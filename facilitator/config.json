@@ -1,0 +1,30 @@
+{
+  "port": 8080,
+  "host": "0.0.0.0",
+  "chains": {
+    "eip155:91342": {
+      "_comment": "GIWA Sepolia",
+      "eip1559": true,
+      "flashblocks": false,
+      "signers": [
+        "$EVM_PRIVATE_KEY"
+      ],
+      "rpc": [
+        {
+          "http": "https://sepolia-rpc.giwa.io",
+          "rate_limit": 50
+        }
+      ]
+    }
+  },
+  "schemes": [
+    {
+      "id": "v1-eip155-exact",
+      "chains": "eip155:*"
+    },
+    {
+      "id": "v2-eip155-exact",
+      "chains": "eip155:*"
+    }
+  ]
+}

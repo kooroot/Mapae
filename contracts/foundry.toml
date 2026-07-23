@@ -1,0 +1,31 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+script = "script"
+
+# 핀 고정 — verify 통과와 opcode 호환을 위해 "latest" 금지
+solc_version = "0.8.28"
+evm_version = "cancun"        # MCOPY 리버트 시 "shanghai"로 내릴 것
+optimizer = true
+optimizer_runs = 200
+
+# 커스텀 에러 리버트 문자열 보기 좋게
+verbosity = 2
+
+[rpc_endpoints]
+# 공개 테스트넷 RPC는 하드코딩 — 클론한 사람이 .env 없이 바로 돌릴 수 있어야 함
+# docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa 에서 복사
+giwa_sepolia = "https://sepolia-rpc.giwa.io"
+# 레이트리밋 걸리면 사설 RPC로 우회
+giwa_sepolia_alt = "${GIWA_SEPOLIA_RPC_URL}"
+
+[etherscan]
+giwa_sepolia = {key = "unused", url = "https://sepolia-explorer.giwa.io/api/", chain = 91342}
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = false
+int_types = "long"

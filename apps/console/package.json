@@ -1,0 +1,11 @@
+{
+  "name": "@mapae/console",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-router": "^1.170.18",
+    "viem": "^2.55.8",
+    "wagmi": "^3.7.4"
+  }
+}

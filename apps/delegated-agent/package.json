@@ -1,0 +1,10 @@
+{
+  "name": "@mapae/delegated-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mapae/delegation": "workspace:*",
+    "@mapae/shared": "workspace:*",
+    "viem": "^2.55.8"
+  }
+}

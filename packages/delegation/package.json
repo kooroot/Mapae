@@ -1,0 +1,19 @@
+{
+  "name": "@mapae/delegation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./policy": "./src/policy.ts",
+    "./x402": "./src/x402.ts"
+  },
+  "dependencies": {
+    "@mapae/shared": "workspace:*",
+    "@metamask/smart-accounts-kit": "1.7.0",
+    "viem": "^2.55.8"
+  }
+}

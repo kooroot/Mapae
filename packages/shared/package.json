@@ -1,0 +1,18 @@
+{
+  "name": "@mapae/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./chain": "./src/chain.ts",
+    "./token": "./src/token.ts",
+    "./x402": "./src/x402.ts",
+    "./errors": "./src/errors.ts"
+  },
+  "peerDependencies": {
+    "viem": "*"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@mapae/seller",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot index.ts"
+  },
+  "dependencies": {
+    "@mapae/shared": "workspace:*",
+    "hono": "^4",
+    "viem": "^2.55.8"
+  }
+}
