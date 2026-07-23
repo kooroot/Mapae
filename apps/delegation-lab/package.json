@@ -1,0 +1,18 @@
+{
+  "name": "@mapae/delegation-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "plan": "bun run index.ts plan",
+    "deploy:preview": "bun run deploy-framework.ts",
+    "deploy:owner:preview": "bun run deploy-owner-account.ts",
+    "sessions:generate": "bun run generate-session-accounts.ts",
+    "test:local": "bun run local-integration.ts"
+  },
+  "dependencies": {
+    "@mapae/delegation": "workspace:*",
+    "@mapae/shared": "workspace:*",
+    "@metamask/smart-accounts-kit": "1.7.0",
+    "viem": "^2.55.8"
+  }
+}

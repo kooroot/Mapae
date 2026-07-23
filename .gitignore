@@ -1,0 +1,60 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+!.env.*.example
+.envrc
+.direnv/
+.secrets/
+*.key
+*.pem
+*.p12
+*.keystore
+*.permission.json
+deployments/d3-session-addresses.json
+
+# JavaScript / Bun
+node_modules/
+.bun/
+.npm/
+.yarn/
+.pnpm-store/
+dist/
+build/
+.vite/
+.turbo/
+.cache/
+.parcel-cache/
+coverage/
+playwright-report/
+test-results/
+.nyc_output/
+*.lcov
+.eslintcache
+*.tsbuildinfo
+*.log
+logs/
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/verify-input.json
+contracts/*.flat.sol
+contracts/lcov.info
+contracts/coverage/
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.fleet/
+*.swp
+*.swo
+
+# Local scratch files
+tmp/
+temp/
+*.tmp
+*.bak

@@ -1,0 +1,25 @@
+services:
+  facilitator:
+    # Pinned to x402-rs v2.0.2. Do not use a floating tag for a component that
+    # handles a security-sensitive key.
+    image: ghcr.io/x402-rs/x402-facilitator@sha256:4ebe09d824bf6a5f342add8ae22eb44a2c56894ad22e7d3f5b83ba38023226b9
+    container_name: mapae-facilitator
+    ports:
+      # The API has no application-level authentication. The seller is the only
+      # local caller, so never expose it to the LAN or public internet.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # config.json 에는 키가 없고 $EVM_PRIVATE_KEY 참조만 있으므로 커밋 가능
+      - ./config.json:/app/config.json:ro
+    environment:
+      # .env 에서 주입 — 릴레이어(가스 대납 + 정산 브로드캐스트) 키
+      EVM_PRIVATE_KEY: ${EVM_PRIVATE_KEY:?set EVM_PRIVATE_KEY in .env}
+      RUST_LOG: ${RUST_LOG:-info}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: unless-stopped
