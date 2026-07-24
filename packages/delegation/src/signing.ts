@@ -215,6 +215,8 @@ export async function signChildPeriodPermission(params: {
     environment: SmartAccountsEnvironment;
     policy: PeriodPolicy;
     startDate: number;
+    /** Defaults to GIWA Sepolia; override to sign for a local Anvil / forked chain. */
+    chainId?: number;
 }): Promise<PermissionArtifact> {
     const managerSigner = privateKeyToAccount(params.managerPrivateKey);
     if (managerSigner.address !== getAddress(params.managerAddress)) {
@@ -237,7 +239,7 @@ export async function signChildPeriodPermission(params: {
         privateKey: params.managerPrivateKey,
         delegation: unsigned,
         delegationManager: getAddress(params.environment.DelegationManager),
-        chainId: giwaSepolia.id,
+        chainId: params.chainId ?? giwaSepolia.id,
     });
     return permissionArtifact(
         params.policy.role,
