@@ -165,9 +165,7 @@ Mapae의 핵심 보안 경계는 다음과 같습니다.
 현재 프로세스 내 중복방지는 안전하지만, 재시작과 다중 replica를 넘는
 idempotency는 제품화 전에 Redis/Postgres 같은 영속 저장소로 이전해야 합니다.
 
-전체 검토 결과와 남은 배포 게이트는
-[배포 전 보안 검토](docs/audits/predeployment-contract-security-review-2026-07-24.md)에
-기록되어 있습니다.
+위협 모델과 온체인 보안 설계는 [기술 노트](docs/tech-notes.md)에 정리되어 있습니다.
 
 ## GIWA 연동
 
@@ -199,18 +197,13 @@ apps/delegation-lab/       policy scenarios and deployment previews
 apps/delegated-agent/      ERC-7710 payment agent
 apps/delegated-seller/     ERC-7710 resource seller
 apps/facilitator-erc7710/  delegated settlement adapter
-docs/                      architecture, runbooks, and security reviews
+docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 ```
 
 ## 문서
 
-- [프로젝트 마스터 문서](docs/mapae-master.md)
-- [D3/D4 실행 안내서](docs/d3-d4-runbook.md)
-- [Forge Framework 배포 런북](docs/framework-forge-deployment.md)
 - [기술 노트](docs/tech-notes.md)
-- [보안 검토](docs/security-review-2026-07-23.md)
-- [적대적 배포 전 감사](docs/audits/predeployment-contract-security-review-2026-07-24.md)
-- [M-02 / M-03 보완 계획](docs/m02-m03-remediation-plan.md)
+- [배포된 컨트랙트](docs/deployed-contracts.md)
 
 ## 배포 안전장치
 
@@ -219,4 +212,4 @@ docs/                      architecture, runbooks, and security reviews
 composition manifest, 최종 Framework-admin ownership, 실제 Framework
 negative-path 검증을 완료해야 합니다.
 
-자세한 순서는 [D3/D4 runbook](docs/d3-d4-runbook.md)을 참고하세요.
+GIWA write는 각 활성화 단계마다 별도의 명시적 승인을 거칩니다.

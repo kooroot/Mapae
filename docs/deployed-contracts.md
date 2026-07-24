@@ -152,7 +152,7 @@ owner가 각 역할에 위임한 세션 키. 개별 지출 한도의 수신자�
 | Ownership 이전 tx | [`0x1e9fde1a…89531fc`](https://sepolia-explorer.giwa.io/tx/0x1e9fde1ad06f6f803ee70e204f24da07e2dc03261cb184901f0b1c45f89531fc) |
 | Ownership 수락 tx | [`0x2b5eaf94…399b8d8`](https://sepolia-explorer.giwa.io/tx/0x2b5eaf94df6e9a9126a5813ff171d6ce2087a4fd92c5ff0c32fe3573b399b8d8) |
 | 검증 블록 | `31520346` |
-| 배포 절차 | [`docs/framework-forge-deployment.md`](./framework-forge-deployment.md) |
+| 배포 절차 | `contracts/script/DeployDelegationFramework.s.sol` + `contracts/Makefile` (`make framework-deploy`) |
 | Negative-path 검증 | `apps/delegation-lab/negative-path-suite.ts` — 이 컨트랙트들을 실제 GIWA fork(`SUITE_TARGET=fork`)와 ephemeral 양쪽에서 상환·거절 실증 |
 
 주소가 배포 결과와 일치하는지 확인하려면 아티팩트를 직접 비교한다:

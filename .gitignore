@@ -61,3 +61,15 @@ tmp/
 temp/
 *.tmp
 *.bak
+
+# Internal docs — kept out of the public repo, preserved separately outside the tree.
+# CLAUDE.md / AGENTS.md stay locally (untracked) so local AI tooling still works.
+/CLAUDE.md
+/AGENTS.md
+/apps/seller/CLAUDE.md
+/docs/mapae-master.md
+/docs/d3-d4-runbook.md
+/docs/framework-forge-deployment.md
+/docs/security-review-2026-07-23.md
+/docs/m02-m03-remediation-plan.md
+/docs/audits/

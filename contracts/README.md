@@ -75,9 +75,8 @@ make framework-simulate
 
 실제 GIWA write는 별도 검토 후 `make framework-deploy`에서만 발생한다.
 38개 creation, ownership transfer/acceptance, Forge journal import, owner
-HybridDeleGator CREATE2 및 `make owner-account-verify`의 전체 순서와 중단 조건은
-[`docs/framework-forge-deployment.md`](../docs/framework-forge-deployment.md)에
-정리되어 있다.
+HybridDeleGator CREATE2 및 `make owner-account-verify`의 전체 순서는
+`script/DeployDelegationFramework.s.sol`과 `Makefile` 타깃에 정의되어 있다.
 
 ## ⚠️ facilitator에 등록할 값
 

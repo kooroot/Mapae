@@ -168,9 +168,8 @@ In-process idempotency is covered. Before multi-replica production deployment,
 `paymentIntentId → transaction hash` state must move to a durable store such as
 Redis or Postgres.
 
-See the
-[pre-deployment security review](docs/audits/predeployment-contract-security-review-2026-07-24.md)
-for the full threat model and remaining activation gates.
+See the [technical notes](docs/tech-notes.md) for the threat model and the
+on-chain security design.
 
 ## GIWA integration
 
@@ -200,18 +199,13 @@ apps/delegation-lab/       policy scenarios and deployment previews
 apps/delegated-agent/      ERC-7710 payment agent
 apps/delegated-seller/     ERC-7710 resource seller
 apps/facilitator-erc7710/  delegated settlement adapter
-docs/                      architecture, runbooks, and security reviews
+docs/                      technical notes and the deployed-contract reference
 ```
 
 ## Documentation
 
-- [Project master document](docs/mapae-master.md)
-- [D3/D4 runbook](docs/d3-d4-runbook.md)
-- [Forge Framework deployment runbook](docs/framework-forge-deployment.md)
 - [Technical notes](docs/tech-notes.md)
-- [Security review](docs/security-review-2026-07-23.md)
-- [Adversarial pre-deployment audit](docs/audits/predeployment-contract-security-review-2026-07-24.md)
-- [M-02 / M-03 remediation plan](docs/m02-m03-remediation-plan.md)
+- [Deployed contracts](docs/deployed-contracts.md)
 
 ## Deployment safety
 
@@ -220,4 +214,4 @@ and an explicit approval phrase. Public activation remains gated on the Framewor
 composition manifest, final Framework-admin ownership, and real-Framework
 negative-path verification.
 
-See the [D3/D4 runbook](docs/d3-d4-runbook.md) for the complete activation sequence.
+GIWA broadcasts require a separate explicit approval at each activation step.
