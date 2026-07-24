@@ -1,9 +1,18 @@
 import {
+    FRAMEWORK_COMPOSITION_ID,
+    FrameworkDeploymentRecorder,
     buildD3Policies,
     createMapaeDelegationProvider,
+    createRecordingWalletClient,
+    finalizeFrameworkDeploymentManifest,
+    parseFrameworkDeploymentManifest,
     preparePeriodDelegation,
+    verifyFrameworkLiveState,
+    verifyOwnerSmartAccount,
     withDelegationSignature,
 } from "@mapae/delegation";
+import {EntryPoint as EntryPointAbi} from "@metamask/delegation-abis";
+import {EntryPoint as EntryPointBytecode} from "@metamask/delegation-abis/bytecode";
 import {
     ExecutionMode,
     Implementation,
@@ -22,6 +31,7 @@ import {
     encodeFunctionData,
     getAddress,
     http,
+    parseAbi,
     publicActions,
     type Abi,
     type Address,
@@ -31,6 +41,8 @@ import {privateKeyToAccount} from "viem/accounts";
 
 const ANVIL_RELAYER_KEY =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as Hex;
+const ANVIL_FRAMEWORK_ADMIN_KEY =
+    "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as Hex;
 const OWNER_KEY =
     "0x0000000000000000000000000000000000000000000000000000000000000001" as Hex;
 const AGENT_KEY =
@@ -50,6 +62,7 @@ const anvil = defineChain({
 
 async function main(): Promise<void> {
     const relayer = privateKeyToAccount(ANVIL_RELAYER_KEY);
+    const frameworkAdmin = privateKeyToAccount(ANVIL_FRAMEWORK_ADMIN_KEY);
     const owner = privateKeyToAccount(OWNER_KEY);
     const agent = privateKeyToAccount(AGENT_KEY);
     const publicClient = createPublicClient({chain: anvil, transport: http(RPC_URL)});
@@ -58,16 +71,105 @@ async function main(): Promise<void> {
         chain: anvil,
         transport: http(RPC_URL),
     }).extend(publicActions);
+    const frameworkAdminClient = createWalletClient({
+        account: frameworkAdmin,
+        chain: anvil,
+        transport: http(RPC_URL),
+    });
     if ((await publicClient.getChainId()) !== anvil.id) {
         throw new Error("local integration requires Anvil chain 31337");
     }
 
-    console.log("[local] deploying MetaMask Delegation Framework environment");
+    console.log("[local] deploying ERC-4337 v0.7 EntryPoint");
+    const entryPointHash = await relayerClient.deployContract({
+        abi: EntryPointAbi,
+        bytecode: EntryPointBytecode,
+        args: [],
+        account: relayer,
+        chain: anvil,
+    });
+    const entryPointReceipt = await publicClient.waitForTransactionReceipt({
+        hash: entryPointHash,
+    });
+    if (!entryPointReceipt.contractAddress) {
+        throw new Error("local EntryPoint deployment returned no address");
+    }
+    const namedDeployments: Record<string, Hex> = {
+        EntryPoint: getAddress(entryPointReceipt.contractAddress),
+    };
+    const recorder = new FrameworkDeploymentRecorder();
+    const recordingRelayerClient = createRecordingWalletClient(relayerClient, recorder);
+
+    console.log("[local] deploying and recording pinned 38-unit Framework composition");
     const environment = await deploySmartAccountsEnvironment(
-        relayerClient,
+        recordingRelayerClient,
         publicClient,
         anvil,
+        namedDeployments,
     );
+    const rawFrameworkManifest = await finalizeFrameworkDeploymentManifest(
+        recorder,
+        publicClient,
+        namedDeployments,
+        relayer.address,
+    );
+    const frameworkManifest = parseFrameworkDeploymentManifest(
+        JSON.parse(JSON.stringify(rawFrameworkManifest)) as unknown,
+    );
+    if (frameworkManifest.compositionId !== FRAMEWORK_COMPOSITION_ID) {
+        throw new Error("local Framework manifest composition ID mismatch");
+    }
+    await verifyFrameworkLiveState({
+        publicClient,
+        manifest: frameworkManifest,
+        environment,
+        expectedAdmin: {
+            owner: relayer.address,
+            pendingOwner: null,
+            paused: false,
+        },
+    });
+    console.log(
+        `[local] verified ${frameworkManifest.deploymentCount} deployments (${frameworkManifest.compositionId})`,
+    );
+    const ownershipAbi = parseAbi([
+        "function transferOwnership(address newOwner)",
+        "function acceptOwnership()",
+    ]);
+    const transferOwnershipHash = await relayerClient.writeContract({
+        address: getAddress(environment.DelegationManager),
+        abi: ownershipAbi,
+        functionName: "transferOwnership",
+        args: [frameworkAdmin.address],
+    });
+    await publicClient.waitForTransactionReceipt({hash: transferOwnershipHash});
+    await verifyFrameworkLiveState({
+        publicClient,
+        manifest: frameworkManifest,
+        environment,
+        expectedAdmin: {
+            owner: relayer.address,
+            pendingOwner: frameworkAdmin.address,
+            paused: false,
+        },
+    });
+    const acceptOwnershipHash = await frameworkAdminClient.writeContract({
+        address: getAddress(environment.DelegationManager),
+        abi: ownershipAbi,
+        functionName: "acceptOwnership",
+    });
+    await publicClient.waitForTransactionReceipt({hash: acceptOwnershipHash});
+    await verifyFrameworkLiveState({
+        publicClient,
+        manifest: frameworkManifest,
+        environment,
+        expectedAdmin: {
+            owner: frameworkAdmin.address,
+            pendingOwner: null,
+            paused: false,
+        },
+    });
+    console.log("[local] verified two-step Framework ownership finalization");
     const token = await deployMockUsdc(relayerClient, publicClient);
 
     const ownerAccount = await toMetaMaskSmartAccount({
@@ -91,6 +193,13 @@ async function main(): Promise<void> {
     await publicClient.waitForTransactionReceipt({hash: deployHash});
     const accountCode = await publicClient.getCode({address: ownerAccount.address});
     if (!accountCode || accountCode === "0x") throw new Error("owner smart account not deployed");
+    await verifyOwnerSmartAccount({
+        publicClient,
+        account: ownerAccount.address,
+        expectedOwner: owner.address,
+        environment,
+    });
+    console.log("[local] verified owner account proxy, wiring, and initialization");
 
     const mintHash = await relayerClient.writeContract({
         address: token.address,

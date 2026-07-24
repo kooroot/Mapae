@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@mapae/shared": "workspace:*",
+    "@metamask/delegation-abis": "1.1.0",
     "@metamask/smart-accounts-kit": "1.7.0",
     "viem": "^2.55.8"
   }

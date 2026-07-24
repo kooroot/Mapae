@@ -1,7 +1,9 @@
 import {
     createMapaeDelegationProvider,
     isPermissionContext,
-    parseDeploymentArtifactJson,
+    parseActiveDeploymentArtifactJson,
+    parseFrameworkDeploymentManifestJson,
+    verifyActiveFrameworkDeployment,
 } from "@mapae/delegation";
 import {
     GIWA_SEPOLIA_CAIP2,
@@ -10,10 +12,19 @@ import {
     buildErc7710PaymentPayload,
     encodePaymentHeader,
     fromTokenAmount,
+    giwaSepolia,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
 } from "@mapae/shared";
-import {getAddress, isAddress, type Address, type Hex} from "viem";
+import {
+    createPublicClient,
+    getAddress,
+    http,
+    isAddress,
+    zeroAddress,
+    type Address,
+    type Hex,
+} from "viem";
 import {privateKeyToAccount} from "viem/accounts";
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -45,7 +56,35 @@ async function readDeployment() {
         "../../deployments/giwa-sepolia.framework.json";
     const file = Bun.file(path);
     if (!(await file.exists())) throw new Error(`deployment artifact not found: ${path}`);
-    return parseDeploymentArtifactJson(await file.text());
+    return parseActiveDeploymentArtifactJson(await file.text());
+}
+
+async function readManifest() {
+    const path =
+        process.env.DELEGATION_MANIFEST_PATH ??
+        "../../deployments/giwa-sepolia.framework-manifest.json";
+    const file = Bun.file(path);
+    if (!(await file.exists())) throw new Error(`Framework manifest not found: ${path}`);
+    return parseFrameworkDeploymentManifestJson(await file.text());
+}
+
+function readRpcUrl(): string {
+    const value =
+        process.env.GIWA_SEPOLIA_RPC_URL?.trim() ||
+        giwaSepolia.rpcUrls.default.http[0];
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) {
+        throw new Error("GIWA_SEPOLIA_RPC_URL must be HTTPS without credentials");
+    }
+    return url.toString();
+}
+
+function readFrameworkAdmin(): Address {
+    const value = process.env.FRAMEWORK_ADMIN_ADDRESS?.trim() ?? "";
+    if (!isAddress(value)) throw new Error("FRAMEWORK_ADMIN_ADDRESS must be an address");
+    const address = getAddress(value);
+    if (address === zeroAddress) throw new Error("FRAMEWORK_ADMIN_ADDRESS must not be zero");
+    return address;
 }
 
 async function readParentPermissionContext(): Promise<Hex> {
@@ -115,11 +154,22 @@ async function main(): Promise<void> {
     const target = new URL(resource, seller);
     if (target.origin !== seller.origin) throw new Error("resource escaped SELLER_URL");
 
-    const [deployment, parentPermissionContext, facilitatorAddresses] = await Promise.all([
+    const [deployment, manifest, parentPermissionContext, facilitatorAddresses] = await Promise.all([
         readDeployment(),
+        readManifest(),
         readParentPermissionContext(),
         trustedFacilitators(facilitator),
     ]);
+    const publicClient = createPublicClient({
+        chain: giwaSepolia,
+        transport: http(readRpcUrl()),
+    });
+    await verifyActiveFrameworkDeployment({
+        publicClient,
+        deployment,
+        manifest,
+        expectedFrameworkAdmin: readFrameworkAdmin(),
+    });
     const provider = createMapaeDelegationProvider({
         account,
         environment: deployment.environment,

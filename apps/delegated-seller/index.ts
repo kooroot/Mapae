@@ -1,7 +1,9 @@
 import {Hono} from "hono";
 import {
-    parseDeploymentArtifactJson,
+    parseActiveDeploymentArtifactJson,
+    parseFrameworkDeploymentManifestJson,
     validateDelegatedPayment,
+    verifyActiveFrameworkDeployment,
     type Erc7710FacilitatorRequest,
 } from "@mapae/delegation";
 import {
@@ -10,12 +12,21 @@ import {
     buildErc7710PaymentRequirements,
     decodeAnyPaymentHeader,
     fromTokenAmount,
+    giwaSepolia,
     toTokenAmount,
     type Erc7710PaymentPayload,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
 } from "@mapae/shared";
-import {getAddress, isAddress, zeroAddress, type Address, type Hex} from "viem";
+import {
+    createPublicClient,
+    getAddress,
+    http,
+    isAddress,
+    zeroAddress,
+    type Address,
+    type Hex,
+} from "viem";
 
 const MAX_PAYMENT_HEADER_LENGTH = 150_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -57,7 +68,35 @@ async function readDeployment() {
         "../../deployments/giwa-sepolia.framework.json";
     const file = Bun.file(path);
     if (!(await file.exists())) throw new Error(`deployment artifact not found: ${path}`);
-    return parseDeploymentArtifactJson(await file.text());
+    return parseActiveDeploymentArtifactJson(await file.text());
+}
+
+async function readManifest() {
+    const path =
+        process.env.DELEGATION_MANIFEST_PATH ??
+        "../../deployments/giwa-sepolia.framework-manifest.json";
+    const file = Bun.file(path);
+    if (!(await file.exists())) throw new Error(`Framework manifest not found: ${path}`);
+    return parseFrameworkDeploymentManifestJson(await file.text());
+}
+
+function readRpcUrl(): string {
+    const value =
+        process.env.GIWA_SEPOLIA_RPC_URL?.trim() ||
+        giwaSepolia.rpcUrls.default.http[0];
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) {
+        throw new Error("GIWA_SEPOLIA_RPC_URL must be HTTPS without credentials");
+    }
+    return url.toString();
+}
+
+function readFrameworkAdmin(): Address {
+    const value = process.env.FRAMEWORK_ADMIN_ADDRESS?.trim() ?? "";
+    if (!isAddress(value)) throw new Error("FRAMEWORK_ADMIN_ADDRESS must be an address");
+    const address = getAddress(value);
+    if (address === zeroAddress) throw new Error("FRAMEWORK_ADMIN_ADDRESS must not be zero");
+    return address;
 }
 
 async function readFacilitatorAddress(url: string): Promise<Address> {
@@ -88,6 +127,17 @@ if (!["127.0.0.1", "localhost", "::1"].includes(HOST)) {
 }
 const PORT = readPort();
 const deployment = await readDeployment();
+const manifest = await readManifest();
+const publicClient = createPublicClient({
+    chain: giwaSepolia,
+    transport: http(readRpcUrl()),
+});
+await verifyActiveFrameworkDeployment({
+    publicClient,
+    deployment,
+    manifest,
+    expectedFrameworkAdmin: readFrameworkAdmin(),
+});
 const facilitatorAddress = await readFacilitatorAddress(FACILITATOR_URL);
 
 const DELIVERABLES: Record<

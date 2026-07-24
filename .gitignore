@@ -39,6 +39,7 @@ logs/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+contracts/generated/
 contracts/verify-input.json
 contracts/*.flat.sol
 contracts/lcov.info

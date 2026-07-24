@@ -1,6 +1,9 @@
 {
+  "schemaVersion": 2,
+  "state": "active",
   "chainId": 91342,
   "frameworkVersion": "1.3.0",
+  "compositionId": "mapae-sak-1.7.0-d90569fa-df-d0ebab53-e297f795",
   "environment": {
     "DelegationManager": "0x0000000000000000000000000000000000000000",
     "EntryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
@@ -18,7 +21,11 @@
     }
   },
   "admin": {
-    "owner": "0x0000000000000000000000000000000000000000",
-    "pendingOwner": "0x3333333333333333333333333333333333333333"
+    "deployer": "0x1111111111111111111111111111111111111111",
+    "owner": "0x3333333333333333333333333333333333333333",
+    "pendingOwner": null,
+    "ownershipTransferTransaction": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ownershipAcceptanceTransaction": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "verificationBlock": "0"
   }
 }
