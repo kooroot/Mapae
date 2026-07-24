@@ -4,7 +4,11 @@
   "type": "module",
   "scripts": {
     "plan": "bun run index.ts plan",
+    "forge:prepare": "bun run export-forge-artifacts.ts",
+    "forge:import": "bun run import-forge-framework.ts",
     "deploy:preview": "bun run deploy-framework.ts",
+    "ownership:acceptance": "bun run index.ts ownership-acceptance",
+    "finalize:framework": "bun run finalize-framework.ts",
     "deploy:owner:preview": "bun run deploy-owner-account.ts",
     "sessions:generate": "bun run generate-session-accounts.ts",
     "test:local": "bun run local-integration.ts"
@@ -12,6 +16,7 @@
   "dependencies": {
     "@mapae/delegation": "workspace:*",
     "@mapae/shared": "workspace:*",
+    "@metamask/delegation-abis": "1.1.0",
     "@metamask/smart-accounts-kit": "1.7.0",
     "viem": "^2.55.8"
   }

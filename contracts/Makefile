@@ -6,7 +6,10 @@ VERIFIER_URL := https://sepolia-explorer.giwa.io/api/
 RPC          := giwa_sepolia
 TARGET       := src/MockUSDC.sol:MockUSDC
 
-.PHONY: build test fmt deploy verify json clean
+.PHONY: build test fmt deploy verify json clean \
+	framework-prepare framework-test framework-simulate framework-deploy \
+	framework-import framework-accept framework-finalize owner-account-deploy \
+	owner-account-verify
 
 build:
 	forge build
@@ -16,6 +19,59 @@ test:
 
 fmt:
 	forge fmt
+
+## Pinned npm bytecodes -> local Forge-readable bundle. No key or RPC is used.
+framework-prepare:
+	cd ../apps/delegation-lab && bun run forge:prepare
+
+## Deploy all 38 units + owner proxy locally and verify constructor/library wiring.
+framework-test: framework-prepare
+	forge test --match-contract DeployDelegationFrameworkTest -vvv
+
+## Full GIWA fork simulation. Requires the same gated env as broadcast, but makes no RPC write.
+framework-simulate: framework-prepare
+	FRAMEWORK_FORGE_ADDRESS_PATH=./generated/framework-simulation-addresses.json \
+		forge script script/DeployDelegationFramework.s.sol \
+		--rpc-url giwa_sepolia -vv
+
+## 38 creations + transferOwnership(). This is the explicit GIWA write boundary.
+framework-deploy: framework-prepare
+	forge script script/DeployDelegationFramework.s.sol \
+		--rpc-url giwa_sepolia --broadcast -vvvv
+
+## Read-only import of run-latest.json + independent RPC evidence verification.
+framework-import:
+	cd ../apps/delegation-lab && \
+		FRAMEWORK_ADMIN_ADDRESS='$(FRAMEWORK_ADMIN_ADDRESS)' \
+		GIWA_SEPOLIA_RPC_URL='$(GIWA_SEPOLIA_RPC_URL)' \
+		bun run forge:import
+
+## Optional Forge route. Rabby/multisig acceptOwnership() is also supported.
+framework-accept:
+	forge script script/AcceptFrameworkOwnership.s.sol \
+		--rpc-url giwa_sepolia --broadcast -vvvv
+
+## Read-only transition from ownership-pending evidence to the active artifact.
+framework-finalize:
+	@test -n "$(ACCEPT_TX)" || (echo "ACCEPT_TX=0x... is required"; exit 1)
+	cd ../apps/delegation-lab && \
+		CASE_1_OWNER_ADDRESS='$(CASE_1_OWNER_ADDRESS)' \
+		CASE_2_VENDOR_ADDRESS='$(CASE_2_VENDOR_ADDRESS)' \
+		CASE_3_MANAGER_ADDRESS='$(CASE_3_MANAGER_ADDRESS)' \
+		FRAMEWORK_ADMIN_ADDRESS='$(FRAMEWORK_ADMIN_ADDRESS)' \
+		GIWA_SEPOLIA_RPC_URL='$(GIWA_SEPOLIA_RPC_URL)' \
+		FRAMEWORK_OWNERSHIP_ACCEPTANCE_TX='$(ACCEPT_TX)' \
+		bun run finalize:framework
+
+## Active Framework only: deploy and verify the owner HybridDeleGator proxy.
+owner-account-deploy: framework-prepare
+	forge script script/DeployOwnerAccount.s.sol \
+		--rpc-url giwa_sepolia --broadcast -vvvv
+
+## Read-only live RPC verification. Fails instead of simulating a missing account.
+owner-account-verify: framework-prepare
+	OWNER_ACCOUNT_VERIFY_ONLY=true forge script script/DeployOwnerAccount.s.sol \
+		--rpc-url giwa_sepolia -vvvv
 
 ## 배포 + 검증 (한 번에)
 deploy:

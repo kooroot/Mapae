@@ -1,16 +1,19 @@
 # mapae/contracts
 
-Mapae 정산에 쓰이는 컨트랙트. D1 범위는 **MockUSDC (EIP-3009)** 하나.
+Mapae 정산에 쓰이는 컨트랙트와 exact Delegation Framework Forge 배포 경로.
+MockUSDC는 D1 rail이고 Framework는 D3/D4의 위임 실행 계층이다.
 
 ## 셋업
 
-⚠️ **`forge init`을 쓰지 말 것.** `--force`가 `foundry.toml`을 기본값으로 덮어쓰고 `Counter.sol`을 심습니다.
-폴더 구조는 이미 있으므로 의존성만 설치합니다.
+⚠️ **`forge init`이나 `forge install`을 다시 실행하지 말 것.**
+`foundry.toml`과 감사한 dependency pin을 바꿀 수 있다. 루트에서 고정된
+submodule을 그대로 초기화한다.
 
 ```bash
+git submodule update --init --recursive
+bun install --frozen-lockfile
 cd contracts
-forge install foundry-rs/forge-std
-forge install OpenZeppelin/openzeppelin-contracts   # v5 계열 필요
+forge build
 ```
 
 `remappings.txt`:
@@ -23,8 +26,10 @@ forge-std/=lib/forge-std/src/
 forge build && forge test -vvv
 ```
 
-- `forge install`은 git submodule을 씁니다. 루트에서 `git init`을 했으므로 `contracts/lib/...` 경로로 잡히는 게 정상. 작업 트리가 더러우면 먼저 커밋할 것.
-- **OZ는 v5 이상.** 테스트에서 `ECDSA.tryRecover`를 3-튜플로 받는데 v4.9까지는 2-튜플이라 컴파일이 깨집니다.
+- `contracts/lib/delegation-framework`는 source review용 upstream
+  `d0ebab5386503824730fdc0e48924f362d8290d0` pin이다.
+- exact 38-unit 배포 입력은 `make framework-prepare`가 pinned
+  `@metamask/delegation-abis@1.1.0`에서 생성한다.
 
 `.env`:
 ```bash
@@ -59,6 +64,20 @@ forge script script/DeployMockUSDC.s.sol \
 ```
 
 배포 후 **소스 verify 확인**. 익스플로러에서 소스 코드가 보여야 합니다.
+
+## Delegation Framework Forge 배포
+
+```bash
+make framework-prepare
+make framework-test
+make framework-simulate
+```
+
+실제 GIWA write는 별도 검토 후 `make framework-deploy`에서만 발생한다.
+38개 creation, ownership transfer/acceptance, Forge journal import, owner
+HybridDeleGator CREATE2 및 `make owner-account-verify`의 전체 순서와 중단 조건은
+[`docs/framework-forge-deployment.md`](../docs/framework-forge-deployment.md)에
+정리되어 있다.
 
 ## ⚠️ facilitator에 등록할 값
 

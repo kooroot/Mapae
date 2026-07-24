@@ -3,9 +3,11 @@ import {getAddress, type Address} from "viem";
 import type {SmartAccountsEnvironment} from "@metamask/smart-accounts-kit";
 import {
     ENTRY_POINT_V07,
+    parseActiveDeploymentArtifact,
     parseD3IdentityConfig,
     parseDeploymentArtifact,
 } from "./config.js";
+import {FRAMEWORK_COMPOSITION_ID} from "./composition.js";
 import {buildD3Policies, preparePeriodDelegation} from "./policy.js";
 
 const address = (suffix: number): Address =>
@@ -27,25 +29,44 @@ const environment: SmartAccountsEnvironment = {
         RedeemerEnforcer: address(9),
     },
 };
+const transactionHash = `0x${"ab".repeat(32)}`;
+const pendingDeployment = {
+    schemaVersion: 2,
+    state: "ownership-pending",
+    chainId: 91342,
+    frameworkVersion: "1.3.0",
+    compositionId: FRAMEWORK_COMPOSITION_ID,
+    environment,
+    admin: {
+        deployer: address(30),
+        owner: address(30),
+        pendingOwner: address(31),
+        ownershipTransferTransaction: transactionHash,
+        verificationBlock: "123",
+    },
+};
 
 describe("MetaMask Delegation Framework policy construction", () => {
     test("parses role addresses from application configuration and rejects zero", () => {
         expect(
             parseD3IdentityConfig({
-                accountOwner: address(20),
+                case1Owner: address(20),
+                case2Vendor: address(22),
+                case3Manager: address(23),
                 frameworkAdmin: address(21),
-                fixedVendor: address(22),
             }),
         ).toEqual({
-            accountOwner: address(20),
+            case1Owner: address(20),
+            case2Vendor: address(22),
+            case3Manager: address(23),
             frameworkAdmin: address(21),
-            fixedVendor: address(22),
         });
         expect(() =>
             parseD3IdentityConfig({
-                accountOwner: address(20),
+                case1Owner: address(20),
+                case2Vendor: address(22),
+                case3Manager: address(23),
                 frameworkAdmin: address(0),
-                fixedVendor: address(22),
             }),
         ).toThrow("frameworkAdmin must not be the zero address");
     });
@@ -84,10 +105,31 @@ describe("MetaMask Delegation Framework policy construction", () => {
     test("deployment artifact rejects a non-canonical EntryPoint", () => {
         expect(() =>
             parseDeploymentArtifact({
-                chainId: 91342,
-                frameworkVersion: "1.3.0",
-                environment: {...environment, EntryPoint: address(99)},
+                ...pendingDeployment,
+                environment: {...pendingDeployment.environment, EntryPoint: address(99)},
             }),
         ).toThrow("canonical v0.7");
+    });
+
+    test("keeps ownership-pending evidence separate from active deployments", () => {
+        const pending = parseDeploymentArtifact(pendingDeployment);
+        expect(pending.state).toBe("ownership-pending");
+        expect(() => parseActiveDeploymentArtifact(pendingDeployment)).toThrow(
+            "ownership is still pending",
+        );
+
+        const active = parseActiveDeploymentArtifact({
+            ...pendingDeployment,
+            state: "active",
+            admin: {
+                ...pendingDeployment.admin,
+                owner: pendingDeployment.admin.pendingOwner,
+                pendingOwner: null,
+                ownershipAcceptanceTransaction: `0x${"cd".repeat(32)}`,
+                verificationBlock: "130",
+            },
+        });
+        expect(active.state).toBe("active");
+        expect(active.admin.pendingOwner).toBeNull();
     });
 });
