@@ -11,7 +11,9 @@
     "finalize:framework": "bun run finalize-framework.ts",
     "deploy:owner:preview": "bun run deploy-owner-account.ts",
     "sessions:generate": "bun run generate-session-accounts.ts",
-    "test:local": "bun run local-integration.ts"
+    "test:local": "bun run local-integration.ts",
+    "permission:prepare": "bun run sign-root-permission.ts prepare",
+    "permission:assemble": "bun run sign-root-permission.ts assemble"
   },
   "dependencies": {
     "@mapae/delegation": "workspace:*",

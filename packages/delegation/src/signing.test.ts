@@ -11,7 +11,13 @@ import {
     withDelegationSignature,
 } from "./policy.js";
 import {buildRevocationCall} from "./revocation.js";
-import {signChildPeriodPermission} from "./signing.js";
+import {signDelegation as signDelegationWithPrivateKey} from "@metamask/smart-accounts-kit";
+import {giwaSepolia} from "@mapae/shared";
+import {
+    assembleRootPermission,
+    prepareRootPermissionSigningRequest,
+    signChildPeriodPermission,
+} from "./signing.js";
 
 const address = (suffix: number): Address =>
     getAddress(`0x${suffix.toString(16).padStart(40, "0")}`);
@@ -62,6 +68,51 @@ describe("D3 signing and revocation preparation", () => {
         expect(getAddress(chain[0]!.delegate)).toBe(address(12));
         expect(getAddress(chain[1]!.delegate)).toBe(manager.address);
         expect(chain[0]!.signature).not.toBe("0x");
+    });
+
+    test("offline root permission typed data is byte-identical to the SDK signer", async () => {
+        const owner = privateKeyToAccount(MANAGER_KEY);
+        const request = prepareRootPermissionSigningRequest({
+            environment,
+            accountOwnerSmartAccount: address(10),
+            delegate: address(11),
+            policy: D3_POLICIES["open-agent"],
+            startDate: 2_000_000_000,
+        });
+
+        // The domain and shape must match both the contract and the SDK exactly.
+        expect(request.typedData.domain).toEqual({
+            name: "DelegationManager",
+            version: "1",
+            chainId: giwaSepolia.id,
+            verifyingContract: environment.DelegationManager,
+        });
+        expect(request.typedData.primaryType).toBe("Delegation");
+
+        // Signing the offline typed data with an EOA must produce the exact same bytes
+        // as the SDK's canonical signer over the same delegation. If the typed data
+        // drifted by one field, these would differ.
+        const offlineSignature = await owner.signTypedData(request.typedData);
+        const sdkSignature = await signDelegationWithPrivateKey({
+            privateKey: MANAGER_KEY,
+            delegation: request.unsignedDelegation,
+            delegationManager: environment.DelegationManager,
+            chainId: giwaSepolia.id,
+        });
+        expect(offlineSignature).toBe(sdkSignature);
+
+        const artifact = assembleRootPermission({
+            role: "open-agent",
+            unsignedDelegation: request.unsignedDelegation,
+            signature: offlineSignature,
+            createdAt: 2_000_000_000,
+        });
+        const chain = decodeDelegations(artifact.permissionContext);
+        expect(chain).toHaveLength(1);
+        expect(chain[0]!.signature).toBe(offlineSignature);
+        expect(getAddress(chain[0]!.delegator)).toBe(address(10));
+        expect(getAddress(chain[0]!.delegate)).toBe(address(11));
+        expect(artifact.delegator).toBe(address(10));
     });
 
     test("revocation is targeted at the delegator smart account, not the manager", () => {

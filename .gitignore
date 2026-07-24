@@ -11,6 +11,7 @@
 *.p12
 *.keystore
 *.permission.json
+*.permission.request.json
 deployments/d3-session-addresses.json
 
 # JavaScript / Bun
