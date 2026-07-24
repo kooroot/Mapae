@@ -18,7 +18,6 @@ export const DELEGATION_FRAMEWORK_VERSION = "1.3.0" as const;
 export interface D3IdentityConfig {
     case1Owner: Address;
     case2Vendor: Address;
-    case3Manager: Address;
     frameworkAdmin: Address;
 }
 
@@ -105,7 +104,6 @@ export function parseD3IdentityConfig(input: unknown): D3IdentityConfig {
     return {
         case1Owner: checkedAddress(value.case1Owner, "case1Owner"),
         case2Vendor: checkedAddress(value.case2Vendor, "case2Vendor"),
-        case3Manager: checkedAddress(value.case3Manager, "case3Manager"),
         frameworkAdmin: checkedAddress(value.frameworkAdmin, "frameworkAdmin"),
     };
 }

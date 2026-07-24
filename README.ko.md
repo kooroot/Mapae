@@ -137,7 +137,6 @@ cp apps/delegation-lab/.env.example apps/delegation-lab/.env
 |---|---|
 | `CASE_1_OWNER_ADDRESS` | Case 1 owner, owner 스마트계정과 root delegation 제어 |
 | `CASE_2_VENDOR_ADDRESS` | Case 2 vendor 정책의 고정 수취인 |
-| `CASE_3_MANAGER_ADDRESS` | Case 3 manager identity |
 | `FRAMEWORK_ADMIN_ADDRESS` | DelegationManager ownership·pause 관리 |
 | `DEPLOYER_ADDRESS` | Framework·owner account 배포 signer의 기대 주소 |
 | `RELAYER_ADDRESS` | D4 정산 relayer 기대 주소, Framework 배포에는 사용하지 않음 |

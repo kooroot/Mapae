@@ -138,7 +138,6 @@ cp apps/delegation-lab/.env.example apps/delegation-lab/.env
 |---|---|
 | `CASE_1_OWNER_ADDRESS` | Case 1 owner; controls the owner smart account and root delegations |
 | `CASE_2_VENDOR_ADDRESS` | Recipient pinned by the Case 2 vendor policy |
-| `CASE_3_MANAGER_ADDRESS` | Case 3 manager identity |
 | `FRAMEWORK_ADMIN_ADDRESS` | Controls DelegationManager ownership and pause state |
 | `DEPLOYER_ADDRESS` | Expected signer for Framework and owner-account deployment |
 | `RELAYER_ADDRESS` | Expected D4 settlement relayer; never used for Framework deployment |

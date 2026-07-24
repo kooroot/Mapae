@@ -6,7 +6,6 @@ export function readD3IdentityConfig(): D3IdentityConfig {
     return parseD3IdentityConfig({
         case1Owner: process.env.CASE_1_OWNER_ADDRESS,
         case2Vendor: process.env.CASE_2_VENDOR_ADDRESS,
-        case3Manager: process.env.CASE_3_MANAGER_ADDRESS,
         frameworkAdmin: process.env.FRAMEWORK_ADMIN_ADDRESS,
     });
 }

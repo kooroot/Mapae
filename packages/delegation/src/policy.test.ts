@@ -52,20 +52,17 @@ describe("MetaMask Delegation Framework policy construction", () => {
             parseD3IdentityConfig({
                 case1Owner: address(20),
                 case2Vendor: address(22),
-                case3Manager: address(23),
                 frameworkAdmin: address(21),
             }),
         ).toEqual({
             case1Owner: address(20),
             case2Vendor: address(22),
-            case3Manager: address(23),
             frameworkAdmin: address(21),
         });
         expect(() =>
             parseD3IdentityConfig({
                 case1Owner: address(20),
                 case2Vendor: address(22),
-                case3Manager: address(23),
                 frameworkAdmin: address(0),
             }),
         ).toThrow("frameworkAdmin must not be the zero address");

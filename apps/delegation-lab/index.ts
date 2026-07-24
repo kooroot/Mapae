@@ -39,7 +39,6 @@ async function printPlan(): Promise<void> {
                 caseIdentities: {
                     case1Owner: identities.case1Owner,
                     case2Vendor: identities.case2Vendor,
-                    case3Manager: identities.case3Manager,
                 },
                 delegatedSessionAddresses: sessionAddresses,
                 ownerAccountSalt: OWNER_ACCOUNT_SALT,
