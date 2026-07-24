@@ -10,9 +10,11 @@
     "ownership:acceptance": "bun run index.ts ownership-acceptance",
     "finalize:framework": "bun run finalize-framework.ts",
     "deploy:owner:preview": "bun run deploy-owner-account.ts",
+    "fund:preview": "bun run fund-smart-account.ts",
     "sessions:generate": "bun run generate-session-accounts.ts",
     "test:local": "bun run local-integration.ts",
     "permission:prepare": "bun run sign-root-permission.ts prepare",
+    "permission:serve": "bun run sign-root-permission.ts serve",
     "permission:assemble": "bun run sign-root-permission.ts assemble"
   },
   "dependencies": {

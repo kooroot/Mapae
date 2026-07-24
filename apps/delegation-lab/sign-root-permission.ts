@@ -107,6 +107,7 @@ function buildSigningPage(input: {
     typedData: unknown;
 }): string {
     const embedded = JSON.stringify({
+        role: input.role,
         owner: input.owner,
         chainId: input.chainId,
         digest: input.digest,
@@ -163,10 +164,23 @@ function buildSigningPage(input: {
   var copyBtn = document.getElementById("copy");
   var sigEl = document.getElementById("sig");
   var account = null;
+  // EIP-6963: collect wallets that announce themselves so this works with MetaMask
+  // and Rabby side by side. window.ethereum stays the primary path.
+  var discovered = [];
+  window.addEventListener("eip6963:announceProvider", function (ev) {
+    if (ev && ev.detail && ev.detail.provider) discovered.push(ev.detail.provider);
+  });
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
   function set(msg, cls) { statusEl.textContent = msg; statusEl.className = "row " + (cls || ""); }
   function eth() {
-    if (!window.ethereum) { set("No wallet detected. Open this file in the browser where MetaMask/Rabby is installed.", "bad"); return null; }
-    return window.ethereum;
+    if (window.ethereum) return window.ethereum;
+    if (discovered.length) return discovered[0];
+    if (location.protocol === "file:") {
+      set("No wallet detected because this page is opened as a file:// URL — browser extensions cannot inject a provider there. Serve it over loopback instead: run  bun run permission:serve " + data.role + "  and open the printed http://127.0.0.1 URL.", "bad");
+    } else {
+      set("No wallet detected. Open this page in the browser where MetaMask/Rabby is installed and enabled.", "bad");
+    }
+    return null;
   }
   document.getElementById("connect").onclick = async function () {
     var e = eth(); if (!e) return;
@@ -366,8 +380,10 @@ async function prepare(): Promise<void> {
     console.log(`  request saved            ${requestPath(role)}`);
     console.log(`  EIP-712 digest           ${digest}`);
     console.log("");
-    console.log(`Open this local page in the browser with your wallet, then Connect + Sign:`);
-    console.log(`  ${resolve(pagePath)}`);
+    console.log("Serve the page over loopback (browser wallets do not inject on file:// URLs):");
+    console.log(`  bun run permission:serve ${role}`);
+    console.log("then open the printed http://127.0.0.1 URL in the browser with your wallet, and Connect + Sign.");
+    console.log(`  page file: ${resolve(pagePath)}`);
     console.log("");
     console.log("It is a signature (eth_signTypedData_v4), not a transaction — no gas, nothing on chain.");
     console.log("Then: ROOT_PERMISSION_SIGNATURE=0x... bun run permission:assemble " + role);
@@ -464,11 +480,67 @@ async function assemble(): Promise<void> {
     console.log("No transaction was broadcast.");
 }
 
+/**
+ * Serve the one signing page over loopback so a browser wallet extension can inject a
+ * provider — MetaMask/Rabby inject on http://127.0.0.1 but not on file:// URLs. Only the
+ * requested `<role>.sign.html` is exposed; the directory also holds `.env` (chmod 600)
+ * and `*.permission.request.json`, so a directory server would leak them.
+ */
+function serve(): void {
+    const role = readRole();
+    const pagePath = resolve(
+        process.env.ROOT_PERMISSION_PAGE_PATH?.trim() || `./${role}.sign.html`,
+    );
+    const basename = pagePath.split("/").pop() ?? `${role}.sign.html`;
+    const hostname = "127.0.0.1";
+    const port = Number(process.env.SIGN_SERVER_PORT ?? "8899");
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error("SIGN_SERVER_PORT must be a valid TCP port");
+    }
+    let server: ReturnType<typeof Bun.serve>;
+    try {
+        server = Bun.serve({
+            hostname,
+            port,
+            async fetch(request) {
+                const url = new URL(request.url);
+                if (url.pathname !== "/" && url.pathname !== `/${basename}`) {
+                    return new Response("not found", {status: 404});
+                }
+                const file = Bun.file(pagePath);
+                if (!(await file.exists())) {
+                    return new Response(
+                        `run \`bun run permission:prepare ${role}\` first`,
+                        {status: 404},
+                    );
+                }
+                return new Response(file, {
+                    headers: {
+                        "content-type": "text/html; charset=utf-8",
+                        "cache-control": "no-store",
+                    },
+                });
+            },
+        });
+    } catch (error) {
+        throw new Error(
+            `could not bind ${hostname}:${port} (${error instanceof Error ? error.message : String(error)}); set SIGN_SERVER_PORT to a free port`,
+        );
+    }
+    console.log(`serving the "${role}" signing page over loopback (this one file only):`);
+    console.log(`  http://${hostname}:${server.port}/`);
+    console.log("");
+    console.log("Open that URL in the browser where MetaMask/Rabby is installed, then Connect + Sign.");
+    console.log("Wallet extensions inject on http://127.0.0.1 but not on file:// URLs — that is why this exists.");
+    console.log("Press Ctrl+C once you have copied the signature.");
+}
+
 async function main(): Promise<void> {
     const command = process.argv[2];
     if (command === "prepare") return prepare();
     if (command === "assemble") return assemble();
-    throw new Error("usage: sign-root-permission.ts <prepare|assemble> <role>");
+    if (command === "serve") return serve();
+    throw new Error("usage: sign-root-permission.ts <prepare|assemble|serve> <role>");
 }
 
 main().catch((error: unknown) => {
