@@ -3,6 +3,7 @@ import {
     isPermissionContext,
     parseActiveDeploymentArtifactJson,
     parseFrameworkDeploymentManifestJson,
+    throttledHttp,
     verifyActiveFrameworkDeployment,
 } from "@mapae/delegation";
 import {
@@ -19,7 +20,6 @@ import {
 import {
     createPublicClient,
     getAddress,
-    http,
     isAddress,
     zeroAddress,
     type Address,
@@ -162,7 +162,7 @@ async function main(): Promise<void> {
     ]);
     const publicClient = createPublicClient({
         chain: giwaSepolia,
-        transport: http(readRpcUrl()),
+        transport: throttledHttp(readRpcUrl()),
     });
     await verifyActiveFrameworkDeployment({
         publicClient,

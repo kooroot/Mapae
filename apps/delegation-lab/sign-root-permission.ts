@@ -310,6 +310,23 @@ async function writeAtomically(pathInput: string, contents: string): Promise<voi
     await rename(temporary, path);
 }
 
+/**
+ * The committed policy default is a conservative 30-minute session-key window
+ * (BASE_POLICY.expiresAfterSeconds). For a repeatable demo or pitch that window is
+ * impractical — it expires mid-run — so PERMISSION_TTL_SECONDS lets an operator widen
+ * it without weakening the default. The real spending control is the per-period cap,
+ * which is unaffected; this only extends how long the session key stays valid.
+ */
+function applyPermissionTtlOverride<T extends {expiresAfterSeconds: number}>(base: T): T {
+    const raw = process.env.PERMISSION_TTL_SECONDS?.trim();
+    if (!raw) return base;
+    const ttl = Number(raw);
+    if (!Number.isSafeInteger(ttl) || ttl <= 0 || ttl > 7 * 24 * 3600) {
+        throw new Error("PERMISSION_TTL_SECONDS must be a positive integer up to 604800 (7 days)");
+    }
+    return {...base, expiresAfterSeconds: ttl};
+}
+
 function requestPath(role: D3Role): string {
     return process.env.ROOT_PERMISSION_REQUEST_PATH?.trim() || `./${role}.permission.request.json`;
 }
@@ -327,13 +344,14 @@ async function prepare(): Promise<void> {
     }
     const delegate = await readDelegate(role);
     const policies = buildD3Policies(readVendor());
+    const policy = applyPermissionTtlOverride(policies[role]);
     const startDate = Math.floor(Date.now() / 1000);
 
     const request = prepareRootPermissionSigningRequest({
         environment: deployment.environment,
         accountOwnerSmartAccount: account,
         delegate,
-        policy: policies[role],
+        policy,
         startDate,
     });
     const digest = hashTypedData(request.typedData);
@@ -351,7 +369,6 @@ async function prepare(): Promise<void> {
     };
     await writeAtomically(requestPath(role), `${bigintAwareStringify(requestFile)}\n`);
 
-    const policy = policies[role];
     const humanSummary =
         `${policy.periodAmount} base units per ${policy.periodDurationSeconds}s, ` +
         `expires ${policy.expiresAfterSeconds}s after ${startDate}` +

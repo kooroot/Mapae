@@ -8,6 +8,7 @@ import {
     validateDelegatedPayment,
     verifyActiveFrameworkDeployment,
     verifyFrameworkOperationalState,
+    throttledHttp,
     type FrameworkLiveVerification,
     type ValidatedDelegatedPayment,
 } from "@mapae/delegation";
@@ -21,7 +22,6 @@ import {
     createPublicClient,
     createWalletClient,
     getAddress,
-    http,
     isAddress,
     publicActions,
     zeroAddress,
@@ -126,11 +126,11 @@ const manifest = await readManifest();
 const frameworkAdmin = readFrameworkAdmin();
 const manager = getAddress(deployment.environment.DelegationManager);
 
-const publicClient = createPublicClient({chain: giwaSepolia, transport: http(RPC_URL)});
+const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
 const facilitatorClient = createWalletClient({
     account: relayer,
     chain: giwaSepolia,
-    transport: http(RPC_URL),
+    transport: throttledHttp(RPC_URL),
 }).extend(publicActions);
 
 class FrameworkReadinessGate {

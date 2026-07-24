@@ -2,6 +2,7 @@ import {Hono} from "hono";
 import {
     parseActiveDeploymentArtifactJson,
     parseFrameworkDeploymentManifestJson,
+    throttledHttp,
     validateDelegatedPayment,
     verifyActiveFrameworkDeployment,
     type Erc7710FacilitatorRequest,
@@ -21,7 +22,6 @@ import {
 import {
     createPublicClient,
     getAddress,
-    http,
     isAddress,
     zeroAddress,
     type Address,
@@ -130,7 +130,7 @@ const deployment = await readDeployment();
 const manifest = await readManifest();
 const publicClient = createPublicClient({
     chain: giwaSepolia,
-    transport: http(readRpcUrl()),
+    transport: throttledHttp(readRpcUrl()),
 });
 await verifyActiveFrameworkDeployment({
     publicClient,
