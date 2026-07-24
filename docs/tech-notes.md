@@ -54,9 +54,77 @@ facilitator → DelegationManager.redeemDelegations
             → mUSDC.transfer(payTo, amount)
 ```
 
-parent caveat는 60초 주기 한도와 30분 만료를 온체인으로 강제한다. Vendor
-프로필은 ERC-20 `transfer` calldata의 수취인 위치도 고정한다. Manager→Child
-재위임에서는 child의 개별 한도와 manager의 합산 한도가 동시에 적용된다.
+parent caveat는 60초 주기 한도와 만료창(기본 30분, 데모는 `PERMISSION_TTL_SECONDS`로
+연장)을 온체인으로 강제한다. Vendor 프로필은 ERC-20 `transfer` calldata의 수취인
+위치도 고정한다. Manager→Child 재위임에서는 child의 개별 한도와 manager의 합산
+한도가 동시에 적용된다.
+
+아래 시퀀스는 데모의 세 경로 — 정상 정산, 주기 한도 초과 거절, 만료 거절 — 를
+같은 위임 하나에 대해 보여준다. 거절은 백엔드가 아니라 온체인 caveat이 판정한다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner as Owner 지갑
+    participant SA as HybridDeleGator<br/>스마트계정 (payer)
+    participant Agent as delegated-agent<br/>세션키
+    participant Seller as delegated-seller
+    participant Fac as facilitator<br/>(relayer, 가스대납)
+    participant DM as DelegationManager<br/>+ caveat enforcers
+    participant USDC as MockUSDC
+
+    Note over Owner,SA: 사전 1회 — 루트 위임 오프라인 서명
+    Owner->>SA: eth_signTypedData_v4 → ERC-1271 0x1626ba7e
+    Note right of SA: 3 mUSDC / 60s cap · 만료창 · permission.json
+
+    rect rgb(232,245,233)
+    Note over Agent,USDC: ① 정상 경로 — 누적 2.5 ≤ 3.0
+    Agent->>Seller: GET /delegated/deliverable/inv-002
+    Seller-->>Agent: 402 (amount 2.5, erc7710)
+    Agent->>Agent: 결제별 leaf 서명 (세션키)
+    Agent->>Seller: X-PAYMENT (leaf context)
+    Seller->>Fac: /verify → simulate redeemDelegations
+    Fac-->>Seller: isValid
+    Seller->>Fac: /settle
+    Fac->>DM: redeemDelegations (relayer 가스대납)
+    DM->>USDC: transfer(payTo, 2.5)
+    DM-->>Fac: OK
+    Fac-->>Seller: tx 0x71d71442…
+    Seller-->>Agent: 200 + 리소스 (payer 가스 0)
+    end
+
+    rect rgb(255,235,235)
+    Note over Agent,DM: ② 한도 초과 — 같은 주기 재시도, 누적 5.0 > 3.0
+    Agent->>Seller: GET inv-002 (재시도)
+    Seller->>Fac: /verify → simulate
+    Fac->>DM: simulate redeemDelegations
+    DM-->>Fac: revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded
+    Fac-->>Seller: isValid = false
+    Seller-->>Agent: 403 — 정산 없음, 자금 불변
+    end
+
+    rect rgb(255,244,229)
+    Note over Agent,DM: ③ 만료 — 유효창 경과 후
+    Fac->>DM: simulate redeemDelegations
+    DM-->>Fac: revert TimestampEnforcer:expired-delegation
+    Fac-->>Seller: isValid = false
+    end
+```
+
+#### 라이브 데모 증거 — GIWA Sepolia (2026-07-24)
+
+| 경로 | 결과 | 증거 |
+|---|---|---|
+| Framework 배포 | 38-unit + 2단계 ownership + owner 스마트계정 | manager `0xF2F782Fa…F40C`, owner account `0xA4e4d00E…DDF382` |
+| 정상 정산 (inv-001, 1 mUSDC) | 성공, payer 가스 0 | tx `0xe897fe55…a97d`, block 31555419 |
+| 정상 정산 (inv-002, 2.5 mUSDC) | 성공 | tx `0x71d71442…6ce4`, block 31558282 |
+| **주기 한도 초과** (누적 5.0 > 3.0) | **온체인 거절, 자금 불변** | revert `ERC20PeriodTransferEnforcer:transfer-amount-exceeded` |
+| **만료** (유효창 경과) | **온체인 거절** | revert `TimestampEnforcer:expired-delegation` |
+
+거절 두 경우 모두 relayer는 트랜잭션을 브로드캐스트하지 않는다 — facilitator의
+`/verify`가 `simulate.redeemDelegations`로 미리 걸러 가스를 낭비하지 않는다.
+동일한 2.5 mUSDC 결제가 여유가 있을 땐 정산되고 누적이 cap을 넘으면 거절된다는
+점이 핵심이다: **한도는 코드의 약속이 아니라 온체인 enforcer가 강제하는 사실이다.**
 
 ---
 
@@ -116,15 +184,20 @@ MVP 기간에 도입하지 않은 이유는 부분 도입이 어렵기 때문이
 | MockUSDC | `0xcfeb694719A09caeb80798e2011298F29CDa4e92` |
 | EIP-712 도메인 | name `Mock USDC` / version `2` / decimals `6` |
 | EntryPoint | canonical v0.7 `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
-| Delegation Framework | GIWA 미배포 확인, v1.3 배포 준비 완료·사용자 승인 대기 |
+| Delegation Framework v1.3 | **GIWA 배포·검증 완료** — DelegationManager `0xF2F782Fa…F40C` (active, owner=admin, unpaused), 38-unit exact composition |
+| owner 스마트계정 (payer) | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` (HybridDeleGator, owner=Case1) |
+| ERC20PeriodTransferEnforcer | `0x700330288f6f094780121ea54cd2eDEfe45b3625` |
 | Dojang | EAS 기반 attestation, 배포 확인 (등급2에서 사용 예정) |
 
 ---
 
 ## 6. 다음 단계
 
-- **GIWA D3/D4 활성화** — Framework v1.3 배포 검토, owner account 배포,
-  account-owner root 위임 서명, GIWA receipt 확보
+- **GIWA D3/D4 활성화 ✅ 완료** — Framework 배포, owner account 배포, root 위임
+  서명(ERC-1271 검증), 정상 정산 + 한도·만료 거절까지 GIWA에서 실증
+- **real-Framework negative-path 수트** — 감사 항목 4. expiry·period cap은 이미
+  실증됐고, replay·wrong-redeemer·revocation·child 합산 cap·period reset·payer
+  mismatch를 `local-integration.ts` 체인-파라미터화로 자동화
 - **정산 두뇌** — 트리거·스케줄러, 복합 위임(수취인·주기·상한), 원장, 재시도
 - **등급2 검증 경로** — Dojang KYC 게이트 + EAS 계약/영수증 스키마 + 리졸버
 - **이행검증** — optimistic 구조(기본 통과·이의제기 창·본드). 최종 판정자가 재실행이 아닌 중재이므로 trustless가 아님을 전제로 설계
