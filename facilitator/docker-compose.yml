@@ -1,7 +1,7 @@
 services:
   facilitator:
-    # Pinned to x402-rs v2.0.2. Do not use a floating tag for a component that
-    # handles a security-sensitive key.
+    # Pinned to x402-rs v2.0.2. Do not use a floating tag for a
+    # security-sensitive component.
     image: ghcr.io/x402-rs/x402-facilitator@sha256:4ebe09d824bf6a5f342add8ae22eb44a2c56894ad22e7d3f5b83ba38023226b9
     container_name: mapae-facilitator
     ports:
