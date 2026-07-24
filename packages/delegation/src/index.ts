@@ -6,5 +6,6 @@ export * from "./live-verifier.js";
 export * from "./oracle.js";
 export * from "./policy.js";
 export * from "./revocation.js";
+export * from "./rpc.js";
 export * from "./signing.js";
 export * from "./x402.js";

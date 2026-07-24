@@ -1,0 +1,203 @@
+{
+  "source": "chain-derived",
+  "note": "Rebuilt from GIWA state after an interrupted Forge broadcast. The explorer supplied only the nonce index; every field was re-verified over RPC. The original Forge journal is unmodified.",
+  "chainId": 91342,
+  "deployer": "0x5Ea1FB5f222572c03220356cb2914Da2b5acc0DE",
+  "firstNonce": 3,
+  "receipts": [
+    {
+      "transactionHash": "0x456655d62dde7283064456c254b06a8cc883f3524eedd7ea639504c9f4b64912",
+      "nonce": 3,
+      "contractAddress": "0xbED01c51285771437154B01D7EB1E942B96A30b2"
+    },
+    {
+      "transactionHash": "0xf7e9b6705dcf3bc67f614bd01357f77685a0184cbb9e574f41f1a113a0efdee6",
+      "nonce": 4,
+      "contractAddress": "0x9C8fb08f2F00F474B1A3F1d02988a7b498f31165"
+    },
+    {
+      "transactionHash": "0x3e0cb8c27751ea3995bf1b7363ff62061ea4ddbd0da7f5435bbdb37234c482dc",
+      "nonce": 5,
+      "contractAddress": "0x412aEB6daB5f782d133F14f756f4E191f90E4C32"
+    },
+    {
+      "transactionHash": "0x3ddcca7c5c5a30c70cbbe4297c8b74e0ac30083f3614878df47a1855d5fc6383",
+      "nonce": 6,
+      "contractAddress": "0x637DcE9006b58C99446A43B326DECC22756A53a7"
+    },
+    {
+      "transactionHash": "0x9ce2fb884c43e12168f052f11d40a24c1357db685b661f0a8c89aa177be79fbc",
+      "nonce": 7,
+      "contractAddress": "0x7985846b0b9f4f1641774a9323bDc4e1dbbe29bD"
+    },
+    {
+      "transactionHash": "0x22b0df20423a7b1f2f6e66286ab0228af418ed4de18640db300e7e53c56c12f7",
+      "nonce": 8,
+      "contractAddress": "0xf371d6cA846362D0c5342d4182e12f248Abb0878"
+    },
+    {
+      "transactionHash": "0x954beea96837cfe1c28aa97db56036ac026d5551788fa6baf90a47cb4ad89c70",
+      "nonce": 9,
+      "contractAddress": "0x3fc13b47b7E7D2DbF257070c89395AAc43D22115"
+    },
+    {
+      "transactionHash": "0x468fceb8c0855961f55e0395d1dfed8a347111a73ed2a9edd5410c3861ea6584",
+      "nonce": 10,
+      "contractAddress": "0xEE818d86Ec7642335c1B6d90b529F3c5060D9fb8"
+    },
+    {
+      "transactionHash": "0x60692c5db9cd06d7f6c3a8c49dff4192d42875223cba2ba9e25f83c01996b691",
+      "nonce": 11,
+      "contractAddress": "0xAF723E03725cEFC4B2Ee74f8aFb4044Be722584A"
+    },
+    {
+      "transactionHash": "0x04919f047fc8a27e50d279253d5601e4054fc08b57485989fcf982cf36f946cc",
+      "nonce": 12,
+      "contractAddress": "0x416b79119A766bee45e1F9bE1A0955F921CFe34d"
+    },
+    {
+      "transactionHash": "0xfcdcc261fdacb9f728103a3371400daf1ddcfde540f154ff1cdb9ee42381f8db",
+      "nonce": 13,
+      "contractAddress": "0x6105728F5895fCa116bC9fB17Df64138b3310B67"
+    },
+    {
+      "transactionHash": "0x06d4c64dff728f89d37414c6e6f019f2d6c926a7e7ebc9671a8606f302e803ae",
+      "nonce": 14,
+      "contractAddress": "0x6e2023356bd37a4DA70DAB3e1374B9fFd44bbc0e"
+    },
+    {
+      "transactionHash": "0x69a848a2eb169c823f6255be7866a10e2e6b5217d860a4514e6c387e307ead11",
+      "nonce": 15,
+      "contractAddress": "0xBd1A645E76cB748616f3aB89755b7cc66147c344"
+    },
+    {
+      "transactionHash": "0x6fda0d5d77ec041c3591759776614d3d488102d9362d21e0862ab8ddb98cdb72",
+      "nonce": 16,
+      "contractAddress": "0xF3BA7dA29d9285533a40DE6044fe4118A786D7e9"
+    },
+    {
+      "transactionHash": "0xec4b2dfd43a7f0f2c850b9abffc37982f839a5388e2f87e8e7d8b5fbe8a74a72",
+      "nonce": 17,
+      "contractAddress": "0xAf3B31e662F4413935ef0ccA69126DA622A1Ef72"
+    },
+    {
+      "transactionHash": "0xa7150a92d896a068447ff60ec892cb6afc6273365caa602dacb6595de2caadb9",
+      "nonce": 18,
+      "contractAddress": "0x3686051360cDbC512Fe6d783E8916Ce882A176af"
+    },
+    {
+      "transactionHash": "0xe504b9f169c4c818a35ed1583ddc03d9b623caf721d97b5696a01bd2b7fbe566",
+      "nonce": 19,
+      "contractAddress": "0x321b7D61c67Ea0B650aEE19231bFc2adFb334316"
+    },
+    {
+      "transactionHash": "0xc38f15cc36d112f260eb47bc0dc6f83042fbc24f3e4de3a442d6d0b170e964b0",
+      "nonce": 20,
+      "contractAddress": "0xBf24097FbB32346C05d0829e27e6041d2CDFbaFf"
+    },
+    {
+      "transactionHash": "0x0ea54355ef93850895455754afea75d58dfeaa5c4bb59b388f27022bc64b57e5",
+      "nonce": 21,
+      "contractAddress": "0x7EA4d8d14aC4Bcff8e1D3C785de1FA529f421Ce5"
+    },
+    {
+      "transactionHash": "0xa70fa278beef1172c4b1ce962054bd2c0ae410978b5b56005e66dd009ad8cbed",
+      "nonce": 22,
+      "contractAddress": "0x5E2f42d305C674F0761E41D3DA77F8A3601748c8"
+    },
+    {
+      "transactionHash": "0x91d7a69a77e8176acbc645f297510e79d36fa17ccf151c9f1c61bc8dbd3f0162",
+      "nonce": 23,
+      "contractAddress": "0x097c6b710bC38E60797E1F9F396BC1782cC12714"
+    },
+    {
+      "transactionHash": "0x8c0424eabceea0b7bb6d47f5bdcc8527e1cfa3422e630a9043d25eec159a8145",
+      "nonce": 24,
+      "contractAddress": "0xBD52B958DaF25Df3751601E31edbEa89191ACfaA"
+    },
+    {
+      "transactionHash": "0xe94bab146f8910ca762c4b4a0b2fe8fc79f4709bf751f04c28d90eccbfec96f6",
+      "nonce": 25,
+      "contractAddress": "0x0f423B5DB18c66178eEd4cA4a7e3021067b4E294"
+    },
+    {
+      "transactionHash": "0x8b3178ab20fa267b68dd647754b75fc089dbe93d875e5af25771988ad5c7e89f",
+      "nonce": 26,
+      "contractAddress": "0xA44561Ac0b3d7Bc465c9E5177F63E1AB3622dDfe"
+    },
+    {
+      "transactionHash": "0xe08525f2d0b88587a56de82d4ec64f3bd87f3014f1fc352e02864c237947af70",
+      "nonce": 27,
+      "contractAddress": "0xc2dCDaaBec97C4b3118075641A852D5884Da4e74"
+    },
+    {
+      "transactionHash": "0x8fa4b3fbe849347c9bd6537edf8af99dd6886c558e8af601b6353bde6012f12c",
+      "nonce": 28,
+      "contractAddress": "0x700330288f6f094780121ea54cd2eDEfe45b3625"
+    },
+    {
+      "transactionHash": "0x42fbb8a000ba8d7baa2452eb05efe458ef30290532c4b408121633470a923f8a",
+      "nonce": 29,
+      "contractAddress": "0x40b6f626a1e6D1e17625277d2Db9F2E87Ea0138d"
+    },
+    {
+      "transactionHash": "0x3269e95c3207195c7348398af55f80f015be922a38b07b6da10f5eeadaa88073",
+      "nonce": 30,
+      "contractAddress": "0x157BC93Be05c899E44d6836a95A25385531b67c9"
+    },
+    {
+      "transactionHash": "0xe052850a3b9108d93d1fe6566bc58085daa6b23ccc042deab103257321dccb05",
+      "nonce": 31,
+      "contractAddress": "0x8823B75199671aC4C6d20438921680c18c9B4D90"
+    },
+    {
+      "transactionHash": "0xce2dce5cfb8943a81a804e6d4374bd40ade094ca99cae5c42ca790a442f3ddff",
+      "nonce": 32,
+      "contractAddress": "0xcF3F6cA8323C0450C2Eb913f85c2EBcd4efB2389"
+    },
+    {
+      "transactionHash": "0x6bea11be43cdcef77c563146a780a93a9447a160a4e6f871f066c649687a0a6a",
+      "nonce": 33,
+      "contractAddress": "0xE696A7c90a4a94FA1417CeEAbB108024884A03Bf"
+    },
+    {
+      "transactionHash": "0xade5decba21831c7a35dcc97494116860da7e905c344a2c0443eb1ab04874f4d",
+      "nonce": 34,
+      "contractAddress": "0x937848926405a71502f36B59F00669Ddb4987762"
+    },
+    {
+      "transactionHash": "0x0a5334fe95e2d5d0902e7de79c309421bf41971c9ca9370fad333104d740baa5",
+      "nonce": 35,
+      "contractAddress": "0xF2F782FafBB278eBe46a4F4004B6d45d125EF40C"
+    },
+    {
+      "transactionHash": "0xa857a8657eb1bc4bab4defe2c20258c6319316b8e7ac5802a2a8d8e4d7dedb99",
+      "nonce": 36,
+      "contractAddress": "0x2224e1e92bCddAc18530557880B78f04655e2836"
+    },
+    {
+      "transactionHash": "0x169277df9860270158677f99a3000e4247f528b0c89fd768d43aab4933cec23d",
+      "nonce": 37,
+      "contractAddress": "0x9c4A2911359a900F1b713576e3B7FAbe4367fA72"
+    },
+    {
+      "transactionHash": "0x996b64b16ceb06f116fdff5bb3136d3c7775c90afdd2a35ab8a1fbbd0b84d788",
+      "nonce": 38,
+      "contractAddress": "0xDd64e5D75aBe21Ea4f2a69c35dA23e09A37D8185"
+    },
+    {
+      "transactionHash": "0xf0f7b86fca1b5eb9e7f493fb3be86a13ed250a6b967647433c909673233dde40",
+      "nonce": 39,
+      "contractAddress": "0x0e7F86337C3FA93E53658Fee0E9D42Bbd9b886B5"
+    },
+    {
+      "transactionHash": "0xf14ec35cecbacf6fa2cc62cb686c6410966f9aebcd7e979ddd3951c977381952",
+      "nonce": 40,
+      "contractAddress": "0x393AE8400430F9E3e1aa97Beb57D98f98003BE5D"
+    },
+    {
+      "transactionHash": "0x1e9fde1ad06f6f803ee70e204f24da07e2dc03261cb184901f0b1c45f89531fc",
+      "nonce": 41
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import {
     FRAMEWORK_COMPOSITION_ID,
     OWNER_ACCOUNT_SALT,
     parseActiveDeploymentArtifactJson,
+    throttledHttp,
     verifyOwnerSmartAccount,
 } from "@mapae/delegation";
 import {giwaSepolia} from "@mapae/shared";
@@ -11,7 +12,6 @@ import {
     createPublicClient,
     createWalletClient,
     getAddress,
-    http,
     type Hex,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
@@ -61,11 +61,11 @@ async function main(): Promise<void> {
             `DEPLOYER_PRIVATE_KEY resolves to ${deployer.address}, expected ${expectedDeployer}`,
         );
     }
-    const publicClient = createPublicClient({chain: giwaSepolia, transport: http(url.toString())});
+    const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(url.toString())});
     const walletClient = createWalletClient({
         account: deployer,
         chain: giwaSepolia,
-        transport: http(url.toString()),
+        transport: throttledHttp(url.toString()),
     });
     if ((await publicClient.getChainId()) !== giwaSepolia.id) {
         throw new Error("RPC is not GIWA Sepolia");

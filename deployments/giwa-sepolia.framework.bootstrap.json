@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "chainId": 91342,
+  "frameworkVersion": "1.3.0",
+  "compositionId": "mapae-sak-1.7.0-d90569fa-df-d0ebab53-e297f795",
+  "environment": {
+    "DelegationManager": "0xF2F782FafBB278eBe46a4F4004B6d45d125EF40C",
+    "EntryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+    "SimpleFactory": "0xbED01c51285771437154B01D7EB1E942B96A30b2",
+    "implementations": {
+      "HybridDeleGatorImpl": "0xDd64e5D75aBe21Ea4f2a69c35dA23e09A37D8185",
+      "MultiSigDeleGatorImpl": "0x0e7F86337C3FA93E53658Fee0E9D42Bbd9b886B5",
+      "EIP7702StatelessDeleGatorImpl": "0x393AE8400430F9E3e1aa97Beb57D98f98003BE5D"
+    },
+    "caveatEnforcers": {
+      "AllowedCalldataEnforcer": "0x9C8fb08f2F00F474B1A3F1d02988a7b498f31165",
+      "AllowedTargetsEnforcer": "0x412aEB6daB5f782d133F14f756f4E191f90E4C32",
+      "AllowedMethodsEnforcer": "0x637DcE9006b58C99446A43B326DECC22756A53a7",
+      "ApprovalRevocationEnforcer": "0x7985846b0b9f4f1641774a9323bDc4e1dbbe29bD",
+      "ArgsEqualityCheckEnforcer": "0xf371d6cA846362D0c5342d4182e12f248Abb0878",
+      "DeployedEnforcer": "0x3fc13b47b7E7D2DbF257070c89395AAc43D22115",
+      "TimestampEnforcer": "0xEE818d86Ec7642335c1B6d90b529F3c5060D9fb8",
+      "BlockNumberEnforcer": "0xAF723E03725cEFC4B2Ee74f8aFb4044Be722584A",
+      "LimitedCallsEnforcer": "0x416b79119A766bee45e1F9bE1A0955F921CFe34d",
+      "ERC20BalanceChangeEnforcer": "0x6105728F5895fCa116bC9fB17Df64138b3310B67",
+      "ERC20TransferAmountEnforcer": "0x6e2023356bd37a4DA70DAB3e1374B9fFd44bbc0e",
+      "ERC20StreamingEnforcer": "0xBd1A645E76cB748616f3aB89755b7cc66147c344",
+      "ERC721BalanceChangeEnforcer": "0xF3BA7dA29d9285533a40DE6044fe4118A786D7e9",
+      "ERC721TransferEnforcer": "0xAf3B31e662F4413935ef0ccA69126DA622A1Ef72",
+      "ERC1155BalanceChangeEnforcer": "0x3686051360cDbC512Fe6d783E8916Ce882A176af",
+      "IdEnforcer": "0x321b7D61c67Ea0B650aEE19231bFc2adFb334316",
+      "NonceEnforcer": "0xBf24097FbB32346C05d0829e27e6041d2CDFbaFf",
+      "ValueLteEnforcer": "0x7EA4d8d14aC4Bcff8e1D3C785de1FA529f421Ce5",
+      "NativeTokenTransferAmountEnforcer": "0x5E2f42d305C674F0761E41D3DA77F8A3601748c8",
+      "NativeBalanceChangeEnforcer": "0x097c6b710bC38E60797E1F9F396BC1782cC12714",
+      "NativeTokenStreamingEnforcer": "0xBD52B958DaF25Df3751601E31edbEa89191ACfaA",
+      "OwnershipTransferEnforcer": "0x0f423B5DB18c66178eEd4cA4a7e3021067b4E294",
+      "RedeemerEnforcer": "0xA44561Ac0b3d7Bc465c9E5177F63E1AB3622dDfe",
+      "SpecificActionERC20TransferBatchEnforcer": "0xc2dCDaaBec97C4b3118075641A852D5884Da4e74",
+      "ERC20PeriodTransferEnforcer": "0x700330288f6f094780121ea54cd2eDEfe45b3625",
+      "NativeTokenPeriodTransferEnforcer": "0x40b6f626a1e6D1e17625277d2Db9F2E87Ea0138d",
+      "ExactCalldataBatchEnforcer": "0x157BC93Be05c899E44d6836a95A25385531b67c9",
+      "ExactCalldataEnforcer": "0x8823B75199671aC4C6d20438921680c18c9B4D90",
+      "ExactExecutionEnforcer": "0xcF3F6cA8323C0450C2Eb913f85c2EBcd4efB2389",
+      "ExactExecutionBatchEnforcer": "0xE696A7c90a4a94FA1417CeEAbB108024884A03Bf",
+      "MultiTokenPeriodEnforcer": "0x937848926405a71502f36B59F00669Ddb4987762",
+      "NativeTokenPaymentEnforcer": "0x2224e1e92bCddAc18530557880B78f04655e2836"
+    }
+  },
+  "state": "ownership-pending",
+  "admin": {
+    "deployer": "0x5Ea1FB5f222572c03220356cb2914Da2b5acc0DE",
+    "owner": "0x5Ea1FB5f222572c03220356cb2914Da2b5acc0DE",
+    "pendingOwner": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+    "ownershipTransferTransaction": "0x1e9fde1ad06f6f803ee70e204f24da07e2dc03261cb184901f0b1c45f89531fc",
+    "verificationBlock": "31519033"
+  }
+}

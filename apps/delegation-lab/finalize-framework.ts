@@ -5,6 +5,7 @@ import {
     parseDeploymentArtifact,
     parseDeploymentArtifactJson,
     parseFrameworkDeploymentManifestJson,
+    throttledHttp,
     verifyFrameworkLiveState,
 } from "@mapae/delegation";
 import {giwaSepolia} from "@mapae/shared";
@@ -14,7 +15,6 @@ import {
     createPublicClient,
     encodeFunctionData,
     getAddress,
-    http,
     parseAbi,
     type Hex,
 } from "viem";
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
 
     const publicClient = createPublicClient({
         chain: giwaSepolia,
-        transport: http(readRpcUrl()),
+        transport: throttledHttp(readRpcUrl()),
     });
     if ((await publicClient.getChainId()) !== giwaSepolia.id) {
         throw new Error("RPC is not GIWA Sepolia");

@@ -8,6 +8,7 @@ import {
     finalizeFrameworkDeploymentManifest,
     parseDeploymentArtifact,
     verifyFrameworkLiveState,
+    throttledHttp,
     verifyGiwaEntryPointRuntimeCode,
     type FrameworkDeploymentName,
 } from "@mapae/delegation";
@@ -18,7 +19,6 @@ import {
     createPublicClient,
     encodeFunctionData,
     getAddress,
-    http,
     isAddress,
     parseAbi,
     type Address,
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
     );
     const publicClient = createPublicClient({
         chain: giwaSepolia,
-        transport: http(readRpcUrl()),
+        transport: throttledHttp(readRpcUrl()),
     });
     if ((await publicClient.getChainId()) !== giwaSepolia.id) {
         throw new Error("RPC is not GIWA Sepolia");
@@ -163,9 +163,10 @@ async function main(): Promise<void> {
     if (!entryPointCode) throw new Error("GIWA EntryPoint runtime is missing");
     verifyGiwaEntryPointRuntimeCode(entryPointCode);
 
-    const transactions = await Promise.all(
-        hashes.map((hash) => publicClient.getTransaction({hash})),
-    );
+    const transactions = [];
+    for (const hash of hashes) {
+        transactions.push(await publicClient.getTransaction({hash}));
+    }
     const creationTransactions = transactions.filter(
         (transaction) => transaction.to === null,
     );
