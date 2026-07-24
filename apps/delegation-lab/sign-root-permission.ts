@@ -66,6 +66,155 @@ function bigintAwareStringify(value: unknown): string {
     );
 }
 
+/** The exact `eth_signTypedData_v4` payload: SIGNABLE types plus EIP712Domain. */
+function fullSignTypedDataV4(typedData: {
+    domain: unknown;
+    types: Record<string, unknown>;
+    primaryType: string;
+    message: unknown;
+}): unknown {
+    return {
+        types: {
+            EIP712Domain: [
+                {name: "name", type: "string"},
+                {name: "version", type: "string"},
+                {name: "chainId", type: "uint256"},
+                {name: "verifyingContract", type: "address"},
+            ],
+            ...typedData.types,
+        },
+        primaryType: typedData.primaryType,
+        domain: typedData.domain,
+        message: typedData.message,
+    };
+}
+
+/**
+ * A self-contained local page that asks the owner wallet (MetaMask/Rabby) to sign the
+ * typed data via `eth_signTypedData_v4`. This is a signature request, not a
+ * transaction — nothing is broadcast and no gas is spent. The page embeds only public
+ * values; the owner key stays in the wallet. It is opened from the local filesystem in
+ * the browser where the wallet extension lives, never published.
+ */
+function buildSigningPage(input: {
+    role: string;
+    owner: Address;
+    delegator: Address;
+    delegate: Address;
+    chainId: number;
+    digest: Hex;
+    humanSummary: string;
+    typedData: unknown;
+}): string {
+    const embedded = JSON.stringify({
+        owner: input.owner,
+        chainId: input.chainId,
+        digest: input.digest,
+        typedData: input.typedData,
+    });
+    // The embedded JSON is injected into a <script type="application/json"> block, so it
+    // cannot break out into executable context; the page parses it with JSON.parse.
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mapae — sign root permission (${input.role})</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 20px; }
+  .card { border: 1px solid #8884; border-radius: 10px; padding: 16px 18px; margin: 16px 0; }
+  code { font-family: ui-monospace, monospace; word-break: break-all; }
+  button { font: inherit; padding: 10px 16px; border-radius: 8px; border: 1px solid #8886; cursor: pointer; background: #2563eb; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { margin: 6px 0; }
+  .k { display: inline-block; min-width: 130px; color: #888; }
+  .ok { color: #16a34a; } .bad { color: #dc2626; } .warn { color: #d97706; }
+  textarea { width: 100%; min-height: 70px; font-family: ui-monospace, monospace; font-size: 13px; }
+  #status { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Sign root permission — <code>${input.role}</code></h1>
+<p>This is an <b>EIP-712 signature</b> (<code>eth_signTypedData_v4</code>), <b>not</b> a transaction. Nothing is sent on chain and no gas is spent.</p>
+<div class="card">
+  <div class="row"><span class="k">Owner must sign</span><code>${input.owner}</code></div>
+  <div class="row"><span class="k">Smart account</span><code>${input.delegator}</code></div>
+  <div class="row"><span class="k">Agent session</span><code>${input.delegate}</code></div>
+  <div class="row"><span class="k">Grant</span>${input.humanSummary}</div>
+  <div class="row"><span class="k">EIP-712 digest</span><code>${input.digest}</code></div>
+</div>
+<div class="card">
+  <div class="row"><button id="connect">1. Connect wallet</button> <span id="acct"></span></div>
+  <div class="row"><button id="sign" disabled>2. Sign</button></div>
+  <div id="status" class="row"></div>
+  <div class="row"><textarea id="sig" readonly placeholder="signature appears here"></textarea></div>
+  <div class="row"><button id="copy" disabled>Copy signature</button></div>
+  <div class="row" id="next" style="display:none">Then run:<br><code>ROOT_PERMISSION_SIGNATURE=<span id="sigcmd"></span> bun run permission:assemble ${input.role}</code></div>
+</div>
+<script type="application/json" id="payload">${embedded}</script>
+<script>
+(function () {
+  var data = JSON.parse(document.getElementById("payload").textContent);
+  var statusEl = document.getElementById("status");
+  var acctEl = document.getElementById("acct");
+  var signBtn = document.getElementById("sign");
+  var copyBtn = document.getElementById("copy");
+  var sigEl = document.getElementById("sig");
+  var account = null;
+  function set(msg, cls) { statusEl.textContent = msg; statusEl.className = "row " + (cls || ""); }
+  function eth() {
+    if (!window.ethereum) { set("No wallet detected. Open this file in the browser where MetaMask/Rabby is installed.", "bad"); return null; }
+    return window.ethereum;
+  }
+  document.getElementById("connect").onclick = async function () {
+    var e = eth(); if (!e) return;
+    try {
+      var accounts = await e.request({ method: "eth_requestAccounts" });
+      account = (accounts[0] || "").toLowerCase();
+      acctEl.textContent = "";
+      var codeEl = document.createElement("code");
+      codeEl.textContent = account;
+      acctEl.appendChild(document.createTextNode("connected "));
+      acctEl.appendChild(codeEl);
+      var chainId = await e.request({ method: "eth_chainId" });
+      var onGiwa = parseInt(chainId, 16) === data.chainId;
+      if (account !== data.owner.toLowerCase()) {
+        set("Connected account is not the required owner " + data.owner + ". Switch account in the wallet.", "bad");
+        signBtn.disabled = true; return;
+      }
+      if (!onGiwa) {
+        set("Wallet is on chain " + parseInt(chainId,16) + ", but this signature is for GIWA Sepolia (" + data.chainId + "). Switch the wallet network to GIWA Sepolia, then reconnect.", "warn");
+        signBtn.disabled = true; return;
+      }
+      set("Ready: owner and network match.", "ok");
+      signBtn.disabled = false;
+    } catch (err) { set("Connect failed: " + (err && err.message || err), "bad"); }
+  };
+  signBtn.onclick = async function () {
+    var e = eth(); if (!e || !account) return;
+    try {
+      set("Waiting for wallet signature...", "warn");
+      var signature = await e.request({ method: "eth_signTypedData_v4", params: [account, JSON.stringify(data.typedData)] });
+      sigEl.value = signature;
+      document.getElementById("sigcmd").textContent = signature;
+      document.getElementById("next").style.display = "";
+      copyBtn.disabled = false;
+      set("Signed. Copy the signature and run the assemble command.", "ok");
+    } catch (err) { set("Signature rejected or failed: " + (err && err.message || err), "bad"); }
+  };
+  copyBtn.onclick = async function () {
+    try { await navigator.clipboard.writeText(sigEl.value); set("Signature copied.", "ok"); }
+    catch (e) { sigEl.select(); set("Select the text and copy manually.", "warn"); }
+  };
+})();
+</script>
+</body>
+</html>
+`;
+}
+
 function readRole(): D3Role {
     const value = (process.argv[3] ?? "open-agent").trim();
     if (!ROLES.includes(value as D3Role)) {
@@ -188,33 +337,39 @@ async function prepare(): Promise<void> {
     };
     await writeAtomically(requestPath(role), `${bigintAwareStringify(requestFile)}\n`);
 
+    const policy = policies[role];
+    const humanSummary =
+        `${policy.periodAmount} base units per ${policy.periodDurationSeconds}s, ` +
+        `expires ${policy.expiresAfterSeconds}s after ${startDate}` +
+        (policy.recipient ? `, only to ${policy.recipient}` : "");
+    const fullTypedData = fullSignTypedDataV4(request.typedData);
+    const pageContents = buildSigningPage({
+        role,
+        owner,
+        delegator: account,
+        delegate,
+        chainId: giwaSepolia.id,
+        digest,
+        humanSummary,
+        // The page needs a bigint-free payload (JSON.parse-able in the browser).
+        typedData: JSON.parse(bigintAwareStringify(fullTypedData)),
+    });
+    const pagePath = process.env.ROOT_PERMISSION_PAGE_PATH?.trim() || `./${role}.sign.html`;
+    await writeAtomically(pagePath, pageContents);
+
     console.log(`root permission signing request for role "${role}"`);
     console.log(`  owner wallet must sign   ${owner}`);
     console.log(`  delegator (smart account)${account}`);
     console.log(`  delegate (agent session) ${delegate}`);
-    console.log(`  period amount            ${policies[role].periodAmount} base units / ${policies[role].periodDurationSeconds}s`);
-    console.log(`  expires after            ${policies[role].expiresAfterSeconds}s from ${startDate}`);
+    console.log(`  period amount            ${policy.periodAmount} base units / ${policy.periodDurationSeconds}s`);
+    console.log(`  expires after            ${policy.expiresAfterSeconds}s from ${startDate}`);
     console.log(`  request saved            ${requestPath(role)}`);
     console.log(`  EIP-712 digest           ${digest}`);
     console.log("");
-    console.log("Sign this exact typed data from the owner wallet (eth_signTypedData_v4):");
-    console.log(
-        bigintAwareStringify({
-            types: {
-                EIP712Domain: [
-                    {name: "name", type: "string"},
-                    {name: "version", type: "string"},
-                    {name: "chainId", type: "uint256"},
-                    {name: "verifyingContract", type: "address"},
-                ],
-                ...request.typedData.types,
-            },
-            primaryType: request.typedData.primaryType,
-            domain: request.typedData.domain,
-            message: request.typedData.message,
-        }),
-    );
+    console.log(`Open this local page in the browser with your wallet, then Connect + Sign:`);
+    console.log(`  ${resolve(pagePath)}`);
     console.log("");
+    console.log("It is a signature (eth_signTypedData_v4), not a transaction — no gas, nothing on chain.");
     console.log("Then: ROOT_PERMISSION_SIGNATURE=0x... bun run permission:assemble " + role);
 }
 

@@ -12,6 +12,7 @@
 *.keystore
 *.permission.json
 *.permission.request.json
+*.sign.html
 deployments/d3-session-addresses.json
 
 # JavaScript / Bun
