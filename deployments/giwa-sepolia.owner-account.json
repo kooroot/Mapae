@@ -1,0 +1,9 @@
+{
+  "DelegationManager": "0xF2F782FafBB278eBe46a4F4004B6d45d125EF40C",
+  "EntryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+  "account": "0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382",
+  "chainId": 91342,
+  "implementation": "0xDd64e5D75aBe21Ea4f2a69c35dA23e09A37D8185",
+  "owner": "0x011234B8959c1e5Ae9eB833764FaA861C24dB901",
+  "schemaVersion": 1
+}
