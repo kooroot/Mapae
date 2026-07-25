@@ -447,6 +447,59 @@ D2 EIP-3009 경로(`apps/seller`)다. D3/D4 위임 경로는 다르게 동작한
 보내는 bearer 길이의 hex(서명된 permission context)는 크기만 남기고 지운다. 운영자는
 원인을 보고, 호출자는 보지 못한다.
 
+#### 422 와 504 는 서로 반대되는 주장이다
+
+불투명한 사유들 중 이 둘만은 **뭉개면 안 된다.** `settlement_failed`(422)는 "지불자는
+청구되지 않았다"이고 `settlement_unknown`(504)은 "청구되었는지 우리도 모른다"이다.
+전자는 재시도를 권하는 답이고, 그 재시도가 두 번 지불한다.
+
+이건 가정이 아니라 이미 한 번 치른 값이다. GIWA `0x533c5cb2…9964c`(block 31634935)는
+지불자에게서 1.00 mUSDC 를 실제로 옮겼는데 호출자는 `PAYMENT_REJECTED` 를 받았다.
+
+그 구분은 `errorReason === "settlement_unconfirmed"` 문자열 하나에 달려 있었고, 그
+문자열은 **두 프로세스에 각각 맨 리터럴로** 적혀 있었다. 읽는 쪽(`delegated-seller`)의
+응답 타입은 필드가 전부 optional 이라, 생산자를 고쳐도 양쪽 다 타입체크를 통과하고
+동작으로만 드러난다 — 계약이되 컴파일러가 검사할 수 없는 계약이었다.
+
+지금은 요청 절반이 있던 자리(`packages/delegation/src/x402.ts`)에 응답 절반도 함께 산다:
+`SETTLEMENT_UNCONFIRMED` 상수 하나, `Erc7710VerifyResponse`/`Erc7710SettleResponse`,
+그리고 판정 자체가 `decideSettlement()` 라는 순수 함수다. facilitator 도 chain 도 key 도
+없이 테스트되므로 `bun run check` 안에 들어간다.
+
+판정 사다리 — `unknown` 쪽으로 기우는 것이 의도다:
+
+| 관찰 | 결과 | 이유 |
+|---|---|---|
+| 응답 못 받음 (연결 거부·non-2xx·JSON 아님·타임아웃) | `unknown` 504 | "요청이 닿지 않음"과 "브로드캐스트 후 답이 유실됨"을 구분할 수 없다 |
+| `errorReason === SETTLEMENT_UNCONFIRMED` | `unknown` 504 (+해시) | 해시가 없으면 호출자는 확인할 방법이 없다 |
+| `success !== true` | `failed` 422 | 깨끗한 거절 — 돈이 움직이지 않았다 |
+| `success === true`, payer 불일치 | `unknown` 504 | 브로드캐스트는 했다고 한다. 어긋난 건 신원뿐이고 잔액은 아무도 확인하지 않았다 |
+| `success === true`, payer 일치 | `settled` 200 | |
+
+마지막에서 두 번째 줄은 이번에 바뀐 동작이다. 이전에는 422 였는데, 그건 검사한 적 없는
+잔액을 단정하는 답이었다.
+
+여섯 뮤테이션으로 증명했다 — 미확인 분기 제거, payer 교차검사 제거, 도달불가를 `failed`
+로, 해시 정규식 제거, verify 의 payer 무시, 그리고 **상수 이름 변경**. 각각 정확히 한두
+테스트만 깨진다. 마지막 것이 핵심이다: 상수를 바꾸면 두 프로세스가 조용히 어긋나던 예전
+상태에서는 아무 테스트도 깨지지 않았다.
+
+배선까지 확인하려면 fork 에서 그 경로를 강제한다 — facilitator 가 이미 브로드캐스트한
+트랜잭션의 receipt 대기를 1ms 만에 포기하게 만든다:
+
+```bash
+cd apps/delegation-lab && SETTLEMENT_RECEIPT_TIMEOUT_MS=1 bun run test:e2e:mcp
+```
+
+상태 코드만 보는 검증은 약하다 — 모든 것에 504 를 돌려주는 seller 도 통과한다. 그래서
+이 실행은 enforcer 이벤트를 fork 에서 직접 읽어 **돈이 실제로 움직였는지**까지 확인한다.
+지불자는 청구되었고, 답은 모른다고 말했다 — 그게 정직한 조합이다.
+
+이 환경변수는 전부터 있었고 주석에도 "이렇게 하면 그 경로를 탈 수 있다"고 적혀 있었지만,
+켜면 `body.ok !== true` 가드에 걸려 실행이 **실패**했다. 문서화된 탈출구로 문서화된
+경로를 탈 수 없었던 것이다. CLAUDE.md 가 기록한 `verify-forge-addresses.ts` 와 같은 부류
+— "재실행하라"고 적힌 조건이 조용히 재실행되지 않게 되는 방식.
+
 ### Effect 이관 계획
 
 현재 판별 유니온으로 구현하되, `_tag` 판별자는 **의도적으로 [Effect](https://effect.website)의 `Data.TaggedError`와 동형**으로 잡았다.

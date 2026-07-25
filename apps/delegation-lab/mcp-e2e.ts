@@ -41,6 +41,12 @@ import {
 } from "viem";
 import type {Address, Hex, PublicClient} from "viem";
 
+/**
+ * Opt-in: forces the broadcast-but-unconfirmed path instead of the happy path.
+ * See `proveUnconfirmedIsNotRejected`.
+ */
+const FORCED_UNCONFIRMED = Boolean(process.env.SETTLEMENT_RECEIPT_TIMEOUT_MS);
+
 const ANVIL_PORT = 8546;
 const FACILITATOR_PORT = 8181;
 const SELLER_PORT = 3101;
@@ -325,6 +331,60 @@ async function reportConsoleState(forkRpc: string, fromBlock: bigint): Promise<v
  * so the refusal is the gate's, not a lucky on-chain revert — and restores the
  * framework afterwards so the revocation proof that follows stays independent.
  */
+/**
+ * Set `SETTLEMENT_RECEIPT_TIMEOUT_MS=1` and the facilitator gives up on the receipt of a
+ * transaction it has already broadcast. That is the one case where the payer is charged
+ * and nobody can yet say so, and the seller must answer 504 `settlement_unknown` — never
+ * 422, which asserts a balance nobody checked.
+ *
+ * The knob existed before this function and only forwarded the variable. Setting it made
+ * the run *fail* at the `body.ok !== true` guard above, so the escape hatch that was
+ * documented as the way to exercise this path could not be used to exercise it.
+ *
+ * The status code alone would be a weak assertion — a seller that answered 504 for
+ * everything would pass it. So this also reads the enforcer's own event from the fork:
+ * the money really moved, and the answer was still honest about not knowing.
+ */
+async function proveUnconfirmedIsNotRejected(
+    body: Record<string, unknown>,
+    forkRpc: string,
+    fromBlock: bigint,
+): Promise<void> {
+    console.log("");
+    console.log("[unconfirmed] SETTLEMENT_RECEIPT_TIMEOUT_MS is set — receipt wait forced to give up");
+    if (body.ok !== false || body.code !== "SETTLEMENT_UNKNOWN") {
+        console.error("[unconfirmed] FAILED —", JSON.stringify(body, null, 2));
+        throw new Error(
+            `expected SETTLEMENT_UNKNOWN, got ok=${String(body.ok)} code=${String(body.code)}`,
+        );
+    }
+    console.log(`[unconfirmed] agent code       ${String(body.code)}`);
+    console.log(`[unconfirmed] agent detail     ${String(body.detail)}`);
+
+    const {publicClient, deployment, root} = await loadForkContext(forkRpc);
+    const status = await readDelegationStatus({
+        publicClient,
+        environment: deployment.environment,
+        delegation: root,
+    });
+    const receipts = await readSettlementReceipts({
+        publicClient,
+        environment: deployment.environment,
+        delegationHash: status.delegationHash,
+        fromBlock,
+    });
+    if (receipts.length === 0) {
+        throw new Error(
+            "no settlement event on the fork — nothing was charged, so 504 was not the honest answer",
+        );
+    }
+    const [settled] = receipts;
+    console.log(
+        `[unconfirmed] on-chain         ${settled?.amount !== undefined ? fromTokenAmount(settled.amount) : "?"} mUSDC moved anyway`,
+    );
+    console.log("[unconfirmed] PASS — payer was charged and the answer said so ✅");
+}
+
 async function provePauseStops(forkRpc: string, client: Client): Promise<void> {
     const {publicClient, deployment} = await loadForkContext(forkRpc);
     const manager = getAddress(deployment.environment.DelegationManager);
@@ -580,6 +640,16 @@ async function main(): Promise<void> {
     const text = content[0]?.text ?? "";
 
     const body = JSON.parse(text) as Record<string, unknown>;
+    if (FORCED_UNCONFIRMED) {
+        await proveUnconfirmedIsNotRejected(body, forkRpc, forkBaseBlock);
+        await transport.close();
+        // Everything below needs a payment that was *answered*. This run deliberately
+        // has none, and the cap it consumed is real, so continuing would report
+        // failures that belong to the setup rather than to the code.
+        console.log("");
+        console.log("[e2e] PASS — a broadcast-but-unconfirmed settlement answers 504");
+        return;
+    }
     if (body.ok !== true) {
         await transport.close();
         console.error("[e2e] FAILED —", JSON.stringify(body, null, 2));

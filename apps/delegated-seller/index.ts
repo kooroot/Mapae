@@ -1,5 +1,7 @@
 import {Hono} from "hono";
 import {
+    decideSettlement,
+    isVerificationAccepted,
     parseActiveDeploymentArtifactJson,
     parseFrameworkDeploymentManifestJson,
     throttledHttp,
@@ -26,7 +28,6 @@ import {
     isAddress,
     zeroAddress,
     type Address,
-    type Hex,
 } from "viem";
 
 const MAX_PAYMENT_HEADER_LENGTH = 150_000;
@@ -248,29 +249,26 @@ app.get("/delegated/deliverable/:id", async (c) => {
     }
 
     const verified = await callFacilitator("/verify", request);
-    if (
-        !verified.ok ||
-        verified.value.isValid !== true ||
-        !isCanonicalPayer(verified.value.payer, payer)
-    ) {
+    if (!verified.reachable || !isVerificationAccepted(verified.body, payer)) {
         return c.json({error: "delegation_rejected"}, 403);
     }
-    const settled = await callFacilitator("/settle", request);
+
     // "Did not succeed" and "is not known to have succeeded" are different claims.
     // A transport failure, or a facilitator that broadcast without seeing a receipt,
     // leaves the payer possibly charged — answering 422 would assert they were not.
-    if (!settled.ok || settled.value.errorReason === "settlement_unconfirmed") {
-        return c.json({error: "settlement_unknown"}, 504);
+    // The ladder itself lives in @mapae/delegation so it can be tested without a
+    // facilitator, a chain, or a key; this switch is the only part that is HTTP.
+    const outcome = decideSettlement(await callFacilitator("/settle", request), payer);
+    switch (outcome.kind) {
+        case "unknown":
+            return c.json({error: "settlement_unknown"}, 504);
+        case "failed":
+            return c.json({error: "settlement_failed"}, 422);
+        case "settled":
+            break;
     }
-    if (settled.value.success !== true || !isCanonicalPayer(settled.value.payer, payer)) {
-        return c.json({error: "settlement_failed"}, 422);
-    }
+    const {transaction} = outcome;
 
-    const transaction =
-        typeof settled.value.transaction === "string" &&
-        /^0x[0-9a-fA-F]{64}$/.test(settled.value.transaction)
-            ? (settled.value.transaction as Hex)
-            : undefined;
     // Built from the fields this seller validated, not by echoing the facilitator's
     // body. `btoa` throws on any non-Latin1 character, and that throw would land
     // *after* settlement — the buyer would have paid and received a 500. Every field
@@ -294,23 +292,15 @@ app.get("/delegated/deliverable/:id", async (c) => {
     });
 });
 
-type FacilitatorResponse = {
-    isValid?: boolean;
-    success?: boolean;
-    transaction?: string;
-    payer?: string;
-    /** `settlement_unconfirmed` means broadcast happened but the receipt did not. */
-    errorReason?: string;
-};
-
-function isCanonicalPayer(value: unknown, expected: Address): boolean {
-    return typeof value === "string" && isAddress(value) && getAddress(value) === expected;
-}
-
+/**
+ * `reachable: false` is every way the call did not yield a body — refused connection,
+ * non-2xx, unparseable JSON, timeout. It deliberately does not distinguish them: for
+ * `/settle` they are all the same claim, that we do not know whether money moved.
+ */
 async function callFacilitator(
     path: "/verify" | "/settle",
     request: Erc7710FacilitatorRequest,
-): Promise<{ok: true; value: FacilitatorResponse} | {ok: false}> {
+): Promise<{reachable: boolean; body?: unknown}> {
     try {
         const response = await fetch(`${FACILITATOR_URL}${path}`, {
             method: "POST",
@@ -324,10 +314,10 @@ async function callFacilitator(
                 path === "/settle" ? SETTLE_TIMEOUT_MS : VERIFY_TIMEOUT_MS,
             ),
         });
-        if (!response.ok) return {ok: false};
-        return {ok: true, value: (await response.json()) as FacilitatorResponse};
+        if (!response.ok) return {reachable: false};
+        return {reachable: true, body: (await response.json()) as unknown};
     } catch {
-        return {ok: false};
+        return {reachable: false};
     }
 }
 

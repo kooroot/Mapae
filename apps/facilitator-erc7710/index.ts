@@ -9,6 +9,9 @@ import {
     verifyActiveFrameworkDeployment,
     verifyFrameworkOperationalState,
     throttledHttp,
+    SETTLEMENT_UNCONFIRMED,
+    type Erc7710SettleResponse,
+    type Erc7710VerifyResponse,
     type FrameworkLiveVerification,
     type ValidatedDelegatedPayment,
 } from "@mapae/delegation";
@@ -180,19 +183,11 @@ const startupVerification = await verifyActiveFrameworkDeployment({
 });
 const readiness = new FrameworkReadinessGate(startupVerification);
 
-interface VerifyResponse {
-    isValid: boolean;
-    payer?: Address;
-    invalidReason?: string;
-}
-
-interface SettleResponse {
-    success: boolean;
-    transaction?: Hex;
-    network: typeof GIWA_SEPOLIA_CAIP2;
-    payer?: Address;
-    errorReason?: string;
-}
+// The wire contract is shared with the seller that reads it — see the note on
+// SETTLEMENT_UNCONFIRMED in packages/delegation/src/x402.ts for why it stopped being
+// declared once per process.
+type VerifyResponse = Erc7710VerifyResponse;
+type SettleResponse = Erc7710SettleResponse;
 
 /**
  * How long a broadcast transaction stays remembered for its payment intent.
@@ -392,7 +387,7 @@ app.post("/settle", async (c) => {
                 success: false,
                 network: GIWA_SEPOLIA_CAIP2,
                 transaction: error.transaction,
-                errorReason: "settlement_unconfirmed",
+                errorReason: SETTLEMENT_UNCONFIRMED,
             };
             return c.json(pending);
         }
