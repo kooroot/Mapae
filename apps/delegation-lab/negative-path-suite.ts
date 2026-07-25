@@ -271,6 +271,34 @@ function assertPortFree(port: number): void {
  */
 const FORK_BLOCK = 31_606_000;
 
+/**
+ * Every node this process started, torn down from one place.
+ *
+ * Handing the caller a `stop` it must remember to call is not enough: anything that
+ * throws between `spawnAnvil` returning and `stop` reaching the caller leaks the node.
+ * That is not hypothetical — a guard added to `acquireContext` did exactly this, and the
+ * run did not merely leave an orphan, it **hung indefinitely**, because Bun will not exit
+ * while a spawned child is alive. The visible symptom is a suite that produces no output
+ * and never returns, which looks nothing like the error that actually occurred.
+ *
+ * Registering at spawn time covers every failure path, including ones added later that
+ * nobody thought to wrap.
+ */
+const teardowns: Array<() => void> = [];
+
+function runTeardowns(): void {
+    // `splice` empties the list, so calling this twice is safe — `main` runs it in a
+    // `finally` and the top-level handler runs it again for failures that happen before
+    // that `finally` is ever entered.
+    for (const teardown of teardowns.splice(0)) {
+        try {
+            teardown();
+        } catch {
+            /* already gone */
+        }
+    }
+}
+
 async function spawnAnvil(forkUrl: string | undefined, port: number): Promise<() => void> {
     assertPortFree(port);
     const args = ["--port", String(port), "--silent"];
@@ -325,12 +353,16 @@ async function spawnAnvil(forkUrl: string | undefined, port: number): Promise<()
         }
         try {
             await rpc(url, "eth_chainId");
-            return () => {
+            const stop = () => {
                 if (proc.exitCode !== null && proc.exitCode !== 0) {
                     console.error(`[suite] anvil exited with code ${proc.exitCode}${died()}`);
                 }
                 proc.kill();
             };
+            // Registered here, not by the caller: the gap this closes is precisely the one
+            // between this return and the caller storing the handle.
+            teardowns.push(stop);
+            return stop;
         } catch {
             /* not ready yet */
         }
@@ -1410,17 +1442,16 @@ async function run(ctx: Ctx): Promise<void> {
 }
 
 async function main(): Promise<void> {
-    const {ctx, stop} = await acquireContext();
     try {
-        // Inside the try, not in `acquireContext`: a refusal raised there would abort
-        // after the node is already up but before `stop` reaches a caller, orphaning an
-        // anvil that holds the port. The next run then fails with "port in use" instead
-        // of the reason it actually refused. Measured while mutation-testing this guard.
+        const {ctx} = await acquireContext();
         await assertBeneficiaryIsCodeFree(ctx.publicClient);
         console.log(`[suite] running negative-path cases on chainId ${ctx.chainId}\n`);
         await run(ctx);
     } finally {
-        stop();
+        // `runTeardowns`, not the returned `stop`: `acquireContext` itself can throw after
+        // the node is up, and then no handle ever reaches this scope. Keeping the call
+        // inside the same `try` as `acquireContext` is what makes that case reachable.
+        runTeardowns();
     }
     const failed = results.filter((r) => !r.ok);
     console.log(`\n[suite] ${results.length - failed.length}/${results.length} cases passed`);
@@ -1434,6 +1465,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
+    // Belt and braces: `main`'s `finally` already covers everything it can reach, but a
+    // throw from the `acquireContext` call itself would otherwise leave a live child and
+    // Bun would never exit — a hang, not an error message.
+    runTeardowns();
     // The stack is kept — for a suite failure the frames are the whole point — but it is
     // run through `redactUrls` first. On a viem `BaseError` the stack begins with the
     // composed message, which includes `URL:` and `Request body:` metaMessages, so
