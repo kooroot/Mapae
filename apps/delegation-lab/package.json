@@ -17,7 +17,9 @@
         "permission:prepare": "bun run sign-root-permission.ts prepare",
         "permission:serve": "bun run sign-root-permission.ts serve",
         "permission:assemble": "bun run sign-root-permission.ts assemble",
-        "test:negative": "bun run negative-path-suite.ts",
+        "preflight:giwa": "bun run giwa-preflight.ts",
+    "run:giwa": "bun run giwa-mcp-run.ts",
+    "test:negative": "bun run negative-path-suite.ts",
         "test:e2e:mcp": "bun run mcp-e2e.ts",
         "test:e2e:revoke": "bun run revocation-submitter-e2e.ts"
     },

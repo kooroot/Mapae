@@ -19,7 +19,13 @@ import {
     readDelegationStatus,
     readSettlementReceipts,
 } from "@mapae/delegation";
-import {fromTokenAmount, giwaSepolia, parseNodeRpcUrl, redactForLog} from "@mapae/shared";
+import {
+    assertRpcTarget,
+    fromTokenAmount,
+    giwaSepolia,
+    parseNodeRpcUrl,
+    redactForLog,
+} from "@mapae/shared";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
@@ -43,18 +49,9 @@ const SELLER_URL = `http://127.0.0.1:${SELLER_PORT}`;
 const RESOURCE = process.argv[2] ?? "/delegated/deliverable/inv-001";
 const REPO = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
 
-const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
-
 /** Refuse to run at all unless every child will be pinned to a local node. */
-function assertLoopbackRpc(value: string): string {
-    const url = new URL(parseNodeRpcUrl(value));
-    if (!LOOPBACK.includes(url.hostname)) {
-        throw new Error(
-            `refusing to run: child RPC ${url.hostname} is not loopback — this would broadcast to GIWA`,
-        );
-    }
-    return url.toString();
-}
+const assertLoopbackRpc = (value: string): string =>
+    assertRpcTarget(value, "loopback", "this would broadcast to GIWA");
 
 async function rpc(url: string, method: string, params: unknown[] = []): Promise<unknown> {
     const response = await fetch(url, {

@@ -32,7 +32,7 @@ import {
     withDelegationSignature,
     buildD3Policies,
 } from "@mapae/delegation";
-import {giwaSepolia, parseNodeRpcUrl, redactForLog} from "@mapae/shared";
+import {assertRpcTarget, giwaSepolia, parseNodeRpcUrl, redactForLog} from "@mapae/shared";
 import {EntryPoint as EntryPointAbi} from "@metamask/delegation-abis";
 import {Implementation, toMetaMaskSmartAccount} from "@metamask/smart-accounts-kit";
 import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
@@ -57,7 +57,6 @@ const FORK_RPC = `http://127.0.0.1:${ANVIL_PORT}`;
 const SUBMITTER_URL = `http://127.0.0.1:${SUBMITTER_PORT}`;
 const REPO = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
 const FORK_BLOCK = 31_606_000;
-const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
 
 /**
  * Every key here is derived, high-entropy and throwaway. None of the well-known Anvil dev
@@ -95,15 +94,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     });
 }
 
-function assertLoopback(value: string): string {
-    const url = new URL(parseNodeRpcUrl(value));
-    if (!LOOPBACK.includes(url.hostname)) {
-        throw new Error(
-            `refusing to run: child RPC ${url.hostname} is not loopback — this would broadcast to GIWA`,
-        );
-    }
-    return url.toString();
-}
+const assertLoopback = (value: string): string =>
+    assertRpcTarget(value, "loopback", "this would broadcast to GIWA");
 
 function assertPortFree(name: string, port: number): void {
     try {

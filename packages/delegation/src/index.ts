@@ -11,5 +11,6 @@ export * from "./policy.js";
 export * from "./revocation.js";
 export * from "./revocation-submission.js";
 export * from "./rpc.js";
+export * from "./settlement-evidence.js";
 export * from "./signing.js";
 export * from "./x402.js";
