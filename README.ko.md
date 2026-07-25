@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-341%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-365%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -94,7 +94,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 노트](docs/tech-notes.md)에 있다.
-- 회귀 검증: **341 TypeScript tests (shared/delegation/scripts 244 + MCP 3 + 콘솔 94)
+- 회귀 검증: **365 TypeScript tests (shared/delegation/scripts 268 + MCP 3 + 콘솔 94)
   + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -155,18 +155,34 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`bun run check`는 전체 패키지의 strict TypeScript, 문서 검사, 로깅 검사,
-shared/delegation 테스트, MCP 서버 스모크, 콘솔 렌더 테스트, 실제 콘솔 빌드,
-Foundry 테스트를 모두 실행합니다. 키도 네트워크도 필요 없습니다.
+`bun run check`는 전체 패키지의 strict TypeScript, 네 가지 상시 검사(문서·로깅·
+의존성 권고·테스트 수치), shared/delegation 테스트, MCP 서버 스모크, 콘솔 렌더
+테스트, 실제 콘솔 빌드, Foundry 테스트를 모두 실행합니다. 키는 필요 없습니다.
+네트워크를 원하는 것은 권고 검사 하나뿐이고, 그것도 닿지 못하면 그렇다고 말하고
+계속 갑니다.
 
 문서 검사를 게이트에 넣은 이유는 로드맵이 이 README를 곧 제출물로 두기 때문입니다 —
 그러면 문서 부패가 정합성 버그가 됩니다. 코드 블록에 적힌 모든 `bun run`·`make`
 명령이 실제로 존재하는지, 모든 상대 링크가 열리는지, 모든 주소가 두 정본(배포
-아티팩트와 `packages/shared/src/token.ts`) 중 하나와 일치하는지, 그리고 여기 적힌
-테스트 수치들이 서로 모순되지 않는지 확인합니다. 첫 실행에서 MockUSDC 주소가 어떤
-아티팩트에도 없다는 것이 드러났는데, 이 저장소는 그동안 반대로 적어두고 있었습니다.
-수치 규칙은 나중에 붙었습니다 — 배지가 275에 멈춰 있는 동안 그 옆의 숫자가 세 번
-바뀌었기 때문입니다.
+아티팩트와 `packages/shared/src/token.ts`) 중 하나와 일치하는지 확인합니다. 첫
+실행에서 MockUSDC 주소가 어떤 아티팩트에도 없다는 것이 드러났는데, 이 저장소는
+그동안 반대로 적어두고 있었습니다.
+
+위 배지의 테스트 수는 이 페이지의 다른 숫자가 아니라 **실제로 존재하는 테스트**와
+대조합니다. 배지·총계·내역이 서로 맞는다는 것은 맞다는 뜻이 아니었습니다 — 손으로
+고치면 셋이 함께 움직이기 때문이고, 실제로 수트가 자란 직후 적힌 수가 12개 모자란
+채로 게이트는 "수치 확인됨"을 출력했습니다. 아무것도 매칭되지 않는 이름 필터로
+`bun test`를 돌리면 파일을 전부 수집한 뒤 본문은 하나도 실행하지 않고 총계를
+보고합니다. 컨트랙트 쪽은 `forge test --list`가 같은 일을 합니다.
+
+권고 검사는 `bun audit`을 돌리고, 모든 발견을 **고치거나 근거를 붙여 명시적으로
+수용**하도록 요구합니다. 현재 수용된 것은 하나입니다 — `@modelcontextprotocol/sdk`가
+우리가 쓰지 않는 트랜스포트를 위해 끌어오는 HTTP 어댑터의 Windows 경로 traversal.
+호환 업데이트로는 닫히지 않습니다(SDK가 `^1.19.9`를 선언하고 수정은 2.0.5에
+들어갔습니다). 그래서 수용의 근거는 오직 "그 어댑터가 우리 번들에 들어오지
+않는다"이고, 그것을 매 실행마다 다시 잽니다. 같은 측정이 먼저 컨트롤 파일 — 일부러
+그 트랜스포트를 import하는 파일 — 을 찾아내야 합니다. 항상 0을 돌려주는 탐지기는
+아무것도 증명하지 않은 채 검사를 통과시키기 때문입니다.
 
 로깅 검사는 `console.*` 인자에 들어간 날것의 에러를 거절합니다. 로컬 fork에 쓰는
 비공개 RPC 엔드포인트는 API 키를 URL **경로**에 실어 인증하고, viem은 모든 에러

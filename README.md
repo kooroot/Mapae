@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-341%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-365%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -97,7 +97,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical notes](docs/tech-notes.md).
-- Regression suite: **341 TypeScript tests (244 shared/delegation/scripts + 3 MCP + 94 console)
+- Regression suite: **365 TypeScript tests (268 shared/delegation/scripts + 3 MCP + 94 console)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
@@ -162,20 +162,38 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`bun run check` runs strict TypeScript across every package, a documentation
-check, a logging check, the shared and delegation suites, the MCP server smoke
-tests, the console render tests, a real console build, and the Foundry contract
-suite. It needs no keys and no network.
+`bun run check` runs strict TypeScript across every package, four standing
+checks — documentation, logging, dependency advisories, test counts — the shared
+and delegation suites, the MCP server smoke tests, the console render tests, a
+real console build, and the Foundry contract suite. It needs no keys. Only the
+advisory check wants the network, and it says so and carries on without it.
 
 The documentation check is in the gate because the roadmap makes this README the
 submission, which turns doc rot into a correctness bug. It verifies that every
 `bun run` and `make` command written in a code block exists, that every relative
-link resolves, that every address matches one of the two canonical sources —
-the deployment artifacts and `packages/shared/src/token.ts` — and that the test
-counts stated here do not contradict each other. Its first run found that
-MockUSDC's address is in no artifact at all, which this repository had been
-claiming otherwise for months; the count rule was added after the badge sat at
-275 through three updates of the number beside it.
+link resolves, and that every address matches one of the two canonical sources —
+the deployment artifacts and `packages/shared/src/token.ts`. Its first run found
+that MockUSDC's address is in no artifact at all, which this repository had been
+claiming otherwise for months.
+
+The count of tests in the badge above is checked against the tests that exist,
+not against the other numbers on this page. Badge, total and breakdown agreeing
+with each other never meant they were right — they move together whenever
+someone edits them by hand — and the stated number was twelve short the last
+time a suite grew, while the gate printed that the counts checked out. `bun test`
+with a name filter that matches nothing collects every file and reports the
+total without running a single test body; `forge test --list` does the same for
+the contracts.
+
+The advisory check runs `bun audit` and requires every finding to be either
+fixed or accepted in writing with a proof attached. One is accepted today: a
+Windows path traversal in the HTTP adapter that `@modelcontextprotocol/sdk`
+pulls in for a transport this repository does not use. No compatible update
+closes it — the SDK declares `^1.19.9` and the fix landed in 2.0.5 — so the
+acceptance rests entirely on that adapter never entering our bundle, which is
+re-measured on every run. A control file that imports the transport on purpose
+has to be found by the same measurement first: a detector that always reported
+zero would pass the check while proving nothing.
 
 The logging check refuses a raw error inside any `console.*` argument. The
 private RPC endpoint used for local forks carries its API key in the URL *path*,

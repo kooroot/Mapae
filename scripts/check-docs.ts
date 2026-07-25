@@ -6,8 +6,9 @@
  * not tidiness — and this repo has already paid for all three of the classes below.
  * A commit had to go back and clean dead links; a `bun run` command sat in a doc with no
  * matching `package.json` entry for weeks (`verify-forge-addresses.ts`, which is how a
- * condition worded "re-run this" quietly stopped being re-run); and the stated test count
- * drifted every time a suite grew.
+ * condition worded "re-run this" quietly stopped being re-run); and an address that
+ * appears in no deployment artifact sends a reader to the wrong contract on an explorer.
+ * Stated test counts were checked here too and are now `check-test-counts.ts`'s job.
  *
  * Deliberately static and fast — it runs inside `bun run check`, so it must not need a
  * network, a key, or a node. What it cannot check (whether a number is *interesting*,
@@ -157,40 +158,13 @@ const FOREIGN_ADDRESSES = new Map<string, string>([
     ["0x6666666666666666666666666666666666666666", "placeholder"],
 ]);
 
-/**
- * The README states its test totals three times: a badge, a total, and a breakdown.
- * Make them agree with each other.
- *
- * This cannot know whether the number is *right* — that needs the suite to run, and this
- * check has to stay offline. It can know when the same document contradicts itself, which
- * is the failure that actually happened: the body was updated from 275 to 316 to 325 while
- * the badge stayed at 275 through all of it. Every reader sees the badge first.
- *
- * The breakdown exists because `bun run check` prints four separate numbers; a total that
- * does not equal the sum of its parts is a total nobody can reconcile with the command.
- */
-function checkTestCounts(doc: string, text: string): void {
-    const badge = /tests-(\d+)%20TS%20%2B%20(\d+)%20Foundry/.exec(text);
-    const body = /\*\*(\d+) TypeScript tests \(([^)]*)\)/.exec(text);
-    if (!badge || !body) {
-        // Only the two READMEs carry these; everything else legitimately has neither.
-        if (badge || body) fail(doc, "test counts: badge and body must both be present");
-        return;
-    }
-    const total = Number(body[1]);
-    const parts = [...(body[2] ?? "").matchAll(/\d+/g)].map((match) => Number(match[0]));
-    const sum = parts.reduce((accumulator, part) => accumulator + part, 0);
-    if (Number(badge[1]) !== total) {
-        fail(doc, `test counts: badge says ${badge[1]} TS, body says ${total}`);
-    }
-    if (sum !== total) {
-        fail(doc, `test counts: breakdown sums to ${sum}, total says ${total}`);
-    }
-    const foundry = /\+ (\d+) Foundry tests/.exec(text);
-    if (foundry && Number(badge[2]) !== Number(foundry[1])) {
-        fail(doc, `test counts: badge says ${badge[2]} Foundry, body says ${foundry[1]}`);
-    }
-}
+// Test counts used to be checked here, against the document's own other numbers — badge
+// against total against breakdown. That caught the failure it was written for (the body
+// went 275 → 316 → 325 while the badge stayed at 275) and missed the larger one: all three
+// agree with each other the moment someone edits them together, and none of them was ever
+// compared to a suite. They now live in `check-test-counts.ts`, which counts for real.
+// Kept out of this file because that check spawns bun and forge, and this one promises to
+// stay static, instant and offline.
 
 async function main(): Promise<void> {
     const scripts = await loadScripts();
@@ -212,9 +186,6 @@ async function main(): Promise<void> {
         }
         checked += 1;
         const text = await file.text();
-
-        // ── 0. the document does not contradict itself about its own test counts ──────
-        checkTestCounts(doc, text);
 
         // ── 1. every documented command exists ────────────────────────────────────────
         // `(?![\w.:-])` keeps `bun run index.ts` from being read as a script named `index`.
@@ -269,7 +240,7 @@ async function main(): Promise<void> {
     }
     const note = skipped.length > 0 ? ` (${skipped.join(", ")} absent — local-only)` : "";
     console.log(
-        `[docs] ${checked} documents — commands, links, addresses and test counts check out${note}`,
+        `[docs] ${checked} documents — commands, links and addresses check out${note}`,
     );
 }
 
