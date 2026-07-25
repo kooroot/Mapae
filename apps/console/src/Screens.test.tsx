@@ -130,12 +130,19 @@ function delegationScreen(
     ]);
 }
 
-function receiptScreen(value: SettlementReceipt[] | (() => never)): Promise<string> {
+/** The window the screen shows by default: a lookback deep enough not to reach genesis. */
+const WINDOW = {fromBlock: 31_600_000n, openedAt: 2_000_000_000n};
+
+function receiptScreen(
+    value: SettlementReceipt[] | (() => never),
+    window: {fromBlock: bigint; openedAt?: bigint} = WINDOW,
+): Promise<string> {
     const delegation = rootDelegation();
     return render(<ReceiptScreen delegation={delegation} />, [
         {
             key: ["receipts", delegation.root.delegate, rpcUrl],
-            value: typeof value === "function" ? value : () => value,
+            value:
+                typeof value === "function" ? value : () => ({receipts: value, ...window}),
         },
     ]);
 }
@@ -297,13 +304,59 @@ describe("delegation screen", () => {
  * screen, so whatever it prints is the whole of what the demo can show for a settlement.
  */
 describe("receipt screen", () => {
-    test("an empty window says it is empty rather than rendering nothing", async () => {
+    /**
+     * The empty list is the screen's most misreadable state, and the reason is arithmetic:
+     * the lookback is a block count, GIWA produces a block about every second, so the
+     * default 50,000 covers well under a day. A demo opened the morning after a settlement
+     * gets an empty list — and "no receipts" would say the product never worked, when what
+     * is true is that the settlement scrolled out of range.
+     */
+    test("an empty window dates itself instead of claiming nothing ever settled", async () => {
         const html = await receiptScreen([]);
 
-        expect(html).toContain("정산 기록이 없습니다");
-        // The window has to be legible even when empty: "no receipts" and "no receipts
-        // *in the last 50,000 blocks*" are different claims, and only one of them is true.
-        expect(html).toContain(String(RECEIPT_LOOKBACK_BLOCKS));
+        expect(html).toContain("정산된 기록이 없습니다");
+        expect(html).toContain("2033-05-18 03:33:20 UTC 이후");
+        expect(html).toContain("31600000");
+        expect(html).toContain("이 창 밖에 있습니다");
+    });
+
+    /**
+     * `fromBlock === 0` is the one case where the lookback withholds nothing, so dating
+     * the window there would imply a limit that is not being applied — "since genesis" is
+     * a cutoff nobody is subject to.
+     */
+    test("a window that reaches genesis claims the whole history, with no cutoff", async () => {
+        const html = await receiptScreen([], {fromBlock: 0n, openedAt: 1n});
+
+        expect(html).toContain("전체 이력");
+        expect(html).toContain("아직 없습니다");
+        expect(html).not.toContain("이 창 밖에");
+    });
+
+    /**
+     * A pruned or restricted node refuses the old block. That costs the sentence, not the
+     * screen — falling back to the block count is worse copy but still a true statement,
+     * whereas throwing would take the receipt list down with it.
+     */
+    test("a node that will not serve the opening block falls back to the block count", async () => {
+        const html = await receiptScreen([], {fromBlock: 31_600_000n});
+
+        expect(html).toContain(`최근 ${String(RECEIPT_LOOKBACK_BLOCKS)} 블록`);
+        expect(html).toContain("정산된 기록이 없습니다");
+    });
+
+    /**
+     * The window is capped by GIWA itself — `eth_getLogs` refuses spans over 100k blocks —
+     * so widening the variable cannot reach arbitrarily far back. Saying so on the screen
+     * is the difference between a documented limit and a silent truncation presented as
+     * complete history.
+     */
+    test("the panel names both the knob and the ceiling it cannot pass", async () => {
+        const html = await receiptScreen([]);
+
+        expect(html).toContain("VITE_RECEIPT_LOOKBACK_BLOCKS");
+        expect(html).toContain("10만 블록");
+        expect(html).toContain("페이징하지 않습니다");
     });
 
     test("settlements render newest first with resolvable explorer links", async () => {
@@ -348,6 +401,6 @@ describe("receipt screen", () => {
     test("a pending read says so rather than claiming an empty history", async () => {
         const html = await render(<ReceiptScreen delegation={rootDelegation()} />, []);
         expect(html).toContain("체인에서 읽는 중…");
-        expect(html).not.toContain("정산 기록이 없습니다");
+        expect(html).not.toContain("기록이 없습니다");
     });
 });
