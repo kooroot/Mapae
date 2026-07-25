@@ -7,6 +7,7 @@
  *
  * Sends no transaction and reads no private key.
  */
+import {redactForLog} from "@mapae/shared";
 import {
     FRAMEWORK_DEPLOYMENT_ORDER,
     verifyFrameworkRuntimeCode,
@@ -78,6 +79,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(redactForLog(error));
     process.exitCode = 1;
 });

@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-21%20TS%20%2B%2011%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-188%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -62,7 +62,7 @@ Mapae에는 비교 가능한 두 결제 경로가 함께 있습니다.
 | 경로 | 목적 | 상태 |
 |---|---|---|
 | EIP-3009 + x402-rs | 가스리스 exact 결제 기준선 | GIWA Sepolia 정산 완료 |
-| ERC-7710 + x402 | 제한·만료·회수 가능한 에이전트 결제 | 로컬 실제 EVM 검증 완료, GIWA 활성화 대기 |
+| ERC-7710 + x402 | 제한·만료·회수 가능한 에이전트 결제 | GIWA Sepolia 정산 완료, caveat 거절은 온체인이 판정 |
 
 ## 현재 상태
 
@@ -70,14 +70,43 @@ Mapae에는 비교 가능한 두 결제 경로가 함께 있습니다.
 |---|---|
 | D1 | MockUSDC 배포·소스 검증, x402-rs facilitator 연결 |
 | D2 | `402 → sign → verify → settle → resource` GIWA 온체인 완주 |
-| D3 | period/vendor/manager-child 정책과 취소 준비, 로컬 Framework 검증 |
-| D4 | ERC-7710 agent·seller·facilitator, canonical payer와 중복방지 구현 |
-| M-02/M-03 | exact Forge 배포·38개 live wiring·2단계 ownership·active-only gate·owner proxy를 로컬 검증 |
+| D3/D4 | Framework와 owner 스마트계정 GIWA 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 |
+| D5 | MCP tool 한 번 호출로 사람 개입 0 완주 |
+| D6 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 |
 
-- MockUSDC: [`0xcfeb...e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
-- D2 settlement: [`0xc9ab...b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
-- 회귀 검증: **34 TypeScript tests + 14 Foundry tests**
-- D3/D4 GIWA Framework broadcast: **아직 실행하지 않음**
+- MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
+- D2 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
+- D4 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
+- D4 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
+- 한도 초과와 만료는 백엔드 검사가 아니라 **온체인 enforcer가 거절**한다 —
+  증거표는 [기술 노트](docs/tech-notes.md)에 있다.
+- 회귀 검증: **188 TypeScript tests + 14 Foundry tests**, 그리고 동일한 23개 caveat
+  케이스를 일회용 체인과 GIWA fork 양쪽에서 돌리는 체인 파라미터화 negative-path 수트.
+
+### 증명하지 않은 것
+
+초록 체크를 늘리는 것보다 경계를 분명히 하는 편이 낫다.
+
+- **회수는 온체인으로 증명했고, 지갑 UI와 제출자(submitter)는 증명하지 않았다.**
+  `DeleGatorCore.disableDelegation`은 `onlyEntryPointOrSelf`라 owner는 EntryPoint
+  UserOperation으로 회수한다. 이제 두 분기 모두 양쪽 수트 타깃에서 돈다 — *self*
+  분기, 그리고 실제 owner 서명 UserOperation을 `handleOps`로 태우는 *EntryPoint*
+  분기. 의존 요소가 실제로 작동함을 증명하는 대조군 3개가 함께 붙는다: 예치금이
+  없으면 `AA21`, owner가 아닌 서명은 `AA24`, 서명된 `entryPoint` 필드를 변조하면
+  `AA24`. 제출 엔드포인트(`apps/revocation-submitter`)가 생겼고 콘솔의 회수 버튼도
+  거기에 연결됐다 — 연결 → 계정 `owner()` 대조 → 서명 → POST. 아직 증명하지 않은
+  것은 마지막 한 뼘, **MetaMask가 그 9개 필드 구조체를 사람이 읽을 수 있게
+  렌더링하는지**다. 이건 테스트가 아니라 실제 지갑을 실제 사람 앞에 띄워봐야 한다.
+- **킬 스위치는 가스리스가 아니며, 미리 충전해두지 않으면 작동하지 않는다.**
+  결제는 EntryPoint를 아예 거치지 않으므로(relayer가 `redeemDelegations`를 직접
+  호출) 결제에 대한 payer의 zero-ETH 불변식은 그대로다. 회수는 EntryPoint를 피할
+  수 없고, EntryPoint는 계정의 *예치금*에서 가스를 걷는다. 예치금이 없으면 회수는
+  `AA21`로 실패한다. relayer가 `EntryPoint.depositTo(payerAccount)`로 채워줄 수
+  있으며, 이때 payer의 ETH 잔액은 정확히 0으로 유지되고 relayer는 그 예치금을 다시
+  회수할 수 없다. 프레임워크 전체 `DelegationManager.pause()`는 예치금이 필요 없다.
+- **중복방지는 프로세스 내부에서만 보장된다.** 단일 replica에서는 올바르지만
+  다중 replica 전에 영속 저장소로 옮겨야 한다.
+- **실제 스테이블코인은 별도의 토큰 동작 검토가 필요하다.** MockUSDC는 테스트넷 rail이다.
 
 ## 빠른 시작
 
@@ -97,8 +126,50 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`bun run check`는 strict TypeScript, shared/delegation 테스트, Foundry 테스트를
-모두 실행합니다.
+`bun run check`는 전체 패키지의 strict TypeScript, shared/delegation 테스트,
+MCP 서버 스모크, 콘솔 렌더 테스트, 실제 콘솔 빌드, Foundry 테스트를 모두
+실행합니다. 키도 네트워크도 필요 없습니다.
+
+콘솔 빌드를 게이트에 넣은 이유는 타입 검사만으로는 못 잡기 때문입니다. `node:`
+전용 import는 타입 검사를 멀쩡히 통과한 뒤 번들에서 깨지는데, 이는 브라우저
+코드에서 서버 전용 모듈에 손을 뻗는 것과 같은 부류의 실수입니다.
+
+### 에이전트가 스스로 결제하고, 회수되는 것까지 한 명령으로
+
+데모 그 자체입니다. GIWA를 로컬로 fork하고 ERC-7710 facilitator와 seller를 그
+fork에 붙인 뒤, MCP 서버에게 유료 리소스를 사게 하고, 이어서 권한을 회수해 같은
+호출이 거절되는 것을 보여줍니다.
+
+```bash
+cd apps/delegation-lab
+bun run test:e2e:mcp
+```
+
+중간에 한도로 감당할 수 없는 결제도 한 번 요청하는데, 에이전트는 서명하기 전에
+enforcer 자신의 회계를 읽어 거절합니다 —
+`payment of 2500000 exceeds 2000000 left in this period`.
+
+이어서 두 정지 스위치를 바깥쪽부터 증명합니다. `DelegationManager`를 일시정지하면
+— 프레임워크 전체를 멈추는 쪽 — facilitator가 정산 전에 거절하고, health 엔드포인트가
+"불건전하다"가 아니라 **그 이유**를 보고합니다. 프레임워크를 되돌린 뒤 위임 하나를
+회수하면 같은 호출이 다시 거절되므로, 두 증명이 서로를 가리지 않습니다.
+
+GIWA에는 아무것도 닿지 않습니다. 자식 프로세스가 loopback RPC에 고정되지 않으면
+스크립트가 시작조차 하지 않고, 끝난 뒤 실제 relayer nonce가 그대로인지 다시
+읽어 확인합니다.
+
+### 콘솔 실행
+
+```bash
+cd apps/console
+VITE_RPC_URL=http://127.0.0.1:8546 \
+VITE_PERMISSION_CONTEXT=0x… \
+bun run dev
+```
+
+화면 두 개 — 각인된 한도와 남은 주기 잔액, 그리고 정산 영수증. 영수증은
+enforcer 자신의 `TransferredInPeriod` 이벤트에서 읽으므로 별도 원장도 계정
+체계도 없습니다. 지갑 연결이 곧 유일한 신원입니다.
 
 ### 로컬 Delegation Framework 시나리오 실행
 
@@ -149,7 +220,38 @@ Git에서 제외됩니다. 예제 파일에는 fixture 값만 들어 있습니�
 
 ## 보안 모델
 
-Mapae의 핵심 보안 경계는 다음과 같습니다.
+### 침해된 facilitator가 할 수 있는 것
+
+facilitator는 릴레이어 키를 쥐고, 서명된 `X-PAYMENT`를 받고, leaf가 지정한 redeemer
+본인입니다 — 모든 신원 검사를 통과하는 위치입니다. 그러므로 물어야 할 것은 신뢰
+여부가 아니라 **완전히 침해되었을 때의 최대 피해**입니다.
+
+서명은 permission context를 덮지만 **execution은 덮지 않습니다.**
+`redeemDelegations`는 `_executionCallDatas`를 호출자의 calldata로 받습니다
+(`DelegationManager.sol:126-133`). 즉 침해된 facilitator는 멀쩡한 leaf와 함께 자기가
+고른 아무 execution이나 제출할 수 있고, 이를 막는 것은 그 leaf의 caveat뿐입니다.
+그리고 실제로 막힙니다.
+
+| 시도 | 거절하는 enforcer | 온체인 revert |
+|---|---|---|
+| 벤더 대신 자기 주소로 지급 | `AllowedCalldataEnforcer` | `invalid-calldata` |
+| 금액 부풀리기 (주기 상한 이내라도) | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
+| 1회성 지불을 상시 allowance로 전환 | `ERC20TransferAmountEnforcer` | `invalid-method` |
+| 다른 컨트랙트로 호출 돌리기 | `ERC20TransferAmountEnforcer` | `invalid-contract` |
+| native 값 끼워 빼내기 | `ValueLteEnforcer` | `value-too-high` |
+| **payer 계정 자신을 target으로** (self 분기 진입) | `ERC20TransferAmountEnforcer` | `invalid-contract` |
+| 같은 leaf 재상환 | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
+
+남는 것은 안전성이 아니라 가용성입니다 — 정산을 거부하거나, 만료 창 안에서 순서를
+바꾸거나, 지불자가 이미 승인한 결제를 집행할 수 있습니다. 다만 수취인은 언제나
+에이전트가 고정한 벤더이고 자기 자신이 될 수 없습니다. **탈취·경로 변경·한도 초과는
+불가능합니다.** 릴레이어에게 가스는 맡기되 자금은 맡기지 않는 구조의 값이 여기 있습니다.
+
+각 행은 `negative-path-suite.ts`의 케이스이며, 5개 변조 케이스에는 대조군이
+붙어 있습니다 — 같은 leaf·같은 redeemer로 변조만 뺀 execution은 정상 정산됩니다.
+소진된 주기나 낡은 계정 때문이 아니라 변조 때문에 거절되었음을 이 대조군이 보장합니다.
+
+### 결제 바인딩
 
 - facilitator는 서명된 `permissionContext`의 마지막/root delegator를
   canonical payer로 사용합니다.
@@ -197,6 +299,8 @@ apps/delegation-lab/       policy scenarios and deployment previews
 apps/delegated-agent/      ERC-7710 payment agent
 apps/delegated-seller/     ERC-7710 resource seller
 apps/facilitator-erc7710/  delegated settlement adapter
+apps/agent-mcp/            요청 시 리소스를 결제하는 MCP 서버
+apps/console/              위임·영수증 화면, 지갑 모듈 크기
 docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 ```
 
@@ -208,8 +312,10 @@ docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 ## 배포 안전장치
 
 기본 명령은 배포 preview만 수행합니다. GIWA write는 `--broadcast`와 명시적인
-승인 문구가 함께 있을 때만 활성화됩니다. 공개 활성화 전에는 Framework
-composition manifest, 최종 Framework-admin ownership, 실제 Framework
-negative-path 검증을 완료해야 합니다.
+승인 문구가 함께 있을 때만 활성화되며, 활성화 단계마다 별도 승인을 거칩니다.
 
-GIWA write는 각 활성화 단계마다 별도의 명시적 승인을 거칩니다.
+이 저장소에서 재현 가능한 것은 전부 일회용 체인이나 로컬 fork에서 돌아갑니다.
+end-to-end 스크립트는 자식 프로세스가 loopback 노드가 아닌 곳과 통신하려 하면
+시작하지 않습니다 — 같은 명령을 실제 RPC로 겨누면 진짜 정산이 나가기 때문입니다.
+`apps/delegation-lab`의 배포 도구는 정반대 이유로 HTTPS 전용 규칙을 더 엄격히
+유지합니다. 그것들은 GIWA에 닿는 것이 목적이므로 fork를 겨눠서는 안 됩니다.

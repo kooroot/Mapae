@@ -72,6 +72,49 @@ export function httpStatusFor(error: SettlementError): number {
     }
 }
 
+/**
+ * A one-line log message that keeps the cause and drops the bearer material.
+ *
+ * viem embeds the whole request in its errors, and on the settlement path that
+ * request carries a signed permission context — a bearer authorization that must
+ * never reach a log. What an operator actually needs is short: revert reasons like
+ * `ERC20PeriodTransferEnforcer:transfer-amount-exceeded`, addresses, tx hashes.
+ * The dangerous material is long hex, so the split is by length: anything longer
+ * than a 32-byte hash is replaced by its size. Logging only `error.name` avoids the
+ * leak too, but leaves the operator with "Error: request rejected" and no cause.
+ */
+/**
+ * Reduce every URL in a string to `scheme://host`, dropping path, query and fragment.
+ *
+ * Private RPC providers authenticate with an API key in the URL *path*, so a full URL is
+ * a credential even though nothing about it looks like one. viem embeds its transport URL
+ * in error messages, anvil prints the fork URL when a fork fails, and both of those reach
+ * logs and — through `redactForLog` — HTTP response bodies.
+ *
+ * The host is kept deliberately: "which endpoint failed" is the entire diagnostic value,
+ * and the host is not the secret.
+ */
+export function redactUrls(text: string): string {
+    return text.replace(/\bhttps?:\/\/[^\s"'<>)\]}]+/gi, (match) => {
+        try {
+            const url = new URL(match);
+            const tail = match.slice(url.origin.length);
+            return tail && tail !== "/" ? `${url.origin}/<redacted>` : url.origin;
+        } catch {
+            return match;
+        }
+    });
+}
+
+export function redactForLog(value: unknown, maxLength = 300): string {
+    const raw = value instanceof Error ? `${value.name}: ${value.message}` : String(value);
+    const scrubbed = redactUrls(raw)
+        .replace(/0x[0-9a-fA-F]{65,}/g, (match) => `0x<${(match.length - 2) / 2} bytes redacted>`)
+        .replace(/\s+/g, " ")
+        .trim();
+    return scrubbed.length > maxLength ? `${scrubbed.slice(0, maxLength)}…` : scrubbed;
+}
+
 /** Never let a failure leave as a bare 500 with no cause — that's undebuggable in a demo. */
 export function describe(error: SettlementError): string {
     switch (error._tag) {
@@ -91,10 +134,12 @@ export function describe(error: SettlementError): string {
             return `delegation ${error.delegationHash} was revoked`;
         case "RelayerOutOfGas":
             return `relayer ${error.signer} has ${error.balance} wei — top up`;
+        // Host only. The path carries the provider API key, and this string is a
+        // user-facing description, not an operator-only log line.
         case "RpcUnavailable":
-            return `RPC ${error.url} unreachable`;
+            return `RPC ${redactUrls(error.url)} unreachable`;
         case "RpcRateLimited":
-            return `RPC ${error.url} rate limited`;
+            return `RPC ${redactUrls(error.url)} rate limited`;
         case "TxReverted":
             return `tx reverted${error.reason ? `: ${error.reason}` : ""}`;
         case "DomainMismatch":

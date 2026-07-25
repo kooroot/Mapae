@@ -1,3 +1,4 @@
+import {redactForLog} from "@mapae/shared";
 import {chmod, mkdir} from "node:fs/promises";
 import {generatePrivateKey, privateKeyToAccount} from "viem/accounts";
 
@@ -41,6 +42,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(redactForLog(error));
     process.exitCode = 1;
 });

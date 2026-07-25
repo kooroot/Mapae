@@ -16,6 +16,8 @@ import {
     GIWA_SEPOLIA_CAIP2,
     X402_VERSION,
     giwaSepolia,
+    parseNodeRpcUrl,
+    redactForLog,
     toTokenAmount,
 } from "@mapae/shared";
 import {
@@ -49,12 +51,9 @@ function readHost(): string {
 }
 
 function readRpcUrl(): string {
-    const value = process.env.GIWA_SEPOLIA_RPC_URL?.trim() || giwaSepolia.rpcUrls.default.http[0];
-    const url = new URL(value);
-    if (url.protocol !== "https:" || url.username || url.password) {
-        throw new Error("GIWA_SEPOLIA_RPC_URL must be HTTPS without embedded credentials");
-    }
-    return url.toString();
+    return parseNodeRpcUrl(
+        process.env.GIWA_SEPOLIA_RPC_URL?.trim() || giwaSepolia.rpcUrls.default.http[0],
+    );
 }
 
 function readRelayerKey(): Hex {
@@ -114,6 +113,9 @@ const PORT = readPort();
 const RPC_URL = readRpcUrl();
 const MAX_AMOUNT = toTokenAmount(process.env.MAX_SETTLEMENT_AMOUNT ?? "10.00");
 const MAX_REDEMPTION_GAS = readPositiveInteger("MAX_REDEMPTION_GAS", 1_500_000);
+// Configurable like the other limits, and lowering it is how the broadcast-but-
+// unconfirmed path gets exercised without waiting a minute for a real stall.
+const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOUT_MS", 60_000));
 const relayer = privateKeyToAccount(readRelayerKey());
 const expectedRelayer = readRelayerAddress();
 if (relayer.address !== expectedRelayer) {
@@ -183,9 +185,42 @@ interface SettleResponse {
     errorReason?: string;
 }
 
+/**
+ * How long a broadcast transaction stays remembered for its payment intent.
+ *
+ * The map exists so a receipt timeout never triggers a second broadcast, which
+ * only matters while a client could still be retrying — the agent's own request
+ * timeout is 15s. Keeping entries forever would grow the process without bound;
+ * evicting them earlier than any live retry could arrive is what makes dropping
+ * them safe.
+ */
+const INTENT_MEMORY_MS = 60 * 60 * 1_000;
+
+/**
+ * Raised when a redemption was broadcast but its receipt did not arrive in time.
+ *
+ * Distinct from every other settlement failure because the payer may well have been
+ * charged. The caller needs the hash to find out, and must not be told the payment
+ * was rejected.
+ */
+class SettlementUnconfirmed extends Error {
+    constructor(readonly transaction: Hex) {
+        super("redemption broadcast but not confirmed in time");
+        this.name = "SettlementUnconfirmed";
+    }
+}
+
 class SettlementCoordinator {
     readonly #singleFlight = new PaymentIntentSingleFlight<SettleResponse>();
-    readonly #broadcastTransactions = new Map<Hex, Hex>();
+    readonly #broadcastTransactions = new Map<Hex, {hash: Hex; at: number}>();
+
+    #rememberBroadcast(intent: Hex, hash: Hex): void {
+        const cutoff = Date.now() - INTENT_MEMORY_MS;
+        for (const [key, entry] of this.#broadcastTransactions) {
+            if (entry.at < cutoff) this.#broadcastTransactions.delete(key);
+        }
+        this.#broadcastTransactions.set(intent, {hash, at: Date.now()});
+    }
 
     async simulate(payment: ValidatedDelegatedPayment): Promise<void> {
         const transfer = buildDelegatedTransfer(payment);
@@ -209,7 +244,7 @@ class SettlementCoordinator {
     }
 
     async #settleOnce(payment: ValidatedDelegatedPayment): Promise<SettleResponse> {
-        let hash = this.#broadcastTransactions.get(payment.paymentIntentId);
+        let hash = this.#broadcastTransactions.get(payment.paymentIntentId)?.hash;
         if (!hash) {
             const transfer = buildDelegatedTransfer(payment);
             const simulation = await DelegationManager.simulate.redeemDelegations({
@@ -225,14 +260,22 @@ class SettlementCoordinator {
             }
             hash = await facilitatorClient.writeContract({...simulation.request, gas});
             // Save before waiting. A receipt timeout must never trigger a duplicate broadcast.
-            this.#broadcastTransactions.set(payment.paymentIntentId, hash);
+            this.#rememberBroadcast(payment.paymentIntentId, hash);
         }
 
-        const receipt = await publicClient.waitForTransactionReceipt({
-            hash,
-            confirmations: 1,
-            timeout: 60_000,
-        });
+        let receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
+        try {
+            receipt = await publicClient.waitForTransactionReceipt({
+                hash,
+                confirmations: 1,
+                timeout: RECEIPT_TIMEOUT_MS,
+            });
+        } catch {
+            // The transaction is already on the network; only our wait gave up.
+            // Collapsing this into the generic rejection would tell the seller the
+            // payer was not charged, which is exactly what nobody knows yet.
+            throw new SettlementUnconfirmed(hash);
+        }
         if (receipt.status !== "success") throw new Error("redemption transaction reverted");
         return {
             success: true,
@@ -254,21 +297,33 @@ app.use("*", async (c, next) => {
 
 app.get("/health", async (c) => {
     let framework: FrameworkLiveVerification | undefined;
+    // Why it is unhealthy, not just that it is. Verification throws for a paused
+    // manager, an unexpected owner, and an unreachable RPC alike, so without this
+    // every one of them looks identical: ok=false, frameworkPaused=null. Loopback
+    // only, and redacted, so the reason never becomes an oracle for a caller.
+    let frameworkError: string | null = null;
     try {
         framework = await readiness.verify();
-    } catch {
+    } catch (error) {
         framework = undefined;
+        frameworkError = redactForLog(error, 200);
     }
-    const relayerBalance = await publicClient.getBalance({address: relayer.address});
+    // Degrade like the framework check above rather than throwing: a health probe
+    // that 500s when the RPC blips tells the operator less than one that reports
+    // which dependency is down.
+    const relayerBalance = await publicClient
+        .getBalance({address: relayer.address})
+        .catch(() => undefined);
     return c.json({
-        ok: Boolean(framework) && relayerBalance > 0n,
+        ok: Boolean(framework) && relayerBalance !== undefined && relayerBalance > 0n,
         network: GIWA_SEPOLIA_CAIP2,
         composition: deployment.compositionId,
         delegationManager: manager,
         frameworkOwner: framework?.owner ?? null,
         frameworkPaused: framework?.paused ?? null,
+        frameworkError,
         facilitator: relayer.address,
-        relayerFunded: relayerBalance > 0n,
+        relayerFunded: relayerBalance === undefined ? null : relayerBalance > 0n,
     });
 });
 
@@ -323,6 +378,15 @@ app.post("/settle", async (c) => {
         return c.json(response);
     } catch (error) {
         logSafeFailure("settle", error);
+        if (error instanceof SettlementUnconfirmed) {
+            const pending: SettleResponse = {
+                success: false,
+                network: GIWA_SEPOLIA_CAIP2,
+                transaction: error.transaction,
+                errorReason: "settlement_unconfirmed",
+            };
+            return c.json(pending);
+        }
         const response: SettleResponse = {
             success: false,
             network: GIWA_SEPOLIA_CAIP2,
@@ -347,12 +411,17 @@ async function readJson(c: Context): Promise<unknown> {
 }
 
 function logSafeFailure(path: string, error: unknown): void {
-    // Never log permissionContext: it contains bearer-like signed delegations.
-    const name = error instanceof Error ? error.name : "UnknownError";
-    console.error(`[${path}] ${name}: request rejected`);
+    // The response stays deliberately opaque — an untrusted caller learns nothing
+    // about why its payment failed. The operator is not untrusted, and logging only
+    // the error name left them with "Error: request rejected" for an on-chain
+    // caveat rejection. `redactForLog` keeps the revert reason and strips the
+    // bearer-length hex that viem embeds in its errors.
+    console.error(`[${path}] rejected — ${redactForLog(error)}`);
 }
 
-if (!isAddress(manager)) throw new Error("invalid DelegationManager");
+// `manager` is already `getAddress(...)`-checked at construction, which throws on
+// anything malformed — a second check here could never fire while reading like a
+// real guard.
 console.log(`ERC-7710 facilitator listening on ${HOST}:${PORT}`);
 console.log(`  network ${GIWA_SEPOLIA_CAIP2}`);
 console.log(`  manager ${manager}`);

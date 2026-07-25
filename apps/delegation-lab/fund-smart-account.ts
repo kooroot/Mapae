@@ -4,7 +4,7 @@ import {
     parseActiveDeploymentArtifactJson,
     throttledHttp,
 } from "@mapae/delegation";
-import {MOCK_USDC, fromTokenAmount, giwaSepolia, toTokenAmount} from "@mapae/shared";
+import {MOCK_USDC, fromTokenAmount, giwaSepolia, redactForLog, toTokenAmount} from "@mapae/shared";
 import {Implementation} from "@metamask/smart-accounts-kit";
 import {getCounterfactualAccountData} from "@metamask/smart-accounts-kit/utils";
 import {
@@ -149,6 +149,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(redactForLog(error));
     process.exitCode = 1;
 });

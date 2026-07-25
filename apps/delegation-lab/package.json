@@ -16,13 +16,15 @@
         "permission:prepare": "bun run sign-root-permission.ts prepare",
         "permission:serve": "bun run sign-root-permission.ts serve",
         "permission:assemble": "bun run sign-root-permission.ts assemble",
-        "test:negative": "bun run negative-path-suite.ts"
+        "test:negative": "bun run negative-path-suite.ts",
+        "test:e2e:mcp": "bun run mcp-e2e.ts"
     },
     "dependencies": {
         "@mapae/delegation": "workspace:*",
         "@mapae/shared": "workspace:*",
         "@metamask/delegation-abis": "1.1.0",
         "@metamask/smart-accounts-kit": "1.7.0",
-        "viem": "^2.55.8"
+        "viem": "^2.55.8",
+        "@modelcontextprotocol/sdk": "1.29.0"
     }
 }
