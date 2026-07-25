@@ -36,6 +36,28 @@ describe("judgePreflight", () => {
         expect(judgePreflight([link()], toTokenAmount("1"))).toEqual({ok: true});
     });
 
+    test("an empty chain is refused, not cleared", () => {
+        // Every other rule here is a loop, so with no statuses each one fell through and
+        // the function cleared the payment — measured at 999 mUSDC against a chain it had
+        // read nothing from. The state is reachable: `isPermissionContext` guards shape
+        // and length, and a well-formed ABI encoding of an empty `Delegation[]` is 130
+        // characters that passes it and decodes to `[]`.
+        const verdict = judgePreflight([], 999_000_000n);
+        expect(verdict.ok).toBe(false);
+        expect(verdict).toMatchObject({code: "PERMISSION_EMPTY"});
+    });
+
+    test("empty and inactive are told apart, not merged", () => {
+        // Separate codes on purpose: `PERMISSION_INACTIVE` sends an operator to check
+        // revocation and expiry on chain, where a broken permission artifact leaves
+        // nothing to find. Asserting both sides — a `not.toMatchObject` here would pass
+        // for a verdict of `{ok: true}` too, which is the bug this pins.
+        expect(judgePreflight([], 1n)).toMatchObject({code: "PERMISSION_EMPTY"});
+        expect(judgePreflight([link({revoked: true})], 1n)).toMatchObject({
+            code: "PERMISSION_INACTIVE",
+        });
+    });
+
     test("clears a payment exactly at the cap — the enforcer allows equality", () => {
         // `>` not `>=`: refusing the exact remaining balance would make the last
         // spendable unit unspendable, and the chain would have allowed it.

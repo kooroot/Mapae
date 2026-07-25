@@ -180,6 +180,14 @@ export async function loadDelegatedAgentRuntime(
     // reads the whole chain: checking only the root would clear a payment that a
     // re-delegated child's tighter cap refuses on-chain.
     const chain = decodeDelegations(parent.permissionContext);
+    // `isPermissionContext` above checks shape and length, not content, so a well-formed
+    // encoding of an empty `Delegation[]` reaches here. An agent whose permission holds no
+    // links has nothing to spend under; failing at bootstrap says so once rather than
+    // once per payment. `judgePreflight` guards the same state for callers that build
+    // their own status list.
+    if (chain.length === 0) {
+        throw new Error("parent permissionContext decodes to no delegations");
+    }
 
     const preflight = async (amount: bigint): Promise<PreflightVerdict> =>
         judgePreflight(
@@ -233,6 +241,25 @@ export async function loadDelegatedAgentRuntime(
  * error rather than as the limit doing its job.
  */
 export function judgePreflight(statuses: DelegationStatus[], amount: bigint): PreflightVerdict {
+    // An empty chain must not read as "no limits apply".
+    //
+    // Everything below is a loop, so with no statuses each one falls through and the
+    // function clears the payment — measured at 999 mUSDC against a chain it had read
+    // nothing from. That state is reachable: `isPermissionContext` is a shape-and-length
+    // guard on hex, and a well-formed ABI encoding of an empty `Delegation[]` is 130
+    // characters that passes it and decodes to `[]`.
+    //
+    // The settlement would still be refused on-chain, so this was never a route to funds.
+    // What it defeated is the reason this function exists — reporting a cause from the
+    // chain's own accounting instead of walking into the seller and relaying a status
+    // code. "We read nothing" is not "we read no limits".
+    if (statuses.length === 0) {
+        return {
+            ok: false,
+            code: "PERMISSION_EMPTY",
+            detail: "permission context decodes to no delegations — nothing to spend under",
+        };
+    }
     for (const status of statuses) {
         if (status.revoked) {
             return {ok: false, code: "PERMISSION_INACTIVE", detail: "permission was revoked"};

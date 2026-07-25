@@ -27,6 +27,14 @@ export type DelegatedPaymentFailureCode =
     | "LIMIT_EXCEEDED"
     /** The permission is revoked, expired, or not yet active. */
     | "PERMISSION_INACTIVE"
+    /**
+     * The permission context holds no delegations, so pre-flight read nothing.
+     *
+     * Deliberately not folded into `PERMISSION_INACTIVE`. That code sends an operator to
+     * check revocation and expiry on chain, where they would find nothing wrong — the
+     * fault is in the permission artifact, not in chain state.
+     */
+    | "PERMISSION_EMPTY"
     /** The leaf delegation could not be signed — e.g. the parent was revoked. */
     | "SIGNING_FAILED"
     | "PAYMENT_REJECTED"
@@ -64,7 +72,11 @@ export type DelegatedLeafProvider = (
 /** Verdict from an optional on-chain check made before any payment is attempted. */
 export type PreflightVerdict =
     | {ok: true}
-    | {ok: false; code: "LIMIT_EXCEEDED" | "PERMISSION_INACTIVE"; detail: string};
+    | {
+          ok: false;
+          code: "LIMIT_EXCEEDED" | "PERMISSION_INACTIVE" | "PERMISSION_EMPTY";
+          detail: string;
+      };
 
 export interface DelegatedPaymentConfig {
     provider: DelegatedLeafProvider;

@@ -447,6 +447,36 @@ D2 EIP-3009 경로(`apps/seller`)다. D3/D4 위임 경로는 다르게 동작한
 보내는 bearer 길이의 hex(서명된 permission context)는 크기만 남기고 지운다. 운영자는
 원인을 보고, 호출자는 보지 못한다.
 
+#### 빈 체인은 "한도 없음"이 아니라 "읽은 것이 없음"이다
+
+D5 의 판정 기준은 "실패 시 조용히 죽지 말고 **이유** 반환"이고, 그 이유를 만드는 곳이
+`judgePreflight` 다. 서명 전에 체인의 회계를 읽어 판매자에게 걸어 들어가는 대신 원인을
+말하는 함수다.
+
+그 함수의 규칙이 전부 루프였다. statuses 가 비면 revoked·expired·notYetActive 검사가
+모두 그냥 지나가고, `tightest` 는 `undefined` 로 남아 한도 비교도 건너뛰고, 결과는
+`{ok: true}` 였다. **아무것도 읽지 못한 상태에서 999 mUSDC 결제를 통과시킨다** — 실측.
+
+도달 가능한 상태다. `isPermissionContext` 는 hex 의 모양과 길이를 보는 가드이고, 빈
+`Delegation[]` 의 올바른 ABI 인코딩은 그 가드를 통과하는 130자짜리 문자열이며
+`decodeDelegations` 는 그것을 `[]` 로 돌려준다.
+
+자금 경로는 아니었다 — 정산은 여전히 온체인에서 거절된다. 무너진 것은 이 함수가 존재하는
+이유 쪽이다.
+
+코드는 `PERMISSION_INACTIVE` 를 재사용하지 않고 **`PERMISSION_EMPTY`** 를 새로 만들었다.
+CLAUDE.md 의 규칙("모호한 태그를 재사용하지 말고 새 태그를 추가하라")이 여기 정확히
+들어맞는다: `PERMISSION_INACTIVE` 는 운영자를 회수·만료를 확인하러 체인으로 보내는데,
+망가진 permission 아티팩트에는 거기서 찾을 것이 없다.
+
+가드는 두 곳에 있고 서로 다른 호출자를 막는다 — `loadDelegatedAgentRuntime` 은 부팅에서
+한 번 던지고(기존의 "missing, malformed, or too large" 검증 바로 옆, 그 검증의 구멍이었다),
+`judgePreflight` 는 자기 상태 목록을 직접 만드는 호출자를 막는다.
+
+테스트 두 개 중 하나는 처음에 **공허하게** 통과했다. `not.toMatchObject({code:
+"PERMISSION_INACTIVE"})` 는 가드가 없어 `{ok: true}` 가 나와도 통과한다 — 뮤테이션이 2개
+중 1개만 깨뜨려서 드러났다. 양쪽을 다 단언하도록 고쳤고, 이제 가드를 제거하면 둘 다 깨진다.
+
 #### 기억으로 지키던 규칙을 게이트로 옮겼다
 
 `redactForLog`가 있어도 그것을 **부르는 것**은 사람이었다. 6차원 감사가 17개의 탈출
