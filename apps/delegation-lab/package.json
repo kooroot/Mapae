@@ -17,7 +17,8 @@
         "permission:serve": "bun run sign-root-permission.ts serve",
         "permission:assemble": "bun run sign-root-permission.ts assemble",
         "test:negative": "bun run negative-path-suite.ts",
-        "test:e2e:mcp": "bun run mcp-e2e.ts"
+        "test:e2e:mcp": "bun run mcp-e2e.ts",
+        "test:e2e:revoke": "bun run revocation-submitter-e2e.ts"
     },
     "dependencies": {
         "@mapae/delegation": "workspace:*",

@@ -234,6 +234,25 @@ prefix 검사로 바꾸면 정확히 `trailing bytes` 케이스 하나만 깨진
 `UserOperationRevertReason`으로 삼키고 트랜잭션 자체는 성공시키므로, receipt만
 보면 `disableDelegation`이 revert해도 초록으로 보인다(뮤테이션으로 확인함).
 
+**서비스를 실제로 띄운 검증** (`bun run test:e2e:revoke`). 위 표는 수트가 검증기와
+온체인 강제를 덮는다는 뜻이지 **프로세스가 뜬다는 뜻은 아니었다.** env 파싱, 배포
+아티팩트 읽기, 부팅 시 릴레이어 대조, `/health`, single-flight, simulate→broadcast는
+별도 e2e가 GIWA fork 위에 서비스를 실제로 spawn해서 5케이스를 왕복한다.
+
+그중 두 케이스가 분리된 이유가 비자명하다. "같은 바디를 다시 보내면 거절된다"만으로는
+리플레이 방어를 증명하지 못한다 — 그걸 막은 건 체인 **앞단의** 예치금 게이트고 nonce는
+실행된 적이 없다. 그래서 예치금을 다시 채워 그 게이트를 치운 뒤 동일 바디를 재전송하고,
+그때 남는 유일한 방어선인 EntryPoint nonce가 `AA25 invalid account nonce`로 끊는 것을
+확인한다. 처음 작성했을 때는 이 구분이 없어 **틀린 이유로 통과하고 있었다.**
+
+성공 케이스는 릴레이어의 **수지**도 확인한다 — 가스로 쓴 것보다 더 줄었으면 실패시킨다.
+이건 형식적인 검사가 아니다: GIWA에서 잘 알려진 Anvil 주소들은 EIP-7702 designator를
+달고 있고 그 대상이 들어온 잔액을 전액 쓸어가는 스위퍼다. `_compensate`가 beneficiary에게
+`call{value: …}`로 지급하므로 그 주소를 릴레이어로 쓰면 `handleOps` 한 번에 릴레이어가
+빈다(측정: 1 ETH → 0.00024 ETH, 트랜잭션 비용은 0.00017 ETH). 트랜잭션이 성공했다는
+사실만으로는 릴레이어가 보전됐다는 뜻이 아니다. 절차는
+[회수 런북](revocation-runbook.md)에 있다.
+
 **콘솔 버튼 (`RevokeButton`).** 지갑 연결 → `owner()` 대조 → nonce 읽기 → 빌드 →
 `signTypedData` → 제출 엔드포인트 POST. 세 가지가 비자명하다.
 
@@ -304,6 +323,7 @@ bun run check                      # 키·네트워크 없이 전 계층 회귀
 cd apps/delegation-lab
 bun run test:negative              # 10개 caveat 케이스 (일회용 체인 / GIWA fork)
 bun run test:e2e:mcp               # 결제 완주 → 한도 초과 pre-flight 거절 → pause → 회수
+bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 5케이스 왕복
 ```
 
 `test:e2e:mcp`는 자식 프로세스가 loopback RPC에 고정되지 않으면 시작하지 않고,

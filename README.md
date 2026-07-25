@@ -311,6 +311,7 @@ apps/delegated-agent/      ERC-7710 payment agent
 apps/delegated-seller/     ERC-7710 resource seller
 apps/facilitator-erc7710/  delegated settlement adapter
 apps/agent-mcp/            MCP server that pays for a resource on request
+apps/revocation-submitter/ loopback endpoint that carries a signed revocation
 apps/console/              delegation and receipt screens, wallet-module sized
 docs/                      technical notes and the deployed-contract reference
 ```
@@ -318,6 +319,7 @@ docs/                      technical notes and the deployed-contract reference
 ## Documentation
 
 - [Technical notes](docs/tech-notes.md)
+- [Revocation runbook](docs/revocation-runbook.md) — the kill switch, and how to verify it
 - [Deployed contracts](docs/deployed-contracts.md)
 
 ## Deployment safety

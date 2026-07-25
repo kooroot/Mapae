@@ -300,6 +300,7 @@ apps/delegated-agent/      ERC-7710 payment agent
 apps/delegated-seller/     ERC-7710 resource seller
 apps/facilitator-erc7710/  delegated settlement adapter
 apps/agent-mcp/            요청 시 리소스를 결제하는 MCP 서버
+apps/revocation-submitter/ 서명된 회수를 실어 나르는 loopback 엔드포인트
 apps/console/              위임·영수증 화면, 지갑 모듈 크기
 docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 ```
@@ -307,6 +308,7 @@ docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 ## 문서
 
 - [기술 노트](docs/tech-notes.md)
+- [회수 런북](docs/revocation-runbook.md) — 킬 스위치와 그 검증 방법
 - [배포된 컨트랙트](docs/deployed-contracts.md)
 
 ## 배포 안전장치
