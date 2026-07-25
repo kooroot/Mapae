@@ -86,7 +86,7 @@ Delegation Framework의 코어. `DelegationManager`가 위임 서명 검증과
 | ExactCalldataBatchEnforcer | [`0x157BC93Be05c899E44d6836a95A25385531b67c9`](https://sepolia-explorer.giwa.io/address/0x157BC93Be05c899E44d6836a95A25385531b67c9) | | 배치 calldata 정확 일치 |
 | ExactExecutionEnforcer | [`0xcF3F6cA8323C0450C2Eb913f85c2EBcd4efB2389`](https://sepolia-explorer.giwa.io/address/0xcF3F6cA8323C0450C2Eb913f85c2EBcd4efB2389) | | 실행(target·value·calldata) 정확 일치 |
 | ExactExecutionBatchEnforcer | [`0xE696A7c90a4a94FA1417CeEAbB108024884A03Bf`](https://sepolia-explorer.giwa.io/address/0xE696A7c90a4a94FA1417CeEAbB108024884A03Bf) | | 배치 실행 정확 일치 |
-| SpecificActionERC20TransferBatchEnforcer | [`0xc2dCDaaBec97C4b3118075641A852D5884Da4e74`](https://sepolia-explorer.giwa.io/address/0xc2dCDaaBec97C4b3118075641A852D5884Da4e74) | | 특정 액션 + ERC-20 전송 배치 |
+| SpecificActionERC20TransferBatchEnforcer | [`0xc2dCDaaBec97C4b3118075641A852D5884Da4e74`](https://sepolia-explorer.giwa.io/address/0xc2dCDaaBec97C4b3118075641A852D5884Da4e74) | | 특정 액션 + ERC-20 전송 배치. **소스 미검증 — 38개 중 유일. 사유는 [아래](#소스-검증-상태--38-유닛-중-37).** Mapae 정책 경로에서 쓰지 않음 |
 | DeployedEnforcer | [`0x3fc13b47b7E7D2DbF257070c89395AAc43D22115`](https://sepolia-explorer.giwa.io/address/0x3fc13b47b7E7D2DbF257070c89395AAc43D22115) | | 대상 컨트랙트 배포 여부 |
 | ApprovalRevocationEnforcer | [`0x7985846b0b9f4f1641774a9323bDc4e1dbbe29bD`](https://sepolia-explorer.giwa.io/address/0x7985846b0b9f4f1641774a9323bDc4e1dbbe29bD) | | ERC-20 approval 취소 강제 |
 | OwnershipTransferEnforcer | [`0x0f423B5DB18c66178eEd4cA4a7e3021067b4E294`](https://sepolia-explorer.giwa.io/address/0x0f423B5DB18c66178eEd4cA4a7e3021067b4E294) | | 소유권 이전 제약 |
@@ -141,6 +141,86 @@ owner가 각 역할에 위임한 세션 키. 개별 지출 한도의 수신자�
 > 값이라 이 표에 고정하지 않는다.** relayer는 정산 트랜잭션의 `msg.sender`이자 가스
 > 대납자이고, `payTo`는 판매자의 수취 주소다. 둘 다 공개 주소지만 배포 산출물이 아니라
 > 배포/운영 환경 설정에 속한다.
+
+---
+
+## 소스 검증 상태 — 38 유닛 중 37
+
+익스플로러에서 실측한 값이다(2026-07-25, Blockscout `/api/v2/smart-contracts/<주소>`):
+
+| 상태 | 수 | 뜻 |
+|---|---|---|
+| partial match | 36 | **정상 결과다.** 32바이트 IPFS 메타데이터 다이제스트만 다르고 실행 바이트는 전부 일치한다 — 배포된 코드가 MetaMask의 감사받은 npm 바이트코드이기 때문이다. MockUSDC도 같은 상태 |
+| full match | 1 | `ApprovalRevocationEnforcer` |
+| **미검증** | **1** | `SpecificActionERC20TransferBatchEnforcer` ([`0xc2dCDaaB…4Da4e74`](https://sepolia-explorer.giwa.io/address/0xc2dCDaaBec97C4b3118075641A852D5884Da4e74)) |
+
+재확인:
+
+```bash
+curl -s https://sepolia-explorer.giwa.io/api/v2/smart-contracts/<주소> \
+  | jq '{name, is_verified, is_partially_verified}'
+```
+
+### 그 하나가 검증되지 않는 이유
+
+**핀한 서브모듈 소스와 배포된 바이트코드가 서로 다른 리비전이다.** 서브모듈은
+`d0ebab5`에 고정돼 있고 거기에는 업스트림 PR **#145**(`72d9305`,
+"refactor: add value to specific action erc20 transfer enforcer", 2025-09-03)가
+들어 있다. 배포된 코드는 그 이전 버전이다.
+
+#145가 바꾼 것 — 전부 `terms` **인코딩**이다:
+
+| | #145 이전 (배포된 것) | #145 이후 (서브모듈 소스) |
+|---|---|---|
+| 최소 terms 길이 | 92바이트 (20+20+32+20) | **124바이트** (+32) |
+| 첫 실행의 value 검사 | `executions_[0].value != 0` | `!= terms_.firstValue` |
+| `firstCalldata` 시작 | `_terms[92:]` | `_terms[124:]` |
+| `TermsData` 필드 수 | 5 | 6 (`firstValue` 추가) |
+
+**`terms`는 `bytes`이므로 외부 ABI가 바뀌지 않았다.** 이게 이 건이 헷갈리는
+이유다 — 익스플로러에서 ABI는 맞아떨어지는데 바이트코드만 어긋난다. 로컬 컴파일
+runtime은 3333바이트, 배포된 것은 3279바이트로 **54바이트 짧다.**
+
+바이트 수는 정황이고, 결정적 증거는 배포된 컨트랙트의 동작이다. 92바이트 terms를
+넣어 읽어보면 확정된다(읽기 전용):
+
+```bash
+T92=0x$(python3 -c "print('11'*20 + '22'*20 + '33'*32 + '44'*20)")
+cast call 0xc2dCDaaBec97C4b3118075641A852D5884Da4e74 "getTermsInfo(bytes)" "$T92" \
+  --rpc-url https://sepolia-rpc.giwa.io
+```
+
+실측 결과: **revert하지 않고 필드 5개를 돌려준다**(`firstValue` 없음). #145 이후
+코드였다면 `SpecificActionERC20TransferBatchEnforcer:invalid-terms-length`로
+거절했어야 한다. 124바이트를 넣으면 여분 32바이트가 `firstValue`가 아니라
+`firstCalldata`로 해석된다 — 배포된 것이 pre-#145임을 다시 확인해 준다.
+
+배포 시점의 `@metamask/delegation-abis`가 소스 저장소보다 뒤처져 있었고,
+결정적(CREATE2) 컴포지션은 그 시점 바이트코드로 굳었다.
+
+### 그래서 이게 문제인가 — 아니다
+
+**Mapae는 이 enforcer를 정책 경로에서 쓰지 않는다.** 자기 NatSpec이 *정확히 2건짜리
+배치*(`a batch of exactly 2 transactions`), *배치 실행 콜타입 전용*, *1회용*
+(`can only be executed once`)을 요구하는데, Mapae의 x402 결제는 단일 실행
+(`ExecutionMode.SingleDefault`)이고 주기 한도는 재사용된다 — 구조적으로 맞지 않는다.
+
+소스 전체에서 이 이름이 나오는 곳은 배포 목록 3군데뿐이고, 어떤 caveat 조립
+경로에도 등장하지 않는다:
+
+```
+packages/delegation/src/composition.ts:39          배포 유닛 이름 목록
+packages/delegation/src/composition.ts:182         기대 constructor 인자
+contracts/script/DeployDelegationFramework.s.sol:253   배포 스크립트
+```
+
+38-unit exact composition을 배포한 이유는 **컴포지션 해시가 감사받은 조합과 정확히
+일치해야 하기 때문**이지, 38개를 다 쓰기 때문이 아니다. 하나를 빼면 그건 다른
+컴포지션이다.
+
+고치려면 서브모듈을 배포 시점 리비전으로 내리거나 이 유닛만 그 리비전으로
+검증 제출해야 하는데, 둘 다 나머지 37개의 검증을 흔든다. **미검증 1건을 사유와
+함께 적어두는 쪽을 택했다.**
 
 ---
 
