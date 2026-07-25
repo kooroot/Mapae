@@ -9,7 +9,20 @@ import {
 import {GIWA_SEPOLIA_CAIP2, fromTokenAmount, redactForLog} from "@mapae/shared";
 import {z} from "zod";
 
-const REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * The outermost of four stacked timeouts, and therefore the longest.
+ *
+ * Inward from here: the seller's HTTP idle timeout (45 s), its call to the facilitator
+ * (35 s), and the facilitator's wait for a receipt (25 s). Each layer must out-wait the
+ * one inside it, or the outer hop hangs up on a settlement that is still running and the
+ * caller learns nothing about a payment that may already have been mined. That is not
+ * hypothetical: with `Bun.serve`'s 10 s default sitting under a 60 s receipt wait, a GIWA
+ * payment settled (`0x533c5cb2…9964c`) while the agent was told it had been rejected.
+ *
+ * 50 s also has to stay under a typical MCP client's 60 s call deadline — the client
+ * giving up first would put the same ambiguity one level higher.
+ */
+const REQUEST_TIMEOUT_MS = 50_000;
 
 /**
  * The runtime performs network I/O (facilitator /supported, RPC deployment

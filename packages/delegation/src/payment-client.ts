@@ -30,8 +30,31 @@ export type DelegatedPaymentFailureCode =
     /** The leaf delegation could not be signed — e.g. the parent was revoked. */
     | "SIGNING_FAILED"
     | "PAYMENT_REJECTED"
+    /**
+     * The payment header was delivered and the outcome is not known. **The payer may
+     * already have been charged.**
+     *
+     * Separate from `PAYMENT_REJECTED` because the two demand opposite responses: a
+     * rejection invites a retry, and retrying this one can pay twice. Measured on GIWA —
+     * a settlement that outlived the seller's connection timeout reported
+     * `PAYMENT_REJECTED 403` while the transfer had already been mined
+     * (`0x533c5cb2…9964c`, block 31634935). Nothing about the reported code told the
+     * caller that 1.00 mUSDC had moved.
+     */
+    | "SETTLEMENT_UNKNOWN"
     | "MALFORMED_RESOURCE"
     | "TRANSPORT_ERROR";
+
+/**
+ * Statuses that mean "the seller could not establish what happened", not "no".
+ *
+ * `504` is what `apps/delegated-seller` returns when its facilitator call does not answer
+ * — it already draws this distinction correctly on its own side ("Did not succeed and is
+ * not known to have succeeded are different claims"). The loss happened here, where every
+ * non-2xx collapsed into one code. `408` and `425` are included because a gateway in front
+ * of a seller produces them for the same reason.
+ */
+const SETTLEMENT_UNKNOWN_STATUSES = new Set([408, 425, 504]);
 
 /** Signs a payment-specific leaf delegation for a seller's ERC-7710 offer. */
 export type DelegatedLeafProvider = (
@@ -295,11 +318,23 @@ export async function payForDelegatedResource(
             headers: {"X-PAYMENT": paymentHeader},
         });
     } catch (error) {
-        return failure("TRANSPORT_ERROR", errorMessage(error));
+        // The header is already on the wire. A connection that dies now says nothing
+        // about whether the seller settled — reporting TRANSPORT_ERROR here would read
+        // as "the request never landed", which is exactly the belief that makes a caller
+        // retry a payment that already went through. The identical failure *before* the
+        // header is sent is a genuine TRANSPORT_ERROR; the difference is the header.
+        return failure("SETTLEMENT_UNKNOWN", `no answer after the payment was sent: ${errorMessage(error)}`);
     }
     if (!second.ok) {
         // Do not read the body: a malicious seller can reflect X-PAYMENT after we
         // have sent a bearer permission context. Report the status class only.
+        if (SETTLEMENT_UNKNOWN_STATUSES.has(second.status)) {
+            return failure(
+                "SETTLEMENT_UNKNOWN",
+                `seller could not confirm settlement (${second.status}) — the payer may already be charged`,
+                second.status,
+            );
+        }
         return failure(
             "PAYMENT_REJECTED",
             `seller rejected the payment (${second.status})`,

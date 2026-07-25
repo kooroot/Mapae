@@ -30,7 +30,29 @@ import {
 } from "viem";
 
 const MAX_PAYMENT_HEADER_LENGTH = 150_000;
-const REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Timeout budgets, and why they are ordered this way.
+ *
+ * Four timeouts stack on one payment, and they have to grow outward:
+ *
+ *   facilitator receipt wait  <  seller→facilitator settle  <  this server's idle
+ *   timeout  <  the agent's own request timeout
+ *
+ * They were inverted. `Bun.serve`'s **default `idleTimeout` is 10 s**, which made the
+ * outermost hop the shortest, while the facilitator waits up to 60 s for a receipt. On
+ * GIWA that produced the worst available outcome: the transfer was mined
+ * (`0x533c5cb2…9964c`, block 31634935, payer −1.00 mUSDC) and the agent was told the
+ * payment had failed. An inverted budget does not lose a payment — it loses the *answer*
+ * about a payment, which is harder to recover from.
+ *
+ * `idleTimeout` is in seconds and capped at 255 by Bun.
+ */
+const VERIFY_TIMEOUT_MS = 15_000;
+/** Must exceed the facilitator's own `SETTLEMENT_RECEIPT_TIMEOUT_MS` (default 25 s). */
+const SETTLE_TIMEOUT_MS = 35_000;
+/** Must exceed SETTLE_TIMEOUT_MS, or this server hangs up on its own settlement. */
+const IDLE_TIMEOUT_SECONDS = 45;
 
 function readPayTo(): Address {
     const value = process.env.PAY_TO?.trim() ?? "";
@@ -98,7 +120,7 @@ function readFrameworkAdmin(): Address {
 async function readFacilitatorAddress(url: string): Promise<Address> {
     const response = await fetch(`${url}/supported`, {
         redirect: "error",
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`facilitator /supported returned ${response.status}`);
     const body = (await response.json()) as {signers?: Record<string, unknown>};
@@ -295,7 +317,12 @@ async function callFacilitator(
             headers: {"content-type": "application/json"},
             body: JSON.stringify(request),
             redirect: "error",
-            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            // `/verify` is a simulation and answers quickly; `/settle` broadcasts and
+            // waits for a receipt. One shared budget meant the shorter of the two set
+            // the deadline for the longer.
+            signal: AbortSignal.timeout(
+                path === "/settle" ? SETTLE_TIMEOUT_MS : VERIFY_TIMEOUT_MS,
+            ),
         });
         if (!response.ok) return {ok: false};
         return {ok: true, value: (await response.json()) as FacilitatorResponse};
@@ -307,4 +334,9 @@ async function callFacilitator(
 console.log(`delegated seller listening on ${HOST}:${PORT}`);
 console.log(`  payTo       ${PAY_TO}`);
 console.log(`  facilitator ${FACILITATOR_URL} (${facilitatorAddress})`);
-export default {hostname: HOST, port: PORT, fetch: app.fetch};
+export default {
+    hostname: HOST,
+    port: PORT,
+    idleTimeout: IDLE_TIMEOUT_SECONDS,
+    fetch: app.fetch,
+};

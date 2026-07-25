@@ -115,7 +115,16 @@ const MAX_AMOUNT = toTokenAmount(process.env.MAX_SETTLEMENT_AMOUNT ?? "10.00");
 const MAX_REDEMPTION_GAS = readPositiveInteger("MAX_REDEMPTION_GAS", 1_500_000);
 // Configurable like the other limits, and lowering it is how the broadcast-but-
 // unconfirmed path gets exercised without waiting a minute for a real stall.
-const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOUT_MS", 60_000));
+//
+// The default is 25 s, not 60 s. This is the innermost of four stacked timeouts and it
+// sets the budget for all of them: the seller must out-wait this, its HTTP server must
+// out-wait the seller, and the agent must out-wait that — while still finishing inside an
+// MCP client's 60 s default. Sixty seconds here leaves no room for the other three.
+//
+// 25 s is not tight. GIWA Sepolia produces a block every 1.00 s (measured across
+// 31634888→31634935), and settlement waits for a single confirmation, so the real cost is
+// the throttled RPC round trips rather than the chain.
+const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOUT_MS", 25_000));
 const relayer = privateKeyToAccount(readRelayerKey());
 const expectedRelayer = readRelayerAddress();
 if (relayer.address !== expectedRelayer) {

@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-269%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-275%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -77,13 +77,19 @@ a strong result, but nothing was mined and there is no link to follow.
 | D1 | MockUSDC deployed and verified; x402-rs facilitator connected | **GIWA** |
 | D2 | `402 → sign → verify → settle → resource` completed | **GIWA** |
 | D3/D4 | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
-| D5 | One MCP tool call completes the whole payment with no human in the loop | Local fork |
+| D5 | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
 | D6 | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - D4 delegated settlement, 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - D4 delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
+- **D5 agent-driven settlement**, one MCP call, no human step:
+  [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
+  — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer gas spend 0**.
+  This run also surfaced a real defect and its fix is in the same tree: the answer the
+  agent received said the payment had been rejected while it had in fact been mined. See
+  "settlement-unknown" below.
 - Over-cap and expired payments are refused by the enforcers, not by a backend check.
   **There is no transaction to link for these two**, and that is the mechanism working
   rather than a gap: the facilitator simulates `redeemDelegations` against live GIWA state
@@ -91,7 +97,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical notes](docs/tech-notes.md).
-- Regression suite: **269 TypeScript tests + 14 Foundry tests**, plus a
+- Regression suite: **275 TypeScript tests + 14 Foundry tests**, plus a
   chain-parameterised negative-path suite that runs the same twenty-three caveat cases on a
   disposable chain and on a GIWA fork.
 
@@ -121,6 +127,16 @@ Being explicit about the edges matters more than a longer list of green checks.
   fails `AA21`. A relayer can fund it with `EntryPoint.depositTo(payerAccount)`, which
   leaves the payer's ETH balance at exactly zero and cannot be clawed back by the
   relayer. Framework-wide `DelegationManager.pause()` needs no deposit.
+- **A settlement can outlive the agent's patience, and then the answer is "unknown".**
+  Found by running D5 on GIWA rather than on a fork. Four timeouts stack on one payment —
+  the facilitator's wait for a receipt, the seller's call to it, the seller's HTTP idle
+  timeout, and the agent's own deadline — and they were inverted: `Bun.serve`'s 10 s
+  default sat underneath a 60 s receipt wait. The transfer was mined and the agent was
+  told it had been rejected. The budgets now grow outward (25 → 35 → 45 → 50 s) and a
+  payment whose outcome is not established returns `SETTLEMENT_UNKNOWN` instead of
+  `PAYMENT_REJECTED`, because the two invite opposite responses and retrying the first
+  can pay twice. A fork mines instantly, so no amount of local testing would have shown
+  this.
 - **Idempotency is in-process.** It is correct for a single replica and must move
   to a durable store before running more than one.
 - **A production stablecoin needs its own token-behaviour review.** MockUSDC is a

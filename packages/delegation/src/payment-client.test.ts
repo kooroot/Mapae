@@ -417,3 +417,87 @@ describe("D5 every failure returns a reason, never a throw", () => {
         expect(result.code).toBe("MALFORMED_RESOURCE");
     });
 });
+
+/**
+ * "Rejected" and "not known to have succeeded" are different claims.
+ *
+ * This distinction was missing and it cost a real payment's answer. On GIWA the transfer
+ * settled (`0x533c5cb2…9964c`, block 31634935, payer −1.00 mUSDC) while the caller was
+ * told `PAYMENT_REJECTED`. The seller had reported the ambiguity correctly — 504
+ * `settlement_unknown`, with a comment saying exactly why — and this function flattened
+ * every non-2xx into one code on the way back.
+ *
+ * The two demand opposite responses: a rejection invites a retry, and retrying this one
+ * can pay twice.
+ */
+describe("D5 settlement-unknown is not a rejection", () => {
+    async function resultFor(second: Response) {
+        const {impl} = scriptedFetch(second);
+        return payForDelegatedResource(target, baseConfig(impl));
+    }
+
+    test("504 from the seller is SETTLEMENT_UNKNOWN, not PAYMENT_REJECTED", async () => {
+        // 504 is exactly what apps/delegated-seller returns when its facilitator call
+        // does not answer — the case where the money may already have moved.
+        const result = await resultFor(poisonedResponse(504));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("SETTLEMENT_UNKNOWN");
+        expect(result.status).toBe(504);
+        // The caller has to be told the payer may be charged, not just given a code.
+        expect(result.detail).toContain("may already be charged");
+    });
+
+    test("gateway timeouts are treated the same way", async () => {
+        for (const status of [408, 425]) {
+            const result = await resultFor(poisonedResponse(status));
+            expect(result.ok === false && result.code).toBe("SETTLEMENT_UNKNOWN");
+        }
+    });
+
+    test("a genuine refusal is still PAYMENT_REJECTED", async () => {
+        // 403 delegation_rejected and 422 settlement_failed both mean the payment did not
+        // go through. Widening the unknown set to cover these would make every refusal
+        // look like a possible charge, which is its own way of being useless.
+        for (const status of [402, 403, 422, 400, 500]) {
+            const result = await resultFor(poisonedResponse(status));
+            expect(result.ok === false && result.code).toBe("PAYMENT_REJECTED");
+        }
+    });
+
+    test("the seller's body is still never read on an unknown outcome", async () => {
+        // `poisonedResponse` throws if the body is touched. The bearer-reflection rule
+        // does not relax just because the status changed class.
+        const result = await resultFor(poisonedResponse(504));
+        expect(result.ok).toBe(false);
+    });
+
+    test("a dead connection after the header is sent is SETTLEMENT_UNKNOWN", async () => {
+        // Measured: Bun's fetch does not retry, so this surfaces as a thrown socket
+        // error. Reporting TRANSPORT_ERROR would read as "the request never landed" —
+        // the belief that makes a caller re-send a payment that already settled.
+        let call = 0;
+        const impl = (async (url: URL, init?: RequestInit) => {
+            call += 1;
+            if (call === 1) return jsonResponse(402, paymentRequired());
+            throw new Error("The socket connection was closed unexpectedly");
+        }) as unknown as typeof fetch;
+
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("SETTLEMENT_UNKNOWN");
+        expect(result.detail).toContain("after the payment was sent");
+    });
+
+    test("the same failure before the header is sent is still TRANSPORT_ERROR", async () => {
+        // The header is the whole difference. Collapsing both into SETTLEMENT_UNKNOWN
+        // would make an unreachable seller look like a possible charge.
+        const impl = (async () => {
+            throw new Error("connection refused");
+        }) as unknown as typeof fetch;
+
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok === false && result.code).toBe("TRANSPORT_ERROR");
+    });
+});

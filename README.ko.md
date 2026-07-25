@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-269%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-275%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -76,20 +76,25 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 | D1 | MockUSDC 배포·소스 검증, x402-rs facilitator 연결 | **GIWA** |
 | D2 | `402 → sign → verify → settle → resource` 완주 | **GIWA** |
 | D3/D4 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
-| D5 | MCP tool 한 번 호출로 사람 개입 0 완주 | 로컬 fork |
+| D5 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
 | D6 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - D4 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - D4 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
+- **D5 에이전트 자율 정산**, MCP 1회 호출, 사람 개입 0:
+  [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
+  — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
+  이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
+  에이전트는 거절됐다는 답을 받았다. 아래 "settlement-unknown" 참조.
 - 한도 초과와 만료는 백엔드 검사가 아니라 **배포된 enforcer가 거절**한다.
   **이 둘에는 걸 tx 해시가 없고**, 그것은 빈틈이 아니라 설계가 작동한 결과다:
   facilitator가 브로드캐스트 전에 `redeemDelegations`를 GIWA 현재 상태에 시뮬레이션하므로
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 노트](docs/tech-notes.md)에 있다.
-- 회귀 검증: **269 TypeScript tests + 14 Foundry tests**, 그리고 동일한 23개 caveat
+- 회귀 검증: **275 TypeScript tests + 14 Foundry tests**, 그리고 동일한 23개 caveat
   케이스를 일회용 체인과 GIWA fork 양쪽에서 돌리는 체인 파라미터화 negative-path 수트.
 
 ### 증명하지 않은 것
@@ -116,6 +121,15 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   `AA21`로 실패한다. relayer가 `EntryPoint.depositTo(payerAccount)`로 채워줄 수
   있으며, 이때 payer의 ETH 잔액은 정확히 0으로 유지되고 relayer는 그 예치금을 다시
   회수할 수 없다. 프레임워크 전체 `DelegationManager.pause()`는 예치금이 필요 없다.
+- **정산이 에이전트의 인내심보다 오래 걸릴 수 있고, 그때 답은 "모름"이다.**
+  D5를 fork가 아니라 GIWA에서 돌려서 찾았다. 결제 하나에 타임아웃 넷이 쌓이는데
+  (facilitator 영수증 대기 → 판매자의 호출 → 판매자 HTTP idle → 에이전트 자신의 기한)
+  순서가 거꾸로였다: `Bun.serve` 기본값 10초가 60초 영수증 대기 밑에 깔려 있었다.
+  이체는 채굴됐고 에이전트는 거절됐다는 답을 받았다. 이제 예산이 바깥으로 갈수록
+  길어지고(25 → 35 → 45 → 50초), 결과가 확정되지 않은 결제는 `PAYMENT_REJECTED`가
+  아니라 `SETTLEMENT_UNKNOWN`을 돌려준다 — 둘은 정반대 대응을 부르고, 앞의 것을
+  재시도하면 두 번 낼 수 있기 때문이다. fork는 즉시 채굴이라 로컬 테스트로는 절대
+  나오지 않는다.
 - **중복방지는 프로세스 내부에서만 보장된다.** 단일 replica에서는 올바르지만
   다중 replica 전에 영속 저장소로 옮겨야 한다.
 - **실제 스테이블코인은 별도의 토큰 동작 검토가 필요하다.** MockUSDC는 테스트넷 rail이다.
