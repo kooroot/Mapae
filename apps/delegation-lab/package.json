@@ -6,6 +6,7 @@
         "plan": "bun run index.ts plan",
         "forge:prepare": "bun run export-forge-artifacts.ts",
         "forge:import": "bun run import-forge-framework.ts",
+        "verify:framework": "bun run verify-forge-addresses.ts",
         "deploy:preview": "bun run deploy-framework.ts",
         "ownership:acceptance": "bun run index.ts ownership-acceptance",
         "finalize:framework": "bun run finalize-framework.ts",
