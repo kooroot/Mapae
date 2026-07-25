@@ -63,7 +63,12 @@ delegated seller listening on 127.0.0.1:3001
 cd apps/delegation-lab && bun run preflight:giwa inv-001
 ```
 
-17개 조건 전부 ✅ 여야 다음으로 간다. 이 스크립트는 loopback RPC를 **거부**한다 —
+조건이 **전부** ✅ 여야 다음으로 간다. 개수를 여기 적지 않는 이유는 스크립트가 스스로
+세어 출력하기 때문이다(`GO — N개 조건 전부 충족`) — 그리고 그 N 은 고정이 아니다.
+facilitator 나 판매자에 닿지 못하면 그 아래 항목들이 기록되지 않으므로 총계가 줄어든다.
+여기 숫자를 박아두면 **줄어든 총계를 통과로 읽을 수 있다.** 화면의 N 을 믿을 것.
+
+이 스크립트는 loopback RPC를 **거부**한다 —
 fork를 상대로 통과한 GO는 GO가 아니라 거짓 안심이기 때문이다. (`mcp-e2e.ts`가 loopback만
 허용하는 것과 정확히 대칭인 가드다.)
 
@@ -74,7 +79,7 @@ facilitator가 광고하는 signer가 `RELAYER_ADDRESS`와 같은지 · 판매�
 ## 4. 드라이런
 
 ```bash
-bun run run:giwa
+cd apps/delegation-lab && bun run run:giwa
 ```
 
 MCP를 호출하지 않는다. 무엇이 일어날지만 출력하고 끝난다.
@@ -82,8 +87,13 @@ MCP를 호출하지 않는다. 무엇이 일어날지만 출력하고 끝난다.
 ## 5. 실행 — **여기가 브로드캐스트 경계**
 
 ```bash
-bun run run:giwa -- --broadcast
+cd apps/delegation-lab && bun run run:giwa -- --broadcast
 ```
+
+> `cd` 를 이 두 줄에 붙여 쓰는 이유: 3절의 `cd` 는 `&&` 안에 있어 다음 셸로 이어지지
+> 않는다. 새 터미널을 열거나 이 줄만 복사한 사람은 저장소 루트에서 실행하게 되고, 루트
+> `package.json` 에는 `run:giwa` 가 없다. **저장소에서 가장 결과가 큰 명령이 작업
+> 디렉터리를 말하지 않고 있었다.**
 
 일어나는 일:
 
@@ -109,8 +119,27 @@ bun run run:giwa -- --broadcast
 |---|---|---|
 | `LIMIT_EXCEEDED` | 이번 주기 잔량 부족 | 60초 기다렸다 재실행. **이건 정상 동작이다** |
 | `PERMISSION_INACTIVE` | 만료/미개시/회수 | permission 재서명 필요 |
+| `PERMISSION_EMPTY` | permission 파일이 위임 0개로 디코드됨 | 체인 상태가 아니라 **아티팩트가 잘못됐다.** 서명 절차를 다시 밟을 것 |
+| **`SETTLEMENT_UNKNOWN`** | 정산이 브로드캐스트됐고 결과를 확인하지 못함 | **재시도 금지.** 아래 참조 |
 | `AA21` / relayer 잔고 | relayer ETH 고갈 | 충전 |
 | 대조 실패 | 같은 블록에 다른 결제가 섞임 | 증거 JSON과 explorer로 수동 확인 |
+
+### `SETTLEMENT_UNKNOWN` 은 거절이 아니다
+
+이 표에서 유일하게 **틀린 대응이 존재하는** 줄이다. `PAYMENT_REJECTED` 는 재시도를
+부르지만 `SETTLEMENT_UNKNOWN` 은 "지불자가 이미 청구됐을 수 있다"는 뜻이고, 재시도하면
+두 번 낼 수 있다.
+
+가정이 아니라 이미 치른 값이다. GIWA `0x533c5cb2…9964c`(block 31634935)는 지불자에게서
+1.00 mUSDC 를 실제로 옮겼는데 호출자는 거절됐다는 답을 받았다. 그 사고 이후 판매자는
+확정되지 않은 결과에 504 를 돌려주고, 에이전트는 그것을 이 코드로 옮긴다.
+
+순서:
+
+1. 응답의 tx 해시를 확인한다. 있으면 explorer 에서 바로 조회한다.
+2. 해시가 없으면 `giwa-mcp-run.evidence.json` 의 전후 상태를 본다 — payer mUSDC 가
+   결제액만큼 줄었는지가 답이다.
+3. **둘 다로 확인되기 전에는 다시 실행하지 않는다.**
 
 브로드캐스트는 되돌릴 수 없다. 실패해도 되돌리지 말고 **무엇이 일어났는지 기록**한다.
 
