@@ -29,6 +29,22 @@ const DOCS = [
     "docs/giwa-demo-runbook.md",
 ];
 
+/**
+ * Documents this check reads when they are present and does not require.
+ *
+ * Both are gitignored on purpose — `ced4db6` kept the agent-facing notes out of the public
+ * tree — so a clone does not have them. Reading them unconditionally made `bun run check`
+ * crash with a raw `ENOENT` on **every fresh clone** while passing in the working tree
+ * that has them, which is the one place it was ever run. The README opens by telling a
+ * reader to run that command; it was the first thing they would see fail.
+ *
+ * Missing files are announced rather than silently skipped. A silent skip is how a
+ * renamed document stops being checked without anyone noticing — the same failure as a
+ * documented command with no `package.json` entry, which this script exists to catch.
+ * Anything not listed here is required, and its absence is still a failure.
+ */
+const LOCAL_ONLY = new Set(["AGENTS.md", "CLAUDE.md"]);
+
 const failures: string[] = [];
 const fail = (doc: string, message: string) => failures.push(`${doc}: ${message}`);
 
@@ -181,9 +197,21 @@ async function main(): Promise<void> {
     const makeTargets = await loadMakeTargets();
     const canonical = await loadCanonicalAddresses();
 
+    const skipped: string[] = [];
+    let checked = 0;
     for (const doc of DOCS) {
         const path = join(REPO, doc);
-        const text = await Bun.file(path).text();
+        const file = Bun.file(path);
+        if (!(await file.exists())) {
+            if (LOCAL_ONLY.has(doc)) {
+                skipped.push(doc);
+                continue;
+            }
+            fail(doc, "is required but does not exist");
+            continue;
+        }
+        checked += 1;
+        const text = await file.text();
 
         // ── 0. the document does not contradict itself about its own test counts ──────
         checkTestCounts(doc, text);
@@ -239,8 +267,9 @@ async function main(): Promise<void> {
         for (const failure of failures) console.error(`  ✗ ${failure}`);
         process.exit(1);
     }
+    const note = skipped.length > 0 ? ` (${skipped.join(", ")} absent — local-only)` : "";
     console.log(
-        `[docs] ${DOCS.length} documents — commands, links, addresses and test counts check out`,
+        `[docs] ${checked} documents — commands, links, addresses and test counts check out${note}`,
     );
 }
 

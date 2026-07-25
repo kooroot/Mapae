@@ -113,6 +113,21 @@ describe("revoke gate", () => {
     });
 
     test("an unread deposit does not block — the submitter re-checks it anyway", () => {
+        // Reads as the opposite of the test directly above, and the difference is the
+        // point. This looks like the fail-open that `judgePreflight` had — an absent
+        // reading treated as a satisfied condition — and it is not the same trade.
+        //
+        // An unread *owner* risks prompting the wrong person to sign, and failing closed
+        // costs them a retry. An unread *deposit* risks nothing but a wasted signature on
+        // an operation the submitter re-checks and refuses with the shortfall; failing
+        // closed would disarm the kill switch whenever the **console's** RPC is unhealthy,
+        // even though the submitter reads through a different process that may be fine.
+        // A kill switch that locks itself because the page cannot see is the wrong
+        // failure for the one control that has to work when things are bad.
+        //
+        // The owner is not left uninformed: `RevocationFunding` holds its own query and
+        // says "재원을 읽는 중…" or "재원 상태를 읽지 못했습니다 — <reason>" in the panel
+        // beside the button, which is why the gate does not need to repeat it.
         expect(judgeRevokeGate({...base, shortfall: undefined}).kind).toBe("ready");
     });
 
