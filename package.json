@@ -10,9 +10,10 @@
     "test:ts": "bun test packages/shared/src packages/delegation/src",
     "test:mcp": "cd apps/agent-mcp && bun test",
     "test:contracts": "cd contracts && forge test -vvv",
-    "check": "bun run typecheck && bun run test:ts && bun run test:mcp && bun run test:console && bun run build:console && bun run test:contracts",
+    "check": "bun run typecheck && bun run check:docs && bun run test:ts && bun run test:mcp && bun run test:console && bun run build:console && bun run test:contracts",
     "test:console": "cd apps/console && bun test",
-    "build:console": "cd apps/console && bun run build"
+    "build:console": "cd apps/console && bun run build",
+    "check:docs": "bun run scripts/check-docs.ts"
   },
   "dependencies": {
     "viem": "^2.55.8"

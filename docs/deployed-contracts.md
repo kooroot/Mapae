@@ -1,11 +1,23 @@
 # 배포된 컨트랙트 (GIWA Sepolia)
 
 Mapae가 **GIWA Sepolia**에 배포한 모든 온체인 컨트랙트의 단일 레퍼런스다.
-주소는 배포 아티팩트(`deployments/giwa-sepolia.framework*.json`)에서 그대로 가져온
-것이며, 이 파일이 사람이 읽는 정본(正本)이다 — 코드/스크립트는 항상 JSON 아티팩트를
-읽지 이 표를 읽지 않는다.
+주소는 정본(正本)에서 그대로 가져온 것이며, 이 파일은 사람이 읽는 사본이다 —
+코드/스크립트는 항상 정본을 읽지 이 표를 읽지 않는다.
 
-> 값이 바뀌면 이 문서가 아니라 아티팩트가 먼저 바뀐다. 불일치가 보이면 아티팩트가 옳다.
+정본은 **둘**이다:
+
+| 대상 | 정본 |
+|---|---|
+| Framework 38 유닛, 데모 계정 | `deployments/giwa-sepolia.framework*.json`, `deployments/giwa-sepolia.owner-account.json` |
+| **MockUSDC** | **`packages/shared/src/token.ts`** — 배포 아티팩트에 없다 |
+
+MockUSDC가 아티팩트에 없는 것은 누락이다. 이 문서는 오래도록 "모든 주소가 아티팩트에서
+온다"고 적어뒀는데 그 하나에 대해서는 참인 적이 없었고, `scripts/check-docs.ts` 를
+쓰면서 처음 드러났다. 검사기는 두 정본을 모두 읽는다 — MockUSDC 를 예외 목록에 넣었다면
+이 사실이 다시 묻혔을 것이다.
+
+> 값이 바뀌면 이 문서가 아니라 정본이 먼저 바뀐다. 불일치가 보이면 정본이 옳다.
+> `bun run check:docs` 가 이 표의 모든 주소를 두 정본에 대조한다.
 
 ---
 

@@ -97,9 +97,11 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical notes](docs/tech-notes.md).
-- Regression suite: **275 TypeScript tests + 14 Foundry tests**, plus a
-  chain-parameterised negative-path suite that runs the same twenty-three caveat cases on a
-  disposable chain and on a GIWA fork.
+- Regression suite: **316 TypeScript tests (219 shared/delegation + 3 MCP + 94 console)
+  + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
+  twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
+  given because `bun run check` prints it as four separate numbers — a single total is a
+  claim you cannot check against anything the command actually shows you.
 
 ### What is not proven here
 
@@ -160,9 +162,18 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`bun run check` runs strict TypeScript across every package, the shared and
-delegation suites, the MCP server smoke tests, the console render tests, a real
-console build, and the Foundry contract suite. It needs no keys and no network.
+`bun run check` runs strict TypeScript across every package, a documentation
+check, the shared and delegation suites, the MCP server smoke tests, the console
+render tests, a real console build, and the Foundry contract suite. It needs no
+keys and no network.
+
+The documentation check is in the gate because the roadmap makes this README the
+submission, which turns doc rot into a correctness bug. It verifies that every
+`bun run` and `make` command written in a code block exists, that every relative
+link resolves, and that every address matches one of the two canonical sources —
+the deployment artifacts and `packages/shared/src/token.ts`. Its first run found
+that MockUSDC's address is in no artifact at all, which this repository had been
+claiming otherwise for months.
 
 The console build is part of the gate because type checking alone does not catch
 it: a `node:`-only import type-checks cleanly and then fails to bundle, which is
