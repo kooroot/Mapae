@@ -191,16 +191,45 @@ The console build is part of the gate because type checking alone does not catch
 it: a `node:`-only import type-checks cleanly and then fails to bundle, which is
 the same class of mistake as reaching for a server-only module from browser code.
 
+### See the limits refuse a payment, on a chain you own
+
+This is the strongest thing you can check without anything of ours. It spawns a
+disposable Anvil, deploys the pinned 38-unit Framework and MockUSDC onto it, and
+runs twenty-three cases against the deployed enforcer bytecode — the period cap,
+its reset, expiry, replay, a wrong redeemer, a recipient swap, six ways a
+compromised facilitator could try to profit, and revocation through both the
+account and the EntryPoint.
+
+```bash
+cd apps/delegation-lab
+bun run test:negative
+```
+
+No keys, no network, no artifact from us: it generates its own owner, agent,
+manager and child accounts, and the default target is hermetic. Measured from a
+clean clone with nothing but Bun and Foundry installed — `23/23 cases passed`,
+exit 0. Every refusal prints the enforcer and the exact revert string, so what
+refuses is legible rather than asserted.
+
 ### Watch the agent pay by itself, then revoke it
 
-This is the demo in one command. It forks GIWA locally, starts the ERC-7710
-facilitator and seller against that fork, asks the MCP server to buy a gated
-resource, and then revokes the permission and shows the same call being refused.
+This forks GIWA locally, starts the ERC-7710 facilitator and seller against that
+fork, asks the MCP server to buy a gated resource, and then revokes the permission
+and shows the same call being refused.
 
 ```bash
 cd apps/delegation-lab
 bun run test:e2e:mcp
 ```
+
+**This one is not runnable from a clone, and that is not a defect to route around.**
+It replays *this* deployment: it needs `apps/delegation-lab/.env` and a signed root
+permission at `open-agent.permission.json`, and that permission can only be produced
+by the wallet that owns the deployed account. Both are gitignored, so a fresh clone
+stops at `RELAYER_ADDRESS must be set (apps/delegation-lab/.env)`. Setup is in
+[`docs/giwa-demo-runbook.md`](docs/giwa-demo-runbook.md); if you want a payment loop
+you can drive end to end yourself, use `test:negative` above — it proves the same
+enforcement without needing anyone's signature.
 
 Along the way it also asks for a payment the cap cannot cover, and the agent
 refuses it from the enforcer's own accounting before signing anything:

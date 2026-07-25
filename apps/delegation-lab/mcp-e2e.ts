@@ -535,7 +535,58 @@ async function proveRevocationStops(
     console.log("[revoke] PASS — revocation stops the agent on-chain ✅");
 }
 
+/**
+ * Everything this run needs, checked together before anything is spawned.
+ *
+ * This command is what the README points a reader at, so its first failure is the first
+ * thing many people see of the project. Without this it reported them one at a time and
+ * in the worst possible order: `RELAYER_ADDRESS must be set` first, then — only after
+ * anvil had forked GIWA over the network, some fifteen seconds in — a child process died
+ * and printed a *source listing* of `apps/facilitator-erc7710/index.ts` around the line
+ * that throws, with the actual missing thing (`RELAYER_PRIVATE_KEY`, in that app's own
+ * `.env`) buried in it. Measured from a clean clone, not imagined.
+ *
+ * Two properties matter more than the wording. It runs before the fork, so a missing
+ * `.env` costs no network round trip. And it collects *all* of them, so filling one in
+ * does not just buy you the next stack trace.
+ *
+ * The child `.env` files are checked for existence rather than contents. Reading their
+ * variables from here would put a second copy of each app's requirements in this file,
+ * and a copy that drifts is worse than a check that stops one step short.
+ */
+async function assertPrerequisites(): Promise<void> {
+    const missing: string[] = [];
+
+    if (!process.env.RELAYER_ADDRESS?.trim()) {
+        missing.push("RELAYER_ADDRESS is unset — see apps/delegation-lab/.env.example");
+    }
+    const permissionPath =
+        process.env.PARENT_PERMISSION_CONTEXT_PATH ??
+        `${REPO}/apps/delegation-lab/open-agent.permission.json`;
+    if (!(await Bun.file(permissionPath).exists())) {
+        missing.push(
+            `${permissionPath} is absent — a root permission signed by the account owner's ` +
+                "wallet. It is gitignored, so a clone never has one",
+        );
+    }
+    for (const app of ["facilitator-erc7710", "delegated-seller"]) {
+        if (!(await Bun.file(`${REPO}/apps/${app}/.env`).exists())) {
+            missing.push(`apps/${app}/.env is absent — copy .env.example and fill it in`);
+        }
+    }
+    if (missing.length === 0) return;
+
+    console.error("[e2e] cannot start — this run replays a specific deployment:");
+    for (const item of missing) console.error(`  ✗ ${item}`);
+    console.error("");
+    console.error("  Setup: docs/giwa-demo-runbook.md");
+    console.error("  To exercise the same enforcement with nothing of ours, run");
+    console.error("  `bun run test:negative` — hermetic, no keys, no signed permission.");
+    process.exit(1);
+}
+
 async function main(): Promise<void> {
+    await assertPrerequisites();
     const forkRpc = assertLoopbackRpc(FORK_RPC);
     const relayer = readRelayerAddress();
     const upstream = parseNodeRpcUrl(

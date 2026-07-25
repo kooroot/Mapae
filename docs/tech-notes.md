@@ -447,6 +447,47 @@ D2 EIP-3009 경로(`apps/seller`)다. D3/D4 위임 경로는 다르게 동작한
 보내는 bearer 길이의 hex(서명된 permission context)는 크기만 남기고 지운다. 운영자는
 원인을 보고, 호출자는 보지 못한다.
 
+#### 낯선 사람의 상태에서 돌려봐야 보이는 것들
+
+`bun run check` 는 이 저장소가 자기를 증명하는 방식이고, README 가 제일 먼저 시키는
+명령이다. 그런데 그 게이트를 **항상 작업 트리에서만** 돌렸다 — 게이트는 자기가 도는 트리
+밖의 버그를 잡지 못한다. 실제로 클론해서(`clone --recurse-submodules` → `bun install
+--frozen-lockfile` → `bun run check`) 돌려보니 세 곳이 깨져 있었고, 셋 다 로컬에서는
+보이지 않는 종류였다.
+
+| 결함 | 로컬에서 안 보인 이유 |
+|---|---|
+| `check-docs.ts` 가 `AGENTS.md`/`CLAUDE.md` 를 무조건 읽어 `ENOENT` | 둘 다 gitignore 인데 작업 트리에는 있다 |
+| `docs/deployed-contracts.md` 의 주소 5개의 정본이 gitignore | 로컬에만 있는 파일이 정본 노릇을 하고 있었다 |
+| Foundry 테스트가 gitignore 된 생성물을 `vm.readFile` | 이전 Forge 실행이 남긴 파일이 있었다 |
+
+세 번째가 가장 구조적이다. `make framework-test` 는 `framework-prepare` 에 의존한다고
+선언하는데, 같은 스위트를 도는 `make test` 와 `bun run test:contracts` 는 하지 않았다 —
+선언이 필요한 세 곳 중 한 곳에만 있었다.
+
+계측 오류도 하나 있었다. 클론 실행을 `| tail -25` 로 받아 종료 코드가 0 으로 보였는데,
+그건 `tail` 의 종료 코드다. 실제로는 1 이었다. CLAUDE.md 가 기록한 `ps -Eww` false zero
+와 같은 부류 — **파이프를 통과한 종료 코드는 계측이 아니다.**
+
+#### 데모의 정문에서 "이유 반환" 이 깨져 있었다
+
+같은 방법을 README 의 다음 명령에 적용했다. `bun run test:e2e:mcp` 는 준비물이 넷인데
+하나씩, 그것도 최악의 순서로 알려줬다. `RELAYER_ADDRESS` 를 채우면 anvil 이 GIWA 를 **네트워크로
+fork 한 뒤** 약 15초 지점에서 자식 프로세스가 죽으면서 `apps/facilitator-erc7710/index.ts`
+의 **소스 목록**을 찍었고, 정작 없는 것(그 앱 자신의 `.env` 안 `RELAYER_PRIVATE_KEY`)은
+그 안에 묻혀 있었다.
+
+`assertPrerequisites()` 가 넷을 한꺼번에, 어떤 spawn 보다도 먼저 검사한다. 자식 앱의
+`.env` 는 존재만 본다 — 변수를 여기서 읽으면 각 앱의 요구사항이 두 벌이 되고, 어긋나는
+사본은 한 걸음 못 미치는 검사보다 나쁘다.
+
+그리고 이 명령이 **클론에서 원리적으로 돌지 않는다**는 사실 자체가 문서화되어 있지 않았다.
+서명된 root permission 이 필요하고 그건 배포된 계정을 소유한 지갑만 만들 수 있다. README 는
+그걸 "the demo in one command" 라고만 불렀다. 이제 그 제약을 적고, 대신 **아무나 돌릴 수
+있는** 것을 앞에 놓는다 — `bun run test:negative` 는 일회용 Anvil 에 38유닛 Framework 를
+직접 배포해 23개 케이스를 돌리며, 키도 네트워크도 우리 아티팩트도 필요 없다. Bun 과
+Foundry 만 있는 깨끗한 클론에서 실측: `23/23 cases passed`, 종료 코드 0.
+
 #### 빈 체인은 "한도 없음"이 아니라 "읽은 것이 없음"이다
 
 D5 의 판정 기준은 "실패 시 조용히 죽지 말고 **이유** 반환"이고, 그 이유를 만드는 곳이

@@ -181,16 +181,44 @@ URL을 `scheme://host`로 줄입니다. 이 규칙은 원래 리뷰로 지켜졌
 전용 import는 타입 검사를 멀쩡히 통과한 뒤 번들에서 깨지는데, 이는 브라우저
 코드에서 서버 전용 모듈에 손을 뻗는 것과 같은 부류의 실수입니다.
 
+### 한도가 결제를 거절하는 것을, 당신 것인 체인에서
+
+우리 것이 하나도 없이 확인할 수 있는 가장 강한 결과입니다. 일회용 Anvil을 띄우고
+고정된 38유닛 Framework와 MockUSDC를 거기 배포한 뒤, 배포된 enforcer 바이트코드를
+상대로 23개 케이스를 돌립니다 — 주기 한도와 그 리셋, 만료, 재사용, 잘못된 redeemer,
+수취인 바꿔치기, 침해된 facilitator가 이득을 볼 수 있는 여섯 가지 시도, 그리고
+계정과 EntryPoint 양쪽을 통한 회수.
+
+```bash
+cd apps/delegation-lab
+bun run test:negative
+```
+
+키도, 네트워크도, 우리 쪽 아티팩트도 필요 없습니다. 소유자·에이전트·매니저·자식
+계정을 스스로 만들어 쓰고 기본 타깃이 hermetic입니다. Bun과 Foundry만 설치된
+깨끗한 클론에서 실측했습니다 — `23/23 cases passed`, 종료 코드 0. 모든 거절이
+enforcer 이름과 정확한 revert 문자열을 찍으므로, 무엇이 거절하는지가 주장이 아니라
+읽히는 형태로 남습니다.
+
 ### 에이전트가 스스로 결제하고, 회수되는 것까지 한 명령으로
 
-데모 그 자체입니다. GIWA를 로컬로 fork하고 ERC-7710 facilitator와 seller를 그
-fork에 붙인 뒤, MCP 서버에게 유료 리소스를 사게 하고, 이어서 권한을 회수해 같은
-호출이 거절되는 것을 보여줍니다.
+GIWA를 로컬로 fork하고 ERC-7710 facilitator와 seller를 그 fork에 붙인 뒤, MCP
+서버에게 유료 리소스를 사게 하고, 이어서 권한을 회수해 같은 호출이 거절되는 것을
+보여줍니다.
 
 ```bash
 cd apps/delegation-lab
 bun run test:e2e:mcp
 ```
+
+**이건 클론에서는 돌지 않으며, 우회할 결함이 아닙니다.** 이 명령은 *이* 배포를
+재생합니다 — `apps/delegation-lab/.env`와 `open-agent.permission.json`의 서명된 root
+permission이 필요하고, 그 permission은 배포된 계정을 소유한 지갑만 만들 수 있습니다.
+둘 다 gitignore이므로 신선한 클론은
+`RELAYER_ADDRESS must be set (apps/delegation-lab/.env)`에서 멈춥니다. 준비 절차는
+[`docs/giwa-demo-runbook.md`](docs/giwa-demo-runbook.md)에 있고, 직접 끝까지 몰아볼
+결제 루프가 필요하면 위의 `test:negative`를 쓰세요 — 누구의 서명도 없이 같은 강제를
+증명합니다.
 
 중간에 한도로 감당할 수 없는 결제도 한 번 요청하는데, 에이전트는 서명하기 전에
 enforcer 자신의 회계를 읽어 거절합니다 —
