@@ -256,7 +256,7 @@ agent pinned, never to itself. **Theft, redirection, and exceeding the cap are n
 available to it.** That is what makes handing a relayer the gas, but not the funds, a
 different arrangement from handing it a funded wallet.
 
-Each row is a case in `negative-path-suite.ts`, and the five tampering cases carry a
+Each row is a case in `negative-path-suite.ts`, and the six tampering cases carry a
 control — same leaf, same redeemer, untampered execution settles — so the refusals are
 attributable to the tampering rather than to an exhausted period or a stale account.
 
