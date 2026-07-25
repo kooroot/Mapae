@@ -32,9 +32,12 @@
  */
 import {
     DEFAULT_REVOCATION_GAS,
+    buildRevocationCall,
+    buildRevocationUserOperation,
     isDelegationRevoked,
     parseActiveDeploymentArtifactJson,
     readAccountOwner,
+    readRevocationNonce,
     readRevocationPrefundState,
     revocationPrefund,
 } from "@mapae/delegation";
@@ -48,6 +51,7 @@ import {
     defineChain,
     formatEther,
     getAddress,
+    hashTypedData,
     http,
     isHex,
     keccak256,
@@ -338,6 +342,49 @@ VITE_PERMISSION_CONTEXT=${context}
     if (consolePort !== CONSOLE_PORTS[0]) {
         console.log(`│  note: ${CONSOLE_PORTS[0]} 은 이미 사용 중 — vite 는 ${consolePort} 로 갑니다`);
     }
+
+    // ── the answer key ────────────────────────────────────────────────────────────────
+    //
+    // The open audit item is not "does the byte path work" — `revocation-submitter-e2e`
+    // settles that 8/8. It is "does a wallet render this legibly to a person". Judging
+    // that needs something to compare the wallet's screen against, so the exact payload
+    // it will be handed is printed here.
+    //
+    // The nonce is the one field that could drift between this print and the click. It
+    // cannot here: nothing else on this fork sends a UserOperation for this account, so
+    // the console reads back the same value.
+    const nonce = await readRevocationNonce({publicClient, entryPoint, sender: payer});
+    const built = buildRevocationUserOperation({
+        delegation: root,
+        entryPoint,
+        chainId: giwaSepolia.id,
+        nonce,
+        gas: DEFAULT_REVOCATION_GAS,
+    });
+    const digest = hashTypedData({
+        domain: built.typedData.domain,
+        types: built.typedData.types,
+        primaryType: "PackedUserOperation",
+        message: built.typedData.message,
+    });
+    const call = buildRevocationCall(root);
+
+    console.log("├─ 지갑이 서명하도록 요청받을 내용 (화면과 대조하세요)");
+    console.log(`│    domain.name             ${built.typedData.domain.name}`);
+    console.log(`│    domain.version          ${built.typedData.domain.version}`);
+    console.log(`│    domain.chainId          ${built.typedData.domain.chainId}`);
+    console.log(`│    domain.verifyingContract ${built.typedData.domain.verifyingContract}`);
+    console.log(`│    primaryType            PackedUserOperation (9 필드)`);
+    console.log(`│      sender               ${built.typedData.message.sender}`);
+    console.log(`│      nonce                ${built.typedData.message.nonce}`);
+    console.log(`│      initCode             ${built.typedData.message.initCode}`);
+    console.log(`│      callData             ${call.data.length - 2}자 hex, selector ${call.data.slice(0, 10)}`);
+    console.log(`│                           = disableDelegation(위임 1건) → ${call.to}`);
+    console.log(`│      preVerificationGas   ${built.typedData.message.preVerificationGas}`);
+    console.log(`│      paymasterAndData     ${built.typedData.message.paymasterAndData}`);
+    console.log(`│      entryPoint           ${built.typedData.message.entryPoint}`);
+    console.log(`│    EIP-712 digest         ${digest}`);
+    console.log("│");
 
     console.log("└─ ready\n");
     console.log("다음을 하세요:\n");
