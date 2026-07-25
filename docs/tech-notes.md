@@ -297,7 +297,9 @@ prefix 검사로 바꾸면 정확히 `trailing bytes` 케이스 하나만 깨진
 **서비스를 실제로 띄운 검증** (`bun run test:e2e:revoke`). 위 표는 수트가 검증기와
 온체인 강제를 덮는다는 뜻이지 **프로세스가 뜬다는 뜻은 아니었다.** env 파싱, 배포
 아티팩트 읽기, 부팅 시 릴레이어 대조, `/health`, single-flight, simulate→broadcast는
-별도 e2e가 GIWA fork 위에 서비스를 실제로 spawn해서 8케이스를 왕복한다.
+별도 e2e가 GIWA fork 위에 서비스를 실제로 spawn해서 왕복한다. 케이스는 A부터
+글자로 붙고, 수트가 통과한 글자를 세어 마지막 줄에 그대로 출력한다
+(`PASS — N cases (ABC…)`) — 한 건이 빠지면 글자와 숫자가 같이 줄어든다.
 
 마지막 세 케이스는 **브라우저 레그**다. 나머지가 Bun의 서버 사이드 `fetch`를 쓰는데
 그건 CORS를 강제하지 않아서, 콘솔의 회수 버튼이 페이지에서 제출기에 아예 닿지 못하는
@@ -397,11 +399,18 @@ fork에서 owner를 impersonate해 `pause()`를 실행하고 **1번이 실제로
 ```bash
 bun run check                      # 키·네트워크 없이 전 계층 회귀
 cd apps/delegation-lab
-bun run test:negative              # 23개 caveat 케이스 (일회용 체인 / GIWA fork)
+bun run test:negative              # caveat 케이스 (일회용 체인 / GIWA fork)
 bun run test:e2e:mcp               # 결제 완주 → 한도 초과 pre-flight 거절 → pause → 회수
-bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 8케이스 왕복
-bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO (17개 조건)
+bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 왕복
+bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO
 ```
+
+케이스·조건의 **개수는 여기 적지 않는다.** 셋 다 자기가 세어 출력하고
+(`N/N cases passed`, `PASS — N cases (ABC…)`, `GO — N개 조건 전부 충족`),
+그중 preflight 의 N 은 고정이 아니다 — facilitator 나 판매자에 닿지 못하면 그 아래
+항목들이 아예 기록되지 않아 총계가 줄어든다. 숫자를 문서에 박아두면 **줄어든 총계를
+통과로 읽을 수 있다.** 이 규칙은 `docs/revocation-runbook.md` 와 `giwa-demo-runbook.md`
+가 먼저 적어둔 것인데, 정작 이 문서가 세 줄 모두에 숫자를 박고 있었다.
 
 `test:e2e:mcp`는 자식 프로세스가 loopback RPC에 고정되지 않으면 시작하지 않고,
 종료 후 실제 GIWA relayer nonce가 그대로인지 다시 읽어 아무것도 브로드캐스트되지

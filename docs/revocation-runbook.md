@@ -41,7 +41,9 @@ cd apps/delegation-lab
 bun run test:e2e:revoke
 ```
 
-`apps/revocation-submitter`를 **실제 프로세스로 띄워** 5케이스를 왕복한다.
+`apps/revocation-submitter`를 **실제 프로세스로 띄워** 아래 표의 케이스를 순서대로
+왕복한다. 개수는 여기 적지 않는다 — 수트가 통과한 글자를 세어 마지막 줄에
+`PASS — N cases (ABC…)`로 출력하고, 이 표가 그 글자의 정본이다.
 유닛 테스트가 검증기를, 반례 수트가 온체인 강제를 각각 덮지만, 서비스 자체가
 부팅되는지 — env 파싱, 배포 아티팩트 읽기, 시작 시 릴레이어 확인, `/health`,
 single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는 이
@@ -54,6 +56,9 @@ single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는
 | C 정상 | 실제로 회수된다 | `200` + tx, `disabledDelegations` 참 |
 | D 재요청 | 예치금이 실제로 소모됐다 | `409 prefund_short` |
 | E 재충전 후 재요청 | 리플레이를 막는 건 **nonce**다 | `502` + `AA25 invalid account nonce` |
+| F 콘솔 preflight | 회수 버튼이 브라우저에서 닿을 수 있다 | `204` + 정확한 `allow-origin`·`content-type` |
+| G 낯선 출처 preflight | 허용 목록에 없는 출처는 거절 | `403`, `allow-origin` 없음 |
+| H Origin 없는 요청 | CORS 가드가 스크립트를 깨지 않았다 | `200` |
 
 D와 E가 분리된 이유가 이 수트에서 가장 비자명하다. D만 있으면 "리플레이가
 막혔다"고 말할 수 없다 — D를 막은 건 체인 앞단의 예치금 게이트고, nonce는 실행된

@@ -81,6 +81,22 @@ const children: {name: string; proc: Bun.Subprocess}[] = [];
 /** Loopback listeners this run owns — closed alongside the children on any exit path. */
 const listeners: {stop(): void}[] = [];
 
+/**
+ * The lettered cases, recorded as they pass. The closing line used to read `PASS — 8/8` as
+ * a string literal, which is a claim rather than a measurement: delete a case in a refactor
+ * and it still says eight. Every case here fails by throwing, so passed and total are the
+ * same number, and printing the letters makes a missing one visible at a glance.
+ *
+ * Same rule the preflight runbook already states for its condition total — a count that is
+ * written down instead of counted lets a shrunken run read as a whole one.
+ */
+const cases: string[] = [];
+
+function passed(letter: string, detail: string): void {
+    cases.push(letter);
+    console.log(`[e2e] ${letter} ${detail} ✅`);
+}
+
 function shutdown(): void {
     for (const {proc} of children) {
         try {
@@ -194,7 +210,7 @@ async function proveCorsPreflight(): Promise<void> {
     }
     // A wildcard cannot reach here — the equality check above already pins the exact
     // origin. `judgeCorsRequest` carries the "never `*`" assertion instead.
-    console.log(`[e2e] F preflight      204 · allow-origin ${allowOrigin} · content-type ✅`);
+    passed("F", `preflight      204 · allow-origin ${allowOrigin} · content-type`);
 
     const stranger = await preflight("http://evil.example");
     if (stranger.status !== 403 || stranger.headers.get("access-control-allow-origin") !== null) {
@@ -202,13 +218,13 @@ async function proveCorsPreflight(): Promise<void> {
             `an unlisted origin was not refused: ${stranger.status} ${stranger.headers.get("access-control-allow-origin")}`,
         );
     }
-    console.log(`[e2e] G foreign origin 403, no allow-origin ✅`);
+    passed("G", "foreign origin 403, no allow-origin");
 
     // The suite's own POSTs carry no Origin. That path has to keep working, or this
     // guard would have fixed the browser by breaking every script.
     const noOrigin = await fetch(`${SUBMITTER_URL}/health`, {signal: AbortSignal.timeout(10_000)});
     if (!noOrigin.ok) throw new Error("a request with no Origin was refused");
-    console.log(`[e2e] H no Origin      ${noOrigin.status} — scripts unaffected ✅`);
+    passed("H", `no Origin      ${noOrigin.status} — scripts unaffected`);
 }
 
 async function main(): Promise<void> {
@@ -380,9 +396,7 @@ async function main(): Promise<void> {
         );
     }
     if (await revoked()) throw new Error("delegation was disabled by a refused submission");
-    console.log(
-        `[e2e] A unfunded       409 prefund_short (short ${unfunded.body.detail?.["shortfall"]} wei) ✅`,
-    );
+    passed("A", `unfunded       409 prefund_short (short ${unfunded.body.detail?.["shortfall"]} wei)`);
 
     // ── fund exactly the required prefund ─────────────────────────────────────────────
     await publicClient.waitForTransactionReceipt({
@@ -436,7 +450,7 @@ async function main(): Promise<void> {
             `expected 400 invalid_submission, got ${foreign.status} ${JSON.stringify(foreign.body)}`,
         );
     }
-    console.log(`[e2e] B foreign sender 400 invalid_submission ✅`);
+    passed("B", "foreign sender 400 invalid_submission");
 
     // ── C. the real thing ─────────────────────────────────────────────────────────────
     const relayerBefore = await publicClient.getBalance({address: relayer.address});
@@ -447,7 +461,7 @@ async function main(): Promise<void> {
     if (!(await revoked())) {
         throw new Error("submitter reported success but the delegation is still enabled");
     }
-    console.log(`[e2e] C revoked        tx ${ok.body.transaction} ✅`);
+    passed("C", `revoked        tx ${ok.body.transaction}`);
     /**
      * The relayer must come out of `handleOps` roughly whole: it fronts the gas and the
      * EntryPoint reimburses it from the payer's deposit. Asserting the economics — rather
@@ -475,7 +489,7 @@ async function main(): Promise<void> {
             `expected the deposit to be consumed, got ${spent.status} ${JSON.stringify(spent.body)}`,
         );
     }
-    console.log(`[e2e] D deposit spent  409 prefund_short ✅`);
+    passed("D", "deposit spent  409 prefund_short");
 
     /**
      * ── E. replay, with the deposit re-armed ──────────────────────────────────────────
@@ -502,7 +516,7 @@ async function main(): Promise<void> {
     if (!/AA25|nonce/i.test(why)) {
         throw new Error(`replay was refused, but not by the nonce: ${replay.status} ${why}`);
     }
-    console.log(`[e2e] E replay funded  ${replay.status} ${replay.body.reason} (AA25 nonce) ✅`);
+    passed("E", `replay funded  ${replay.status} ${replay.body.reason} (AA25 nonce)`);
 
     // ── F/G/H. the browser leg ────────────────────────────────────────────────────────
     await proveCorsPreflight();
@@ -518,7 +532,7 @@ async function main(): Promise<void> {
     }
     console.log(`[e2e] relayer GIWA nonce after   ${nonceAfter} (unchanged — nothing broadcast) ✅`);
     console.log("");
-    console.log("[e2e] revocation submitter service PASS — 8/8");
+    console.log(`[e2e] revocation submitter service PASS — ${cases.length} cases (${cases.join("")})`);
 }
 
 async function forward(name: string, stream: ReadableStream<Uint8Array> | number | undefined) {
