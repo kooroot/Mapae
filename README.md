@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-216%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-269%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -63,25 +63,35 @@ The repository keeps two payment paths side by side:
 | Path | Purpose | Status |
 |---|---|---|
 | EIP-3009 + x402-rs | Gasless exact-payment baseline | Settled on GIWA Sepolia |
-| ERC-7710 + x402 | Limited, expiring, revocable agent payments | Settled on GIWA Sepolia; caveat rejections enforced on-chain |
+| ERC-7710 + x402 | Limited, expiring, revocable agent payments | Settled on GIWA Sepolia; caveat rejections come from the deployed enforcers, evaluated against live GIWA state |
 
 ## Current status
 
-| Milestone | Result |
-|---|---|
-| D1 | MockUSDC deployed and verified; x402-rs facilitator connected |
-| D2 | `402 → sign → verify → settle → resource` completed on GIWA |
-| D3/D4 | Delegation Framework and the owner smart account deployed on GIWA; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly |
-| D5 | One MCP tool call completes the whole payment with no human in the loop |
-| D6 | Console reads the cap, the remaining period balance and the settlement receipts straight from chain |
+Two different things are called "done" below, and the column says which. **GIWA** means
+a transaction was mined on GIWA Sepolia and you can open it in the explorer. **Local fork**
+means it runs against real GIWA state and real deployed bytecode in a local Anvil fork —
+a strong result, but nothing was mined and there is no link to follow.
+
+| Milestone | Result | Proven on |
+|---|---|---|
+| D1 | MockUSDC deployed and verified; x402-rs facilitator connected | **GIWA** |
+| D2 | `402 → sign → verify → settle → resource` completed | **GIWA** |
+| D3/D4 | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
+| D5 | One MCP tool call completes the whole payment with no human in the loop | Local fork |
+| D6 | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - D4 delegated settlement, 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - D4 delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
-- Over-cap and expired payments are refused by the enforcers on-chain, not by a
-  backend check — see the evidence table in the [technical notes](docs/tech-notes.md).
-- Regression suite: **216 TypeScript tests + 14 Foundry tests**, plus a
+- Over-cap and expired payments are refused by the enforcers, not by a backend check.
+  **There is no transaction to link for these two**, and that is the mechanism working
+  rather than a gap: the facilitator simulates `redeemDelegations` against live GIWA state
+  before it broadcasts, so the enforcer's revert arrives at `/verify` and no doomed
+  transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
+  reading the real period counter — it is simply an `eth_call`, not a mined block. See the
+  evidence table in the [technical notes](docs/tech-notes.md).
+- Regression suite: **269 TypeScript tests + 14 Foundry tests**, plus a
   chain-parameterised negative-path suite that runs the same twenty-three caveat cases on a
   disposable chain and on a GIWA fork.
 
@@ -89,9 +99,12 @@ The repository keeps two payment paths side by side:
 
 Being explicit about the edges matters more than a longer list of green checks.
 
-- **Revocation is proven on chain; the wallet UI leg and the submitter are not.**
+- **Revocation has never been executed on GIWA.** Every result below comes from a local
+  fork — real deployed bytecode, real account, real EntryPoint, but no mined transaction
+  and no explorer link. The payer account's EntryPoint deposit on GIWA is `0`, so the
+  console's revoke button renders disabled against the live chain until someone funds it.
   `DeleGatorCore.disableDelegation` is `onlyEntryPointOrSelf`, so an owner revokes by
-  submitting an EntryPoint UserOperation. Both branches now run on both suite targets:
+  submitting an EntryPoint UserOperation. Both branches run on both suite targets:
   the *self* branch, and the *EntryPoint* branch driven by a real owner-signed
   UserOperation through `handleOps`, with three controls proving each dependency is
   load-bearing — an unfunded deposit fails `AA21`, a non-owner signature fails `AA24`,
@@ -240,7 +253,11 @@ The signature covers the permission context. It does **not** cover the execution
 execution it likes alongside a perfectly valid leaf. Only the caveats on that leaf
 stand in the way — and they hold:
 
-| Attempt | Refused by | On-chain revert |
+Every revert below is produced by the deployed enforcer bytecode, on a disposable chain
+and again on a GIWA fork. None of them is a mined GIWA transaction — a tampering attempt
+that reverts in simulation is never broadcast, which is the point.
+
+| Attempt | Refused by | Enforcer revert |
 |---|---|---|
 | Pay itself instead of the vendor | `AllowedCalldataEnforcer` | `invalid-calldata` |
 | Inflate the amount, even within the period cap | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |

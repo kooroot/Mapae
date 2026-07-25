@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-216%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-269%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -62,34 +62,46 @@ Mapae에는 비교 가능한 두 결제 경로가 함께 있습니다.
 | 경로 | 목적 | 상태 |
 |---|---|---|
 | EIP-3009 + x402-rs | 가스리스 exact 결제 기준선 | GIWA Sepolia 정산 완료 |
-| ERC-7710 + x402 | 제한·만료·회수 가능한 에이전트 결제 | GIWA Sepolia 정산 완료, caveat 거절은 온체인이 판정 |
+| ERC-7710 + x402 | 제한·만료·회수 가능한 에이전트 결제 | GIWA Sepolia 정산 완료, caveat 거절은 배포된 enforcer가 GIWA 현재 상태를 상대로 판정 |
 
 ## 현재 상태
 
-| 단계 | 결과 |
-|---|---|
-| D1 | MockUSDC 배포·소스 검증, x402-rs facilitator 연결 |
-| D2 | `402 → sign → verify → settle → resource` GIWA 온체인 완주 |
-| D3/D4 | Framework와 owner 스마트계정 GIWA 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 |
-| D5 | MCP tool 한 번 호출로 사람 개입 0 완주 |
-| D6 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 |
+아래에서 "완료"라 부르는 것이 두 종류이고, 열이 그중 무엇인지 말한다. **GIWA**는 GIWA
+Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션이다. **로컬 fork**는 실제 GIWA
+상태와 실제 배포 바이트코드를 상대로 로컬 Anvil fork에서 돈다는 뜻이다 — 강한 결과지만
+채굴된 것은 없고 따라갈 링크도 없다.
+
+| 단계 | 결과 | 증명된 곳 |
+|---|---|---|
+| D1 | MockUSDC 배포·소스 검증, x402-rs facilitator 연결 | **GIWA** |
+| D2 | `402 → sign → verify → settle → resource` 완주 | **GIWA** |
+| D3/D4 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
+| D5 | MCP tool 한 번 호출로 사람 개입 0 완주 | 로컬 fork |
+| D6 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - D4 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - D4 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
-- 한도 초과와 만료는 백엔드 검사가 아니라 **온체인 enforcer가 거절**한다 —
-  증거표는 [기술 노트](docs/tech-notes.md)에 있다.
-- 회귀 검증: **216 TypeScript tests + 14 Foundry tests**, 그리고 동일한 23개 caveat
+- 한도 초과와 만료는 백엔드 검사가 아니라 **배포된 enforcer가 거절**한다.
+  **이 둘에는 걸 tx 해시가 없고**, 그것은 빈틈이 아니라 설계가 작동한 결과다:
+  facilitator가 브로드캐스트 전에 `redeemDelegations`를 GIWA 현재 상태에 시뮬레이션하므로
+  enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
+  판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
+  `eth_call`이다. 증거표는 [기술 노트](docs/tech-notes.md)에 있다.
+- 회귀 검증: **269 TypeScript tests + 14 Foundry tests**, 그리고 동일한 23개 caveat
   케이스를 일회용 체인과 GIWA fork 양쪽에서 돌리는 체인 파라미터화 negative-path 수트.
 
 ### 증명하지 않은 것
 
 초록 체크를 늘리는 것보다 경계를 분명히 하는 편이 낫다.
 
-- **회수는 온체인으로 증명했고, 지갑 UI와 제출자(submitter)는 증명하지 않았다.**
+- **회수는 GIWA에서 한 번도 실행된 적이 없다.** 아래 결과는 전부 로컬 fork에서 나온
+  것이다 — 실제 배포 바이트코드, 실제 계정, 실제 EntryPoint를 쓰지만 채굴된 트랜잭션도
+  익스플로러 링크도 없다. GIWA에서 payer 계정의 EntryPoint 예치금이 `0`이라, 라이브
+  체인을 상대로는 콘솔의 회수 버튼이 누군가 예치하기 전까지 비활성으로 렌더된다.
   `DeleGatorCore.disableDelegation`은 `onlyEntryPointOrSelf`라 owner는 EntryPoint
-  UserOperation으로 회수한다. 이제 두 분기 모두 양쪽 수트 타깃에서 돈다 — *self*
+  UserOperation으로 회수한다. 두 분기 모두 양쪽 수트 타깃에서 돈다 — *self*
   분기, 그리고 실제 owner 서명 UserOperation을 `handleOps`로 태우는 *EntryPoint*
   분기. 의존 요소가 실제로 작동함을 증명하는 대조군 3개가 함께 붙는다: 예치금이
   없으면 `AA21`, owner가 아닌 서명은 `AA24`, 서명된 `entryPoint` 필드를 변조하면

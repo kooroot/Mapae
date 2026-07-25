@@ -114,18 +114,28 @@ sequenceDiagram
 
 #### 라이브 데모 증거 — GIWA Sepolia (2026-07-24)
 
-| 경로 | 결과 | 증거 |
-|---|---|---|
-| Framework 배포 | 38-unit + 2단계 ownership + owner 스마트계정 | manager `0xF2F782Fa…F40C`, owner account `0xA4e4d00E…DDF382` |
-| 정상 정산 (inv-001, 1 mUSDC) | 성공, payer 가스 0 | tx `0xe897fe55…a97d`, block 31555419 |
-| 정상 정산 (inv-002, 2.5 mUSDC) | 성공 | tx `0x71d71442…6ce4`, block 31558282 |
-| **주기 한도 초과** (누적 5.0 > 3.0) | **온체인 거절, 자금 불변** | revert `ERC20PeriodTransferEnforcer:transfer-amount-exceeded` |
-| **만료** (유효창 경과) | **온체인 거절** | revert `TimestampEnforcer:expired-delegation` |
+**증거 수준** 열을 먼저 읽을 것. `채굴됨`은 GIWA에 블록으로 들어가 익스플로러에서
+열리는 트랜잭션이다. `시뮬레이션`은 GIWA의 현재 상태를 상대로 한 `eth_call`이다 —
+판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만, 블록에 들어간
+것은 없고 따라서 걸 링크도 없다. 둘을 한 열에 섞으면 표가 실제보다 더 많은 것을
+증명한 것처럼 읽힌다.
 
-거절 두 경우 모두 relayer는 트랜잭션을 브로드캐스트하지 않는다 — facilitator의
-`/verify`가 `simulate.redeemDelegations`로 미리 걸러 가스를 낭비하지 않는다.
-동일한 2.5 mUSDC 결제가 여유가 있을 땐 정산되고 누적이 cap을 넘으면 거절된다는
-점이 핵심이다: **한도는 코드의 약속이 아니라 온체인 enforcer가 강제하는 사실이다.**
+| 경로 | 결과 | 증거 수준 | 증거 |
+|---|---|---|---|
+| Framework 배포 | 38-unit + 2단계 ownership + owner 스마트계정 | **채굴됨** | manager `0xF2F782Fa…F40C`, owner account `0xA4e4d00E…DDF382` |
+| 정상 정산 (inv-001, 1 mUSDC) | 성공, payer 가스 0 | **채굴됨** | tx `0xe897fe55…a97d`, block 31555419 |
+| 정상 정산 (inv-002, 2.5 mUSDC) | 성공 | **채굴됨** | tx `0x71d71442…6ce4`, block 31558282 |
+| **주기 한도 초과** (누적 5.0 > 3.0) | **거절, 자금 불변** | 시뮬레이션 | revert `ERC20PeriodTransferEnforcer:transfer-amount-exceeded` |
+| **만료** (유효창 경과) | **거절** | 시뮬레이션 | revert `TimestampEnforcer:expired-delegation` |
+
+거절 두 건에 tx 해시가 없는 것은 빈틈이 아니라 설계가 작동한 결과다. facilitator의
+`/verify`가 `simulate.redeemDelegations`로 먼저 걸러내므로, 어차피 revert할
+트랜잭션에 가스를 쓰지 않는다. 대신 그 거절을 **채굴된 revert로 보여주려면** 일부러
+실패할 트랜잭션을 브로드캐스트해야 한다 — 지금은 하지 않는다.
+
+핵심은 그대로다: 동일한 2.5 mUSDC 결제가 여유가 있을 땐 정산되고 누적이 cap을 넘으면
+거절된다. **한도는 코드의 약속이 아니라 배포된 enforcer가 강제하는 사실이다.** 다만
+그 사실을 확인한 방법이 블록이 아니라 `eth_call`이라는 것을 표가 스스로 말하게 둔다.
 
 ### D5 — 에이전트 자동화 (MCP)
 
@@ -255,7 +265,15 @@ prefix 검사로 바꾸면 정확히 `trailing bytes` 케이스 하나만 깨진
 **서비스를 실제로 띄운 검증** (`bun run test:e2e:revoke`). 위 표는 수트가 검증기와
 온체인 강제를 덮는다는 뜻이지 **프로세스가 뜬다는 뜻은 아니었다.** env 파싱, 배포
 아티팩트 읽기, 부팅 시 릴레이어 대조, `/health`, single-flight, simulate→broadcast는
-별도 e2e가 GIWA fork 위에 서비스를 실제로 spawn해서 5케이스를 왕복한다.
+별도 e2e가 GIWA fork 위에 서비스를 실제로 spawn해서 8케이스를 왕복한다.
+
+마지막 세 케이스는 **브라우저 레그**다. 나머지가 Bun의 서버 사이드 `fetch`를 쓰는데
+그건 CORS를 강제하지 않아서, 콘솔의 회수 버튼이 페이지에서 제출기에 아예 닿지 못하는
+동안에도 수트는 계속 초록이었다. 콘솔(:5173)과 제출기(:8082)는 출처가 다르고 요청이
+`content-type: application/json`을 실으므로 브라우저는 preflight를 먼저 보낸다 — 그
+preflight가 404면 POST는 나가지 않고 소유자의 서명은 버려진다. 그래서 F/G/H는 강제에
+기대지 않고 **응답을 직접 확인한다**: 허용된 출처의 preflight가 204인지, 낯선 출처가
+403인지, `Origin` 없는 요청(즉 스크립트)이 그대로 동작하는지.
 
 그중 두 케이스가 분리된 이유가 비자명하다. "같은 바디를 다시 보내면 거절된다"만으로는
 리플레이 방어를 증명하지 못한다 — 그걸 막은 건 체인 **앞단의** 예치금 게이트고 nonce는
@@ -347,9 +365,10 @@ fork에서 owner를 impersonate해 `pause()`를 실행하고 **1번이 실제로
 ```bash
 bun run check                      # 키·네트워크 없이 전 계층 회귀
 cd apps/delegation-lab
-bun run test:negative              # 10개 caveat 케이스 (일회용 체인 / GIWA fork)
+bun run test:negative              # 23개 caveat 케이스 (일회용 체인 / GIWA fork)
 bun run test:e2e:mcp               # 결제 완주 → 한도 초과 pre-flight 거절 → pause → 회수
-bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 5케이스 왕복
+bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 8케이스 왕복
+bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO (17개 조건)
 ```
 
 `test:e2e:mcp`는 자식 프로세스가 loopback RPC에 고정되지 않으면 시작하지 않고,
@@ -498,22 +517,29 @@ GIWA fork 양쪽에서 통과한다.
 | Delegation Framework v1.3 | **GIWA 배포·검증 완료** — DelegationManager `0xF2F782Fa…F40C` (active, owner=admin, unpaused), 38-unit exact composition |
 | owner 스마트계정 (payer) | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` (HybridDeleGator, owner=Case1) |
 | ERC20PeriodTransferEnforcer | `0x700330288f6f094780121ea54cd2eDEfe45b3625` |
-| Dojang | EAS 기반 attestation, 배포 확인 (등급2에서 사용 예정) |
+
+이 표는 **주소를 갖고 우리가 직접 읽어 확인한 것만** 담는다. Dojang은 등급2 계획에
+등장하지만 이 저장소가 주소를 확인한 적이 없어 여기 넣지 않는다 — 확인한 것과 계획한
+것을 같은 표에 두면 표 전체의 값어치가 계획 수준으로 내려간다.
 
 ---
 
 ## 6. 다음 단계
 
 - **GIWA D3/D4 활성화 ✅ 완료** — Framework 배포, owner account 배포, root 위임
-  서명(ERC-1271 검증), 정상 정산 + 한도·만료 거절까지 GIWA에서 실증
+  서명(ERC-1271 검증), 정상 정산까지 GIWA에 채굴됨. 한도·만료 거절은 GIWA 현재 상태를
+  상대로 한 시뮬레이션이며 채굴된 트랜잭션이 아니다(§2 증거표)
 - **real-Framework negative-path 수트 ✅ 완료** — `negative-path-suite.ts`가 동일한
   23개 케이스(정상·주기 cap·주기 reset·만료·wrong-redeemer·수취인 불일치·replay·
   facilitator 변조 6종 + 대조군·payer mismatch·root 취소·회수 UserOp 4종·제출
   엔드포인트 2종·manager 합산)를 일회용 체인과 GIWA fork 양쪽에서 체인 파라미터화로
   돌리며, 각 케이스의 온체인 revert 사유까지 대조한다
-- **MCP 자동화 ✅ / 콘솔 ✅ / 제출 엔드포인트 ✅** — §2의 D5·D6 참조. 회수
-  UserOperation은 온체인 경로까지, 제출 엔드포인트는 와이어 포맷까지 증명 완료.
-  남은 것은 지갑 UI 승인 화면 하나다
+- **MCP 자동화 / 콘솔 / 제출 엔드포인트 — 구현 완료, GIWA 실행 이력 0** — §2의 D5·D6
+  참조. 셋 다 로컬 fork에서 완주하고 회수 UserOperation도 EntryPoint 경로까지 돌지만,
+  **어느 것도 GIWA에 채굴된 적이 없다.** 결제(D2/D4)가 GIWA에서 되는 것과 *에이전트가
+  GIWA에서 스스로 결제하는 것*은 다른 문장이고, 지금 증명된 것은 앞쪽이다.
+  남은 것은 세 가지다: MCP 결제 1건의 GIWA 실행, 회수 1건의 GIWA 실행(payer 계정의
+  EntryPoint 예치금이 `0`이라 선입금 필요), 그리고 지갑 UI 승인 화면
 - **정산 두뇌** — 트리거·스케줄러, 복합 위임(수취인·주기·상한), 원장, 재시도
 - **등급2 검증 경로** — Dojang KYC 게이트 + EAS 계약/영수증 스키마 + 리졸버
 - **이행검증** — optimistic 구조(기본 통과·이의제기 창·본드). 최종 판정자가 재실행이 아닌 중재이므로 trustless가 아님을 전제로 설계
