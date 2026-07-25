@@ -7,6 +7,7 @@ import {parseFrameworkDeploymentManifestJson} from "./deployment-record.js";
 import {verifyActiveFrameworkDeployment} from "./live-verifier.js";
 import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {readDelegationStatus} from "./delegation-status.js";
+import type {DelegationStatus} from "./delegation-status.js";
 import type {DelegatedLeafProvider, PreflightVerdict} from "./payment-client.js";
 import {throttledHttp} from "./rpc.js";
 import {createMapaeDelegationProvider} from "./x402.js";
@@ -180,48 +181,19 @@ export async function loadDelegatedAgentRuntime(
     // re-delegated child's tighter cap refuses on-chain.
     const chain = decodeDelegations(parent.permissionContext);
 
-    const preflight = async (amount: bigint): Promise<PreflightVerdict> => {
-        if (chain.length === 0) return {ok: true};
-        const statuses = await Promise.all(
-            chain.map((delegation) =>
-                readDelegationStatus({
-                    publicClient,
-                    environment: deployment.environment,
-                    delegation,
-                }),
+    const preflight = async (amount: bigint): Promise<PreflightVerdict> =>
+        judgePreflight(
+            await Promise.all(
+                chain.map((delegation) =>
+                    readDelegationStatus({
+                        publicClient,
+                        environment: deployment.environment,
+                        delegation,
+                    }),
+                ),
             ),
+            amount,
         );
-
-        for (const status of statuses) {
-            if (status.revoked) {
-                return {ok: false, code: "PERMISSION_INACTIVE", detail: "permission was revoked"};
-            }
-            if (status.expired) {
-                return {ok: false, code: "PERMISSION_INACTIVE", detail: "permission has expired"};
-            }
-            if (status.notYetActive) {
-                return {
-                    ok: false,
-                    code: "PERMISSION_INACTIVE",
-                    detail: "permission is not active yet",
-                };
-            }
-        }
-
-        let tightest: bigint | undefined;
-        for (const status of statuses) {
-            if (status.remaining === undefined) continue;
-            if (tightest === undefined || status.remaining < tightest) tightest = status.remaining;
-        }
-        if (tightest !== undefined && amount > tightest) {
-            return {
-                ok: false,
-                code: "LIMIT_EXCEEDED",
-                detail: `payment of ${amount} exceeds ${tightest} left in this period`,
-            };
-        }
-        return {ok: true};
-    };
 
     return {
         account,
@@ -240,6 +212,54 @@ export async function loadDelegatedAgentRuntime(
  * Resolve a caller-supplied resource path against the seller origin, rejecting
  * anything that could escape it (protocol-relative, backslash, cross-origin).
  */
+/**
+ * Decide whether a payment may be signed, given every link's on-chain status.
+ *
+ * Split from the chain reads on purpose, the same way `revoke-state.ts` splits the
+ * console's revoke gate from its component: this is the decision that stands between an
+ * agent and a signature, and a decision reachable only through a bootstrap that wants
+ * env vars, files and an RPC is a decision nobody tests.
+ *
+ * Two orderings here are deliberate rather than incidental.
+ *
+ * **Inactive before over-cap.** A revoked or expired permission is refused even when the
+ * amount fits. Reporting `LIMIT_EXCEEDED` for a permission that is not usable at any
+ * amount would send the operator to raise a cap that was never the problem.
+ *
+ * **Tightest link, not the root.** Every link's caveats are enforced by the
+ * DelegationManager, so a re-delegated child's smaller cap binds even when the root has
+ * room. Checking only the root would clear a payment the chain then refuses — the agent
+ * would sign, the settlement would revert, and the failure would surface as a facilitator
+ * error rather than as the limit doing its job.
+ */
+export function judgePreflight(statuses: DelegationStatus[], amount: bigint): PreflightVerdict {
+    for (const status of statuses) {
+        if (status.revoked) {
+            return {ok: false, code: "PERMISSION_INACTIVE", detail: "permission was revoked"};
+        }
+        if (status.expired) {
+            return {ok: false, code: "PERMISSION_INACTIVE", detail: "permission has expired"};
+        }
+        if (status.notYetActive) {
+            return {ok: false, code: "PERMISSION_INACTIVE", detail: "permission is not active yet"};
+        }
+    }
+
+    let tightest: bigint | undefined;
+    for (const status of statuses) {
+        if (status.remaining === undefined) continue;
+        if (tightest === undefined || status.remaining < tightest) tightest = status.remaining;
+    }
+    if (tightest !== undefined && amount > tightest) {
+        return {
+            ok: false,
+            code: "LIMIT_EXCEEDED",
+            detail: `payment of ${amount} exceeds ${tightest} left in this period`,
+        };
+    }
+    return {ok: true};
+}
+
 export function resolveResourceTarget(sellerUrl: URL, resourcePath: string): URL {
     if (
         !resourcePath.startsWith("/") ||

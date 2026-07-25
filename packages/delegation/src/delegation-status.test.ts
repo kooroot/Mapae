@@ -1,6 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import type {SmartAccountsEnvironment} from "@metamask/smart-accounts-kit";
-import {getAddress, type Address} from "viem";
+import {createPublicClient, custom, encodeAbiParameters, getAddress, type Address} from "viem";
 import {MOCK_USDC, toTokenAmount} from "@mapae/shared";
 import {ENTRY_POINT_V07} from "./config.js";
 import {buildD3Policies, preparePeriodDelegation} from "./policy.js";
@@ -9,6 +9,7 @@ import {
     decodeTimestampTerms,
     findCaveatTerms,
     judgeValidity,
+    readDelegationStatus,
     readSettlementReceipts,
     resolveChainTime,
 } from "./delegation-status.js";
@@ -120,6 +121,174 @@ function clientReturning(logs: unknown[], fromBlockTimestamp?: bigint): any {
         },
     };
 }
+
+/**
+ * A node scripted at the JSON-RPC seam rather than at `readContract`.
+ *
+ * That seam is forced, not chosen: the kit's contract helpers build the call themselves
+ * and go straight to `client.request({method: "eth_call"})`, so a stub that intercepts
+ * `readContract` is never consulted. Driving a real viem client through a `custom`
+ * transport also means the ABI encode/decode path under test is the production one — a
+ * hand-shaped return object would prove only that the test agrees with itself.
+ */
+function scriptedNode(script: {
+    revoked?: boolean;
+    available?: {amount: bigint; isNewPeriod: boolean; currentPeriod: bigint};
+    blockTimestamp: bigint;
+}) {
+    const calls: Address[] = [];
+    const client = createPublicClient({
+        transport: custom({
+            // biome-ignore lint/suspicious/noExplicitAny: raw JSON-RPC envelope
+            request: async ({method, params}: any) => {
+                if (method === "eth_call") {
+                    const to = getAddress(params[0].to as Address);
+                    calls.push(to);
+                    if (to === getAddress(environment.DelegationManager)) {
+                        return encodeAbiParameters([{type: "bool"}], [script.revoked ?? false]);
+                    }
+                    if (to === PERIOD_ENFORCER) {
+                        if (!script.available) throw new Error("enforcer must not be called");
+                        return encodeAbiParameters(
+                            [{type: "uint256"}, {type: "bool"}, {type: "uint256"}],
+                            [
+                                script.available.amount,
+                                script.available.isNewPeriod,
+                                script.available.currentPeriod,
+                            ],
+                        );
+                    }
+                }
+                if (method === "eth_getBlockByNumber") {
+                    return {...EMPTY_BLOCK, timestamp: `0x${script.blockTimestamp.toString(16)}`};
+                }
+                throw new Error(`unexpected ${method}`);
+            },
+        }),
+    });
+    return {client, calls};
+}
+
+const EMPTY_BLOCK = {
+    number: "0x1",
+    hash: `0x${"11".repeat(32)}`,
+    parentHash: `0x${"00".repeat(32)}`,
+    nonce: "0x0",
+    sha3Uncles: `0x${"00".repeat(32)}`,
+    logsBloom: "0x",
+    transactionsRoot: `0x${"00".repeat(32)}`,
+    stateRoot: `0x${"00".repeat(32)}`,
+    receiptsRoot: `0x${"00".repeat(32)}`,
+    miner: address(0),
+    difficulty: "0x0",
+    totalDifficulty: "0x0",
+    extraData: "0x",
+    size: "0x0",
+    gasLimit: "0x0",
+    gasUsed: "0x0",
+    transactions: [],
+    uncles: [],
+};
+
+describe("readDelegationStatus", () => {
+    test("reports the enforcer's own remaining balance, not a local tally", async () => {
+        // Deliberately inconsistent with the 3 mUSDC cap in the terms. If this ever came
+        // from decoding `periodAmount` and subtracting a local total, the number below
+        // could not appear — that second source of truth is exactly what the on-chain
+        // read exists to avoid.
+        const {client} = scriptedNode({
+            available: {amount: 999_999_999n, isNewPeriod: true, currentPeriod: 41n},
+            blockTimestamp: BigInt(START_DATE) + 1n,
+        });
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: delegation(),
+        });
+
+        expect(status.remaining).toBe(999_999_999n);
+        expect(status.isNewPeriod).toBe(true);
+        expect(status.currentPeriod).toBe(41n);
+        // The terms still decode to the policy's cap, so the two really are separate.
+        expect(status.limit?.periodAmount).toBe(toTokenAmount("3"));
+    });
+
+    test("expiry is judged against chain time, not the process clock", async () => {
+        // The window closes at START_DATE + 30min, which is in 2033. Wall clock is 2026,
+        // so an implementation reading `Date.now()` would call this live. The head block
+        // says otherwise, and the head is what `TimestampEnforcer` compares against.
+        const {client} = scriptedNode({
+            available: {amount: toTokenAmount("3"), isNewPeriod: true, currentPeriod: 0n},
+            blockTimestamp: BigInt(START_DATE) + BigInt(POLICY.expiresAfterSeconds),
+        });
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: delegation(),
+        });
+
+        expect(status.expired).toBe(true);
+        expect(status.notYetActive).toBe(false);
+    });
+
+    test("the activation second itself is reported as not yet active", async () => {
+        const {client} = scriptedNode({
+            available: {amount: toTokenAmount("3"), isNewPeriod: true, currentPeriod: 0n},
+            blockTimestamp: BigInt(START_DATE),
+        });
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: delegation(),
+        });
+
+        expect(status.notYetActive).toBe(true);
+    });
+
+    test("a revoked delegation is reported revoked", async () => {
+        const {client} = scriptedNode({
+            revoked: true,
+            available: {amount: toTokenAmount("3"), isNewPeriod: true, currentPeriod: 0n},
+            blockTimestamp: BigInt(START_DATE) + 1n,
+        });
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: delegation(),
+        });
+
+        expect(status.revoked).toBe(true);
+    });
+
+    test("a delegation with no period caveat reports no cap and never calls the enforcer", async () => {
+        // `remaining: undefined` has to mean "this link carries no cap", because
+        // `judgePreflight` skips such links when picking the tightest. If a missing
+        // caveat instead produced a zero, every payment on an uncapped policy would be
+        // refused. The unscripted `available` makes an enforcer call throw.
+        const capped = delegation();
+        const uncapped = {
+            ...capped,
+            caveats: capped.caveats.filter(
+                (caveat) => getAddress(caveat.enforcer) !== PERIOD_ENFORCER,
+            ),
+        };
+        const {client, calls} = scriptedNode({blockTimestamp: BigInt(START_DATE) + 1n});
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: uncapped,
+        });
+
+        expect(status.remaining).toBeUndefined();
+        expect(status.limit).toBeUndefined();
+        expect(calls).not.toContain(PERIOD_ENFORCER);
+    });
+});
 
 describe("validity mirrors TimestampEnforcer", () => {
     const window = {notBefore: 1_000n, notAfter: 2_000n};

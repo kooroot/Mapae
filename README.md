@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-188%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-208%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -81,7 +81,7 @@ The repository keeps two payment paths side by side:
 - D4 delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - Over-cap and expired payments are refused by the enforcers on-chain, not by a
   backend check — see the evidence table in the [technical notes](docs/tech-notes.md).
-- Regression suite: **188 TypeScript tests + 14 Foundry tests**, plus a
+- Regression suite: **208 TypeScript tests + 14 Foundry tests**, plus a
   chain-parameterised negative-path suite that runs the same twenty-three caveat cases on a
   disposable chain and on a GIWA fork.
 

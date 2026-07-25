@@ -153,7 +153,25 @@ sequenceDiagram
 
 pre-flight는 콜백으로 주입한다. 결제 코어 자체는 체인 비의존으로 남아야 mock
 fetch만으로 단위 테스트가 되기 때문이다. 실제 구현은 `agent-runtime`이 부모
-permission의 root 위임에 대해 `readDelegationStatus`로 제공한다.
+permission의 **모든 링크**에 대해 `readDelegationStatus`로 제공한다 — root만 보면
+재위임된 child의 더 빡빡한 한도를 통과시키고, 그 결제는 온체인에서 revert한다.
+
+**판정은 순수 함수로 분리했다** (`judgePreflight`). 콘솔의 회수 게이트를
+`revoke-state.ts`로 뽑아낸 것과 같은 이유다: 이건 에이전트와 서명 사이에 서 있는
+판정인데, env·파일·RPC를 요구하는 부트스트랩을 통해서만 닿을 수 있으면 아무도
+테스트하지 않는다. 실제로 그랬다 — 이 leg만 실행 증거가 0건이었다.
+
+두 가지 순서를 뮤테이션으로 고정했다. **비활성이 한도보다 먼저**여야 한다. 어떤
+금액으로도 못 쓰는 permission을 `LIMIT_EXCEEDED`로 보고하면 운영자가 원인이 아닌
+한도를 올리러 간다. 그리고 **최솟값이지 root값이 아니다.** 처음 쓴 순서 테스트는
+한도 분기가 애초에 발화하지 않는 금액을 써서 이름만 그 속성이었고, 뮤테이션이
+그걸 잡았다 — 둘 다 발화하는 입력으로 바꾼 뒤에야 실제로 고정됐다.
+
+`readDelegationStatus`는 kit 헬퍼가 `readContract`가 아니라
+`client.request({method:"eth_call"})`로 내려가므로 JSON-RPC 이음매에서 스크립트한다.
+덕분에 테스트가 프로덕션 ABI 인코딩/디코딩 경로를 그대로 태운다. 핵심 단언은
+**남은 잔액이 terms에서 계산한 값이 아니라 enforcer가 답한 값**이라는 것이다 —
+캡과 모순되는 값을 답하게 해두고 그 값이 그대로 올라오는지 본다.
 
 두 가지 비자명한 결정:
 
