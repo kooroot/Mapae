@@ -1,3 +1,4 @@
+import {redactForLog} from "@mapae/shared";
 import * as DelegationBytecodes from "@metamask/delegation-abis/bytecode";
 import {
     FRAMEWORK_COMPOSITION_ID,
@@ -71,6 +72,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(redactForLog(error));
     process.exitCode = 1;
 });

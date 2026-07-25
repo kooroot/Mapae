@@ -6,6 +6,7 @@
         "plan": "bun run index.ts plan",
         "forge:prepare": "bun run export-forge-artifacts.ts",
         "forge:import": "bun run import-forge-framework.ts",
+        "verify:framework": "bun run verify-forge-addresses.ts",
         "deploy:preview": "bun run deploy-framework.ts",
         "ownership:acceptance": "bun run index.ts ownership-acceptance",
         "finalize:framework": "bun run finalize-framework.ts",
@@ -16,13 +17,16 @@
         "permission:prepare": "bun run sign-root-permission.ts prepare",
         "permission:serve": "bun run sign-root-permission.ts serve",
         "permission:assemble": "bun run sign-root-permission.ts assemble",
-        "test:negative": "bun run negative-path-suite.ts"
+        "test:negative": "bun run negative-path-suite.ts",
+        "test:e2e:mcp": "bun run mcp-e2e.ts",
+        "test:e2e:revoke": "bun run revocation-submitter-e2e.ts"
     },
     "dependencies": {
         "@mapae/delegation": "workspace:*",
         "@mapae/shared": "workspace:*",
         "@metamask/delegation-abis": "1.1.0",
         "@metamask/smart-accounts-kit": "1.7.0",
-        "viem": "^2.55.8"
+        "viem": "^2.55.8",
+        "@modelcontextprotocol/sdk": "1.29.0"
     }
 }

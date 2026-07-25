@@ -1,12 +1,18 @@
 {
   "name": "mapae",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p packages/delegation/tsconfig.json && tsc -p apps/agent/tsconfig.json && tsc -p apps/seller/tsconfig.json && tsc -p apps/delegation-lab/tsconfig.json && tsc -p apps/facilitator-erc7710/tsconfig.json && tsc -p apps/delegated-agent/tsconfig.json && tsc -p apps/delegated-seller/tsconfig.json",
+    "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p packages/delegation/tsconfig.json && tsc -p apps/agent/tsconfig.json && tsc -p apps/seller/tsconfig.json && tsc -p apps/delegation-lab/tsconfig.json && tsc -p apps/facilitator-erc7710/tsconfig.json && tsc -p apps/delegated-agent/tsconfig.json && tsc -p apps/delegated-seller/tsconfig.json && tsc -p apps/agent-mcp/tsconfig.json && tsc -p apps/revocation-submitter/tsconfig.json && tsc -p apps/console/tsconfig.json",
     "test:ts": "bun test packages/shared/src packages/delegation/src",
+    "test:mcp": "cd apps/agent-mcp && bun test",
     "test:contracts": "cd contracts && forge test -vvv",
-    "check": "bun run typecheck && bun run test:ts && bun run test:contracts"
+    "check": "bun run typecheck && bun run test:ts && bun run test:mcp && bun run test:console && bun run build:console && bun run test:contracts",
+    "test:console": "cd apps/console && bun test",
+    "build:console": "cd apps/console && bun run build"
   },
   "dependencies": {
     "viem": "^2.55.8"

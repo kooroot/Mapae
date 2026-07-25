@@ -28,6 +28,17 @@ function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * `429` only counts as a status code, never as a bare number.
+ *
+ * Matching it loosely made `insufficient funds: have 429000000000000000` and
+ * `execution reverted for tx 0x…429…` look like rate limits, so a starved relayer
+ * or a caveat rejection burned the full retry ladder — about a minute of backoff —
+ * before surfacing, which is the opposite of what this file promises.
+ */
+const RATE_LIMIT_PATTERN =
+    /rate.?limit|too many requests|\b(?:http|status|code)\s*:?\s*429\b/i;
+
 /** Rate-limit signals arrive as a message, a `details` field, or a nested cause. */
 export function isRateLimitError(error: unknown): boolean {
     const parts: string[] = [];
@@ -40,7 +51,7 @@ export function isRateLimitError(error: unknown): boolean {
         current = (current as {cause?: unknown}).cause;
         depth += 1;
     }
-    return /over rate limit|rate.?limit|429|too many requests/i.test(parts.join(" "));
+    return RATE_LIMIT_PATTERN.test(parts.join(" "));
 }
 
 export function throttledHttp(

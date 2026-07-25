@@ -1,0 +1,497 @@
+/*
+ * 각인된 마패 — the console is styled as the bronze tally it is named after.
+ *
+ * The product's claim is that the engraving on a 마패 recorded where authority
+ * ENDED, not what it granted. So the limit is presented as something inscribed:
+ * recessed, immutable, never a form field. The one control that can change the
+ * arrangement — revocation — carries the only warm destructive colour on screen.
+ */
+
+:root {
+    --ink: #0b0a08;
+    --ink-raised: #141210;
+    --ink-recessed: #070605;
+    --edge: #2a2620;
+    --edge-bright: #3d372c;
+
+    --bronze: #c69b5e;
+    --bronze-dim: #8a6d43;
+    --bronze-bright: #e6c78f;
+    --patina: #5d9b86;
+    --oxide: #b4443f;
+    /* The oxide that carries text. #b4443f is a 3.6:1 border colour, not a
+       label colour; every ratio below is measured against the darkest surface
+       the token actually lands on. */
+    --oxide-bright: #d97b76;
+
+    --text: #e8e0d2;
+    --text-dim: #9c9284;
+    /* The faint tier still carries information — the revocation `to` address,
+       the period legend, every panel heading. At #6b6357 it measured 3.2–3.4:1
+       on these surfaces, under the 4.5:1 floor for text this size; #877c6d
+       clears it (4.6–5.0:1) while staying a visible step below --text-dim. */
+    --text-faint: #877c6d;
+    /* Bright enough to read on the recessed channel, dark enough to read as an
+       incision across the struck bronze. Sits between the two on purpose. */
+    --tick: #57503f;
+
+    --display: "Nanum Myeongjo", serif;
+    /* Nanum Myeongjo's Google build is Hangul + Latin with no Hanja, so the
+       馬牌 crest fell through to the platform serif (tofu where none exists).
+       Noto Serif KR carries both codepoints; it is listed first for the crest
+       only, so the rest of the UI keeps Nanum Myeongjo's voice. */
+    --han: "Noto Serif KR", "Nanum Myeongjo", serif;
+    /* IBM Plex Mono ships no Hangul — that is IBM Plex Sans KR, a different
+       family — so Korean in a mono context fell through to the system gothic
+       and switched typeface mid-line. Nanum Gothic Coding is the monospaced
+       Hangul companion; Plex still wins every Latin codepoint it covers. */
+    --mono: "IBM Plex Mono", "Nanum Gothic Coding", ui-monospace, monospace;
+
+    --rule: 1px solid var(--edge);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--display);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px 64px;
+}
+
+/* Grain: keeps the large dark fields from reading as flat digital black. */
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    z-index: 100;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── The tally itself: a narrow column, not a dashboard ──────────────────
+   The roadmap is explicit that this lives like a tab inside a wallet. */
+.tally {
+    width: 100%;
+    max-width: 430px;
+    animation: rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(14px);
+    }
+}
+
+.stagger > * {
+    animation: rise 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 60ms; }
+.stagger > *:nth-child(2) { animation-delay: 120ms; }
+.stagger > *:nth-child(3) { animation-delay: 180ms; }
+.stagger > *:nth-child(4) { animation-delay: 240ms; }
+.stagger > *:nth-child(5) { animation-delay: 300ms; }
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+.crest {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    padding: 26px 0 22px;
+    margin-bottom: 4px;
+    /* The rim below is 150px plus 13px of shadow spread on each side = 176px.
+       Content alone leaves this box ~128px tall, and `overflow: hidden` then
+       sliced the rings into four arcs terminating on one hard horizontal line —
+       a clipping bug, not an engraving. The min-height gives the rim room with
+       margin to spare, so a font swap changing the h1 line box cannot re-clip it. */
+    min-height: 190px;
+    overflow: hidden;
+}
+
+/* Concentric rings echo the engraved rim of the physical tally. */
+.crest::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 150px;
+    height: 150px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 1px solid var(--edge);
+    box-shadow:
+        0 0 0 12px var(--ink),
+        0 0 0 13px var(--edge),
+        inset 0 0 0 11px var(--ink),
+        inset 0 0 0 12px var(--edge);
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.crest h1 {
+    position: relative;
+    font-family: var(--han);
+    font-size: 46px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: var(--bronze);
+    text-shadow:
+        0 1px 0 #000,
+        0 -1px 0 rgba(230, 199, 143, 0.22);
+}
+
+.crest p {
+    position: relative;
+    margin-top: 8px;
+    font-size: 11px;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    font-family: var(--mono);
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────────── */
+.tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border: var(--rule);
+    background: var(--ink-recessed);
+    margin-bottom: 18px;
+}
+
+.tabs button {
+    appearance: none;
+    background: none;
+    border: none;
+    border-right: var(--rule);
+    color: var(--text-dim);
+    font-family: var(--display);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    padding: 13px 0;
+    cursor: pointer;
+    transition: color 180ms, background 180ms;
+}
+.tabs button:last-child { border-right: none; }
+.tabs button:hover { color: var(--text); }
+.tabs button[data-active="true"] {
+    color: var(--bronze-bright);
+    background: linear-gradient(180deg, rgba(198, 155, 94, 0.1), transparent);
+    box-shadow: inset 0 -2px 0 var(--bronze);
+}
+
+/* ── Panels ─────────────────────────────────────────────────────────── */
+.panel {
+    border: var(--rule);
+    background: linear-gradient(170deg, var(--ink-raised), var(--ink-recessed));
+    padding: 20px;
+    margin-bottom: 14px;
+}
+
+.panel > h2 {
+    font-size: 11px;
+    font-family: var(--mono);
+    font-weight: 500;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    border-bottom: var(--rule);
+}
+
+/* ── The engraving: the cap, rendered as struck marks ────────────────── */
+.engraving {
+    text-align: center;
+    padding: 6px 0 2px;
+}
+
+.engraving .remaining {
+    font-family: var(--mono);
+    font-size: 44px;
+    font-weight: 600;
+    color: var(--bronze-bright);
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.engraving .of-cap {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-faint);
+    margin-top: 10px;
+    letter-spacing: 0.06em;
+}
+
+/* A revoked or expired delegation still reports its full period allowance —
+   the ERC20PeriodTransferEnforcer knows nothing about revocation or timestamps.
+   The number stays honest (it is what that enforcer returns) but is struck
+   through, because it is no longer authority anyone holds. */
+.engraving[data-halted="true"] .remaining {
+    color: var(--text-faint);
+    text-decoration: line-through;
+    text-decoration-color: var(--oxide);
+    text-decoration-thickness: 3px;
+}
+
+.engraving[data-halted="true"] .of-cap {
+    color: var(--oxide-bright);
+}
+
+/* Recessed channel; the spent portion is struck in bronze. */
+.marks {
+    position: relative;
+    height: 26px;
+    margin: 20px 0 6px;
+    background: var(--ink-recessed);
+    border: 1px solid var(--edge);
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.85);
+    overflow: hidden;
+}
+
+.marks .struck {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: linear-gradient(180deg, var(--bronze-bright), var(--bronze-dim));
+    box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.45);
+    animation: strike 900ms cubic-bezier(0.16, 1, 0.3, 1) both 320ms;
+}
+
+/* No `!important` here, ever: CSS Animations §Keyframes requires user agents to
+   drop `!important` declarations inside a keyframe block. `width: 0 !important`
+   left this keyframe empty, so the animation animated nothing and the bar was
+   painted at its final width on the first frame. */
+@keyframes strike {
+    from { width: 0; }
+}
+
+/* No `mix-blend-mode` here either: `overlay` takes the multiply branch over a
+   dark backdrop, so the tick composited *darker* than the recessed channel it
+   was drawn on — a 1.02:1 hairline, i.e. invisible exactly where the unspent
+   marks are. --tick reads on both the channel and the struck bronze. */
+.marks .tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--tick);
+}
+
+.legend {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--text-faint);
+    text-transform: uppercase;
+}
+
+/* ── Inscribed rows ─────────────────────────────────────────────────── */
+.row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    padding: 9px 0;
+    border-bottom: 1px dashed rgba(42, 38, 32, 0.85);
+}
+.row:last-child { border-bottom: none; }
+
+.row dt {
+    font-size: 13px;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.row dd {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    text-align: right;
+    word-break: break-all;
+}
+
+.state {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border: 1px solid currentColor;
+}
+.state[data-tone="ok"] { color: var(--patina); }
+.state[data-tone="bad"] { color: var(--oxide); }
+
+/* ── Revocation: the body of the safety model, not an accessory ─────── */
+.revoke {
+    border: 1px solid rgba(180, 68, 63, 0.45);
+    background: linear-gradient(170deg, rgba(180, 68, 63, 0.09), transparent);
+    padding: 18px 20px;
+}
+
+.revoke h2 {
+    color: var(--oxide);
+    border-bottom-color: rgba(180, 68, 63, 0.3);
+}
+
+.revoke p {
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--text-dim);
+    margin-bottom: 15px;
+}
+
+.revoke button {
+    width: 100%;
+    appearance: none;
+    background: none;
+    border: 1px solid var(--oxide);
+    color: var(--oxide-bright);
+    font-family: var(--display);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 13px;
+    cursor: pointer;
+    transition: background 180ms, color 180ms;
+}
+
+.revoke button:hover:not(:disabled) {
+    background: var(--oxide);
+    color: var(--ink);
+}
+
+/* Disabled is this button's permanent state — the console is read-only by
+   design — so it is a resting appearance, not a transient de-emphasis.
+   `opacity: 0.45` composited the whole group to 1.58:1 and took the label
+   "회수 서명 — 소유자 지갑 필요" with it, which is the string that explains
+   the button rather than leaving it looking unimplemented. Withdrawing the
+   destructive colour says "inert"; the label stays readable at 6.3:1. */
+.revoke button:disabled {
+    cursor: not-allowed;
+    color: var(--text-dim);
+    border-color: var(--edge-bright);
+}
+
+/* The funding readout sits between the full-width button and the calldata block.
+   Neither carries a margin on the facing edge, so without these the first row
+   renders flush against the button border and the closing note against the last
+   row — the readout reads as part of the button rather than as its precondition. */
+.revoke dl {
+    margin-top: 16px;
+}
+.revoke dl + p {
+    margin-top: 12px;
+}
+
+.calldata {
+    margin-top: 14px;
+    padding: 12px;
+    background: var(--ink-recessed);
+    border: var(--rule);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    line-height: 1.7;
+    /* Carries the revocation target address, which a reader is meant to check
+       against the explorer — not decoration, so it takes the dim tier. */
+    color: var(--text-dim);
+    /* `break-all` opens a break opportunity between every character pair and the
+       greedy line-breaker takes the last one that fits, so the prose line below
+       the two hex lines was chopped mid-identifier. `anywhere` breaks a token
+       only when it cannot fit a line by itself, which is what the 42-char
+       address needs and what the sentence does not. */
+    overflow-wrap: anywhere;
+}
+.calldata b {
+    color: var(--text-dim);
+    font-weight: 500;
+}
+
+/* ── Receipts ───────────────────────────────────────────────────────── */
+.receipt {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    border: var(--rule);
+    background: var(--ink-recessed);
+    padding: 13px 15px;
+    margin-bottom: 9px;
+    transition: border-color 180ms, transform 180ms;
+}
+.receipt:hover {
+    border-color: var(--bronze-dim);
+    transform: translateX(3px);
+}
+
+.receipt .amount {
+    font-family: var(--mono);
+    font-size: 16px;
+    color: var(--bronze-bright);
+}
+
+.receipt .when {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+}
+
+.receipt .hash {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    margin-top: 7px;
+    word-break: break-all;
+}
+
+.receipt-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+}
+
+/* ── States ─────────────────────────────────────────────────────────── */
+.note {
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text-dim);
+}
+
+.note code {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--bronze);
+}
+
+.fault {
+    border-color: rgba(180, 68, 63, 0.5);
+    color: var(--oxide);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.footnote {
+    margin-top: 20px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}

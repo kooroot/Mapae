@@ -8,7 +8,7 @@ import {
 } from "@mapae/delegation";
 import {Implementation} from "@metamask/smart-accounts-kit";
 import {getCounterfactualAccountData} from "@metamask/smart-accounts-kit/utils";
-import {fromTokenAmount, giwaSepolia} from "@mapae/shared";
+import {fromTokenAmount, giwaSepolia, redactForLog} from "@mapae/shared";
 import {readD3IdentityConfig, readExpectedSignerAddress} from "./runtime-config.js";
 
 async function printPlan(): Promise<void> {
@@ -161,6 +161,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(redactForLog(error));
     process.exitCode = 1;
 });

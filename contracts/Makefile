@@ -40,8 +40,14 @@ framework-deploy: framework-prepare
 		--rpc-url giwa_sepolia --broadcast -vvvv
 
 ## Read-only import of run-latest.json + independent RPC evidence verification.
+# `@` is load-bearing, not cosmetic. Make echoes each logical recipe line *after*
+# variable expansion, so without it the whole command — including the expanded
+# GIWA_SEPOLIA_RPC_URL — is printed to stdout and into any CI log. A private RPC
+# endpoint carries its API key in the URL path, which makes that echo a credential
+# disclosure. Verified with a replica Makefile: the unsilenced form printed the full
+# URL before running.
 framework-import:
-	cd ../apps/delegation-lab && \
+	@cd ../apps/delegation-lab && \
 		FRAMEWORK_ADMIN_ADDRESS='$(FRAMEWORK_ADMIN_ADDRESS)' \
 		GIWA_SEPOLIA_RPC_URL='$(GIWA_SEPOLIA_RPC_URL)' \
 		bun run forge:import
@@ -54,7 +60,7 @@ framework-accept:
 ## Read-only transition from ownership-pending evidence to the active artifact.
 framework-finalize:
 	@test -n "$(ACCEPT_TX)" || (echo "ACCEPT_TX=0x... is required"; exit 1)
-	cd ../apps/delegation-lab && \
+	@cd ../apps/delegation-lab && \
 		CASE_1_OWNER_ADDRESS='$(CASE_1_OWNER_ADDRESS)' \
 		CASE_2_VENDOR_ADDRESS='$(CASE_2_VENDOR_ADDRESS)' \
 		FRAMEWORK_ADMIN_ADDRESS='$(FRAMEWORK_ADMIN_ADDRESS)' \

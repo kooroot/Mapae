@@ -9,7 +9,10 @@
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
     "./policy": "./src/policy.ts",
-    "./x402": "./src/x402.ts"
+    "./x402": "./src/x402.ts",
+    "./delegation-status": "./src/delegation-status.ts",
+    "./revocation": "./src/revocation.ts",
+    "./revocation-submission": "./src/revocation-submission.ts"
   },
   "dependencies": {
     "@mapae/shared": "workspace:*",

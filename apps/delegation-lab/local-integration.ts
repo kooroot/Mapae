@@ -1,3 +1,4 @@
+import {redactForLog} from "@mapae/shared";
 import {
     FRAMEWORK_COMPOSITION_ID,
     FrameworkDeploymentRecorder,
@@ -395,6 +396,6 @@ async function settleLeaf(params: {
 }
 
 main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(redactForLog(error));
     process.exitCode = 1;
 });

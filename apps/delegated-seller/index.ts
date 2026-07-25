@@ -14,6 +14,7 @@ import {
     decodeAnyPaymentHeader,
     fromTokenAmount,
     giwaSepolia,
+    parseNodeRpcUrl,
     toTokenAmount,
     type Erc7710PaymentPayload,
     type Erc7710PaymentRequirements,
@@ -81,14 +82,9 @@ async function readManifest() {
 }
 
 function readRpcUrl(): string {
-    const value =
-        process.env.GIWA_SEPOLIA_RPC_URL?.trim() ||
-        giwaSepolia.rpcUrls.default.http[0];
-    const url = new URL(value);
-    if (url.protocol !== "https:" || url.username || url.password) {
-        throw new Error("GIWA_SEPOLIA_RPC_URL must be HTTPS without credentials");
-    }
-    return url.toString();
+    return parseNodeRpcUrl(
+        process.env.GIWA_SEPOLIA_RPC_URL?.trim() || giwaSepolia.rpcUrls.default.http[0],
+    );
 }
 
 function readFrameworkAdmin(): Address {
@@ -238,11 +234,13 @@ app.get("/delegated/deliverable/:id", async (c) => {
         return c.json({error: "delegation_rejected"}, 403);
     }
     const settled = await callFacilitator("/settle", request);
-    if (
-        !settled.ok ||
-        settled.value.success !== true ||
-        !isCanonicalPayer(settled.value.payer, payer)
-    ) {
+    // "Did not succeed" and "is not known to have succeeded" are different claims.
+    // A transport failure, or a facilitator that broadcast without seeing a receipt,
+    // leaves the payer possibly charged — answering 422 would assert they were not.
+    if (!settled.ok || settled.value.errorReason === "settlement_unconfirmed") {
+        return c.json({error: "settlement_unknown"}, 504);
+    }
+    if (settled.value.success !== true || !isCanonicalPayer(settled.value.payer, payer)) {
         return c.json({error: "settlement_failed"}, 422);
     }
 
@@ -251,7 +249,15 @@ app.get("/delegated/deliverable/:id", async (c) => {
         /^0x[0-9a-fA-F]{64}$/.test(settled.value.transaction)
             ? (settled.value.transaction as Hex)
             : undefined;
-    c.header("X-PAYMENT-RESPONSE", btoa(JSON.stringify(settled.value)));
+    // Built from the fields this seller validated, not by echoing the facilitator's
+    // body. `btoa` throws on any non-Latin1 character, and that throw would land
+    // *after* settlement — the buyer would have paid and received a 500. Every field
+    // here is ASCII by construction: a CAIP-2 constant, a checksummed address, and a
+    // hex hash already matched against /^0x[0-9a-fA-F]{64}$/.
+    c.header(
+        "X-PAYMENT-RESPONSE",
+        btoa(JSON.stringify({success: true, network: requirements.network, payer, transaction})),
+    );
     return c.json({
         ...item.body,
         receipt: {
@@ -271,6 +277,8 @@ type FacilitatorResponse = {
     success?: boolean;
     transaction?: string;
     payer?: string;
+    /** `settlement_unconfirmed` means broadcast happened but the receipt did not. */
+    errorReason?: string;
 };
 
 function isCanonicalPayer(value: unknown, expected: Address): boolean {

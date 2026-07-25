@@ -1,0 +1,12 @@
+{
+  "name": "@mapae/agent-mcp",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mapae/delegation": "workspace:*",
+    "@mapae/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "viem": "^2.55.8",
+    "zod": "^3.25.76"
+  }
+}
