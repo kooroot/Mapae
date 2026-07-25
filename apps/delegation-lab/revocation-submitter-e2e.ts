@@ -50,6 +50,7 @@ import {
     type PublicClient,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
+import {startForkSourceProxy} from "./fork-source-proxy";
 
 const ANVIL_PORT = 8547;
 const SUBMITTER_PORT = 8183;
@@ -77,6 +78,8 @@ const signerKey = (label: string) =>
     keccak256(stringToHex(`mapae.revocation-submitter-e2e.v1.${label}`)) as Hex;
 
 const children: {name: string; proc: Bun.Subprocess}[] = [];
+/** Loopback listeners this run owns — closed alongside the children on any exit path. */
+const listeners: {stop(): void}[] = [];
 
 function shutdown(): void {
     for (const {proc} of children) {
@@ -84,6 +87,13 @@ function shutdown(): void {
             proc.kill();
         } catch {
             /* already gone */
+        }
+    }
+    for (const listener of listeners) {
+        try {
+            listener.stop();
+        } catch {
+            /* already closed */
         }
     }
 }
@@ -218,6 +228,10 @@ async function main(): Promise<void> {
     console.log(`[e2e] relayer GIWA nonce before  ${nonceBefore}`);
 
     // ── fork ──────────────────────────────────────────────────────────────────────────
+    // The key never reaches argv — `--fork-url` has no env alias, and argv is readable
+    // through `ps`. A loopback proxy holds it and hands anvil a keyless address.
+    const source = startForkSourceProxy(upstream);
+    listeners.push(source);
     const anvil = Bun.spawn(
         [
             "anvil",
@@ -225,7 +239,7 @@ async function main(): Promise<void> {
             String(ANVIL_PORT),
             "--silent",
             "--fork-url",
-            upstream,
+            source.url,
             "--fork-block-number",
             process.env["SUITE_FORK_BLOCK"]?.trim() || String(FORK_BLOCK),
             "--compute-units-per-second",

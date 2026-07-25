@@ -39,6 +39,7 @@ import {
     revocationPrefund,
 } from "@mapae/delegation";
 import {assertRpcTarget, giwaSepolia, parseNodeRpcUrl, redactForLog} from "@mapae/shared";
+import {startForkSourceProxy} from "./fork-source-proxy";
 import {EntryPoint as EntryPointAbi} from "@metamask/delegation-abis";
 import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {
@@ -187,6 +188,10 @@ async function main(): Promise<void> {
     console.log(`│  no-broadcast guard: submitter pinned to ${forkRpc}`);
 
     const forkBlock = process.env["SUITE_FORK_BLOCK"]?.trim();
+    // The key never reaches argv. `anvil --fork-url` has no env alias, and this lab is
+    // meant to sit for hours rather than seconds, so the process table would advertise
+    // the credential the whole time. See `fork-source-proxy.ts`.
+    const source = startForkSourceProxy(upstream);
     const anvil = Bun.spawn(
         [
             "anvil",
@@ -194,7 +199,7 @@ async function main(): Promise<void> {
             String(ANVIL_PORT),
             "--silent",
             "--fork-url",
-            upstream,
+            source.url,
             ...(forkBlock ? ["--fork-block-number", forkBlock] : []),
             "--compute-units-per-second",
             process.env["SUITE_CUPS"]?.trim() || "300",
@@ -369,6 +374,8 @@ VITE_PERMISSION_CONTEXT=${context}
     });
     console.log(`\n[lab] fork 상 회수 상태: ${revoked ? "회수됨 ✅ (지갑 레그 완주)" : "미회수"}`);
     console.log(`[lab] 실제 GIWA relayer nonce ${nonceBefore} → ${nonceAfter} (불변) ✅`);
+    console.log(`[lab] fork source 프록시 호출 ${source.forwarded()}회 — 키는 argv 에 한 번도 나오지 않았습니다 ✅`);
+    source.stop();
     console.log(`[lab] ${consoleEnvPath.replace(`${REPO}/`, "")} 는 남겨둡니다 — 지우면 콘솔이 라이브 GIWA 를 봅니다.`);
 }
 

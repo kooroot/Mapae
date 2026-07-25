@@ -26,6 +26,7 @@ import {
     parseNodeRpcUrl,
     redactForLog,
 } from "@mapae/shared";
+import {startForkSourceProxy} from "./fork-source-proxy";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
@@ -84,6 +85,8 @@ async function waitFor(
 }
 
 const children: {name: string; proc: Bun.Subprocess}[] = [];
+/** Loopback listeners this run owns — closed alongside the children on any exit path. */
+const listeners: {stop(): void}[] = [];
 
 function spawnApp(
     name: string,
@@ -127,6 +130,13 @@ function shutdown(): void {
             proc.kill();
         } catch {
             /* already gone */
+        }
+    }
+    for (const listener of listeners) {
+        try {
+            listener.stop();
+        } catch {
+            /* already closed */
         }
     }
 }
@@ -481,8 +491,12 @@ async function main(): Promise<void> {
     console.log(`[e2e] relayer GIWA nonce before  ${BigInt(nonceBefore)}`);
 
     console.log(`[e2e] forking GIWA → ${forkRpc}`);
+    // The key never reaches argv — `--fork-url` has no env alias, and argv is readable
+    // through `ps`. A loopback proxy holds it and hands anvil a keyless address.
+    const source = startForkSourceProxy(upstream);
+    listeners.push(source);
     const anvil = Bun.spawn(
-        ["anvil", "--fork-url", upstream, "--port", String(ANVIL_PORT), "--silent"],
+        ["anvil", "--fork-url", source.url, "--port", String(ANVIL_PORT), "--silent"],
         {stdout: "ignore", stderr: "pipe"},
     );
     children.push({name: "anvil", proc: anvil});

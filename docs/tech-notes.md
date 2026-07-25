@@ -407,6 +407,16 @@ bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO (
 종료 후 실제 GIWA relayer nonce가 그대로인지 다시 읽어 아무것도 브로드캐스트되지
 않았음을 확인한다.
 
+**fork 소스의 자격증명은 argv 에 나오지 않는다.** 프라이빗 GIWA 엔드포인트는 URL
+**경로**에 API 키를 담고, argv 는 `ps` 로 누구나 읽는다. `anvil --fork-url` 에는 env
+별칭이 없고 `ETH_RPC_URL` 만으로는 fork 되지 않으므로(체인 id `0x7a69` 반환),
+`apps/delegation-lab/fork-source-proxy.ts` 가 키를 자기 메모리에 들고 anvil 에는
+키 없는 `http://127.0.0.1:<임시포트>` 를 넘긴다. fork 를 띄우는 네 곳 전부가 이 경로를
+쓴다. 양쪽 모두 같은 도구로 측정했다 — 직접 넘기면 `pgrep -f` 가 키를 찾고, 프록시를
+거치면 못 찾는다(anvil 이 떠 있는 동안 `test:e2e:mcp` 40회·`test:e2e:revoke` 8회 샘플,
+모두 0건). macOS 에서는 `ps -Eww -o command=` 를 쓰면 안 된다 — 전체 argv 를 보여주지
+않아 프록시 없는 경우에도 거짓 0 을 낸다.
+
 ---
 
 ## 3. 에러 모델

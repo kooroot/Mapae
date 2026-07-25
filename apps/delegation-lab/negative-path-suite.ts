@@ -50,6 +50,7 @@ import {
     encodeDelegations,
 } from "@metamask/smart-accounts-kit/utils";
 import {GIWA_SEPOLIA_CAIP2, MOCK_USDC, giwaSepolia, redactUrls} from "@mapae/shared";
+import {startForkSourceProxy} from "./fork-source-proxy";
 import {
     createPublicClient,
     decodeErrorResult,
@@ -302,14 +303,20 @@ function runTeardowns(): void {
 async function spawnAnvil(forkUrl: string | undefined, port: number): Promise<() => void> {
     assertPortFree(port);
     const args = ["--port", String(port), "--silent"];
-    if (forkUrl) {
+    // The fork source's API key lives in the URL *path*, and argv is world-readable
+    // through `ps`. `--fork-url` has no env alias, so the credential is handed to a
+    // loopback proxy that keeps it in memory and gives anvil a keyless address instead.
+    // Measured both ways: `pgrep -f` finds the key with the URL passed directly and finds
+    // nothing through the proxy.
+    const source = forkUrl ? startForkSourceProxy(forkUrl) : undefined;
+    if (forkUrl && source) {
         // The public GIWA RPC rate-limits, and Anvil does not degrade gracefully: an
         // upstream 429 during a storage fetch panics the node mid-suite
         // ("pre-execution changes failed: … over rate limit"). Every later case then
         // reports "Unable to connect", which reads like a local network fault and sends
         // you looking in the wrong place. Throttle Anvil's own upstream rate and let it
         // back off instead of dying. SUITE_CUPS raises it for a private endpoint.
-        args.push("--fork-url", forkUrl);
+        args.push("--fork-url", source.url);
         args.push("--compute-units-per-second", process.env["SUITE_CUPS"]?.trim() || "50");
         args.push("--retries", "30");
         args.push("--fork-retry-backoff", "4");
@@ -358,6 +365,7 @@ async function spawnAnvil(forkUrl: string | undefined, port: number): Promise<()
                     console.error(`[suite] anvil exited with code ${proc.exitCode}${died()}`);
                 }
                 proc.kill();
+                source?.stop();
             };
             // Registered here, not by the caller: the gap this closes is precisely the one
             // between this return and the caller storing the handle.
