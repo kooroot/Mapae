@@ -253,6 +253,14 @@ prefix 검사로 바꾸면 정확히 `trailing bytes` 케이스 하나만 깨진
 사실만으로는 릴레이어가 보전됐다는 뜻이 아니다. 절차는
 [회수 런북](revocation-runbook.md)에 있다.
 
+반례 수트도 같은 이유로 `handleOps` beneficiary를 릴레이어와 분리해 두고 있었는데,
+주석에 적힌 원인은 "fork에서 Anvil이 dev 계정 잔액 override를 잃는다"였고 이는
+측정 결과 **틀렸다.** 원인이 로컬 도구가 아니라 체인 상태이므로 고치는 방법도
+달라진다 — beneficiary는 **대상 체인에서 코드가 없는 주소**여야 하고,
+`assertBeneficiaryIsCodeFree`가 주석 대신 그것을 강제한다. 뮤테이션으로 고정했다:
+beneficiary를 designator가 붙은 주소로 바꾸면 fork 타깃에서만 걸리고 ephemeral은
+그대로 통과한다 — 위험이 있는 곳에서만 정확히 발화한다.
+
 **콘솔 버튼 (`RevokeButton`).** 지갑 연결 → `owner()` 대조 → nonce 읽기 → 빌드 →
 `signTypedData` → 제출 엔드포인트 POST. 세 가지가 비자명하다.
 

@@ -101,12 +101,41 @@ const CHILD_B_KEY = signerKey("child-b");
 const FIXED_VENDOR = getAddress("0x2000000000000000000000000000000000000002");
 const WRONG_PAYEE = getAddress("0x2000000000000000000000000000000000000001");
 const OTHER_PAYEE = getAddress("0x2000000000000000000000000000000000000003");
-// handleOps beneficiary. Deliberately NOT the relayer: on a fork, Anvil loses the local
-// 10000 ETH dev-account override when the EntryPoint credits that account from inside a
-// transaction, and the relayer's balance collapses to its (empty) remote value — every
-// later case then fails "total cost exceeds balance", which reads like the suite spending
-// too much and is not. A throwaway beneficiary keeps the payout off the gas payer.
+// handleOps beneficiary. Deliberately NOT the relayer, and the reason is not what it
+// first looks like.
+//
+// An earlier note here blamed Anvil for losing the local 10000 ETH dev-account override
+// when the EntryPoint credits that account mid-transaction. That was measured and is
+// false. The real mechanism is on the chain, not in Anvil: `ANVIL_KEY_0`/`_1` both carry
+// an EIP-7702 designator on GIWA (`0xef0100…6bd9b715…89606`) pointing at a 614-byte
+// sweeper. `EntryPoint._compensate` pays the beneficiary with `beneficiary.call{value:…}`,
+// which runs that code, and it forwards the account's whole balance onward.
+//
+// `debug_traceTransaction` settles it — the balance leaves in a nested CALL to
+// `0x1330d9…7d8869`, which an override-loss would never produce. Measured on a fork:
+// relayer 1 ETH → 0.00024 ETH in the handleOps block, against a 0.00017 ETH transaction.
+//
+// The distinction matters because it changes the fix. If Anvil were at fault the problem
+// would be local-only; it is not, so a beneficiary must be an address with no code on the
+// *target chain*, and `assertBeneficiaryIsCodeFree` enforces exactly that rather than
+// leaving it to this comment.
 const BENEFICIARY = getAddress("0x2000000000000000000000000000000000000004");
+
+/**
+ * Refuse to start if the beneficiary would execute code on being paid.
+ *
+ * Without this the failure surfaces several cases later as "total cost exceeds balance",
+ * which reads like the suite spending too much and sends you to look at gas parameters.
+ */
+async function assertBeneficiaryIsCodeFree(publicClient: PublicClient): Promise<void> {
+    const code = await publicClient.getCode({address: BENEFICIARY});
+    if (code !== undefined) {
+        throw new Error(
+            `handleOps beneficiary ${BENEFICIARY} carries code on this chain — ` +
+                "EntryPoint._compensate would execute it and the payout can be swept",
+        );
+    }
+}
 
 type RelayerClient = WalletClient<ReturnType<typeof http>, Chain, Account> &
     ReturnType<typeof publicActions>;
@@ -1383,6 +1412,11 @@ async function run(ctx: Ctx): Promise<void> {
 async function main(): Promise<void> {
     const {ctx, stop} = await acquireContext();
     try {
+        // Inside the try, not in `acquireContext`: a refusal raised there would abort
+        // after the node is already up but before `stop` reaches a caller, orphaning an
+        // anvil that holds the port. The next run then fails with "port in use" instead
+        // of the reason it actually refused. Measured while mutation-testing this guard.
+        await assertBeneficiaryIsCodeFree(ctx.publicClient);
         console.log(`[suite] running negative-path cases on chainId ${ctx.chainId}\n`);
         await run(ctx);
     } finally {
