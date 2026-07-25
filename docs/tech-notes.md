@@ -447,6 +447,44 @@ D2 EIP-3009 경로(`apps/seller`)다. D3/D4 위임 경로는 다르게 동작한
 보내는 bearer 길이의 hex(서명된 permission context)는 크기만 남기고 지운다. 운영자는
 원인을 보고, 호출자는 보지 못한다.
 
+#### 기억으로 지키던 규칙을 게이트로 옮겼다
+
+`redactForLog`가 있어도 그것을 **부르는 것**은 사람이었다. 6차원 감사가 17개의 탈출
+경로를 찾아 파일 단위로 닫았는데, 그 스윕의 범위가 `apps/delegation-lab` 과
+`apps/delegated-agent` 였다. `apps/agent/index.ts` 는 금지된 표현을 글자 그대로 유지한
+채 그 스윕을 통과했다:
+
+```ts
+console.error(`\n${err instanceof Error ? err.message : String(err)}`);
+```
+
+오늘 무해한 이유는 그 파일이 `http()` 를 URL 없이 부르기 때문이다 — 다른 앱들처럼
+`throttledHttp(readRpcUrl())` 한 줄만 들어가면 "닫혔다"고 문서화된 구멍이 조용히
+열린다. 새 코드가 계속 되살리는 규칙은 게이트에 있어야 한다.
+
+`bun run check:logging` 이 `apps/` · `packages/` · `scripts/` 전체에서 `console.*` 인자
+안의 날것의 에러를 거절한다. AST 대신 어휘 검사인 이유는 실측이다 — 이 저장소의
+`typescript` 는 7.x 네이티브 포트이고, 그 npm 패키지가 JS 에 노출하는 것은 `version`
+뿐이다(`createSourceFile` 도 `SyntaxKind` 도 없다). 표현 하나를 린트하려고 파서를 하나 더
+들이는 것보다, 주석·문자열·정규식 리터럴을 먼저 지우고 텍스트를 보는 편이 싸다.
+
+지우는 쪽이 위험한 부분이라 export 해서 테스트한다(14 케이스). 그중 하나는 이 저장소의
+실제 줄이다: `redactUrls` 의 정규식 `/\bhttps?:\/\/[^\s"'<>)\]}]+/gi` 는 문자 클래스
+안에 큰따옴표와 작은따옴표를 **둘 다** 갖고 있어서, 정규식 리터럴을 모르는 스트리퍼는
+그 지점부터 파일 끝까지 어긋난다 — 이후의 모든 `console` 호출이 검사에서 사라진다.
+
+일곱 개의 진짜 누출을 일곱 개의 진짜 파일에 심어 증명했다. 그중 하나가 중요한데,
+모듈 로컬 redactor 헬퍼(`console.error(myOwnRedact(error.message))`)는 세탁하지 못한다 —
+`payment-client.ts` 가 실제로 그런 헬퍼를 갖고 있었고 그 반환값이 세 소비자에게 출력됐다.
+
+체커의 첫 초안이 놓친 것도 하나 있었고, 그건 테스트가 아니라 테스트가 덮지 않은 모양을
+찔러보다 나왔다: **`error?.message`**. `error.message` 보다 조심스러워 보이고 똑같이
+누출하며, 사람이 catch 블록을 정리하다 쓰는 바로 그 형태다.
+
+**범위는 `console.*` 뿐이다.** 응답 본문의 `detail: {message: error.message}` 도 같은
+위험이지만, 그걸 잡으려면 어떤 객체가 응답이 되는지 알아야 하고, 오탐이 있는 체커는
+꺼진다 — 경계가 명시된 체커보다 나쁘다.
+
 #### 422 와 504 는 서로 반대되는 주장이다
 
 불투명한 사유들 중 이 둘만은 **뭉개면 안 된다.** `settlement_failed`(422)는 "지불자는

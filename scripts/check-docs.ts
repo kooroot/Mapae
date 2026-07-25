@@ -141,6 +141,41 @@ const FOREIGN_ADDRESSES = new Map<string, string>([
     ["0x6666666666666666666666666666666666666666", "placeholder"],
 ]);
 
+/**
+ * The README states its test totals three times: a badge, a total, and a breakdown.
+ * Make them agree with each other.
+ *
+ * This cannot know whether the number is *right* — that needs the suite to run, and this
+ * check has to stay offline. It can know when the same document contradicts itself, which
+ * is the failure that actually happened: the body was updated from 275 to 316 to 325 while
+ * the badge stayed at 275 through all of it. Every reader sees the badge first.
+ *
+ * The breakdown exists because `bun run check` prints four separate numbers; a total that
+ * does not equal the sum of its parts is a total nobody can reconcile with the command.
+ */
+function checkTestCounts(doc: string, text: string): void {
+    const badge = /tests-(\d+)%20TS%20%2B%20(\d+)%20Foundry/.exec(text);
+    const body = /\*\*(\d+) TypeScript tests \(([^)]*)\)/.exec(text);
+    if (!badge || !body) {
+        // Only the two READMEs carry these; everything else legitimately has neither.
+        if (badge || body) fail(doc, "test counts: badge and body must both be present");
+        return;
+    }
+    const total = Number(body[1]);
+    const parts = [...(body[2] ?? "").matchAll(/\d+/g)].map((match) => Number(match[0]));
+    const sum = parts.reduce((accumulator, part) => accumulator + part, 0);
+    if (Number(badge[1]) !== total) {
+        fail(doc, `test counts: badge says ${badge[1]} TS, body says ${total}`);
+    }
+    if (sum !== total) {
+        fail(doc, `test counts: breakdown sums to ${sum}, total says ${total}`);
+    }
+    const foundry = /\+ (\d+) Foundry tests/.exec(text);
+    if (foundry && Number(badge[2]) !== Number(foundry[1])) {
+        fail(doc, `test counts: badge says ${badge[2]} Foundry, body says ${foundry[1]}`);
+    }
+}
+
 async function main(): Promise<void> {
     const scripts = await loadScripts();
     const makeTargets = await loadMakeTargets();
@@ -149,6 +184,9 @@ async function main(): Promise<void> {
     for (const doc of DOCS) {
         const path = join(REPO, doc);
         const text = await Bun.file(path).text();
+
+        // ── 0. the document does not contradict itself about its own test counts ──────
+        checkTestCounts(doc, text);
 
         // ── 1. every documented command exists ────────────────────────────────────────
         // `(?![\w.:-])` keeps `bun run index.ts` from being read as a script named `index`.
@@ -201,7 +239,9 @@ async function main(): Promise<void> {
         for (const failure of failures) console.error(`  ✗ ${failure}`);
         process.exit(1);
     }
-    console.log(`[docs] ${DOCS.length} documents — commands, links and addresses all check out`);
+    console.log(
+        `[docs] ${DOCS.length} documents — commands, links, addresses and test counts check out`,
+    );
 }
 
 await main();

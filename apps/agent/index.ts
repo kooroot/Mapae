@@ -10,6 +10,7 @@ import {
     explorerTxUrl,
     fromTokenAmount,
     giwaSepolia,
+    redactForLog,
     toTokenAmount,
     type PaymentRequired,
     type PaymentRequirements,
@@ -279,6 +280,11 @@ function randomNonce(): Hex {
 }
 
 main().catch((err: unknown) => {
-    console.error(`\n${err instanceof Error ? err.message : String(err)}`);
+    // This file builds its client with `http()` and no URL, so today the message it
+    // would print holds only the public GIWA endpoint. That is the whole reason this
+    // line survived the sweep that fixed the same expression in fifteen other files —
+    // and it is one `throttledHttp(readRpcUrl())` away from printing a path-embedded
+    // API key. `scripts/check-logging.ts` is what now notices instead of a person.
+    console.error(`\n${redactForLog(err)}`);
     process.exit(1);
 });
