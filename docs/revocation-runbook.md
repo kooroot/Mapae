@@ -150,3 +150,51 @@ cd apps/console && bun run dev
 
 `pause()`는 예치금이 필요 없다. 예치금 arming을 못 한 상태에서의 백스톱이다.
 게이트(`verifyFrameworkOperationalState`)와 온체인(`whenNotPaused`) 양쪽이 막는다.
+
+---
+
+## 지갑 레그를 fork 에서 검증하기
+
+회수 경로에서 자동화가 덮지 못하는 곳은 정확히 하나다 — **사람이 지갑 승인 화면을
+보고 승인하는 구간.** `revocation-submitter-e2e.ts` 가 빌드→서명→POST→CORS
+preflight→simulate→`handleOps`→`UserOperationEvent.success` 까지 8/8 로 완주하지만
+서명은 viem `LocalAccount` 가 만든다. 지갑 확장이 하는 일(사람에게 렌더링,
+`domain.chainId` 강제, 계정 전환, 사용자 거절)은 그 경로에 아예 없고, injected
+provider 를 스텁으로 흉내내면 검증 대상이 스텁 자신이 된다.
+
+```bash
+cd apps/delegation-lab
+bun run lab:revoke        # GIWA head 를 fork, 예치금 arming, 제출기 기동 후 대기
+```
+
+랩이 하는 일: GIWA 헤드를 fork → 파생 relayer 에 `anvil_setBalance` →
+`EntryPoint.depositTo(payer)` 로 1회분의 8배 예치 → 제출기를 fork 에 물려 기동 →
+`apps/console/.env.local` 작성 → **Ctrl-C 까지 그대로 대기.**
+
+### 왜 fork 로 충분한가
+
+서명이 오프라인 EIP-712 이고 **fork 도 chain id 91342** 라, 지갑이 서명하도록 요청받는
+다이제스트가 라이브 GIWA 의 것과 바이트 단위로 같다 — 같은 도메인, 같은
+`verifyingContract`, 같은 `entryPoint`. 그리고 fork 는 GIWA 의 실제 상태를 들고 있으므로
+커서 아래 계정이 진짜 payer `0xA4e4d00E…DDF382` 와 진짜 owner 다. 라이브 GIWA 가
+추가로 주는 것은 채굴된 트랜잭션과 익스플로러 링크뿐이다.
+
+따라온 결론 하나: **MetaMask 에 커스텀 네트워크를 추가할 필요가 없다.** 지갑은
+`domain.chainId` 를 선택된 네트워크와 비교하는데 실제 GIWA Sepolia 도 91342 다. 소유자는
+GIWA Sepolia 에 그대로 있으면서 서명하면 된다. 지갑은 fork 에 접속하지 않는다 — fork 와
+말하는 것은 이 프로세스와 콘솔뿐이다.
+
+### 함정 둘 (여기서 실제로 겪음)
+
+- **`localhost` 말고 `127.0.0.1` 로 열 것.** 같은 머신의 다른 프로젝트가
+  `localhost:5173` 에 service worker 를 남겨두면 그 앱이 대신 뜬다. 서버는 두 호스트
+  모두 정상 응답하는데 브라우저만 다른 것을 보여주므로, 원인을 콘솔에서 찾게 된다.
+- **콘솔 포트가 5173 이 아닐 수 있다.** 그 포트가 이미 쓰이면 vite 는 5174 로 내려가고,
+  CORS allowlist 가 그 포트를 안 덮으면 회수 버튼이 **조용히** 아무 것도 안 한다. 랩은
+  5173–5176 과 4173 을 두 호스트 표기로 모두 덮고, 어느 포트로 갈지 미리 알려준다.
+
+### 안전
+
+라이브 GIWA 에 닿는 것은 없다. 제출기 자식 프로세스는 spawn 전에 loopback fork 로
+고정되고, 실제 GIWA relayer nonce 를 시작과 종료 시점에 각각 읽어 불변임을 증명한다.
+`.env.local` 은 gitignored 이며, 지우면 콘솔이 다시 라이브 GIWA 를 본다.

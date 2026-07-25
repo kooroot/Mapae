@@ -6,6 +6,7 @@ import {getAddress} from "viem";
 import {
     REQUIRED_PREFUND,
     RevocationFundingView,
+    RevokeConnectNote,
     RevokeGateNote,
     RevokeProgressNote,
     describeRefusal,
@@ -15,6 +16,7 @@ import {judgeRevokeGate} from "./revoke-state";
 const required = revocationPrefund(DEFAULT_REVOCATION_GAS);
 const OWNER = getAddress("0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382");
 const STRANGER = getAddress("0x0229346e91a07EA24A54704F094D293E43E9d302");
+const GIWA = 91_342;
 const TX = "0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c";
 
 function state(deposit: bigint, nativeBalance = 0n): RevocationPrefundState {
@@ -94,6 +96,8 @@ describe("revoke gate copy", () => {
                 submitterUrl: undefined,
                 revoked: false,
                 connected: undefined,
+                connectedChainId: undefined,
+                expectedChainId: GIWA,
                 owner: undefined,
                 shortfall: undefined,
             }),
@@ -113,6 +117,8 @@ describe("revoke gate copy", () => {
                 submitterUrl: "http://127.0.0.1:8082",
                 revoked: false,
                 connected: STRANGER,
+                connectedChainId: GIWA,
+                expectedChainId: GIWA,
                 owner: OWNER,
                 shortfall: 0n,
             }),
@@ -122,12 +128,37 @@ describe("revoke gate copy", () => {
         expect(html).toContain(OWNER.slice(0, 10));
     });
 
+    /**
+     * The note has to name the number the wallet is actually on, not just "wrong network".
+     * MetaMask refuses `eth_signTypedData_v4` without opening a prompt when
+     * `domain.chainId` differs, so the alternative to this sentence is a button that looks
+     * ready and a wallet that appears to do nothing.
+     */
+    test("a chain mismatch names both chain ids and where the refusal comes from", () => {
+        const html = gateNote(
+            judgeRevokeGate({
+                submitterUrl: "http://127.0.0.1:8082",
+                revoked: false,
+                connected: OWNER,
+                connectedChainId: 11_155_111,
+                expectedChainId: GIWA,
+                owner: OWNER,
+                shortfall: 0n,
+            }),
+        );
+        expect(html).toContain("11155111");
+        expect(html).toContain(String(GIWA));
+        expect(html).toContain("domain.chainId");
+    });
+
     test("an unarmed deposit names AA21 and the shortfall in ETH", () => {
         const html = gateNote(
             judgeRevokeGate({
                 submitterUrl: "http://127.0.0.1:8082",
                 revoked: false,
                 connected: OWNER,
+                connectedChainId: GIWA,
+                expectedChainId: GIWA,
                 owner: OWNER,
                 shortfall: 700_000_000_000_000n,
             }),
@@ -142,6 +173,8 @@ describe("revoke gate copy", () => {
             submitterUrl: "http://127.0.0.1:8082",
             revoked: false,
             connected: OWNER,
+            connectedChainId: GIWA,
+            expectedChainId: GIWA,
             owner: OWNER,
             shortfall: 0n,
         });
@@ -149,6 +182,8 @@ describe("revoke gate copy", () => {
             submitterUrl: "http://127.0.0.1:8082",
             revoked: true,
             connected: OWNER,
+            connectedChainId: GIWA,
+            expectedChainId: GIWA,
             owner: OWNER,
             shortfall: 0n,
         });
@@ -167,6 +202,28 @@ describe("revoke gate copy", () => {
  * The success path is the only place this console ever reports a state change, so it has
  * to be unambiguous about whether the grant is gone.
  */
+describe("wallet connection failure", () => {
+    test("nothing is said when the connector has not failed", () => {
+        expect(renderToStaticMarkup(<RevokeConnectNote error={null} />)).toBe("");
+    });
+
+    /**
+     * The no-extension case. `injected()` throws `ProviderNotFoundError`, and until this
+     * rendered, the entire user-visible symptom was a button that did nothing — which
+     * sends anyone straight to looking for a broken click handler.
+     */
+    test("a missing wallet extension is named rather than swallowed", () => {
+        const html = renderToStaticMarkup(
+            <RevokeConnectNote error={new Error("Provider not found.\nVersion: wagmi@3.7.4")} />,
+        );
+        expect(html).toContain("지갑에 연결하지 못했습니다");
+        expect(html).toContain("Provider not found.");
+        expect(html).toContain("fault");
+        // Same one-line rule as every other error surface here.
+        expect(html).not.toContain("Version:");
+    });
+});
+
 describe("revoke progress", () => {
     test("idle, signing and submitting render nothing above the button", () => {
         expect(renderToStaticMarkup(<RevokeProgressNote progress={{phase: "idle"}} />)).toBe("");

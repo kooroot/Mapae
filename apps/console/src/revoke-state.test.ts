@@ -6,10 +6,14 @@ const OWNER = getAddress("0x1111111111111111111111111111111111111111");
 const STRANGER = getAddress("0x2222222222222222222222222222222222222222");
 const SUBMITTER = "http://127.0.0.1:8082";
 
+const GIWA = 91_342;
+
 const base = {
     submitterUrl: SUBMITTER,
     revoked: false,
     connected: OWNER as Address | undefined,
+    connectedChainId: GIWA as number | undefined,
+    expectedChainId: GIWA,
     owner: OWNER as Address | undefined,
     shortfall: 0n as bigint | undefined,
 };
@@ -33,6 +37,48 @@ describe("revoke gate", () => {
 
     test("a disconnected wallet asks for connection", () => {
         expect(judgeRevokeGate({...base, connected: undefined}).kind).toBe("disconnected");
+    });
+
+    /**
+     * The wallet leg's quietest failure. MetaMask refuses `eth_signTypedData_v4` outright
+     * when `domain.chainId` is not the selected network — it does not even open the
+     * prompt. Without this branch the button reads "회수 서명", stays enabled, and the
+     * only explanation is the wallet's own message truncated to one line. wagmi cannot
+     * catch it either: the console passes no `chainId` to `signTypedDataAsync`, so
+     * `ConnectorChainMismatchError` is structurally unreachable.
+     */
+    test("a wallet on the wrong chain is caught before the wallet has to refuse", () => {
+        const gate = judgeRevokeGate({...base, connectedChainId: 11_155_111});
+        expect(gate).toEqual({kind: "wrong-chain", connected: 11_155_111, expected: GIWA});
+        expect(revokeButtonLabel(gate)).toBe("지갑 네트워크가 다름");
+    });
+
+    /**
+     * A fork keeps chain id 91342, which is the whole reason the wallet leg can be
+     * verified locally: the digest is identical to the one live GIWA would produce. A
+     * guard that treated "not live GIWA" as wrong would break exactly the setup it exists
+     * to support.
+     */
+    test("a GIWA fork is not a wrong chain — same id, same digest", () => {
+        expect(judgeRevokeGate({...base, connectedChainId: GIWA}).kind).toBe("ready");
+    });
+
+    test("an unknown wallet chain does not invent a mismatch", () => {
+        // `useAccount().chainId` is undefined while disconnected, and `disconnected`
+        // already outranks this. Guessing here would lock the button on a connection
+        // state we have no reading for.
+        expect(judgeRevokeGate({...base, connectedChainId: undefined}).kind).toBe("ready");
+    });
+
+    test("chain outranks wallet — the wrong network can be showing a different account set", () => {
+        const gate = judgeRevokeGate({...base, connected: STRANGER, connectedChainId: 1});
+        expect(gate.kind).toBe("wrong-chain");
+    });
+
+    test("a disconnected wallet outranks a chain mismatch", () => {
+        expect(
+            judgeRevokeGate({...base, connected: undefined, connectedChainId: 1}).kind,
+        ).toBe("disconnected");
     });
 
     test("a non-owner wallet is refused before anything is signed", () => {
