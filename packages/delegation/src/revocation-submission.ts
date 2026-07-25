@@ -308,3 +308,119 @@ export function validateRevocationSubmission(
         requiredPrefund: (verificationGasLimit + callGasLimit + preVerificationGas) * maxFeePerGas,
     };
 }
+
+/**
+ * Which browser origins may reach this submitter, and how the answer is spelled.
+ *
+ * The console talks to the submitter cross-origin — Vite serves `127.0.0.1:5173`, the
+ * submitter listens on `127.0.0.1:8082`, and a different port is a different origin. The
+ * revoke request sends `content-type: application/json`, which is not a CORS-safelisted
+ * value, so the browser *must* send a preflight first. A submitter with no CORS answer
+ * fails that preflight, the POST is never sent, and the owner's signature is discarded
+ * before it reaches the network. The button looks alive and does nothing.
+ *
+ * This is why the policy is code rather than a middleware default: the two obvious
+ * defaults are both wrong here.
+ *
+ * **Not `*`.** The submitter has no application authentication and fronts a funded
+ * relayer key. A wildcard lets any page the operator happens to have open POST to it.
+ * `validateRevocationSubmission` still refuses anything that is not an owner-signed
+ * operation on the one account, so this is not a forgery route — but it is a free
+ * replay-and-burn-gas route, and the origin check is the cheap place to close it.
+ *
+ * **Not credentialed.** No cookie or `Authorization` header is involved; authority
+ * travels in the signature inside the body. `Access-Control-Allow-Credentials` is
+ * therefore never set, which also keeps the wildcard ban from being load-bearing twice.
+ */
+export interface CorsPolicy {
+    /** Exact origins, already normalised. Compared verbatim — no substring, no suffix. */
+    allowedOrigins: string[];
+}
+
+export type CorsDecision =
+    | {allowed: false}
+    | {allowed: true; headers: Record<string, string>};
+
+/**
+ * Answer one request's `Origin`.
+ *
+ * A request with no `Origin` at all is allowed through without CORS headers: that is a
+ * same-origin fetch or a non-browser client (curl, the e2e runner), neither of which the
+ * browser will police. Returning `allowed: true` with no headers keeps those callers
+ * working exactly as before this existed.
+ *
+ * `Vary: Origin` is not decoration. The response differs by origin, and without it any
+ * cache in front of the submitter can serve one origin's allow header to another.
+ */
+export function judgeCorsRequest(
+    origin: string | undefined,
+    policy: CorsPolicy,
+    preflight = false,
+): CorsDecision {
+    if (origin === undefined || origin === "") return {allowed: true, headers: {}};
+    if (!policy.allowedOrigins.includes(origin)) return {allowed: false};
+
+    const headers: Record<string, string> = {
+        "Access-Control-Allow-Origin": origin,
+        Vary: "Origin",
+    };
+    if (preflight) {
+        headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
+        headers["Access-Control-Allow-Headers"] = "content-type";
+        // Ten minutes. Long enough that a retry loop does not re-preflight every attempt,
+        // short enough that tightening the allowlist takes effect within one coffee.
+        headers["Access-Control-Max-Age"] = "600";
+    }
+    return {allowed: true, headers};
+}
+
+/**
+ * Parse the operator's allowlist, refusing anything that would widen the blast radius.
+ *
+ * Loopback-only, for the same reason `configuredSubmitterUrl` is loopback-only on the
+ * console side: this service holds a funded key and has no authentication, so the answer
+ * to "who may drive it from a browser" has to stay on the machine until a TLS reverse
+ * proxy with real auth is in front of it.
+ *
+ * An origin is scheme + host + port and nothing else. `new URL().origin` normalises that
+ * for us, which also means a value with a path or a trailing slash is accepted and
+ * silently reduced to its origin — the comparison in `judgeCorsRequest` is verbatim, so
+ * normalising here is what keeps a trailing slash from quietly disabling the allowlist.
+ */
+export function parseCorsAllowlist(
+    value: string | undefined,
+    isLoopback: (hostname: string) => boolean,
+    fallback: string[],
+): string[] {
+    const raw = value?.trim();
+    if (!raw) return fallback;
+    const origins = raw
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+    if (origins.length === 0) return fallback;
+
+    return origins.map((entry) => {
+        if (entry === "*") {
+            throw new Error(
+                "REVOCATION_CONSOLE_ORIGINS must not be '*' — this submitter fronts a funded relayer key",
+            );
+        }
+        let url: URL;
+        try {
+            url = new URL(entry);
+        } catch {
+            throw new Error(`REVOCATION_CONSOLE_ORIGINS entry is not a URL: ${entry}`);
+        }
+        if (!["http:", "https:"].includes(url.protocol)) {
+            throw new Error(`REVOCATION_CONSOLE_ORIGINS entry must be HTTP(S): ${entry}`);
+        }
+        if (!isLoopback(url.hostname)) {
+            throw new Error(
+                `REVOCATION_CONSOLE_ORIGINS must be loopback, got "${url.hostname}" — ` +
+                    "put a TLS reverse proxy with real authentication in front before this is reachable remotely",
+            );
+        }
+        return url.origin;
+    });
+}

@@ -149,6 +149,58 @@ async function postRevoke(body: unknown): Promise<{status: number; body: RevokeR
     return {status: response.status, body: (await response.json()) as RevokeResponse};
 }
 
+/**
+ * The browser leg, checked against the running service.
+ *
+ * Every other case here uses Bun's server-side `fetch`, which does not enforce CORS — so
+ * the whole suite passed while the console's revoke button was unable to reach this
+ * service from a page at all. `content-type: application/json` is not CORS-safelisted, so
+ * the browser sends this exact preflight first and drops the POST unless it is answered.
+ * Asserting on the response rather than relying on enforcement is what makes a
+ * non-browser client able to catch a browser-only failure.
+ */
+async function proveCorsPreflight(): Promise<void> {
+    const preflight = async (origin: string) =>
+        fetch(`${SUBMITTER_URL}/revoke`, {
+            method: "OPTIONS",
+            headers: {
+                Origin: origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+            signal: AbortSignal.timeout(10_000),
+        });
+
+    const console_ = await preflight("http://127.0.0.1:5173");
+    const allowOrigin = console_.headers.get("access-control-allow-origin");
+    const allowHeaders = console_.headers.get("access-control-allow-headers") ?? "";
+    if (console_.status !== 204 || allowOrigin !== "http://127.0.0.1:5173") {
+        throw new Error(
+            `console preflight failed: ${console_.status} allow-origin=${allowOrigin} — the revoke button cannot reach the submitter from a browser`,
+        );
+    }
+    if (!allowHeaders.toLowerCase().includes("content-type")) {
+        throw new Error(`preflight did not allow content-type (got "${allowHeaders}")`);
+    }
+    // A wildcard cannot reach here — the equality check above already pins the exact
+    // origin. `judgeCorsRequest` carries the "never `*`" assertion instead.
+    console.log(`[e2e] F preflight      204 · allow-origin ${allowOrigin} · content-type ✅`);
+
+    const stranger = await preflight("http://evil.example");
+    if (stranger.status !== 403 || stranger.headers.get("access-control-allow-origin") !== null) {
+        throw new Error(
+            `an unlisted origin was not refused: ${stranger.status} ${stranger.headers.get("access-control-allow-origin")}`,
+        );
+    }
+    console.log(`[e2e] G foreign origin 403, no allow-origin ✅`);
+
+    // The suite's own POSTs carry no Origin. That path has to keep working, or this
+    // guard would have fixed the browser by breaking every script.
+    const noOrigin = await fetch(`${SUBMITTER_URL}/health`, {signal: AbortSignal.timeout(10_000)});
+    if (!noOrigin.ok) throw new Error("a request with no Origin was refused");
+    console.log(`[e2e] H no Origin      ${noOrigin.status} — scripts unaffected ✅`);
+}
+
 async function main(): Promise<void> {
     const forkRpc = assertLoopback(FORK_RPC);
     const upstream = parseNodeRpcUrl(
@@ -438,6 +490,9 @@ async function main(): Promise<void> {
     }
     console.log(`[e2e] E replay funded  ${replay.status} ${replay.body.reason} (AA25 nonce) ✅`);
 
+    // ── F/G/H. the browser leg ────────────────────────────────────────────────────────
+    await proveCorsPreflight();
+
     // ── no-broadcast evidence ─────────────────────────────────────────────────────────
     const nonceAfter = BigInt(
         (await rpc(upstream, "eth_getTransactionCount", [relayer.address, "latest"])) as string,
@@ -449,7 +504,7 @@ async function main(): Promise<void> {
     }
     console.log(`[e2e] relayer GIWA nonce after   ${nonceAfter} (unchanged — nothing broadcast) ✅`);
     console.log("");
-    console.log("[e2e] revocation submitter service PASS — 5/5");
+    console.log("[e2e] revocation submitter service PASS — 8/8");
 }
 
 async function forward(name: string, stream: ReadableStream<Uint8Array> | number | undefined) {
