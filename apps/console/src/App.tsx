@@ -39,24 +39,48 @@ type RootDelegation = {root: Delegation; chainLength: number; context: Hex};
  * unmounts the root and leaves a blank page: no message, no hint, nothing but
  * the grain overlay. The failure is reported instead of thrown.
  */
-function useRootDelegation(
-    context: Hex | undefined,
-): {kind: "unset"} | {kind: "invalid"; reason: string} | {kind: "ok"; value: RootDelegation} {
-    return useMemo(() => {
-        if (!context) return {kind: "unset"} as const;
-        try {
-            // The cap lives on the root permission the owner signed, not on the
-            // per-payment leaf the agent mints for each 402. `chainLength` is carried
-            // along because in a re-delegated chain every link has its own caveats and
-            // an intermediate one can be tighter than the root shown here.
-            const chain = decodeDelegations(context);
-            const root = chain.at(-1);
-            if (!root) return {kind: "invalid", reason: "위임이 하나도 들어 있지 않습니다"} as const;
-            return {kind: "ok", value: {root, chainLength: chain.length, context}} as const;
-        } catch (error) {
-            return {kind: "invalid", reason: faultLine(error)} as const;
-        }
-    }, [context]);
+export type RootDelegationState =
+    | {kind: "unset"}
+    | {kind: "invalid"; reason: string}
+    | {kind: "ok"; value: RootDelegation};
+
+/**
+ * The console's entry gate: which of the three first screens the operator gets.
+ *
+ * Pure and exported so it can be tested without a React tree or a provider, the same
+ * split as `revoke-state.ts`. Three things here are load-bearing.
+ *
+ * **An absent context is `unset`, never `invalid`.** The committed `.env.example` ships
+ * `VITE_PERMISSION_CONTEXT=0x`, which `configuredPermissionContext` reads as absent, so
+ * this is the literal first-run state for anyone following the README. `unset` prints
+ * "set this variable"; `invalid` prints "this could not be decoded" — the second sends a
+ * new reader looking for a corrupted value they never had.
+ *
+ * **The root is the last link, not the first.** `decodeDelegations` returns leaf-first,
+ * and the leaf is the throwaway the agent mints per 402. Taking `[0]` would put that
+ * leaf's single-payment allowance on screen as though it were the account's delegated
+ * cap.
+ *
+ * **A bad context returns a reason instead of throwing.** A throw here unmounts the whole
+ * page, and this repo has already paid for that twice — `configuredSubmitterUrl` did it,
+ * and the note at `Revocation.tsx:151` records the same lesson.
+ */
+export function resolveRootDelegation(context: Hex | undefined): RootDelegationState {
+    if (!context) return {kind: "unset"};
+    try {
+        // `chainLength` is carried along because in a re-delegated chain every link has
+        // its own caveats and an intermediate one can be tighter than the root shown here.
+        const chain = decodeDelegations(context);
+        const root = chain.at(-1);
+        if (!root) return {kind: "invalid", reason: "위임이 하나도 들어 있지 않습니다"};
+        return {kind: "ok", value: {root, chainLength: chain.length, context}};
+    } catch (error) {
+        return {kind: "invalid", reason: faultLine(error)};
+    }
+}
+
+function useRootDelegation(context: Hex | undefined): RootDelegationState {
+    return useMemo(() => resolveRootDelegation(context), [context]);
 }
 
 function DelegationScreen({delegation}: {delegation: RootDelegation}) {
