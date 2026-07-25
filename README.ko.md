@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-208%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-216%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -80,7 +80,7 @@ Mapae에는 비교 가능한 두 결제 경로가 함께 있습니다.
 - D4 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - 한도 초과와 만료는 백엔드 검사가 아니라 **온체인 enforcer가 거절**한다 —
   증거표는 [기술 노트](docs/tech-notes.md)에 있다.
-- 회귀 검증: **208 TypeScript tests + 14 Foundry tests**, 그리고 동일한 23개 caveat
+- 회귀 검증: **216 TypeScript tests + 14 Foundry tests**, 그리고 동일한 23개 caveat
   케이스를 일회용 체인과 GIWA fork 양쪽에서 돌리는 체인 파라미터화 negative-path 수트.
 
 ### 증명하지 않은 것
