@@ -29,7 +29,7 @@ import {RevocationFunding, RevokeButton} from "./Revocation";
  * component's own `Hex | undefined` with a cast — is exactly the "validate, never cast"
  * pattern this repo already got burned by.
  */
-type RootDelegation = {root: Delegation; chainLength: number; context: Hex};
+export type RootDelegation = {root: Delegation; chainLength: number; context: Hex};
 
 /**
  * `decodeDelegations` throws on hex that is well-formed hex but not a
@@ -83,7 +83,14 @@ function useRootDelegation(context: Hex | undefined): RootDelegationState {
     return useMemo(() => resolveRootDelegation(context), [context]);
 }
 
-function DelegationScreen({delegation}: {delegation: RootDelegation}) {
+/**
+ * Exported for the same reason `resolveRootDelegation` is: the tab is `useState`, and a
+ * static render cannot click it. Reaching the receipts screen through `App` would mean
+ * either simulating a click or leaving half the console unrendered by any test — and it
+ * was the second of those for long enough that a `1970-01-01` expiry and a dead
+ * cross-origin revoke button both shipped.
+ */
+export function DelegationScreen({delegation}: {delegation: RootDelegation}) {
     const {root, chainLength, context} = delegation;
 
     const status = useQuery({
@@ -198,7 +205,7 @@ function DelegationScreen({delegation}: {delegation: RootDelegation}) {
     );
 }
 
-function ReceiptScreen({delegation}: {delegation: RootDelegation}) {
+export function ReceiptScreen({delegation}: {delegation: RootDelegation}) {
     const {root} = delegation;
 
     const receipts = useQuery({

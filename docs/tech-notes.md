@@ -214,6 +214,24 @@ permission의 **모든 링크**에 대해 `readDelegationStatus`로 제공한다
 owner EOA가 직접 호출할 수 없고 EntryPoint UserOperation이어야 한다. 두 분기 모두
 수트에서 돈다.
 
+**두 화면은 이제 테스트에서 실제로 렌더된다.** 이전에는 브라우저 밖에서 한 번도
+렌더된 적이 없었고, 그래서 caveat 존재 여부만 보고 만료 행을 그리는 버그가
+`유효` 뱃지 옆에 `만료 1970-01-01`을 띄운 채로 들어갔다 — `TimestampEnforcer`는
+각 절반을 `> 0`으로 검사하므로 0은 1970이 아니라 **무제한**이다. `Screens.test.tsx`가
+`renderToStaticMarkup` + 미리 채운 쿼리 캐시로 로딩·성공·실패 세 분기를 모두 찍는다.
+
+실패 분기를 찍으려면 `retryOnMount: false`가 필요하다. 기본값 `true`에서는
+`QueryObserver`가 에러 상태의 쿼리에 대해 마운트하는 관찰자에게 **낙관적 pending**을
+돌려주므로, 읽기에 실패한 화면을 정적 렌더하면 로딩 패널이 나오고 에러 문구에 대한
+단언이 전부 공허하게 통과한다. 추측이 아니라 측정했다 — 같은 시드가 기본값에서는
+PENDING, 이 플래그에서는 ERROR를 렌더한다.
+
+렌더 단언은 전부 mutation-prove했다: 만료 행 게이트, 영수증 역순, 파생 불가 금액을
+결제액으로 표시, `faultLine` 한 줄 절단, 상태 뱃지 tone, 재위임 경고, 연결 경로를
+`ready` 전용 disable로 접기, 해시 없는 성공의 익스플로러 링크, 잘못된 지갑 주소
+표기, `relayer_unfunded`를 EntryPoint 예치금으로 오도 — 10개 변이가 각각 자기를
+잡는다고 주장한 테스트만 정확히 깨뜨린다.
+
 *self* 분기는 impersonation으로 태워 **결과**를 증명한다 — 회수 후
 `disabledDelegations`가 참으로 바뀌고 동일한 MCP 결제가 `PERMISSION_INACTIVE`로
 거절된다. 셀러가 403을 주는 게 아니라 pre-flight가 첫 402 응답만 보고 서명 전에

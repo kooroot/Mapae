@@ -271,8 +271,15 @@ export function RevokeButton({
     );
 }
 
-/** Turn the submitter's machine-readable refusal into the sentence it stands for. */
-function describeRefusal(body: {reason?: string; detail?: Record<string, string>}): string {
+/**
+ * Turn the submitter's machine-readable refusal into the sentence it stands for.
+ *
+ * Exported for the same reason `revokeButtonLabel` is: these five sentences are the only
+ * thing an owner sees when the kill switch does not fire, and each names a different party
+ * who has to act. Getting `prefund_short` and `relayer_unfunded` the wrong way round would
+ * send someone to top up the wrong account.
+ */
+export function describeRefusal(body: {reason?: string; detail?: Record<string, string>}): string {
     const detail = body.detail ?? {};
     switch (body.reason) {
         case "prefund_short":
