@@ -229,6 +229,19 @@ clean clone with nothing but Bun and Foundry installed — `23/23 cases passed`,
 exit 0. Every refusal prints the enforcer and the exact revert string, so what
 refuses is legible rather than asserted.
 
+The same twenty-three cases also run against the contracts that are actually
+deployed on GIWA, instead of a fresh local copy of them:
+
+```bash
+SUITE_TARGET=fork bun run test:negative
+```
+
+That target needs a GIWA RPC endpoint and forks the live chain locally; nothing
+is broadcast. It is the stronger of the two, and the one this repository's claims
+rest on — the refusals come from the enforcer bytecode at the addresses in
+[docs/deployed-contracts.md](docs/deployed-contracts.md), reading real GIWA state.
+Measured 2026-07-26: `23/23 cases passed` and exit 0 on both targets.
+
 ### Watch the agent pay by itself, then revoke it
 
 This forks GIWA locally, starts the ERC-7710 facilitator and seller against that

@@ -399,11 +399,18 @@ fork에서 owner를 impersonate해 `pause()`를 실행하고 **1번이 실제로
 ```bash
 bun run check                      # 키·네트워크 없이 전 계층 회귀
 cd apps/delegation-lab
-bun run test:negative              # caveat 케이스 (일회용 체인 / GIWA fork)
+bun run test:negative              # caveat 케이스 — 기본 타깃은 일회용 체인
+SUITE_TARGET=fork bun run test:negative   # 같은 케이스를 GIWA fork 위에서
 bun run test:e2e:mcp               # 결제 완주 → 한도 초과 pre-flight 거절 → pause → 회수
 bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 왕복
 bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO
 ```
+
+`test:negative` 를 두 줄로 적은 이유는, 한 줄이 두 타깃을 다 도는 게 아니기 때문이다.
+`SUITE_TARGET` 의 기본값은 `ephemeral` 이라 그냥 실행하면 일회용 체인만 돈다. 이 블록은
+오래도록 한 줄 옆에 "(일회용 체인 / GIWA fork)" 라고만 적어두었는데, 그러면 **더 강한
+쪽을 돌렸다고 읽으면서 실제로는 돌리지 않게 된다.** `SUITE_TARGET=fork` 는 이 저장소
+문서 전체에서 `deployed-contracts.md` 한 곳에만 있었다.
 
 케이스·조건의 **개수는 여기 적지 않는다.** 셋 다 자기가 세어 출력하고
 (`N/N cases passed`, `PASS — N cases (ABC…)`, `GO — N개 조건 전부 충족`),

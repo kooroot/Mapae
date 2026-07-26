@@ -216,6 +216,19 @@ bun run test:negative
 enforcer 이름과 정확한 revert 문자열을 찍으므로, 무엇이 거절하는지가 주장이 아니라
 읽히는 형태로 남습니다.
 
+같은 23개 케이스를 **로컬 사본이 아니라 GIWA에 실제로 배포된 컨트랙트**를 상대로도
+돌립니다:
+
+```bash
+SUITE_TARGET=fork bun run test:negative
+```
+
+이쪽은 GIWA RPC 엔드포인트가 필요하고 라이브 체인을 로컬로 fork합니다 —
+브로드캐스트는 없습니다. 둘 중 더 강한 결과이고 이 저장소의 주장이 기대는 쪽입니다.
+거절이 [docs/deployed-contracts.md](docs/deployed-contracts.md)의 주소에 놓인
+enforcer 바이트코드에서, 실제 GIWA 상태를 읽고 나오기 때문입니다.
+2026-07-26 실측 — 두 타깃 모두 `23/23 cases passed`, 종료 코드 0.
+
 ### 에이전트가 스스로 결제하고, 회수되는 것까지 한 명령으로
 
 GIWA를 로컬로 fork하고 ERC-7710 facilitator와 seller를 그 fork에 붙인 뒤, MCP
