@@ -166,12 +166,25 @@ owner가 각 역할에 위임한 세션 키. 개별 지출 한도의 수신자�
 | full match | 1 | `ApprovalRevocationEnforcer` |
 | **미검증** | **1** | `SpecificActionERC20TransferBatchEnforcer` ([`0xc2dCDaaB…4Da4e74`](https://sepolia-explorer.giwa.io/address/0xc2dCDaaBec97C4b3118075641A852D5884Da4e74)) |
 
-재확인:
+재확인 (읽기 전용, 39개 주소를 한 번에 — 38 유닛 + MockUSDC):
+
+```bash
+bun run verify:explorer
+```
+
+2026-07-26 재측정에서 위 표 그대로였다. 이 명령이 생기기 전의 재확인 절차는 주소당
+`curl` 한 번이었고, 39번을 돌려 손으로 집계해야 했다 — 그래서 아무도 다시 돌리지
+않는 종류의 확인이었다. 한 건만 볼 때는 여전히 이쪽이 빠르다:
 
 ```bash
 curl -s https://sepolia-explorer.giwa.io/api/v2/smart-contracts/<주소> \
   | jq '{name, is_verified, is_partially_verified}'
 ```
+
+`verify:explorer` 는 **읽기만** 한다. 소스를 게시하는 것은
+`scripts/verify-framework.sh` 이고, 그건 제3자 서비스에 쓰는 동작이라 별개로
+의도해서 실행하는 것이다. 미검증 1건이 있어도 이 명령은 0으로 끝난다 —
+익스플로러의 상태를 보고하는 도구가 남의 서비스 장애를 우리 실패로 만들면 안 된다.
 
 ### 그 하나가 검증되지 않는 이유
 

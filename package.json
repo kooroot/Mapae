@@ -16,7 +16,8 @@
     "check:docs": "bun run scripts/check-docs.ts",
     "check:logging": "bun run scripts/check-logging.ts",
     "check:advisories": "bun run scripts/check-advisories.ts",
-    "check:counts": "bun run scripts/check-test-counts.ts"
+    "check:counts": "bun run scripts/check-test-counts.ts",
+    "verify:explorer": "bun run scripts/verify-explorer.ts"
   },
   "dependencies": {
     "viem": "^2.55.8"
