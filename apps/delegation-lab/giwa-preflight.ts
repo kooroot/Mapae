@@ -18,6 +18,7 @@ import {
     parseFrameworkDeploymentManifestJson,
     readDelegationStatus,
     throttledHttp,
+    tightestPeriodRemaining,
     verifyActiveFrameworkDeployment,
 } from "@mapae/delegation";
 import {
@@ -133,7 +134,6 @@ async function main(): Promise<void> {
     record(true, "payer (delegator)", root.delegator);
     record(true, "agent (delegate)", root.delegate);
 
-    let tightest: bigint | undefined;
     for (const [index, status] of statuses.entries()) {
         const tag = index === statuses.length - 1 ? "root" : `link ${index}`;
         record(!status.revoked, `${tag} 회수`, status.revoked ? "회수됨" : "유효");
@@ -144,18 +144,28 @@ async function main(): Promise<void> {
               ? `~ ${new Date(Number(status.validity.notAfter) * 1000).toISOString()}`
               : "제한 없음");
         if (status.remaining !== undefined) {
-            if (tightest === undefined || status.remaining < tightest) tightest = status.remaining;
             record(true, `${tag} 주기 잔량`,
                 `${fromTokenAmount(status.remaining)} mUSDC` +
                 (status.limit ? ` / ${fromTokenAmount(status.limit.periodAmount)} per ${status.limit.periodDuration}s` : ""));
         }
     }
 
+    // 주기 caveat 이 어느 링크에도 없으면 이 조건은 "충족"이 아니라 **답할 수 없음**이다.
+    //
+    // 예전에는 `tightest === undefined` 를 통과로 기록했다. 이 게이트는 사람이 되돌릴 수
+    // 없는 브로드캐스트를 결정하기 직전에 읽는 것이고, 마지막 줄이
+    // `GO — N개 조건 전부 충족` 이다. 없는 한도를 ✅ 로 적으면, 이 제품의 중심 주장인
+    // 온체인 한도가 **빠진 상태**를 GO 로 내보낸다 — 없음을 허가로 읽는 바로 그 모양이다.
+    //
+    // `judgePreflight` 는 같은 `undefined` 를 통과로 둔다. 일부러 다르다: 그쪽 질문은
+    // "체인이 이 결제를 거절하는가"이고 한도가 없으면 답은 "아니오"다. 이쪽 질문은
+    // "내가 생각한 설정이 맞는가"다.
+    const tightest = tightestPeriodRemaining(statuses);
     record(
-        tightest === undefined || amount <= tightest,
+        tightest !== undefined && amount <= tightest,
         "한도 대비 결제액",
         tightest === undefined
-            ? "주기 caveat 없음"
+            ? "주기 caveat 없음 — 이 permission 에는 주기 한도가 없다. 대조할 값이 없다"
             : `${price} ≤ ${fromTokenAmount(tightest)} mUSDC`,
     );
 

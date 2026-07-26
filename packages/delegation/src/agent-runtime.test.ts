@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test";
 import {getAddress, type Address} from "viem";
 import {toTokenAmount} from "@mapae/shared";
-import {judgePreflight, resolveResourceTarget} from "./agent-runtime.js";
+import {judgePreflight, resolveResourceTarget, tightestPeriodRemaining} from "./agent-runtime.js";
 import type {DelegationStatus} from "./delegation-status.js";
 
 const seller = new URL("http://127.0.0.1:3101");
@@ -31,7 +31,34 @@ function link(overrides: Partial<DelegationStatus> = {}): DelegationStatus {
  * closure it was extracted from was reachable only through a bootstrap wanting env vars,
  * files and an RPC, which is why it had no test.
  */
+describe("tightestPeriodRemaining", () => {
+    test("takes the smallest allowance across the chain, not the root's", () => {
+        // A re-delegated child's smaller cap binds even when the root has room.
+        expect(
+            tightestPeriodRemaining([
+                link({remaining: toTokenAmount("1")}),
+                link({remaining: toTokenAmount("5")}),
+            ]),
+        ).toBe(toTokenAmount("1"));
+    });
+
+    test("a chain with no period caveat anywhere is undefined, not zero and not Infinity", () => {
+        // `undefined` is the whole point: it means "there is no cap to compare against".
+        // Collapsing it to a number here would force every caller into one interpretation,
+        // and the two callers want opposite ones.
+        expect(tightestPeriodRemaining([link({remaining: undefined})])).toBeUndefined();
+        expect(tightestPeriodRemaining([])).toBeUndefined();
+    });
+
+    test("links without a cap do not mask the ones that have it", () => {
+        expect(
+            tightestPeriodRemaining([link({remaining: undefined}), link({remaining: 7n})]),
+        ).toBe(7n);
+    });
+});
+
 describe("judgePreflight", () => {
+
     test("clears a payment inside the cap", () => {
         expect(judgePreflight([link()], toTokenAmount("1"))).toEqual({ok: true});
     });
@@ -130,6 +157,15 @@ describe("judgePreflight", () => {
     });
 
     test("no link carries a cap at all — nothing to exceed", () => {
+        // Deliberate, and deliberately *not* what the broadcast gate does with the same
+        // input. `apps/delegation-lab/giwa-preflight.ts` records a missing period cap as a
+        // FAILED condition, because its last line reads `GO — every condition met` to a
+        // human about to send an irreversible settlement, and a cap that is absent must not
+        // be shown as one that was checked. This function answers a narrower question —
+        // "will the chain refuse this payment?" — and with no period cap the answer is no.
+        //
+        // If you came here to make the two agree, read the comment above `tightest` in
+        // agent-runtime.ts first. This assertion is what breaks when you change it.
         expect(judgePreflight([link({remaining: undefined})], toTokenAmount("999"))).toEqual({
             ok: true,
         });

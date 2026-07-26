@@ -240,6 +240,26 @@ export async function loadDelegatedAgentRuntime(
  * would sign, the settlement would revert, and the failure would surface as a facilitator
  * error rather than as the limit doing its job.
  */
+/**
+ * The smallest remaining period allowance across a chain, or `undefined` when no link
+ * carries an `ERC20PeriodTransferEnforcer` caveat at all.
+ *
+ * Shared because two callers computed it with the same six lines and then drew opposite
+ * conclusions from `undefined` — one of them wrongly. Keeping the computation in one place
+ * makes the disagreement visible as a disagreement rather than as a copy that fell behind.
+ *
+ * `undefined` means "there is no period cap to compare against", never "the payment fits".
+ * Every caller has to say which of those it wants.
+ */
+export function tightestPeriodRemaining(statuses: DelegationStatus[]): bigint | undefined {
+    let tightest: bigint | undefined;
+    for (const status of statuses) {
+        if (status.remaining === undefined) continue;
+        if (tightest === undefined || status.remaining < tightest) tightest = status.remaining;
+    }
+    return tightest;
+}
+
 export function judgePreflight(statuses: DelegationStatus[], amount: bigint): PreflightVerdict {
     // An empty chain must not read as "no limits apply".
     //
@@ -272,11 +292,17 @@ export function judgePreflight(statuses: DelegationStatus[], amount: bigint): Pr
         }
     }
 
-    let tightest: bigint | undefined;
-    for (const status of statuses) {
-        if (status.remaining === undefined) continue;
-        if (tightest === undefined || status.remaining < tightest) tightest = status.remaining;
-    }
+    const tightest = tightestPeriodRemaining(statuses);
+    // A chain with links but no period caveat anywhere leaves this undefined, and this
+    // function deliberately clears the payment then: its question is "will the chain refuse
+    // this?", and with no period cap the answer is no. That is *not* the same judgement the
+    // broadcast gate in `apps/delegation-lab/giwa-preflight.ts` makes — a human reading
+    // "GO — every condition met" before an irreversible settlement must not be shown a
+    // missing cap as a satisfied one. The two callers share the computation above and
+    // disagree on purpose; do not "fix" the inconsistency by copying one into the other.
+    //
+    // The empty-chain case above is different in kind and does refuse: "we read nothing" is
+    // not "we read a policy with no period cap".
     if (tightest !== undefined && amount > tightest) {
         return {
             ok: false,
