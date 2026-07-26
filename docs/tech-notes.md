@@ -585,6 +585,23 @@ record(tightest === undefined || amount <= tightest, "한도 대비 결제액", 
 `preparePeriodDelegation` 은 timestamp caveat 과 주기 scope 를 무조건 붙인다. 손으로 만든
 아티팩트에서만 나타난다는 뜻이고, **그래서 아무도 마주친 적이 없어 남아 있었다.**
 
+네 번째는 다른 파일에 있었고, 이번 사냥에서 가장 값이 나갔다. 회수 제출기가
+`judgeSubmissionReadiness` 에 `block.baseFeePerGas ?? 0n` 을 넘기고 있었다. 그 판정기가
+막는 것은 이것이다 — EntryPoint 는 `min(maxFeePerGas, baseFee + priority)` 로 보전하는데
+relayer 자신의 트랜잭션은 `baseFee` 아래로는 포함되지 못하므로, 서명된 `maxFeePerGas` 가
+현재 base fee 밑이면 relayer 는 **회수할 수 없는 비용**을 낸다. 체인에서는 성공하고
+운영자만 조용히 마른다.
+
+`?? 0n` 은 그 검사를 `maxFeePerGas < 0n` 으로 만든다 — 모든 입력에 대해 거짓이다.
+**가드가 존재하기를 멈춘다.** viem 은 블록의 base fee 를 `bigint | null` 로 선언하므로
+도달 가능한 상태다.
+
+이제 판정기가 `bigint | undefined` 를 받고 `base_fee_unreadable` 로 거절한다.
+`fee_below_basefee` 와 사유를 나눈 것은 지시가 반대이기 때문이다 — 앞은 소유자에게 더
+높은 수수료로 다시 서명하라는 뜻이고, 뒤는 우리가 체인을 못 읽었다는 뜻이다. 변이로
+확인: 가드를 빼면 정확히 두 테스트가 깨진다. 회수 e2e 8 케이스는 그대로 통과한다
+(fork 의 블록에는 base fee 가 있으므로 동작 변화가 없다).
+
 #### 기억으로 지키던 규칙을 게이트로 옮겼다
 
 `redactForLog`가 있어도 그것을 **부르는 것**은 사람이었다. 6차원 감사가 17개의 탈출

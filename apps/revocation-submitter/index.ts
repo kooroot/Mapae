@@ -202,7 +202,10 @@ async function submit(submission: ValidatedRevocationSubmission): Promise<Revoke
     const readiness = judgeSubmissionReadiness({
         deposit: prefund.deposit,
         requiredPrefund: submission.requiredPrefund,
-        baseFeePerGas: block.baseFeePerGas ?? 0n,
+        // Not `?? 0n`: a base fee we could not read must reach the judge as unknown.
+        // Substituting zero makes `maxFeePerGas < baseFeePerGas` false for every input and
+        // turns the guard that protects the relayer into a no-op.
+        baseFeePerGas: block.baseFeePerGas ?? undefined,
         maxFeePerGas: submission.gas.maxFeePerGas,
         relayerBalance,
     });

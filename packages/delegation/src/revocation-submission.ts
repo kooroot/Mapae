@@ -131,6 +131,7 @@ export function buildRevocationSubmissionBody(params: {
  */
 export type RevocationSubmissionRefusal =
     | {reason: "prefund_short"; deposit: bigint; requiredPrefund: bigint; shortfall: bigint}
+    | {reason: "base_fee_unreadable"; maxFeePerGas: bigint}
     | {reason: "fee_below_basefee"; maxFeePerGas: bigint; baseFeePerGas: bigint}
     | {reason: "relayer_unfunded"; relayerBalance: bigint; needed: bigint};
 
@@ -147,11 +148,18 @@ export type RevocationSubmissionRefusal =
  * cannot be included below `baseFee`. When the signed `maxFeePerGas` sits under the
  * current base fee the relayer pays more than it can ever recover — a broadcast that
  * succeeds on chain and quietly drains the operator.
+ *
+ * `baseFeePerGas` is deliberately nullable here. viem types a block's base fee as
+ * `bigint | null`, and the caller used to substitute `0n` for the missing case — which
+ * turns `maxFeePerGas < baseFeePerGas` into `x < 0n`, false for every input, silently
+ * disabling the very guard described above. A base fee we could not read is not a base fee
+ * of zero; it is a question we cannot answer, and answering it "fine" is how the operator
+ * gets drained by the check that was supposed to prevent it.
  */
 export function judgeSubmissionReadiness(params: {
     deposit: bigint;
     requiredPrefund: bigint;
-    baseFeePerGas: bigint;
+    baseFeePerGas: bigint | undefined;
     maxFeePerGas: bigint;
     relayerBalance: bigint;
 }): {ok: true} | {ok: false; refusal: RevocationSubmissionRefusal} {
@@ -164,6 +172,12 @@ export function judgeSubmissionReadiness(params: {
                 requiredPrefund: params.requiredPrefund,
                 shortfall: params.requiredPrefund - params.deposit,
             },
+        };
+    }
+    if (params.baseFeePerGas === undefined) {
+        return {
+            ok: false,
+            refusal: {reason: "base_fee_unreadable", maxFeePerGas: params.maxFeePerGas},
         };
     }
     if (params.maxFeePerGas < params.baseFeePerGas) {

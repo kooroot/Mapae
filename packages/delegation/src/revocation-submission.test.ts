@@ -320,6 +320,28 @@ describe("submission readiness", () => {
         expect(judgeSubmissionReadiness(armed)).toEqual({ok: true});
     });
 
+    test("an unreadable base fee refuses instead of passing as zero", () => {
+        // The caller used to substitute `0n` for a block with no base fee. That makes the
+        // fee check below `maxFeePerGas < 0n` — false for every input — so the guard that
+        // stops the relayer fronting unrecoverable gas silently stopped existing. viem
+        // types a block's base fee as `bigint | null`, so this is a reachable state and not
+        // a hypothetical.
+        expect(judgeSubmissionReadiness({...armed, baseFeePerGas: undefined})).toEqual({
+            ok: false,
+            refusal: {reason: "base_fee_unreadable", maxFeePerGas: armed.maxFeePerGas},
+        });
+    });
+
+    test("an unreadable base fee is not reported as a fee that is too low", () => {
+        // Distinct reasons on purpose: `fee_below_basefee` tells the owner to re-sign with
+        // a higher fee, which is the wrong instruction when the truth is that we could not
+        // read the chain. One is about their signature, the other about our read.
+        const unreadable = judgeSubmissionReadiness({...armed, baseFeePerGas: undefined});
+        expect(unreadable).toMatchObject({refusal: {reason: "base_fee_unreadable"}});
+        const tooLow = judgeSubmissionReadiness({...armed, baseFeePerGas: armed.maxFeePerGas + 1n});
+        expect(tooLow).toMatchObject({refusal: {reason: "fee_below_basefee"}});
+    });
+
     test("one wei short is not armed, and the shortfall is reported", () => {
         const result = judgeSubmissionReadiness({...armed, deposit: armed.deposit - 1n});
         expect(result).toEqual({

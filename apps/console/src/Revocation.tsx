@@ -290,6 +290,8 @@ export function describeRefusal(body: {reason?: string; detail?: Record<string, 
     switch (body.reason) {
         case "prefund_short":
             return `EntryPoint 예치금이 ${detail["shortfall"] ?? "?"} wei 모자랍니다 — relayer가 depositTo로 채워야 합니다`;
+        case "base_fee_unreadable":
+            return "현재 base fee를 읽지 못해, 서명된 수수료가 회수 가능한지 판단할 수 없습니다 — 다시 시도해 주세요";
         case "fee_below_basefee":
             return `서명된 maxFeePerGas(${detail["maxFeePerGas"] ?? "?"})가 현재 base fee(${detail["baseFeePerGas"] ?? "?"}) 아래라, 제출자가 회수할 수 없는 비용을 떠안게 됩니다`;
         case "relayer_unfunded":
