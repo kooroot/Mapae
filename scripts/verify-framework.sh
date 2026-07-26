@@ -17,7 +17,10 @@
 # No private key is used or needed — verification only publishes source.
 set -euo pipefail
 export PATH="$HOME/.foundry/bin:$PATH"
-cd /Users/kooroot/Desktop/dev/mapae/contracts/lib/delegation-framework
+# Resolved from this script rather than hardcoded. This line used to name one person's
+# home directory in a tracked file, so nobody else could run it at all.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT/contracts/lib/delegation-framework"
 
 # Guard: must be the exact deployed revision, or the bytecode will not correspond.
 EXPECTED_REV=d0ebab5386503824730fdc0e48924f362d8290d0

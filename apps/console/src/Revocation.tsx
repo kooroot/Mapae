@@ -156,8 +156,11 @@ export function RevokeButton({
     } catch (error) {
         submitterFault = faultLine(error);
     }
-    const {address: connected} = useAccount();
-    const {connect, connectors, isPending: connecting} = useConnect();
+    // `useAccount().chainId` rather than `useChainId()`: the latter falls back to the
+    // config's first chain while disconnected, so it can never report a mismatch, and a
+    // guard that cannot fire is worse than none.
+    const {address: connected, chainId: connectedChainId} = useAccount();
+    const {connect, connectors, isPending: connecting, error: connectError} = useConnect();
     const {signTypedDataAsync} = useSignTypedData();
     const [progress, setProgress] = useState<RevokeProgress>({phase: "idle"});
 
@@ -183,6 +186,8 @@ export function RevokeButton({
         submitterUrl,
         revoked,
         connected,
+        connectedChainId,
+        expectedChainId: chain.id,
         owner: owner.data,
         shortfall: funding.data?.shortfall,
     });
@@ -266,17 +271,27 @@ export function RevokeButton({
             ) : (
                 <RevokeGateNote gate={gate} />
             )}
+            <RevokeConnectNote error={connectError} />
             <RevokeProgressNote progress={progress} />
         </>
     );
 }
 
-/** Turn the submitter's machine-readable refusal into the sentence it stands for. */
-function describeRefusal(body: {reason?: string; detail?: Record<string, string>}): string {
+/**
+ * Turn the submitter's machine-readable refusal into the sentence it stands for.
+ *
+ * Exported for the same reason `revokeButtonLabel` is: these five sentences are the only
+ * thing an owner sees when the kill switch does not fire, and each names a different party
+ * who has to act. Getting `prefund_short` and `relayer_unfunded` the wrong way round would
+ * send someone to top up the wrong account.
+ */
+export function describeRefusal(body: {reason?: string; detail?: Record<string, string>}): string {
     const detail = body.detail ?? {};
     switch (body.reason) {
         case "prefund_short":
             return `EntryPoint 예치금이 ${detail["shortfall"] ?? "?"} wei 모자랍니다 — relayer가 depositTo로 채워야 합니다`;
+        case "base_fee_unreadable":
+            return "현재 base fee를 읽지 못해, 서명된 수수료가 회수 가능한지 판단할 수 없습니다 — 다시 시도해 주세요";
         case "fee_below_basefee":
             return `서명된 maxFeePerGas(${detail["maxFeePerGas"] ?? "?"})가 현재 base fee(${detail["baseFeePerGas"] ?? "?"}) 아래라, 제출자가 회수할 수 없는 비용을 떠안게 됩니다`;
         case "relayer_unfunded":
@@ -298,6 +313,15 @@ export function RevokeGateNote({gate}: {gate: ReturnType<typeof judgeRevokeGate>
                     쪽이 더 나쁩니다.
                 </p>
             );
+        case "wrong-chain":
+            return (
+                <p className="note">
+                    지갑이 체인 {gate.connected}에 있습니다. 이 서명은 GIWA Sepolia(
+                    {gate.expected}) 전용이라 지갑이 서명 창을 띄우지도 않습니다 —
+                    EIP-712 <code>domain.chainId</code>가 선택된 네트워크와 다르기 때문입니다.
+                    지갑 네트워크를 GIWA Sepolia로 바꾸세요.
+                </p>
+            );
         case "wrong-wallet":
             return (
                 <p className="note">
@@ -316,6 +340,23 @@ export function RevokeGateNote({gate}: {gate: ReturnType<typeof judgeRevokeGate>
         default:
             return null;
     }
+}
+
+/**
+ * Why the wallet never appeared.
+ *
+ * `useConnect`'s error was previously read by nobody. With no extension installed the
+ * injected connector throws `ProviderNotFoundError`, and the entire symptom was a button
+ * that did nothing when clicked — indistinguishable from a dead handler, which is what
+ * anyone would go looking for first.
+ *
+ * Pure and exported for the same reason the other three notes here are: the branch cannot
+ * be reached by rendering `RevokeButton`, because a static render has no failed
+ * connection attempt in it. Extracting it is what makes the branch provable at all.
+ */
+export function RevokeConnectNote({error}: {error: Error | null}) {
+    if (!error) return null;
+    return <p className="note fault">지갑에 연결하지 못했습니다 — {faultLine(error)}</p>;
 }
 
 export function RevokeProgressNote({progress}: {progress: RevokeProgress}) {

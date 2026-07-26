@@ -77,7 +77,15 @@ export interface RevocationGas {
     maxPriorityFeePerGas: bigint;
 }
 
-/** ~3.5M gas-units at 1 gwei. Sized for a single `disableDelegation`, with headroom. */
+/**
+ * 700,000 gas-units at 1 gwei — 0.0007 ETH of prefund. Sized for a single
+ * `disableDelegation`, with headroom.
+ *
+ * The figure here used to read "~3.5M", which was wrong by 5× from the commit that
+ * introduced both it and these numbers. Nothing broke, because `revocationPrefund` and
+ * the tests read the fields rather than the sentence — but the sentence is what a person
+ * sizing a deposit reads, and 0.0035 ETH is not the answer.
+ */
 export const DEFAULT_REVOCATION_GAS: RevocationGas = {
     callGasLimit: 300_000n,
     verificationGasLimit: 300_000n,

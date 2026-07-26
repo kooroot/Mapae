@@ -2,9 +2,22 @@ import {describe, expect, test} from "bun:test";
 import {renderToStaticMarkup} from "react-dom/server";
 import {DEFAULT_REVOCATION_GAS, revocationPrefund} from "@mapae/delegation/revocation";
 import type {RevocationPrefundState} from "@mapae/delegation/revocation";
-import {REQUIRED_PREFUND, RevocationFundingView} from "./Revocation";
+import {getAddress} from "viem";
+import {
+    REQUIRED_PREFUND,
+    RevocationFundingView,
+    RevokeConnectNote,
+    RevokeGateNote,
+    RevokeProgressNote,
+    describeRefusal,
+} from "./Revocation";
+import {judgeRevokeGate} from "./revoke-state";
 
 const required = revocationPrefund(DEFAULT_REVOCATION_GAS);
+const OWNER = getAddress("0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382");
+const STRANGER = getAddress("0x0229346e91a07EA24A54704F094D293E43E9d302");
+const GIWA = 91_342;
+const TX = "0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c";
 
 function state(deposit: bigint, nativeBalance = 0n): RevocationPrefundState {
     const shortfall = deposit >= required ? 0n : required - deposit;
@@ -62,5 +75,239 @@ describe("revocation funding", () => {
         const html = view(state(required));
         expect(html).toContain("0.0007 ETH");
         expect(html).not.toContain(String(required));
+    });
+});
+
+const gateNote = (gate: Parameters<typeof RevokeGateNote>[0]["gate"]) =>
+    renderToStaticMarkup(<RevokeGateNote gate={gate} />);
+
+/**
+ * Why the kill switch will not fire, in the owner's words.
+ *
+ * `judgeRevokeGate` is already pinned by `revoke-state.test.ts`, but that proves only
+ * which branch is chosen. These render the branch — and the whole reason the gate is a
+ * discriminated union rather than a boolean is that a merely-disabled button leaves the
+ * one person who can revoke with no idea which of five things to fix.
+ */
+describe("revoke gate copy", () => {
+    test("a missing submitter says the signature would have nowhere to go", () => {
+        const html = gateNote(
+            judgeRevokeGate({
+                submitterUrl: undefined,
+                revoked: false,
+                connected: undefined,
+                connectedChainId: undefined,
+                expectedChainId: GIWA,
+                owner: undefined,
+                shortfall: undefined,
+            }),
+        );
+        expect(html).toContain("VITE_REVOCATION_SUBMITTER_URL");
+    });
+
+    /**
+     * Both addresses, not just the connected one. The account validates through ERC-1271,
+     * so signing with the wrong wallet returns `AA24 signature error` from the EntryPoint
+     * — which reads exactly like a nonce or gas fault. Naming the owner is what turns a
+     * dead end into a one-click fix.
+     */
+    test("a wrong wallet names both addresses and the error it would cause", () => {
+        const html = gateNote(
+            judgeRevokeGate({
+                submitterUrl: "http://127.0.0.1:8082",
+                revoked: false,
+                connected: STRANGER,
+                connectedChainId: GIWA,
+                expectedChainId: GIWA,
+                owner: OWNER,
+                shortfall: 0n,
+            }),
+        );
+        expect(html).toContain("AA24");
+        expect(html).toContain(STRANGER.slice(0, 10));
+        expect(html).toContain(OWNER.slice(0, 10));
+    });
+
+    /**
+     * The note has to name the number the wallet is actually on, not just "wrong network".
+     * MetaMask refuses `eth_signTypedData_v4` without opening a prompt when
+     * `domain.chainId` differs, so the alternative to this sentence is a button that looks
+     * ready and a wallet that appears to do nothing.
+     */
+    test("a chain mismatch names both chain ids and where the refusal comes from", () => {
+        const html = gateNote(
+            judgeRevokeGate({
+                submitterUrl: "http://127.0.0.1:8082",
+                revoked: false,
+                connected: OWNER,
+                connectedChainId: 11_155_111,
+                expectedChainId: GIWA,
+                owner: OWNER,
+                shortfall: 0n,
+            }),
+        );
+        expect(html).toContain("11155111");
+        expect(html).toContain(String(GIWA));
+        expect(html).toContain("domain.chainId");
+    });
+
+    test("an unarmed deposit names AA21 and the shortfall in ETH", () => {
+        const html = gateNote(
+            judgeRevokeGate({
+                submitterUrl: "http://127.0.0.1:8082",
+                revoked: false,
+                connected: OWNER,
+                connectedChainId: GIWA,
+                expectedChainId: GIWA,
+                owner: OWNER,
+                shortfall: 700_000_000_000_000n,
+            }),
+        );
+        expect(html).toContain("AA21");
+        expect(html).toContain("0.0007 ETH");
+        expect(html).not.toContain("700000000000000");
+    });
+
+    test("a ready gate and an already-revoked one say nothing at all", () => {
+        const ready = judgeRevokeGate({
+            submitterUrl: "http://127.0.0.1:8082",
+            revoked: false,
+            connected: OWNER,
+            connectedChainId: GIWA,
+            expectedChainId: GIWA,
+            owner: OWNER,
+            shortfall: 0n,
+        });
+        const revoked = judgeRevokeGate({
+            submitterUrl: "http://127.0.0.1:8082",
+            revoked: true,
+            connected: OWNER,
+            connectedChainId: GIWA,
+            expectedChainId: GIWA,
+            owner: OWNER,
+            shortfall: 0n,
+        });
+        expect(ready.kind).toBe("ready");
+        expect(revoked.kind).toBe("already-revoked");
+        // The button label already carries these two; a note repeating it would push the
+        // three that actually need explaining further down the panel.
+        expect(gateNote(ready)).toBe("");
+        expect(gateNote(revoked)).toBe("");
+    });
+});
+
+/**
+ * What the owner sees after they sign.
+ *
+ * The success path is the only place this console ever reports a state change, so it has
+ * to be unambiguous about whether the grant is gone.
+ */
+describe("wallet connection failure", () => {
+    test("nothing is said when the connector has not failed", () => {
+        expect(renderToStaticMarkup(<RevokeConnectNote error={null} />)).toBe("");
+    });
+
+    /**
+     * The no-extension case. `injected()` throws `ProviderNotFoundError`, and until this
+     * rendered, the entire user-visible symptom was a button that did nothing — which
+     * sends anyone straight to looking for a broken click handler.
+     */
+    test("a missing wallet extension is named rather than swallowed", () => {
+        const html = renderToStaticMarkup(
+            <RevokeConnectNote error={new Error("Provider not found.\nVersion: wagmi@3.7.4")} />,
+        );
+        expect(html).toContain("지갑에 연결하지 못했습니다");
+        expect(html).toContain("Provider not found.");
+        expect(html).toContain("fault");
+        // Same one-line rule as every other error surface here.
+        expect(html).not.toContain("Version:");
+    });
+});
+
+describe("revoke progress", () => {
+    test("idle, signing and submitting render nothing above the button", () => {
+        expect(renderToStaticMarkup(<RevokeProgressNote progress={{phase: "idle"}} />)).toBe("");
+        expect(renderToStaticMarkup(<RevokeProgressNote progress={{phase: "signing"}} />)).toBe("");
+        expect(renderToStaticMarkup(<RevokeProgressNote progress={{phase: "submitting"}} />)).toBe(
+            "",
+        );
+    });
+
+    test("a completed revocation links the transaction and states the consequence", () => {
+        const html = renderToStaticMarkup(
+            <RevokeProgressNote progress={{phase: "done", transaction: TX}} />,
+        );
+        expect(html).toContain(`https://sepolia-explorer.giwa.io/tx/${TX}`);
+        expect(html).toContain('rel="noreferrer noopener"');
+        expect(html).toContain("더 이상 지불할 수 없습니다");
+    });
+
+    /**
+     * `success: true` with no hash is a shape the submitter's own response type allows.
+     * A link built from an empty string points at the explorer's tx index, which renders
+     * a plausible page and would let someone conclude they had seen their revocation.
+     */
+    test("a success with no hash says so instead of linking to nothing", () => {
+        const html = renderToStaticMarkup(
+            <RevokeProgressNote progress={{phase: "done", transaction: ""}} />,
+        );
+        expect(html).toContain("트랜잭션 해시가 반환되지 않았습니다");
+        expect(html).not.toContain("<a");
+    });
+
+    test("a failure keeps the reason and marks itself as a fault", () => {
+        const html = renderToStaticMarkup(
+            <RevokeProgressNote progress={{phase: "failed", reason: "AA21 didn't pay prefund"}} />,
+        );
+        expect(html).toContain("회수하지 못했습니다");
+        expect(html).toContain("AA21");
+        expect(html).toContain("fault");
+    });
+});
+
+/**
+ * The submitter answers with a machine-readable reason; this is the translation.
+ *
+ * Each branch names a *different* party who has to act — the relayer tops up the account's
+ * EntryPoint deposit for `prefund_short`, but its own EOA for `relayer_unfunded`. Swapping
+ * the two sends someone to fund the wrong address.
+ */
+describe("submitter refusals", () => {
+    test("prefund_short points at the account's EntryPoint deposit", () => {
+        const said = describeRefusal({reason: "prefund_short", detail: {shortfall: "12345"}});
+        expect(said).toContain("EntryPoint");
+        expect(said).toContain("12345");
+        expect(said).toContain("depositTo");
+    });
+
+    test("relayer_unfunded points at the relayer's own balance instead", () => {
+        const said = describeRefusal({reason: "relayer_unfunded"});
+        expect(said).toContain("relayer");
+        expect(said).not.toContain("EntryPoint");
+    });
+
+    test("fee_below_basefee quotes both numbers being compared", () => {
+        const said = describeRefusal({
+            reason: "fee_below_basefee",
+            detail: {maxFeePerGas: "1000", baseFeePerGas: "2000"},
+        });
+        expect(said).toContain("1000");
+        expect(said).toContain("2000");
+    });
+
+    test("invalid_submission carries the validator's own message through", () => {
+        expect(
+            describeRefusal({reason: "invalid_submission", detail: {message: "callData mismatch"}}),
+        ).toContain("callData mismatch");
+    });
+
+    /**
+     * An unrecognised reason must still say something. A submitter that grows a new
+     * refusal code before this switch does would otherwise report the revocation as
+     * having failed for no stated reason at all.
+     */
+    test("an unknown reason falls through to something rather than to nothing", () => {
+        expect(describeRefusal({reason: "some_new_code"})).toBe("some_new_code");
+        expect(describeRefusal({}).length).toBeGreaterThan(0);
     });
 });

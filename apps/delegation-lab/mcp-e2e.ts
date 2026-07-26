@@ -19,7 +19,14 @@ import {
     readDelegationStatus,
     readSettlementReceipts,
 } from "@mapae/delegation";
-import {fromTokenAmount, giwaSepolia, parseNodeRpcUrl, redactForLog} from "@mapae/shared";
+import {
+    assertRpcTarget,
+    fromTokenAmount,
+    giwaSepolia,
+    parseNodeRpcUrl,
+    redactForLog,
+} from "@mapae/shared";
+import {startForkSourceProxy} from "./fork-source-proxy";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
@@ -34,6 +41,12 @@ import {
 } from "viem";
 import type {Address, Hex, PublicClient} from "viem";
 
+/**
+ * Opt-in: forces the broadcast-but-unconfirmed path instead of the happy path.
+ * See `proveUnconfirmedIsNotRejected`.
+ */
+const FORCED_UNCONFIRMED = Boolean(process.env.SETTLEMENT_RECEIPT_TIMEOUT_MS);
+
 const ANVIL_PORT = 8546;
 const FACILITATOR_PORT = 8181;
 const SELLER_PORT = 3101;
@@ -43,18 +56,9 @@ const SELLER_URL = `http://127.0.0.1:${SELLER_PORT}`;
 const RESOURCE = process.argv[2] ?? "/delegated/deliverable/inv-001";
 const REPO = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
 
-const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
-
 /** Refuse to run at all unless every child will be pinned to a local node. */
-function assertLoopbackRpc(value: string): string {
-    const url = new URL(parseNodeRpcUrl(value));
-    if (!LOOPBACK.includes(url.hostname)) {
-        throw new Error(
-            `refusing to run: child RPC ${url.hostname} is not loopback — this would broadcast to GIWA`,
-        );
-    }
-    return url.toString();
-}
+const assertLoopbackRpc = (value: string): string =>
+    assertRpcTarget(value, "loopback", "this would broadcast to GIWA");
 
 async function rpc(url: string, method: string, params: unknown[] = []): Promise<unknown> {
     const response = await fetch(url, {
@@ -87,6 +91,8 @@ async function waitFor(
 }
 
 const children: {name: string; proc: Bun.Subprocess}[] = [];
+/** Loopback listeners this run owns — closed alongside the children on any exit path. */
+const listeners: {stop(): void}[] = [];
 
 function spawnApp(
     name: string,
@@ -130,6 +136,13 @@ function shutdown(): void {
             proc.kill();
         } catch {
             /* already gone */
+        }
+    }
+    for (const listener of listeners) {
+        try {
+            listener.stop();
+        } catch {
+            /* already closed */
         }
     }
 }
@@ -318,6 +331,60 @@ async function reportConsoleState(forkRpc: string, fromBlock: bigint): Promise<v
  * so the refusal is the gate's, not a lucky on-chain revert — and restores the
  * framework afterwards so the revocation proof that follows stays independent.
  */
+/**
+ * Set `SETTLEMENT_RECEIPT_TIMEOUT_MS=1` and the facilitator gives up on the receipt of a
+ * transaction it has already broadcast. That is the one case where the payer is charged
+ * and nobody can yet say so, and the seller must answer 504 `settlement_unknown` — never
+ * 422, which asserts a balance nobody checked.
+ *
+ * The knob existed before this function and only forwarded the variable. Setting it made
+ * the run *fail* at the `body.ok !== true` guard above, so the escape hatch that was
+ * documented as the way to exercise this path could not be used to exercise it.
+ *
+ * The status code alone would be a weak assertion — a seller that answered 504 for
+ * everything would pass it. So this also reads the enforcer's own event from the fork:
+ * the money really moved, and the answer was still honest about not knowing.
+ */
+async function proveUnconfirmedIsNotRejected(
+    body: Record<string, unknown>,
+    forkRpc: string,
+    fromBlock: bigint,
+): Promise<void> {
+    console.log("");
+    console.log("[unconfirmed] SETTLEMENT_RECEIPT_TIMEOUT_MS is set — receipt wait forced to give up");
+    if (body.ok !== false || body.code !== "SETTLEMENT_UNKNOWN") {
+        console.error("[unconfirmed] FAILED —", JSON.stringify(body, null, 2));
+        throw new Error(
+            `expected SETTLEMENT_UNKNOWN, got ok=${String(body.ok)} code=${String(body.code)}`,
+        );
+    }
+    console.log(`[unconfirmed] agent code       ${String(body.code)}`);
+    console.log(`[unconfirmed] agent detail     ${String(body.detail)}`);
+
+    const {publicClient, deployment, root} = await loadForkContext(forkRpc);
+    const status = await readDelegationStatus({
+        publicClient,
+        environment: deployment.environment,
+        delegation: root,
+    });
+    const receipts = await readSettlementReceipts({
+        publicClient,
+        environment: deployment.environment,
+        delegationHash: status.delegationHash,
+        fromBlock,
+    });
+    if (receipts.length === 0) {
+        throw new Error(
+            "no settlement event on the fork — nothing was charged, so 504 was not the honest answer",
+        );
+    }
+    const [settled] = receipts;
+    console.log(
+        `[unconfirmed] on-chain         ${settled?.amount !== undefined ? fromTokenAmount(settled.amount) : "?"} mUSDC moved anyway`,
+    );
+    console.log("[unconfirmed] PASS — payer was charged and the answer said so ✅");
+}
+
 async function provePauseStops(forkRpc: string, client: Client): Promise<void> {
     const {publicClient, deployment} = await loadForkContext(forkRpc);
     const manager = getAddress(deployment.environment.DelegationManager);
@@ -468,7 +535,58 @@ async function proveRevocationStops(
     console.log("[revoke] PASS — revocation stops the agent on-chain ✅");
 }
 
+/**
+ * Everything this run needs, checked together before anything is spawned.
+ *
+ * This command is what the README points a reader at, so its first failure is the first
+ * thing many people see of the project. Without this it reported them one at a time and
+ * in the worst possible order: `RELAYER_ADDRESS must be set` first, then — only after
+ * anvil had forked GIWA over the network, some fifteen seconds in — a child process died
+ * and printed a *source listing* of `apps/facilitator-erc7710/index.ts` around the line
+ * that throws, with the actual missing thing (`RELAYER_PRIVATE_KEY`, in that app's own
+ * `.env`) buried in it. Measured from a clean clone, not imagined.
+ *
+ * Two properties matter more than the wording. It runs before the fork, so a missing
+ * `.env` costs no network round trip. And it collects *all* of them, so filling one in
+ * does not just buy you the next stack trace.
+ *
+ * The child `.env` files are checked for existence rather than contents. Reading their
+ * variables from here would put a second copy of each app's requirements in this file,
+ * and a copy that drifts is worse than a check that stops one step short.
+ */
+async function assertPrerequisites(): Promise<void> {
+    const missing: string[] = [];
+
+    if (!process.env.RELAYER_ADDRESS?.trim()) {
+        missing.push("RELAYER_ADDRESS is unset — see apps/delegation-lab/.env.example");
+    }
+    const permissionPath =
+        process.env.PARENT_PERMISSION_CONTEXT_PATH ??
+        `${REPO}/apps/delegation-lab/open-agent.permission.json`;
+    if (!(await Bun.file(permissionPath).exists())) {
+        missing.push(
+            `${permissionPath} is absent — a root permission signed by the account owner's ` +
+                "wallet. It is gitignored, so a clone never has one",
+        );
+    }
+    for (const app of ["facilitator-erc7710", "delegated-seller"]) {
+        if (!(await Bun.file(`${REPO}/apps/${app}/.env`).exists())) {
+            missing.push(`apps/${app}/.env is absent — copy .env.example and fill it in`);
+        }
+    }
+    if (missing.length === 0) return;
+
+    console.error("[e2e] cannot start — this run replays a specific deployment:");
+    for (const item of missing) console.error(`  ✗ ${item}`);
+    console.error("");
+    console.error("  Setup: docs/giwa-demo-runbook.md");
+    console.error("  To exercise the same enforcement with nothing of ours, run");
+    console.error("  `bun run test:negative` — hermetic, no keys, no signed permission.");
+    process.exit(1);
+}
+
 async function main(): Promise<void> {
+    await assertPrerequisites();
     const forkRpc = assertLoopbackRpc(FORK_RPC);
     const relayer = readRelayerAddress();
     const upstream = parseNodeRpcUrl(
@@ -484,8 +602,12 @@ async function main(): Promise<void> {
     console.log(`[e2e] relayer GIWA nonce before  ${BigInt(nonceBefore)}`);
 
     console.log(`[e2e] forking GIWA → ${forkRpc}`);
+    // The key never reaches argv — `--fork-url` has no env alias, and argv is readable
+    // through `ps`. A loopback proxy holds it and hands anvil a keyless address.
+    const source = startForkSourceProxy(upstream);
+    listeners.push(source);
     const anvil = Bun.spawn(
-        ["anvil", "--fork-url", upstream, "--port", String(ANVIL_PORT), "--silent"],
+        ["anvil", "--fork-url", source.url, "--port", String(ANVIL_PORT), "--silent"],
         {stdout: "ignore", stderr: "pipe"},
     );
     children.push({name: "anvil", proc: anvil});
@@ -569,6 +691,16 @@ async function main(): Promise<void> {
     const text = content[0]?.text ?? "";
 
     const body = JSON.parse(text) as Record<string, unknown>;
+    if (FORCED_UNCONFIRMED) {
+        await proveUnconfirmedIsNotRejected(body, forkRpc, forkBaseBlock);
+        await transport.close();
+        // Everything below needs a payment that was *answered*. This run deliberately
+        // has none, and the cap it consumed is real, so continuing would report
+        // failures that belong to the setup rather than to the code.
+        console.log("");
+        console.log("[e2e] PASS — a broadcast-but-unconfirmed settlement answers 504");
+        return;
+    }
     if (body.ok !== true) {
         await transport.close();
         console.error("[e2e] FAILED —", JSON.stringify(body, null, 2));

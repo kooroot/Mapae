@@ -1,15 +1,23 @@
 import {Hono, type Context} from "hono";
 import {
     PaymentIntentSingleFlight,
+    judgeCorsRequest,
     judgeSubmissionReadiness,
     parseActiveDeploymentArtifactJson,
+    parseCorsAllowlist,
     readRevocationPrefundState,
     throttledHttp,
     validateRevocationSubmission,
     type RevocationSubmissionPolicy,
     type ValidatedRevocationSubmission,
 } from "@mapae/delegation";
-import {GIWA_SEPOLIA_CAIP2, giwaSepolia, parseNodeRpcUrl, redactForLog} from "@mapae/shared";
+import {
+    GIWA_SEPOLIA_CAIP2,
+    giwaSepolia,
+    isLoopbackHost,
+    parseNodeRpcUrl,
+    redactForLog,
+} from "@mapae/shared";
 import {EntryPoint as EntryPointAbi} from "@metamask/delegation-abis";
 import {
     createPublicClient,
@@ -194,7 +202,10 @@ async function submit(submission: ValidatedRevocationSubmission): Promise<Revoke
     const readiness = judgeSubmissionReadiness({
         deposit: prefund.deposit,
         requiredPrefund: submission.requiredPrefund,
-        baseFeePerGas: block.baseFeePerGas ?? 0n,
+        // Not `?? 0n`: a base fee we could not read must reach the judge as unknown.
+        // Substituting zero makes `maxFeePerGas < baseFeePerGas` false for every input and
+        // turns the guard that protects the relayer into a no-op.
+        baseFeePerGas: block.baseFeePerGas ?? undefined,
         maxFeePerGas: submission.gas.maxFeePerGas,
         relayerBalance,
     });
@@ -255,12 +266,47 @@ async function submit(submission: ValidatedRevocationSubmission): Promise<Revoke
     };
 }
 
+/**
+ * The console runs on a different port, so every revoke is cross-origin and — because it
+ * sends `content-type: application/json` — is preceded by a preflight. Without an answer
+ * to that preflight the browser drops the POST and the owner's signature never leaves the
+ * page. The allowlist is loopback-only and never `*`; see `parseCorsAllowlist`.
+ */
+const CORS_POLICY = {
+    allowedOrigins: parseCorsAllowlist(process.env.REVOCATION_CONSOLE_ORIGINS, isLoopbackHost, [
+        // `vite` (pinned to 127.0.0.1:5173 in vite.config.ts) and `vite preview` (4173),
+        // each under both spellings of loopback. A revoke button that works under `dev`
+        // and dies under `preview` is the same split this whole fix exists to close.
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:4173",
+        "http://localhost:4173",
+    ]),
+};
+
 const app = new Hono();
 
 app.use("*", async (c, next) => {
+    const decision = judgeCorsRequest(c.req.header("origin"), CORS_POLICY);
+    // A disallowed origin is refused here rather than being allowed to run and then
+    // stripped of its header on the way out: the browser would block the response either
+    // way, but only this order keeps an unauthorised page from spending relayer gas.
+    if (!decision.allowed) {
+        return c.json({success: false, network: GIWA_SEPOLIA_CAIP2, reason: "origin_refused"}, 403);
+    }
     await next();
     c.header("Cache-Control", "no-store");
     c.header("X-Content-Type-Options", "nosniff");
+    for (const [name, value] of Object.entries(decision.headers)) c.header(name, value);
+});
+
+// Hono has no implicit OPTIONS handler, so without this the preflight 404s and every
+// header above is moot.
+app.options("/revoke", (c) => {
+    const decision = judgeCorsRequest(c.req.header("origin"), CORS_POLICY, true);
+    if (!decision.allowed) return c.body(null, 403);
+    for (const [name, value] of Object.entries(decision.headers)) c.header(name, value);
+    return c.body(null, 204);
 });
 
 app.get("/health", async (c) => {

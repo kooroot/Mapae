@@ -13,7 +13,12 @@
 *.permission.json
 *.permission.request.json
 *.sign.html
-deployments/d3-session-addresses.json
+# `deployments/d3-session-addresses.json` is deliberately NOT here. `sessions:generate`
+# splits its output on purpose — private keys to `.secrets/` (ignored above), public
+# addresses to `deployments/`. Ignoring the public half undid that split and left
+# `docs/deployed-contracts.md` publishing five addresses whose canonical source did not
+# ship, so `bun run check` passed here and failed on every clone. The same five addresses
+# are already in that tracked document; this file discloses nothing new.
 
 # JavaScript / Bun
 node_modules/

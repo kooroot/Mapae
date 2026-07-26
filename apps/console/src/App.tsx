@@ -29,7 +29,7 @@ import {RevocationFunding, RevokeButton} from "./Revocation";
  * component's own `Hex | undefined` with a cast — is exactly the "validate, never cast"
  * pattern this repo already got burned by.
  */
-type RootDelegation = {root: Delegation; chainLength: number; context: Hex};
+export type RootDelegation = {root: Delegation; chainLength: number; context: Hex};
 
 /**
  * `decodeDelegations` throws on hex that is well-formed hex but not a
@@ -83,7 +83,14 @@ function useRootDelegation(context: Hex | undefined): RootDelegationState {
     return useMemo(() => resolveRootDelegation(context), [context]);
 }
 
-function DelegationScreen({delegation}: {delegation: RootDelegation}) {
+/**
+ * Exported for the same reason `resolveRootDelegation` is: the tab is `useState`, and a
+ * static render cannot click it. Reaching the receipts screen through `App` would mean
+ * either simulating a click or leaving half the console unrendered by any test — and it
+ * was the second of those for long enough that a `1970-01-01` expiry and a dead
+ * cross-origin revoke button both shipped.
+ */
+export function DelegationScreen({delegation}: {delegation: RootDelegation}) {
     const {root, chainLength, context} = delegation;
 
     const status = useQuery({
@@ -198,23 +205,46 @@ function DelegationScreen({delegation}: {delegation: RootDelegation}) {
     );
 }
 
-function ReceiptScreen({delegation}: {delegation: RootDelegation}) {
+/**
+ * What the receipt list is a list *of*.
+ *
+ * `openedAt` is read from the chain rather than derived from an assumed block time, and
+ * it is the difference between two very different sentences. "No receipts" and "no
+ * receipts since 03:11 UTC" are not the same claim, and the window is narrow enough that
+ * the distinction is routine rather than theoretical: the lookback is a block count, GIWA
+ * produces a block roughly every second, so the default 50,000 covers well under a day.
+ * A demo run the morning after a settlement shows an empty list, and without the window
+ * on screen that reads as "this never worked" instead of "this scrolled out of range".
+ *
+ * `undefined` when the node will not serve the block — a pruned endpoint costs the
+ * sentence, not the screen.
+ */
+type ReceiptWindow = {receipts: SettlementReceipt[]; fromBlock: bigint; openedAt?: bigint};
+
+export function ReceiptScreen({delegation}: {delegation: RootDelegation}) {
     const {root} = delegation;
 
     const receipts = useQuery({
         queryKey: ["receipts", root.delegate, rpcUrl],
-        queryFn: async (): Promise<SettlementReceipt[]> => {
+        queryFn: async (): Promise<ReceiptWindow> => {
             const head = await publicClient.getBlockNumber();
             const from = head > RECEIPT_LOOKBACK_BLOCKS ? head - RECEIPT_LOOKBACK_BLOCKS : 0n;
             // The delegation hash is a pure function of the struct the console
             // already decoded, so asking the chain for it would be a second
             // round-trip on every 10s refetch for a value we can derive.
-            return readSettlementReceipts({
-                publicClient,
-                environment: deployment.environment,
-                delegationHash: hashDelegation(root),
-                fromBlock: from,
-            });
+            const [list, opened] = await Promise.all([
+                readSettlementReceipts({
+                    publicClient,
+                    environment: deployment.environment,
+                    delegationHash: hashDelegation(root),
+                    fromBlock: from,
+                }),
+                publicClient
+                    .getBlock({blockNumber: from})
+                    .then((block) => block.timestamp)
+                    .catch(() => undefined),
+            ]);
+            return {receipts: list, fromBlock: from, openedAt: opened};
         },
         refetchInterval: 10_000,
     });
@@ -226,13 +256,33 @@ function ReceiptScreen({delegation}: {delegation: RootDelegation}) {
         );
     }
 
+    const {receipts: list, fromBlock, openedAt} = receipts.data;
+    // Block 0 means the lookback is wider than the chain is old, so nothing is being
+    // withheld — saying "since <genesis>" there would imply a limit that is not applied.
+    // Not named `window`: this renders in a browser, where that identifier is the global
+    // one and shadowing it inside a component is a trap for whoever edits this next.
+    const windowLabel =
+        fromBlock === 0n
+            ? "전체 이력"
+            : openedAt
+              ? `${stamp(openedAt)} 이후`
+              : `최근 ${String(RECEIPT_LOOKBACK_BLOCKS)} 블록`;
+
     return (
         <section className="panel">
-            <h2>정산 영수증 · 최근 {String(RECEIPT_LOOKBACK_BLOCKS)} 블록</h2>
-            {receipts.data.length === 0 ? (
-                <p className="note">이 창에는 정산 기록이 없습니다.</p>
+            <h2>정산 영수증 · {windowLabel}</h2>
+            {list.length === 0 ? (
+                <p className="note">
+                    {/* Never a bare "no receipts". The window is a block count on a
+                        one-second chain, so an empty list is far more often "older than
+                        the window" than "never happened", and only one of those is a
+                        reason to go looking for a bug. */}
+                    {fromBlock === 0n
+                        ? "이 위임으로 정산된 기록이 아직 없습니다."
+                        : `${windowLabel} 정산된 기록이 없습니다 — 블록 ${String(fromBlock)}부터 조회하므로, 그 이전 정산은 이 창 밖에 있습니다.`}
+                </p>
             ) : (
-                receipts.data
+                list
                     .slice()
                     .reverse()
                     .map((receipt) => (
@@ -258,7 +308,10 @@ function ReceiptScreen({delegation}: {delegation: RootDelegation}) {
             <p className="note" style={{marginTop: 14}}>
                 영수증은 <code>ERC20PeriodTransferEnforcer</code>의{" "}
                 <code>TransferredInPeriod</code> 이벤트에서 직접 읽습니다. 별도 원장도,
-                계정 체계도 없습니다.
+                계정 체계도 없습니다. 창은 <code>VITE_RECEIPT_LOOKBACK_BLOCKS</code>
+                (현재 {String(RECEIPT_LOOKBACK_BLOCKS)})로 넓힐 수 있지만, GIWA가{" "}
+                <code>eth_getLogs</code> 10만 블록 초과를 거절하므로 그보다 긴 이력은
+                페이징이 필요합니다 — 이 콘솔은 페이징하지 않습니다.
             </p>
         </section>
     );

@@ -32,7 +32,7 @@ import {
     withDelegationSignature,
     buildD3Policies,
 } from "@mapae/delegation";
-import {giwaSepolia, parseNodeRpcUrl, redactForLog} from "@mapae/shared";
+import {assertRpcTarget, giwaSepolia, parseNodeRpcUrl, redactForLog} from "@mapae/shared";
 import {EntryPoint as EntryPointAbi} from "@metamask/delegation-abis";
 import {Implementation, toMetaMaskSmartAccount} from "@metamask/smart-accounts-kit";
 import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
@@ -50,6 +50,7 @@ import {
     type PublicClient,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
+import {startForkSourceProxy} from "./fork-source-proxy";
 
 const ANVIL_PORT = 8547;
 const SUBMITTER_PORT = 8183;
@@ -57,7 +58,6 @@ const FORK_RPC = `http://127.0.0.1:${ANVIL_PORT}`;
 const SUBMITTER_URL = `http://127.0.0.1:${SUBMITTER_PORT}`;
 const REPO = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
 const FORK_BLOCK = 31_606_000;
-const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
 
 /**
  * Every key here is derived, high-entropy and throwaway. None of the well-known Anvil dev
@@ -78,6 +78,24 @@ const signerKey = (label: string) =>
     keccak256(stringToHex(`mapae.revocation-submitter-e2e.v1.${label}`)) as Hex;
 
 const children: {name: string; proc: Bun.Subprocess}[] = [];
+/** Loopback listeners this run owns — closed alongside the children on any exit path. */
+const listeners: {stop(): void}[] = [];
+
+/**
+ * The lettered cases, recorded as they pass. The closing line used to read `PASS — 8/8` as
+ * a string literal, which is a claim rather than a measurement: delete a case in a refactor
+ * and it still says eight. Every case here fails by throwing, so passed and total are the
+ * same number, and printing the letters makes a missing one visible at a glance.
+ *
+ * Same rule the preflight runbook already states for its condition total — a count that is
+ * written down instead of counted lets a shrunken run read as a whole one.
+ */
+const cases: string[] = [];
+
+function passed(letter: string, detail: string): void {
+    cases.push(letter);
+    console.log(`[e2e] ${letter} ${detail} ✅`);
+}
 
 function shutdown(): void {
     for (const {proc} of children) {
@@ -85,6 +103,13 @@ function shutdown(): void {
             proc.kill();
         } catch {
             /* already gone */
+        }
+    }
+    for (const listener of listeners) {
+        try {
+            listener.stop();
+        } catch {
+            /* already closed */
         }
     }
 }
@@ -95,15 +120,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     });
 }
 
-function assertLoopback(value: string): string {
-    const url = new URL(parseNodeRpcUrl(value));
-    if (!LOOPBACK.includes(url.hostname)) {
-        throw new Error(
-            `refusing to run: child RPC ${url.hostname} is not loopback — this would broadcast to GIWA`,
-        );
-    }
-    return url.toString();
-}
+const assertLoopback = (value: string): string =>
+    assertRpcTarget(value, "loopback", "this would broadcast to GIWA");
 
 function assertPortFree(name: string, port: number): void {
     try {
@@ -157,6 +175,58 @@ async function postRevoke(body: unknown): Promise<{status: number; body: RevokeR
     return {status: response.status, body: (await response.json()) as RevokeResponse};
 }
 
+/**
+ * The browser leg, checked against the running service.
+ *
+ * Every other case here uses Bun's server-side `fetch`, which does not enforce CORS — so
+ * the whole suite passed while the console's revoke button was unable to reach this
+ * service from a page at all. `content-type: application/json` is not CORS-safelisted, so
+ * the browser sends this exact preflight first and drops the POST unless it is answered.
+ * Asserting on the response rather than relying on enforcement is what makes a
+ * non-browser client able to catch a browser-only failure.
+ */
+async function proveCorsPreflight(): Promise<void> {
+    const preflight = async (origin: string) =>
+        fetch(`${SUBMITTER_URL}/revoke`, {
+            method: "OPTIONS",
+            headers: {
+                Origin: origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+            signal: AbortSignal.timeout(10_000),
+        });
+
+    const console_ = await preflight("http://127.0.0.1:5173");
+    const allowOrigin = console_.headers.get("access-control-allow-origin");
+    const allowHeaders = console_.headers.get("access-control-allow-headers") ?? "";
+    if (console_.status !== 204 || allowOrigin !== "http://127.0.0.1:5173") {
+        throw new Error(
+            `console preflight failed: ${console_.status} allow-origin=${allowOrigin} — the revoke button cannot reach the submitter from a browser`,
+        );
+    }
+    if (!allowHeaders.toLowerCase().includes("content-type")) {
+        throw new Error(`preflight did not allow content-type (got "${allowHeaders}")`);
+    }
+    // A wildcard cannot reach here — the equality check above already pins the exact
+    // origin. `judgeCorsRequest` carries the "never `*`" assertion instead.
+    passed("F", `preflight      204 · allow-origin ${allowOrigin} · content-type`);
+
+    const stranger = await preflight("http://evil.example");
+    if (stranger.status !== 403 || stranger.headers.get("access-control-allow-origin") !== null) {
+        throw new Error(
+            `an unlisted origin was not refused: ${stranger.status} ${stranger.headers.get("access-control-allow-origin")}`,
+        );
+    }
+    passed("G", "foreign origin 403, no allow-origin");
+
+    // The suite's own POSTs carry no Origin. That path has to keep working, or this
+    // guard would have fixed the browser by breaking every script.
+    const noOrigin = await fetch(`${SUBMITTER_URL}/health`, {signal: AbortSignal.timeout(10_000)});
+    if (!noOrigin.ok) throw new Error("a request with no Origin was refused");
+    passed("H", `no Origin      ${noOrigin.status} — scripts unaffected`);
+}
+
 async function main(): Promise<void> {
     const forkRpc = assertLoopback(FORK_RPC);
     const upstream = parseNodeRpcUrl(
@@ -174,6 +244,10 @@ async function main(): Promise<void> {
     console.log(`[e2e] relayer GIWA nonce before  ${nonceBefore}`);
 
     // ── fork ──────────────────────────────────────────────────────────────────────────
+    // The key never reaches argv — `--fork-url` has no env alias, and argv is readable
+    // through `ps`. A loopback proxy holds it and hands anvil a keyless address.
+    const source = startForkSourceProxy(upstream);
+    listeners.push(source);
     const anvil = Bun.spawn(
         [
             "anvil",
@@ -181,7 +255,7 @@ async function main(): Promise<void> {
             String(ANVIL_PORT),
             "--silent",
             "--fork-url",
-            upstream,
+            source.url,
             "--fork-block-number",
             process.env["SUITE_FORK_BLOCK"]?.trim() || String(FORK_BLOCK),
             "--compute-units-per-second",
@@ -322,9 +396,7 @@ async function main(): Promise<void> {
         );
     }
     if (await revoked()) throw new Error("delegation was disabled by a refused submission");
-    console.log(
-        `[e2e] A unfunded       409 prefund_short (short ${unfunded.body.detail?.["shortfall"]} wei) ✅`,
-    );
+    passed("A", `unfunded       409 prefund_short (short ${unfunded.body.detail?.["shortfall"]} wei)`);
 
     // ── fund exactly the required prefund ─────────────────────────────────────────────
     await publicClient.waitForTransactionReceipt({
@@ -378,7 +450,7 @@ async function main(): Promise<void> {
             `expected 400 invalid_submission, got ${foreign.status} ${JSON.stringify(foreign.body)}`,
         );
     }
-    console.log(`[e2e] B foreign sender 400 invalid_submission ✅`);
+    passed("B", "foreign sender 400 invalid_submission");
 
     // ── C. the real thing ─────────────────────────────────────────────────────────────
     const relayerBefore = await publicClient.getBalance({address: relayer.address});
@@ -389,7 +461,7 @@ async function main(): Promise<void> {
     if (!(await revoked())) {
         throw new Error("submitter reported success but the delegation is still enabled");
     }
-    console.log(`[e2e] C revoked        tx ${ok.body.transaction} ✅`);
+    passed("C", `revoked        tx ${ok.body.transaction}`);
     /**
      * The relayer must come out of `handleOps` roughly whole: it fronts the gas and the
      * EntryPoint reimburses it from the payer's deposit. Asserting the economics — rather
@@ -417,7 +489,7 @@ async function main(): Promise<void> {
             `expected the deposit to be consumed, got ${spent.status} ${JSON.stringify(spent.body)}`,
         );
     }
-    console.log(`[e2e] D deposit spent  409 prefund_short ✅`);
+    passed("D", "deposit spent  409 prefund_short");
 
     /**
      * ── E. replay, with the deposit re-armed ──────────────────────────────────────────
@@ -444,7 +516,10 @@ async function main(): Promise<void> {
     if (!/AA25|nonce/i.test(why)) {
         throw new Error(`replay was refused, but not by the nonce: ${replay.status} ${why}`);
     }
-    console.log(`[e2e] E replay funded  ${replay.status} ${replay.body.reason} (AA25 nonce) ✅`);
+    passed("E", `replay funded  ${replay.status} ${replay.body.reason} (AA25 nonce)`);
+
+    // ── F/G/H. the browser leg ────────────────────────────────────────────────────────
+    await proveCorsPreflight();
 
     // ── no-broadcast evidence ─────────────────────────────────────────────────────────
     const nonceAfter = BigInt(
@@ -457,7 +532,7 @@ async function main(): Promise<void> {
     }
     console.log(`[e2e] relayer GIWA nonce after   ${nonceAfter} (unchanged — nothing broadcast) ✅`);
     console.log("");
-    console.log("[e2e] revocation submitter service PASS — 5/5");
+    console.log(`[e2e] revocation submitter service PASS — ${cases.length} cases (${cases.join("")})`);
 }
 
 async function forward(name: string, stream: ReadableStream<Uint8Array> | number | undefined) {

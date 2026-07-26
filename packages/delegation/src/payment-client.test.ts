@@ -280,3 +280,224 @@ describe("D5 payForDelegatedResource", () => {
         expect(result.detail).toContain("connection refused");
     });
 });
+
+/**
+ * D5's second completion criterion, taken literally: "실패 시 조용히 죽지 말고 이유 반환".
+ *
+ * Every case below threw an unstructured exception out of `payForDelegatedResource`
+ * before these guards existed — verified by running the real function against these exact
+ * responses. A thrown DOMException or TypeError is not a reason: it names no field, no
+ * seller, and nothing the caller can act on, and for one of them it arrives *after* the
+ * leaf delegation has been signed.
+ */
+describe("D5 every failure returns a reason, never a throw", () => {
+    async function codeFor(firstBody: unknown, provider = okProvider): Promise<string> {
+        const {impl} = scriptedFetch(jsonResponse(200, {ok: true}), firstBody);
+        const result = await payForDelegatedResource(target, baseConfig(impl, provider));
+        if (result.ok) return "ok";
+        return result.code;
+    }
+
+    test("a 402 body of literal null is answered, not raised", async () => {
+        // `null` is valid JSON so the parse succeeds, and `typeof null === "object"` so a
+        // plain typeof guard would pass it through to `body.x402Version` — which threw
+        // TypeError out of a function whose entire contract is to return a reason.
+        expect(await codeFor(null)).toBe("SELLER_OFFER_INVALID");
+    });
+
+    test("a non-object 402 body is answered", async () => {
+        for (const body of [7, "text", true]) {
+            expect(await codeFor(body)).toBe("SELLER_OFFER_INVALID");
+        }
+    });
+
+    test("an array 402 body is answered", async () => {
+        // Arrays are objects, so this one reaches the version check and is caught there.
+        expect(await codeFor([])).toBe("UNSUPPORTED_X402_VERSION");
+    });
+
+    test("a wrong x402 version is answered — the code exists and is reachable", async () => {
+        // v1 is the version most guides describe, so this is the likeliest real mismatch.
+        expect(await codeFor({...paymentRequired(), x402Version: 1})).toBe(
+            "UNSUPPORTED_X402_VERSION",
+        );
+    });
+
+    /**
+     * The sharpest of the group.
+     *
+     * `X-PAYMENT` is base64 via `btoa`, which is Latin-1 only, and the header echoes the
+     * seller's whole requirements object — including fields the agent never reads. One
+     * character above U+00FF and the encode throws. That encode happens *after* the leaf
+     * is signed, so the failure used to leave a bearer authorization in existence and hand
+     * the caller a DOMException naming no field at all.
+     *
+     * It is one refactor away from firing in this very repo: the seller's own descriptions
+     * contain an em dash and today sit at the 402 top level. Moving them into `accepts[0]`
+     * — the v1-shaped layout CLAUDE.md flags as the most common trap — would kill every
+     * payment.
+     */
+    describe("an offer that cannot be header-encoded is refused before signing", () => {
+        for (const [label, note] of [
+            ["Hangul", "한글 메모"],
+            ["em dash", "invoice — one"],
+            ["emoji (astral, surrogate pair)", "paid 🎉"],
+            ["a single U+0100", "Ā"],
+        ] as const) {
+            test(label, async () => {
+                const offer = paymentRequired();
+                // A field the agent never reads: the point is that *any* byte in the
+                // object reaches btoa, not just the ones that are validated.
+                (offer.accepts[0] as unknown as {extra: Record<string, unknown>}).extra.note = note;
+                expect(await codeFor(offer)).toBe("SELLER_OFFER_INVALID");
+            });
+        }
+
+        test("U+00FF itself is still accepted — the boundary is not off by one", async () => {
+            const offer = paymentRequired();
+            (offer.accepts[0] as unknown as {extra: Record<string, unknown>}).extra.note = "ÿ";
+            expect(await codeFor(offer)).toBe("ok");
+        });
+
+        test("the refusal happens before the provider is ever asked to sign", async () => {
+            // This is the property that matters. A guard at the encoder would also stop
+            // the throw, but only a guard here stops a bearer authorization from existing
+            // for a payment that can never be sent.
+            let signed = 0;
+            const counting: DelegatedLeafProvider = async () => {
+                signed += 1;
+                return {
+                    delegationManager: MANAGER,
+                    permissionContext: PERMISSION_CONTEXT,
+                    delegator: DELEGATOR,
+                };
+            };
+            const offer = paymentRequired();
+            (offer.accepts[0] as unknown as {extra: Record<string, unknown>}).extra.note = "한";
+            expect(await codeFor(offer, counting)).toBe("SELLER_OFFER_INVALID");
+            expect(signed).toBe(0);
+        });
+    });
+
+    test("a provider returning a malformed address is reported, not raised", async () => {
+        // `getAddress` throws on anything that is not an address, so it fired before the
+        // MANAGER_MISMATCH check could describe the problem.
+        const malformed: DelegatedLeafProvider = async () =>
+            ({
+                delegationManager: "not-an-address",
+                permissionContext: PERMISSION_CONTEXT,
+                delegator: DELEGATOR,
+            }) as never;
+        expect(await codeFor(paymentRequired(), malformed)).toBe("MANAGER_MISMATCH");
+    });
+
+    test("a provider returning a malformed delegator is reported too", async () => {
+        const malformed: DelegatedLeafProvider = async () =>
+            ({
+                delegationManager: MANAGER,
+                permissionContext: PERMISSION_CONTEXT,
+                delegator: "0xnope",
+            }) as never;
+        expect(await codeFor(paymentRequired(), malformed)).toBe("MANAGER_MISMATCH");
+    });
+
+    test("MALFORMED_RESOURCE is reachable — a paid resource that is not JSON", async () => {
+        // The payment succeeded here, so this is the one failure that arrives after money
+        // moved. It must still be a code rather than a throw.
+        const {impl} = scriptedFetch({
+            status: 200,
+            ok: true,
+            json: async () => {
+                throw new Error("not JSON");
+            },
+        } as unknown as Response);
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("MALFORMED_RESOURCE");
+    });
+});
+
+/**
+ * "Rejected" and "not known to have succeeded" are different claims.
+ *
+ * This distinction was missing and it cost a real payment's answer. On GIWA the transfer
+ * settled (`0x533c5cb2…9964c`, block 31634935, payer −1.00 mUSDC) while the caller was
+ * told `PAYMENT_REJECTED`. The seller had reported the ambiguity correctly — 504
+ * `settlement_unknown`, with a comment saying exactly why — and this function flattened
+ * every non-2xx into one code on the way back.
+ *
+ * The two demand opposite responses: a rejection invites a retry, and retrying this one
+ * can pay twice.
+ */
+describe("D5 settlement-unknown is not a rejection", () => {
+    async function resultFor(second: Response) {
+        const {impl} = scriptedFetch(second);
+        return payForDelegatedResource(target, baseConfig(impl));
+    }
+
+    test("504 from the seller is SETTLEMENT_UNKNOWN, not PAYMENT_REJECTED", async () => {
+        // 504 is exactly what apps/delegated-seller returns when its facilitator call
+        // does not answer — the case where the money may already have moved.
+        const result = await resultFor(poisonedResponse(504));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("SETTLEMENT_UNKNOWN");
+        expect(result.status).toBe(504);
+        // The caller has to be told the payer may be charged, not just given a code.
+        expect(result.detail).toContain("may already be charged");
+    });
+
+    test("gateway timeouts are treated the same way", async () => {
+        for (const status of [408, 425]) {
+            const result = await resultFor(poisonedResponse(status));
+            expect(result.ok === false && result.code).toBe("SETTLEMENT_UNKNOWN");
+        }
+    });
+
+    test("a genuine refusal is still PAYMENT_REJECTED", async () => {
+        // 403 delegation_rejected and 422 settlement_failed both mean the payment did not
+        // go through. Widening the unknown set to cover these would make every refusal
+        // look like a possible charge, which is its own way of being useless.
+        for (const status of [402, 403, 422, 400, 500]) {
+            const result = await resultFor(poisonedResponse(status));
+            expect(result.ok === false && result.code).toBe("PAYMENT_REJECTED");
+        }
+    });
+
+    test("the seller's body is still never read on an unknown outcome", async () => {
+        // `poisonedResponse` throws if the body is touched. The bearer-reflection rule
+        // does not relax just because the status changed class.
+        const result = await resultFor(poisonedResponse(504));
+        expect(result.ok).toBe(false);
+    });
+
+    test("a dead connection after the header is sent is SETTLEMENT_UNKNOWN", async () => {
+        // Measured: Bun's fetch does not retry, so this surfaces as a thrown socket
+        // error. Reporting TRANSPORT_ERROR would read as "the request never landed" —
+        // the belief that makes a caller re-send a payment that already settled.
+        let call = 0;
+        const impl = (async (url: URL, init?: RequestInit) => {
+            call += 1;
+            if (call === 1) return jsonResponse(402, paymentRequired());
+            throw new Error("The socket connection was closed unexpectedly");
+        }) as unknown as typeof fetch;
+
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("SETTLEMENT_UNKNOWN");
+        expect(result.detail).toContain("after the payment was sent");
+    });
+
+    test("the same failure before the header is sent is still TRANSPORT_ERROR", async () => {
+        // The header is the whole difference. Collapsing both into SETTLEMENT_UNKNOWN
+        // would make an unreachable seller look like a possible charge.
+        const impl = (async () => {
+            throw new Error("connection refused");
+        }) as unknown as typeof fetch;
+
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok === false && result.code).toBe("TRANSPORT_ERROR");
+    });
+});

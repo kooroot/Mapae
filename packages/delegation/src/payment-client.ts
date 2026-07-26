@@ -4,6 +4,7 @@ import {
     X402_VERSION,
     buildErc7710PaymentPayload,
     encodePaymentHeader,
+    isLatin1,
     redactForLog,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
@@ -26,11 +27,42 @@ export type DelegatedPaymentFailureCode =
     | "LIMIT_EXCEEDED"
     /** The permission is revoked, expired, or not yet active. */
     | "PERMISSION_INACTIVE"
+    /**
+     * The permission context holds no delegations, so pre-flight read nothing.
+     *
+     * Deliberately not folded into `PERMISSION_INACTIVE`. That code sends an operator to
+     * check revocation and expiry on chain, where they would find nothing wrong — the
+     * fault is in the permission artifact, not in chain state.
+     */
+    | "PERMISSION_EMPTY"
     /** The leaf delegation could not be signed — e.g. the parent was revoked. */
     | "SIGNING_FAILED"
     | "PAYMENT_REJECTED"
+    /**
+     * The payment header was delivered and the outcome is not known. **The payer may
+     * already have been charged.**
+     *
+     * Separate from `PAYMENT_REJECTED` because the two demand opposite responses: a
+     * rejection invites a retry, and retrying this one can pay twice. Measured on GIWA —
+     * a settlement that outlived the seller's connection timeout reported
+     * `PAYMENT_REJECTED 403` while the transfer had already been mined
+     * (`0x533c5cb2…9964c`, block 31634935). Nothing about the reported code told the
+     * caller that 1.00 mUSDC had moved.
+     */
+    | "SETTLEMENT_UNKNOWN"
     | "MALFORMED_RESOURCE"
     | "TRANSPORT_ERROR";
+
+/**
+ * Statuses that mean "the seller could not establish what happened", not "no".
+ *
+ * `504` is what `apps/delegated-seller` returns when its facilitator call does not answer
+ * — it already draws this distinction correctly on its own side ("Did not succeed and is
+ * not known to have succeeded are different claims"). The loss happened here, where every
+ * non-2xx collapsed into one code. `408` and `425` are included because a gateway in front
+ * of a seller produces them for the same reason.
+ */
+const SETTLEMENT_UNKNOWN_STATUSES = new Set([408, 425, 504]);
 
 /** Signs a payment-specific leaf delegation for a seller's ERC-7710 offer. */
 export type DelegatedLeafProvider = (
@@ -40,7 +72,11 @@ export type DelegatedLeafProvider = (
 /** Verdict from an optional on-chain check made before any payment is attempted. */
 export type PreflightVerdict =
     | {ok: true}
-    | {ok: false; code: "LIMIT_EXCEEDED" | "PERMISSION_INACTIVE"; detail: string};
+    | {
+          ok: false;
+          code: "LIMIT_EXCEEDED" | "PERMISSION_INACTIVE" | "PERMISSION_EMPTY";
+          detail: string;
+      };
 
 export interface DelegatedPaymentConfig {
     provider: DelegatedLeafProvider;
@@ -99,6 +135,18 @@ export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
     const facilitators = req.extra.facilitatorAddresses;
     if (facilitators != null && !Array.isArray(facilitators)) {
         throw new Error("seller facilitatorAddresses is not a list");
+    }
+    // The whole requirements object is echoed back inside the X-PAYMENT header, which is
+    // base64 via `btoa` — Latin-1 only. Any character above U+00FF anywhere in here,
+    // including in a field we never read, makes that encoding throw.
+    //
+    // Checking it *here* rather than at the encoder is the entire point: the encode
+    // happens after the leaf delegation is signed, so a late failure would leave a bearer
+    // authorization in existence and hand the caller a DOMException naming no field. The
+    // seller reasons about this same hazard on its own response header; this is the
+    // matching guard on the agent's side.
+    if (!isLatin1(JSON.stringify(req))) {
+        throw new Error("seller offer contains characters that cannot be header-encoded");
     }
     return req;
 }
@@ -198,6 +246,13 @@ export async function payForDelegatedResource(
     } catch (error) {
         return failure("SELLER_OFFER_INVALID", `402 body is not JSON: ${errorMessage(error)}`);
     }
+    // `null` parses as valid JSON, so the try above does not catch it — and `typeof null`
+    // is "object", so a plain typeof check would not either. A seller answering 402 with
+    // a literal `null` body reached the version check and threw a TypeError out of a
+    // function whose whole contract is to return a reason.
+    if (body === null || typeof body !== "object") {
+        return failure("SELLER_OFFER_INVALID", "402 body is not an object");
+    }
     if (body.x402Version !== X402_VERSION) {
         return failure("UNSUPPORTED_X402_VERSION", `unsupported x402 version ${body.x402Version}`);
     }
@@ -246,7 +301,15 @@ export async function payForDelegatedResource(
         // TRANSPORT_ERROR sends whoever reads the reason looking at the network.
         return failure("SIGNING_FAILED", `leaf signing failed: ${errorMessage(error)}`);
     }
-    if (getAddress(leaf.delegationManager) !== getAddress(config.delegationManager)) {
+    // `getAddress` throws on anything that is not an address, so checking the shape first
+    // is what lets a malformed provider be reported rather than raised. A provider that
+    // returns garbage is the same class of problem as one returning the wrong manager —
+    // the leaf cannot be trusted — and both belong under one code the caller can act on.
+    if (
+        !isAddress(leaf.delegationManager) ||
+        !isAddress(leaf.delegator) ||
+        getAddress(leaf.delegationManager) !== getAddress(config.delegationManager)
+    ) {
         return failure("MANAGER_MISMATCH", "provider returned an unexpected DelegationManager");
     }
 
@@ -267,11 +330,23 @@ export async function payForDelegatedResource(
             headers: {"X-PAYMENT": paymentHeader},
         });
     } catch (error) {
-        return failure("TRANSPORT_ERROR", errorMessage(error));
+        // The header is already on the wire. A connection that dies now says nothing
+        // about whether the seller settled — reporting TRANSPORT_ERROR here would read
+        // as "the request never landed", which is exactly the belief that makes a caller
+        // retry a payment that already went through. The identical failure *before* the
+        // header is sent is a genuine TRANSPORT_ERROR; the difference is the header.
+        return failure("SETTLEMENT_UNKNOWN", `no answer after the payment was sent: ${errorMessage(error)}`);
     }
     if (!second.ok) {
         // Do not read the body: a malicious seller can reflect X-PAYMENT after we
         // have sent a bearer permission context. Report the status class only.
+        if (SETTLEMENT_UNKNOWN_STATUSES.has(second.status)) {
+            return failure(
+                "SETTLEMENT_UNKNOWN",
+                `seller could not confirm settlement (${second.status}) — the payer may already be charged`,
+                second.status,
+            );
+        }
         return failure(
             "PAYMENT_REJECTED",
             `seller rejected the payment (${second.status})`,

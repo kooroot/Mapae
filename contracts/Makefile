@@ -14,7 +14,14 @@ TARGET       := src/MockUSDC.sol:MockUSDC
 build:
 	forge build
 
-test:
+## `forge test` runs every suite, and DeployDelegationFrameworkTest reads
+## ./generated/framework-artifacts.json through vm.readFile. That directory is a build
+## product and gitignored, so this prerequisite is not tidiness: without it the target
+## passes on any machine that ran a Forge target before and fails on every fresh clone
+## with `vm.readFile: failed to open file`, which names no way to fix it.
+## `framework-test` already declared this dependency; `test` and `bun run test:contracts`
+## run the same suite and did not.
+test: framework-prepare
 	forge test -vvv
 
 fmt:

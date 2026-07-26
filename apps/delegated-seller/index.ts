@@ -1,5 +1,7 @@
 import {Hono} from "hono";
 import {
+    decideSettlement,
+    isVerificationAccepted,
     parseActiveDeploymentArtifactJson,
     parseFrameworkDeploymentManifestJson,
     throttledHttp,
@@ -26,11 +28,32 @@ import {
     isAddress,
     zeroAddress,
     type Address,
-    type Hex,
 } from "viem";
 
 const MAX_PAYMENT_HEADER_LENGTH = 150_000;
-const REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Timeout budgets, and why they are ordered this way.
+ *
+ * Four timeouts stack on one payment, and they have to grow outward:
+ *
+ *   facilitator receipt wait  <  seller→facilitator settle  <  this server's idle
+ *   timeout  <  the agent's own request timeout
+ *
+ * They were inverted. `Bun.serve`'s **default `idleTimeout` is 10 s**, which made the
+ * outermost hop the shortest, while the facilitator waits up to 60 s for a receipt. On
+ * GIWA that produced the worst available outcome: the transfer was mined
+ * (`0x533c5cb2…9964c`, block 31634935, payer −1.00 mUSDC) and the agent was told the
+ * payment had failed. An inverted budget does not lose a payment — it loses the *answer*
+ * about a payment, which is harder to recover from.
+ *
+ * `idleTimeout` is in seconds and capped at 255 by Bun.
+ */
+const VERIFY_TIMEOUT_MS = 15_000;
+/** Must exceed the facilitator's own `SETTLEMENT_RECEIPT_TIMEOUT_MS` (default 25 s). */
+const SETTLE_TIMEOUT_MS = 35_000;
+/** Must exceed SETTLE_TIMEOUT_MS, or this server hangs up on its own settlement. */
+const IDLE_TIMEOUT_SECONDS = 45;
 
 function readPayTo(): Address {
     const value = process.env.PAY_TO?.trim() ?? "";
@@ -98,7 +121,7 @@ function readFrameworkAdmin(): Address {
 async function readFacilitatorAddress(url: string): Promise<Address> {
     const response = await fetch(`${url}/supported`, {
         redirect: "error",
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`facilitator /supported returned ${response.status}`);
     const body = (await response.json()) as {signers?: Record<string, unknown>};
@@ -226,29 +249,26 @@ app.get("/delegated/deliverable/:id", async (c) => {
     }
 
     const verified = await callFacilitator("/verify", request);
-    if (
-        !verified.ok ||
-        verified.value.isValid !== true ||
-        !isCanonicalPayer(verified.value.payer, payer)
-    ) {
+    if (!verified.reachable || !isVerificationAccepted(verified.body, payer)) {
         return c.json({error: "delegation_rejected"}, 403);
     }
-    const settled = await callFacilitator("/settle", request);
+
     // "Did not succeed" and "is not known to have succeeded" are different claims.
     // A transport failure, or a facilitator that broadcast without seeing a receipt,
     // leaves the payer possibly charged — answering 422 would assert they were not.
-    if (!settled.ok || settled.value.errorReason === "settlement_unconfirmed") {
-        return c.json({error: "settlement_unknown"}, 504);
+    // The ladder itself lives in @mapae/delegation so it can be tested without a
+    // facilitator, a chain, or a key; this switch is the only part that is HTTP.
+    const outcome = decideSettlement(await callFacilitator("/settle", request), payer);
+    switch (outcome.kind) {
+        case "unknown":
+            return c.json({error: "settlement_unknown"}, 504);
+        case "failed":
+            return c.json({error: "settlement_failed"}, 422);
+        case "settled":
+            break;
     }
-    if (settled.value.success !== true || !isCanonicalPayer(settled.value.payer, payer)) {
-        return c.json({error: "settlement_failed"}, 422);
-    }
+    const {transaction} = outcome;
 
-    const transaction =
-        typeof settled.value.transaction === "string" &&
-        /^0x[0-9a-fA-F]{64}$/.test(settled.value.transaction)
-            ? (settled.value.transaction as Hex)
-            : undefined;
     // Built from the fields this seller validated, not by echoing the facilitator's
     // body. `btoa` throws on any non-Latin1 character, and that throw would land
     // *after* settlement — the buyer would have paid and received a 500. Every field
@@ -272,39 +292,41 @@ app.get("/delegated/deliverable/:id", async (c) => {
     });
 });
 
-type FacilitatorResponse = {
-    isValid?: boolean;
-    success?: boolean;
-    transaction?: string;
-    payer?: string;
-    /** `settlement_unconfirmed` means broadcast happened but the receipt did not. */
-    errorReason?: string;
-};
-
-function isCanonicalPayer(value: unknown, expected: Address): boolean {
-    return typeof value === "string" && isAddress(value) && getAddress(value) === expected;
-}
-
+/**
+ * `reachable: false` is every way the call did not yield a body — refused connection,
+ * non-2xx, unparseable JSON, timeout. It deliberately does not distinguish them: for
+ * `/settle` they are all the same claim, that we do not know whether money moved.
+ */
 async function callFacilitator(
     path: "/verify" | "/settle",
     request: Erc7710FacilitatorRequest,
-): Promise<{ok: true; value: FacilitatorResponse} | {ok: false}> {
+): Promise<{reachable: boolean; body?: unknown}> {
     try {
         const response = await fetch(`${FACILITATOR_URL}${path}`, {
             method: "POST",
             headers: {"content-type": "application/json"},
             body: JSON.stringify(request),
             redirect: "error",
-            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            // `/verify` is a simulation and answers quickly; `/settle` broadcasts and
+            // waits for a receipt. One shared budget meant the shorter of the two set
+            // the deadline for the longer.
+            signal: AbortSignal.timeout(
+                path === "/settle" ? SETTLE_TIMEOUT_MS : VERIFY_TIMEOUT_MS,
+            ),
         });
-        if (!response.ok) return {ok: false};
-        return {ok: true, value: (await response.json()) as FacilitatorResponse};
+        if (!response.ok) return {reachable: false};
+        return {reachable: true, body: (await response.json()) as unknown};
     } catch {
-        return {ok: false};
+        return {reachable: false};
     }
 }
 
 console.log(`delegated seller listening on ${HOST}:${PORT}`);
 console.log(`  payTo       ${PAY_TO}`);
 console.log(`  facilitator ${FACILITATOR_URL} (${facilitatorAddress})`);
-export default {hostname: HOST, port: PORT, fetch: app.fetch};
+export default {
+    hostname: HOST,
+    port: PORT,
+    idleTimeout: IDLE_TIMEOUT_SECONDS,
+    fetch: app.fetch,
+};

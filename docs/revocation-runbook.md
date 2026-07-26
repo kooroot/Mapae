@@ -41,7 +41,9 @@ cd apps/delegation-lab
 bun run test:e2e:revoke
 ```
 
-`apps/revocation-submitter`를 **실제 프로세스로 띄워** 5케이스를 왕복한다.
+`apps/revocation-submitter`를 **실제 프로세스로 띄워** 아래 표의 케이스를 순서대로
+왕복한다. 개수는 여기 적지 않는다 — 수트가 통과한 글자를 세어 마지막 줄에
+`PASS — N cases (ABC…)`로 출력하고, 이 표가 그 글자의 정본이다.
 유닛 테스트가 검증기를, 반례 수트가 온체인 강제를 각각 덮지만, 서비스 자체가
 부팅되는지 — env 파싱, 배포 아티팩트 읽기, 시작 시 릴레이어 확인, `/health`,
 single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는 이
@@ -54,6 +56,9 @@ single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는
 | C 정상 | 실제로 회수된다 | `200` + tx, `disabledDelegations` 참 |
 | D 재요청 | 예치금이 실제로 소모됐다 | `409 prefund_short` |
 | E 재충전 후 재요청 | 리플레이를 막는 건 **nonce**다 | `502` + `AA25 invalid account nonce` |
+| F 콘솔 preflight | 회수 버튼이 브라우저에서 닿을 수 있다 | `204` + 정확한 `allow-origin`·`content-type` |
+| G 낯선 출처 preflight | 허용 목록에 없는 출처는 거절 | `403`, `allow-origin` 없음 |
+| H Origin 없는 요청 | CORS 가드가 스크립트를 깨지 않았다 | `200` |
 
 D와 E가 분리된 이유가 이 수트에서 가장 비자명하다. D만 있으면 "리플레이가
 막혔다"고 말할 수 없다 — D를 막은 건 체인 앞단의 예치금 게이트고, nonce는 실행된
@@ -119,6 +124,26 @@ cd apps/console && bun run dev
 버튼이 잠기는 다섯 가지 이유는 각각 다른 문장을 보여준다 — 엔드포인트 미설정,
 이미 회수됨, 지갑 미연결, 소유자 아님, 예치금 부족.
 
+### 브라우저 레그 — 출처가 다르면 preflight부터 통과해야 한다
+
+콘솔은 `:5173`, 제출기는 `:8082`다. 포트가 다르면 다른 출처이고, 회수 요청이
+`content-type: application/json`을 실어 보내므로 **브라우저가 preflight를 먼저 보낸다.**
+그 preflight가 실패하면 POST는 아예 나가지 않는다 — 버튼은 살아 있어 보이고 아무 일도
+일어나지 않으며, 콘솔에도 서버 로그에도 흔적이 남지 않는다.
+
+제출기는 `REVOCATION_CONSOLE_ORIGINS`의 출처만 답한다. 기본값은 `vite`(5173)와
+`vite preview`(4173)를 loopback 두 표기로 덮는다. 콘솔을 다른 포트에서 띄웠다면 이
+값을 같이 바꿔야 한다.
+
+**`*`는 거부한다.** 이 서비스는 애플리케이션 인증이 없고 자금이 든 릴레이어 키를 들고
+있다. 와일드카드는 운영자가 열어 둔 아무 페이지에나 이 서비스의 가스를 쓸 길을 준다.
+`validateRevocationSubmission`이 소유자 서명이 아닌 것을 이미 거절하므로 위조 경로는
+아니지만, 재전송으로 가스를 태우는 경로는 열린다.
+
+서버 사이드 `fetch`는 CORS를 강제하지 않는다. 그래서 스크립트로는 초록인데 페이지에서는
+죽어 있는 상태가 오래 눈에 띄지 않았다. `revocation-submitter-e2e.ts`의 케이스 F/G/H가
+응답을 직접 확인해 그 간극을 덮는다.
+
 ---
 
 ## 6. 백스톱
@@ -130,3 +155,51 @@ cd apps/console && bun run dev
 
 `pause()`는 예치금이 필요 없다. 예치금 arming을 못 한 상태에서의 백스톱이다.
 게이트(`verifyFrameworkOperationalState`)와 온체인(`whenNotPaused`) 양쪽이 막는다.
+
+---
+
+## 지갑 레그를 fork 에서 검증하기
+
+회수 경로에서 자동화가 덮지 못하는 곳은 정확히 하나다 — **사람이 지갑 승인 화면을
+보고 승인하는 구간.** `revocation-submitter-e2e.ts` 가 빌드→서명→POST→CORS
+preflight→simulate→`handleOps`→`UserOperationEvent.success` 까지 8/8 로 완주하지만
+서명은 viem `LocalAccount` 가 만든다. 지갑 확장이 하는 일(사람에게 렌더링,
+`domain.chainId` 강제, 계정 전환, 사용자 거절)은 그 경로에 아예 없고, injected
+provider 를 스텁으로 흉내내면 검증 대상이 스텁 자신이 된다.
+
+```bash
+cd apps/delegation-lab
+bun run lab:revoke        # GIWA head 를 fork, 예치금 arming, 제출기 기동 후 대기
+```
+
+랩이 하는 일: GIWA 헤드를 fork → 파생 relayer 에 `anvil_setBalance` →
+`EntryPoint.depositTo(payer)` 로 1회분의 8배 예치 → 제출기를 fork 에 물려 기동 →
+`apps/console/.env.local` 작성 → **Ctrl-C 까지 그대로 대기.**
+
+### 왜 fork 로 충분한가
+
+서명이 오프라인 EIP-712 이고 **fork 도 chain id 91342** 라, 지갑이 서명하도록 요청받는
+다이제스트가 라이브 GIWA 의 것과 바이트 단위로 같다 — 같은 도메인, 같은
+`verifyingContract`, 같은 `entryPoint`. 그리고 fork 는 GIWA 의 실제 상태를 들고 있으므로
+커서 아래 계정이 진짜 payer `0xA4e4d00E…DDF382` 와 진짜 owner 다. 라이브 GIWA 가
+추가로 주는 것은 채굴된 트랜잭션과 익스플로러 링크뿐이다.
+
+따라온 결론 하나: **MetaMask 에 커스텀 네트워크를 추가할 필요가 없다.** 지갑은
+`domain.chainId` 를 선택된 네트워크와 비교하는데 실제 GIWA Sepolia 도 91342 다. 소유자는
+GIWA Sepolia 에 그대로 있으면서 서명하면 된다. 지갑은 fork 에 접속하지 않는다 — fork 와
+말하는 것은 이 프로세스와 콘솔뿐이다.
+
+### 함정 둘 (여기서 실제로 겪음)
+
+- **`localhost` 말고 `127.0.0.1` 로 열 것.** 같은 머신의 다른 프로젝트가
+  `localhost:5173` 에 service worker 를 남겨두면 그 앱이 대신 뜬다. 서버는 두 호스트
+  모두 정상 응답하는데 브라우저만 다른 것을 보여주므로, 원인을 콘솔에서 찾게 된다.
+- **콘솔 포트가 5173 이 아닐 수 있다.** 그 포트가 이미 쓰이면 vite 는 5174 로 내려가고,
+  CORS allowlist 가 그 포트를 안 덮으면 회수 버튼이 **조용히** 아무 것도 안 한다. 랩은
+  5173–5176 과 4173 을 두 호스트 표기로 모두 덮고, 어느 포트로 갈지 미리 알려준다.
+
+### 안전
+
+라이브 GIWA 에 닿는 것은 없다. 제출기 자식 프로세스는 spawn 전에 loopback fork 로
+고정되고, 실제 GIWA relayer nonce 를 시작과 종료 시점에 각각 읽어 불변임을 증명한다.
+`.env.local` 은 gitignored 이며, 지우면 콘솔이 다시 라이브 GIWA 를 본다.

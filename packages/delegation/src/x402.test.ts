@@ -3,6 +3,7 @@ import type {SmartAccountsEnvironment} from "@metamask/smart-accounts-kit";
 import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {decodeFunctionData, getAddress, type Address, type Hex} from "viem";
 import {
+    GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
     buildErc7710PaymentPayload,
     buildErc7710PaymentRequirements,
@@ -15,7 +16,10 @@ import {
 } from "./policy.js";
 import {
     PaymentIntentSingleFlight,
+    SETTLEMENT_UNCONFIRMED,
     buildDelegatedTransfer,
+    decideSettlement,
+    isVerificationAccepted,
     validateDelegatedPayment,
 } from "./x402.js";
 
@@ -246,5 +250,123 @@ describe("D4 ERC-7710 facilitator boundary", () => {
                 facilitator: FACILITATOR,
             }),
         ).toThrow("not a valid delegation chain");
+    });
+});
+
+/**
+ * The seller's answer about a payment, pinned.
+ *
+ * This ladder had no test. It is decided in `apps/delegated-seller`, which had no test
+ * file at all, and the two claims it must never confuse — "you were not charged" and "we
+ * do not know whether you were charged" — differ by one string literal that used to be
+ * written out separately in each of the two processes that share it.
+ *
+ * The cost of getting it wrong is not hypothetical: GIWA tx `0x533c5cb2…9964c` moved
+ * 1.00 mUSDC out of the payer while the caller was told the payment was rejected.
+ */
+describe("D5 settlement outcome ladder", () => {
+    const PAYER = getAddress("0x6000000000000000000000000000000000000001");
+    const IMPOSTOR = getAddress("0x6000000000000000000000000000000000000002");
+    const TX = `0x${"ab".repeat(32)}` as Hex;
+    const settled = {success: true, network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX};
+
+    test("the happy path is the control for every case below", () => {
+        expect(decideSettlement({reachable: true, body: settled}, PAYER)).toEqual({
+            kind: "settled",
+            transaction: TX,
+        });
+    });
+
+    test("an unreachable facilitator is unknown, never failed", () => {
+        // Connection refused, non-2xx, timeout — the seller cannot tell them apart, and
+        // none of them distinguishes "never landed" from "broadcast, answer lost".
+        expect(decideSettlement({reachable: false}, PAYER)).toEqual({kind: "unknown"});
+    });
+
+    test("a body that is not an object is unknown, never failed", () => {
+        for (const body of [undefined, null, "settled", 7]) {
+            expect(decideSettlement({reachable: true, body}, PAYER).kind).toBe("unknown");
+        }
+    });
+
+    test("the unconfirmed sentinel is unknown and keeps the hash", () => {
+        // The hash is the only way the caller can find out whether they were charged,
+        // so dropping it would leave them with a 504 and nothing to look up.
+        expect(
+            decideSettlement(
+                {
+                    reachable: true,
+                    body: {
+                        success: false,
+                        network: GIWA_SEPOLIA_CAIP2,
+                        transaction: TX,
+                        errorReason: SETTLEMENT_UNCONFIRMED,
+                    },
+                },
+                PAYER,
+            ),
+        ).toEqual({kind: "unknown", transaction: TX});
+    });
+
+    test("the sentinel is one shared constant, not a literal per process", () => {
+        // If this ever drifts, the case above silently becomes `failed` — a 422 that
+        // asserts a balance nobody checked. Pinning the value is what makes the
+        // facilitator and the seller provably agree without running either.
+        expect(SETTLEMENT_UNCONFIRMED).toBe("settlement_unconfirmed");
+    });
+
+    test("a clean refusal is failed — money did not move", () => {
+        expect(
+            decideSettlement(
+                {
+                    reachable: true,
+                    body: {
+                        success: false,
+                        network: GIWA_SEPOLIA_CAIP2,
+                        errorReason: "delegation_rejected",
+                    },
+                },
+                PAYER,
+            ),
+        ).toEqual({kind: "failed"});
+    });
+
+    test("success with a payer we did not derive is unknown, not failed", () => {
+        // The facilitator says it broadcast. Only the identity it reports disagrees with
+        // the one the seller derived from the signed context, so the balance is exactly
+        // what nobody has checked — `failed` would assert it.
+        expect(
+            decideSettlement({reachable: true, body: {...settled, payer: IMPOSTOR}}, PAYER),
+        ).toEqual({kind: "unknown", transaction: TX});
+        expect(
+            decideSettlement({reachable: true, body: {...settled, payer: undefined}}, PAYER),
+        ).toEqual({kind: "unknown", transaction: TX});
+    });
+
+    test("a malformed hash is dropped rather than echoed into a receipt", () => {
+        for (const transaction of ["0xdeadbeef", "not-a-hash", 42, `0x${"ab".repeat(33)}`]) {
+            expect(decideSettlement({reachable: true, body: {...settled, transaction}}, PAYER))
+                .toEqual({kind: "settled", transaction: undefined});
+        }
+    });
+
+    test("verification requires both a valid flag and our own payer", () => {
+        expect(isVerificationAccepted({isValid: true, payer: PAYER}, PAYER)).toBe(true);
+        // Checksum drift must not read as a different payer.
+        expect(isVerificationAccepted({isValid: true, payer: PAYER.toLowerCase()}, PAYER)).toBe(
+            true,
+        );
+        for (const body of [
+            {isValid: false, payer: PAYER},
+            {isValid: true, payer: IMPOSTOR},
+            {isValid: true},
+            {isValid: true, payer: "0x1234"},
+            {payer: PAYER},
+            undefined,
+            null,
+            "ok",
+        ]) {
+            expect(isVerificationAccepted(body, PAYER)).toBe(false);
+        }
     });
 });

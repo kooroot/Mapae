@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-216%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-375%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -63,35 +63,57 @@ The repository keeps two payment paths side by side:
 | Path | Purpose | Status |
 |---|---|---|
 | EIP-3009 + x402-rs | Gasless exact-payment baseline | Settled on GIWA Sepolia |
-| ERC-7710 + x402 | Limited, expiring, revocable agent payments | Settled on GIWA Sepolia; caveat rejections enforced on-chain |
+| ERC-7710 + x402 | Limited, expiring, revocable agent payments | Settled on GIWA Sepolia; caveat rejections come from the deployed enforcers, evaluated against live GIWA state |
 
 ## Current status
 
-| Milestone | Result |
-|---|---|
-| D1 | MockUSDC deployed and verified; x402-rs facilitator connected |
-| D2 | `402 → sign → verify → settle → resource` completed on GIWA |
-| D3/D4 | Delegation Framework and the owner smart account deployed on GIWA; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly |
-| D5 | One MCP tool call completes the whole payment with no human in the loop |
-| D6 | Console reads the cap, the remaining period balance and the settlement receipts straight from chain |
+Two different things are called "done" below, and the column says which. **GIWA** means
+a transaction was mined on GIWA Sepolia and you can open it in the explorer. **Local fork**
+means it runs against real GIWA state and real deployed bytecode in a local Anvil fork —
+a strong result, but nothing was mined and there is no link to follow.
+
+| Milestone | Result | Proven on |
+|---|---|---|
+| D1 | MockUSDC deployed and verified; x402-rs facilitator connected | **GIWA** |
+| D2 | `402 → sign → verify → settle → resource` completed | **GIWA** |
+| D3/D4 | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
+| D5 | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
+| D6 | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
+| D7 | Standing documentation, logging, advisory and test-count gates; 375 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - D4 delegated settlement, 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - D4 delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
-- Over-cap and expired payments are refused by the enforcers on-chain, not by a
-  backend check — see the evidence table in the [technical notes](docs/tech-notes.md).
-- Regression suite: **216 TypeScript tests + 14 Foundry tests**, plus a
-  chain-parameterised negative-path suite that runs the same twenty-three caveat cases on a
-  disposable chain and on a GIWA fork.
+- **D5 agent-driven settlement**, one MCP call, no human step:
+  [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
+  — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer gas spend 0**.
+  This run also surfaced a real defect and its fix is in the same tree: the answer the
+  agent received said the payment had been rejected while it had in fact been mined. See
+  "settlement-unknown" below.
+- Over-cap and expired payments are refused by the enforcers, not by a backend check.
+  **There is no transaction to link for these two**, and that is the mechanism working
+  rather than a gap: the facilitator simulates `redeemDelegations` against live GIWA state
+  before it broadcasts, so the enforcer's revert arrives at `/verify` and no doomed
+  transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
+  reading the real period counter — it is simply an `eth_call`, not a mined block. See the
+  evidence table in the [technical notes](docs/tech-notes.md).
+- Regression suite: **375 TypeScript tests (278 shared/delegation/scripts + 3 MCP + 94 console)
+  + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
+  twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
+  given because `bun run check` prints it as four separate numbers — a single total is a
+  claim you cannot check against anything the command actually shows you.
 
 ### What is not proven here
 
 Being explicit about the edges matters more than a longer list of green checks.
 
-- **Revocation is proven on chain; the wallet UI leg and the submitter are not.**
+- **Revocation has never been executed on GIWA.** Every result below comes from a local
+  fork — real deployed bytecode, real account, real EntryPoint, but no mined transaction
+  and no explorer link. The payer account's EntryPoint deposit on GIWA is `0`, so the
+  console's revoke button renders disabled against the live chain until someone funds it.
   `DeleGatorCore.disableDelegation` is `onlyEntryPointOrSelf`, so an owner revokes by
-  submitting an EntryPoint UserOperation. Both branches now run on both suite targets:
+  submitting an EntryPoint UserOperation. Both branches run on both suite targets:
   the *self* branch, and the *EntryPoint* branch driven by a real owner-signed
   UserOperation through `handleOps`, with three controls proving each dependency is
   load-bearing — an unfunded deposit fails `AA21`, a non-owner signature fails `AA24`,
@@ -108,6 +130,16 @@ Being explicit about the edges matters more than a longer list of green checks.
   fails `AA21`. A relayer can fund it with `EntryPoint.depositTo(payerAccount)`, which
   leaves the payer's ETH balance at exactly zero and cannot be clawed back by the
   relayer. Framework-wide `DelegationManager.pause()` needs no deposit.
+- **A settlement can outlive the agent's patience, and then the answer is "unknown".**
+  Found by running D5 on GIWA rather than on a fork. Four timeouts stack on one payment —
+  the facilitator's wait for a receipt, the seller's call to it, the seller's HTTP idle
+  timeout, and the agent's own deadline — and they were inverted: `Bun.serve`'s 10 s
+  default sat underneath a 60 s receipt wait. The transfer was mined and the agent was
+  told it had been rejected. The budgets now grow outward (25 → 35 → 45 → 50 s) and a
+  payment whose outcome is not established returns `SETTLEMENT_UNKNOWN` instead of
+  `PAYMENT_REJECTED`, because the two invite opposite responses and retrying the first
+  can pay twice. A fork mines instantly, so no amount of local testing would have shown
+  this.
 - **Idempotency is in-process.** It is correct for a single replica and must move
   to a durable store before running more than one.
 - **A production stablecoin needs its own token-behaviour review.** MockUSDC is a
@@ -131,24 +163,108 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`bun run check` runs strict TypeScript across every package, the shared and
-delegation suites, the MCP server smoke tests, the console render tests, a real
-console build, and the Foundry contract suite. It needs no keys and no network.
+`bun run check` runs strict TypeScript across every package, four standing
+checks — documentation, logging, dependency advisories, test counts — the shared
+and delegation suites, the MCP server smoke tests, the console render tests, a
+real console build, and the Foundry contract suite. It needs no keys. Only the
+advisory check wants the network, and it says so and carries on without it.
+The same command and the hermetic 23-case delegation suite run in GitHub Actions
+on every pull request and every push to `main`, from a recursive-submodule checkout
+with Bun and Foundry pinned to the versions used for the D7 re-run.
+
+The documentation check is in the gate because the roadmap makes this README the
+submission, which turns doc rot into a correctness bug. It verifies that every
+`bun run` and `make` command written in a code block exists, that every relative
+link resolves, and that every address matches one of the two canonical sources —
+the deployment artifacts and `packages/shared/src/token.ts`. Its first run found
+that MockUSDC's address is in no artifact at all, which this repository had been
+claiming otherwise for months.
+
+The count of tests in the badge above is checked against the tests that exist,
+not against the other numbers on this page. Badge, total and breakdown agreeing
+with each other never meant they were right — they move together whenever
+someone edits them by hand — and the stated number was twelve short the last
+time a suite grew, while the gate printed that the counts checked out. `bun test`
+with a name filter that matches nothing collects every file and reports the
+total without running a single test body; `forge test --list` does the same for
+the contracts.
+
+The advisory check runs `bun audit` and requires every finding to be either
+fixed or accepted in writing with a proof attached. One is accepted today: a
+Windows path traversal in the HTTP adapter that `@modelcontextprotocol/sdk`
+pulls in for a transport this repository does not use. No compatible update
+closes it — the SDK declares `^1.19.9` and the fix landed in 2.0.5 — so the
+acceptance rests entirely on that adapter never entering our bundle, which is
+re-measured on every run. A control file that imports the transport on purpose
+has to be found by the same measurement first: a detector that always reported
+zero would pass the check while proving nothing.
+
+The logging check refuses a raw error inside any `console.*` argument. The
+private RPC endpoint used for local forks carries its API key in the URL *path*,
+and viem embeds its transport URL in every error message, so
+`console.error(error.message)` is a credential disclosure. Errors reach a sink
+through `redactForLog`, which reduces any URL to `scheme://host`. That rule used
+to be enforced by review: an audit found seventeen escape paths and fixed them
+file by file, but its sweep was scoped to two directories and `apps/agent` kept
+the forbidden expression through it. A rule that new code keeps reintroducing
+belongs in the gate.
 
 The console build is part of the gate because type checking alone does not catch
 it: a `node:`-only import type-checks cleanly and then fails to bundle, which is
 the same class of mistake as reaching for a server-only module from browser code.
 
+### See the limits refuse a payment, on a chain you own
+
+This is the strongest thing you can check without anything of ours. It spawns a
+disposable Anvil, deploys the pinned 38-unit Framework and MockUSDC onto it, and
+runs twenty-three cases against the deployed enforcer bytecode — the period cap,
+its reset, expiry, replay, a wrong redeemer, a recipient swap, six ways a
+compromised facilitator could try to profit, and revocation through both the
+account and the EntryPoint.
+
+```bash
+cd apps/delegation-lab
+bun run test:negative
+```
+
+No keys, no network, no artifact from us: it generates its own owner, agent,
+manager and child accounts, and the default target is hermetic. Measured from a
+clean clone with nothing but Bun and Foundry installed — `23/23 cases passed`,
+exit 0. Every refusal prints the enforcer and the exact revert string, so what
+refuses is legible rather than asserted.
+
+The same twenty-three cases also run against the contracts that are actually
+deployed on GIWA, instead of a fresh local copy of them:
+
+```bash
+SUITE_TARGET=fork bun run test:negative
+```
+
+That target needs a GIWA RPC endpoint and forks the live chain locally; nothing
+is broadcast. It is the stronger of the two, and the one this repository's claims
+rest on — the refusals come from the enforcer bytecode at the addresses in
+[docs/deployed-contracts.md](docs/deployed-contracts.md), reading real GIWA state.
+Measured 2026-07-26: `23/23 cases passed` and exit 0 on both targets.
+
 ### Watch the agent pay by itself, then revoke it
 
-This is the demo in one command. It forks GIWA locally, starts the ERC-7710
-facilitator and seller against that fork, asks the MCP server to buy a gated
-resource, and then revokes the permission and shows the same call being refused.
+This forks GIWA locally, starts the ERC-7710 facilitator and seller against that
+fork, asks the MCP server to buy a gated resource, and then revokes the permission
+and shows the same call being refused.
 
 ```bash
 cd apps/delegation-lab
 bun run test:e2e:mcp
 ```
+
+**This one is not runnable from a clone, and that is not a defect to route around.**
+It replays *this* deployment: it needs `apps/delegation-lab/.env` and a signed root
+permission at `open-agent.permission.json`, and that permission can only be produced
+by the wallet that owns the deployed account. Both are gitignored, so a fresh clone
+stops at `RELAYER_ADDRESS must be set (apps/delegation-lab/.env)`. Setup is in
+[`docs/giwa-demo-runbook.md`](docs/giwa-demo-runbook.md); if you want a payment loop
+you can drive end to end yourself, use `test:negative` above — it proves the same
+enforcement without needing anyone's signature.
 
 Along the way it also asks for a payment the cap cannot cover, and the agent
 refuses it from the enforcer's own accounting before signing anything:
@@ -240,7 +356,11 @@ The signature covers the permission context. It does **not** cover the execution
 execution it likes alongside a perfectly valid leaf. Only the caveats on that leaf
 stand in the way — and they hold:
 
-| Attempt | Refused by | On-chain revert |
+Every revert below is produced by the deployed enforcer bytecode, on a disposable chain
+and again on a GIWA fork. None of them is a mined GIWA transaction — a tampering attempt
+that reverts in simulation is never broadcast, which is the point.
+
+| Attempt | Refused by | Enforcer revert |
 |---|---|---|
 | Pay itself instead of the vendor | `AllowedCalldataEnforcer` | `invalid-calldata` |
 | Inflate the amount, even within the period cap | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |

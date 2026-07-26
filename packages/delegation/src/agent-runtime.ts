@@ -180,6 +180,14 @@ export async function loadDelegatedAgentRuntime(
     // reads the whole chain: checking only the root would clear a payment that a
     // re-delegated child's tighter cap refuses on-chain.
     const chain = decodeDelegations(parent.permissionContext);
+    // `isPermissionContext` above checks shape and length, not content, so a well-formed
+    // encoding of an empty `Delegation[]` reaches here. An agent whose permission holds no
+    // links has nothing to spend under; failing at bootstrap says so once rather than
+    // once per payment. `judgePreflight` guards the same state for callers that build
+    // their own status list.
+    if (chain.length === 0) {
+        throw new Error("parent permissionContext decodes to no delegations");
+    }
 
     const preflight = async (amount: bigint): Promise<PreflightVerdict> =>
         judgePreflight(
@@ -232,7 +240,46 @@ export async function loadDelegatedAgentRuntime(
  * would sign, the settlement would revert, and the failure would surface as a facilitator
  * error rather than as the limit doing its job.
  */
+/**
+ * The smallest remaining period allowance across a chain, or `undefined` when no link
+ * carries an `ERC20PeriodTransferEnforcer` caveat at all.
+ *
+ * Shared because two callers computed it with the same six lines and then drew opposite
+ * conclusions from `undefined` — one of them wrongly. Keeping the computation in one place
+ * makes the disagreement visible as a disagreement rather than as a copy that fell behind.
+ *
+ * `undefined` means "there is no period cap to compare against", never "the payment fits".
+ * Every caller has to say which of those it wants.
+ */
+export function tightestPeriodRemaining(statuses: DelegationStatus[]): bigint | undefined {
+    let tightest: bigint | undefined;
+    for (const status of statuses) {
+        if (status.remaining === undefined) continue;
+        if (tightest === undefined || status.remaining < tightest) tightest = status.remaining;
+    }
+    return tightest;
+}
+
 export function judgePreflight(statuses: DelegationStatus[], amount: bigint): PreflightVerdict {
+    // An empty chain must not read as "no limits apply".
+    //
+    // Everything below is a loop, so with no statuses each one falls through and the
+    // function clears the payment — measured at 999 mUSDC against a chain it had read
+    // nothing from. That state is reachable: `isPermissionContext` is a shape-and-length
+    // guard on hex, and a well-formed ABI encoding of an empty `Delegation[]` is 130
+    // characters that passes it and decodes to `[]`.
+    //
+    // The settlement would still be refused on-chain, so this was never a route to funds.
+    // What it defeated is the reason this function exists — reporting a cause from the
+    // chain's own accounting instead of walking into the seller and relaying a status
+    // code. "We read nothing" is not "we read no limits".
+    if (statuses.length === 0) {
+        return {
+            ok: false,
+            code: "PERMISSION_EMPTY",
+            detail: "permission context decodes to no delegations — nothing to spend under",
+        };
+    }
     for (const status of statuses) {
         if (status.revoked) {
             return {ok: false, code: "PERMISSION_INACTIVE", detail: "permission was revoked"};
@@ -245,11 +292,17 @@ export function judgePreflight(statuses: DelegationStatus[], amount: bigint): Pr
         }
     }
 
-    let tightest: bigint | undefined;
-    for (const status of statuses) {
-        if (status.remaining === undefined) continue;
-        if (tightest === undefined || status.remaining < tightest) tightest = status.remaining;
-    }
+    const tightest = tightestPeriodRemaining(statuses);
+    // A chain with links but no period caveat anywhere leaves this undefined, and this
+    // function deliberately clears the payment then: its question is "will the chain refuse
+    // this?", and with no period cap the answer is no. That is *not* the same judgement the
+    // broadcast gate in `apps/delegation-lab/giwa-preflight.ts` makes — a human reading
+    // "GO — every condition met" before an irreversible settlement must not be shown a
+    // missing cap as a satisfied one. The two callers share the computation above and
+    // disagree on purpose; do not "fix" the inconsistency by copying one into the other.
+    //
+    // The empty-chain case above is different in kind and does refuse: "we read nothing" is
+    // not "we read a policy with no period cap".
     if (tightest !== undefined && amount > tightest) {
         return {
             ok: false,

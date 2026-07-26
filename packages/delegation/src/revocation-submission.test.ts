@@ -15,6 +15,8 @@ import {
     judgeSubmissionReadiness,
     validateRevocationSubmission,
     type RevocationSubmissionPolicy,
+    judgeCorsRequest,
+    parseCorsAllowlist,
 } from "./revocation-submission.js";
 
 const address = (suffix: number): Address =>
@@ -318,6 +320,28 @@ describe("submission readiness", () => {
         expect(judgeSubmissionReadiness(armed)).toEqual({ok: true});
     });
 
+    test("an unreadable base fee refuses instead of passing as zero", () => {
+        // The caller used to substitute `0n` for a block with no base fee. That makes the
+        // fee check below `maxFeePerGas < 0n` — false for every input — so the guard that
+        // stops the relayer fronting unrecoverable gas silently stopped existing. viem
+        // types a block's base fee as `bigint | null`, so this is a reachable state and not
+        // a hypothetical.
+        expect(judgeSubmissionReadiness({...armed, baseFeePerGas: undefined})).toEqual({
+            ok: false,
+            refusal: {reason: "base_fee_unreadable", maxFeePerGas: armed.maxFeePerGas},
+        });
+    });
+
+    test("an unreadable base fee is not reported as a fee that is too low", () => {
+        // Distinct reasons on purpose: `fee_below_basefee` tells the owner to re-sign with
+        // a higher fee, which is the wrong instruction when the truth is that we could not
+        // read the chain. One is about their signature, the other about our read.
+        const unreadable = judgeSubmissionReadiness({...armed, baseFeePerGas: undefined});
+        expect(unreadable).toMatchObject({refusal: {reason: "base_fee_unreadable"}});
+        const tooLow = judgeSubmissionReadiness({...armed, baseFeePerGas: armed.maxFeePerGas + 1n});
+        expect(tooLow).toMatchObject({refusal: {reason: "fee_below_basefee"}});
+    });
+
     test("one wei short is not armed, and the shortfall is reported", () => {
         const result = judgeSubmissionReadiness({...armed, deposit: armed.deposit - 1n});
         expect(result).toEqual({
@@ -366,5 +390,127 @@ describe("submission readiness", () => {
         expect(result.ok).toBe(false);
         if (result.ok) throw new Error("unreachable");
         expect(result.refusal.reason).toBe("prefund_short");
+    });
+});
+
+/**
+ * Whether the revoke button can reach the submitter from a browser at all.
+ *
+ * The console is served from :5173 and the submitter listens on :8082, so every revoke is
+ * cross-origin, and `content-type: application/json` is not CORS-safelisted — the browser
+ * sends a preflight first and drops the POST if it fails. This went unnoticed because the
+ * e2e runner uses Bun's server-side fetch, which does not enforce CORS at all: the service
+ * was green from a script and dead from a page.
+ */
+describe("judgeCorsRequest", () => {
+    const policy = {allowedOrigins: ["http://127.0.0.1:5173", "http://localhost:5173"]};
+
+    test("allows a configured console origin and echoes it back exactly", () => {
+        const decision = judgeCorsRequest("http://127.0.0.1:5173", policy);
+        expect(decision.allowed).toBe(true);
+        if (!decision.allowed) return;
+        expect(decision.headers["Access-Control-Allow-Origin"]).toBe("http://127.0.0.1:5173");
+    });
+
+    test("marks the response as varying by origin", () => {
+        // Without this a cache in front of the submitter can hand one origin's allow
+        // header to another, which is the allowlist leaking through a shared cache.
+        const decision = judgeCorsRequest("http://localhost:5173", policy);
+        expect(decision.allowed && decision.headers.Vary).toBe("Origin");
+    });
+
+    test("a preflight additionally answers method, headers and max-age", () => {
+        const decision = judgeCorsRequest("http://127.0.0.1:5173", policy, true);
+        expect(decision.allowed).toBe(true);
+        if (!decision.allowed) return;
+        expect(decision.headers["Access-Control-Allow-Methods"]).toContain("POST");
+        // The console sends content-type: application/json. Omitting it here fails the
+        // preflight just as completely as having no CORS at all.
+        expect(decision.headers["Access-Control-Allow-Headers"]).toContain("content-type");
+        expect(Number(decision.headers["Access-Control-Max-Age"])).toBeGreaterThan(0);
+    });
+
+    test("refuses an origin that is not on the list", () => {
+        for (const origin of [
+            "http://evil.example",
+            "https://127.0.0.1:5173", // different scheme is a different origin
+            "http://127.0.0.1:5174", // different port is a different origin
+            "http://127.0.0.1:5173.evil.example", // suffix, not a match
+        ]) {
+            expect(judgeCorsRequest(origin, policy).allowed).toBe(false);
+        }
+    });
+
+    test("never answers with a wildcard", () => {
+        // The submitter has no application authentication and fronts a funded relayer
+        // key, so `*` would let any page the operator has open spend its gas.
+        const decision = judgeCorsRequest("http://127.0.0.1:5173", policy);
+        expect(decision.allowed && decision.headers["Access-Control-Allow-Origin"]).not.toBe("*");
+    });
+
+    test("never allows credentials", () => {
+        // Authority travels in the signature inside the body, not in a cookie. Setting
+        // this would make the wildcard ban the only thing standing between an arbitrary
+        // page and an authenticated request.
+        const decision = judgeCorsRequest("http://127.0.0.1:5173", policy, true);
+        expect(decision.allowed && decision.headers["Access-Control-Allow-Credentials"]).toBeUndefined();
+    });
+
+    test("a request with no Origin passes through unchanged", () => {
+        // curl and the e2e runner send no Origin. They were working before CORS existed
+        // and must keep working — the browser is the only thing this policy governs.
+        const decision = judgeCorsRequest(undefined, policy);
+        expect(decision.allowed).toBe(true);
+        if (!decision.allowed) return;
+        expect(Object.keys(decision.headers)).toHaveLength(0);
+    });
+});
+
+describe("parseCorsAllowlist", () => {
+    const loopback = (host: string) => ["127.0.0.1", "localhost", "[::1]"].includes(host);
+    const fallback = ["http://127.0.0.1:5173"];
+
+    test("falls back when unset or blank", () => {
+        expect(parseCorsAllowlist(undefined, loopback, fallback)).toEqual(fallback);
+        expect(parseCorsAllowlist("   ", loopback, fallback)).toEqual(fallback);
+        expect(parseCorsAllowlist(",, ,", loopback, fallback)).toEqual(fallback);
+    });
+
+    test("splits, trims, and reduces each entry to a bare origin", () => {
+        // A trailing slash or path would never match `Origin`, which is scheme+host+port
+        // only — so normalising here is what stops one stray character from silently
+        // disabling the whole allowlist.
+        expect(
+            parseCorsAllowlist(
+                " http://127.0.0.1:5173/ , http://localhost:4173/console ",
+                loopback,
+                fallback,
+            ),
+        ).toEqual(["http://127.0.0.1:5173", "http://localhost:4173"]);
+    });
+
+    test("refuses a wildcard outright", () => {
+        expect(() => parseCorsAllowlist("*", loopback, fallback)).toThrow("must not be '*'");
+    });
+
+    test("refuses a non-loopback origin", () => {
+        expect(() => parseCorsAllowlist("https://console.example.com", loopback, fallback)).toThrow(
+            "must be loopback",
+        );
+    });
+
+    test("refuses a non-URL and a non-HTTP scheme", () => {
+        expect(() => parseCorsAllowlist("not a url", loopback, fallback)).toThrow("not a URL");
+        expect(() => parseCorsAllowlist("file:///etc/passwd", loopback, fallback)).toThrow(
+            "must be HTTP(S)",
+        );
+    });
+
+    test("one bad entry rejects the whole list rather than silently dropping it", () => {
+        // Skipping the bad one would leave a submitter running with an allowlist the
+        // operator did not write.
+        expect(() =>
+            parseCorsAllowlist("http://127.0.0.1:5173,https://evil.example", loopback, fallback),
+        ).toThrow("must be loopback");
     });
 });

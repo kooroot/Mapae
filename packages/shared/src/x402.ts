@@ -254,8 +254,39 @@ export function toWireAuthorization(auth: TransferAuthorization): Eip3009Authori
  * Header codec
  * ------------------------------------------------------------------ */
 
+/**
+ * `btoa` is Latin-1 only — one character above U+00FF anywhere in the payload and it
+ * throws a bare `DOMException: The string contains invalid characters.`
+ *
+ * That matters here more than it looks. The payload echoes the seller's own requirements
+ * object back, so the offending byte is attacker-controlled, and on the agent's path this
+ * call happens *after* the leaf delegation has been signed: the throw would leave a bearer
+ * authorization in existence while the caller received an opaque DOM error naming neither
+ * the seller nor the field. The seller already reasons about exactly this hazard on its
+ * own side (`apps/delegated-seller/index.ts`, X-PAYMENT-RESPONSE).
+ *
+ * This guard is the backstop, not the fix — callers should refuse an unencodable offer
+ * before they sign anything. It exists so that any *other* caller gets a message that
+ * names the problem instead of a DOMException.
+ */
 export function encodePaymentHeader(payload: AnyPaymentPayload): string {
-    return btoa(JSON.stringify(payload));
+    const json = JSON.stringify(payload);
+    if (!isLatin1(json)) {
+        throw new Error(
+            "payment payload is not Latin-1 encodable, so it cannot be base64 header-encoded",
+        );
+    }
+    return btoa(json);
+}
+
+/**
+ * Every code unit within `btoa`'s range. Surrogate halves are above U+00FF, so an emoji
+ * or any astral character fails here rather than at the codec.
+ */
+export function isLatin1(value: string): boolean {
+    // Written with explicit escapes: a literal range would put the very characters
+    // this guards against into the file that defines the guard.
+    return !/[^\u0000-\u00FF]/u.test(value);
 }
 
 export function decodePaymentHeader(header: string): PaymentPayload {

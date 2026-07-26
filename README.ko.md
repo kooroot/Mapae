@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-216%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-375%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -62,34 +62,55 @@ Mapae에는 비교 가능한 두 결제 경로가 함께 있습니다.
 | 경로 | 목적 | 상태 |
 |---|---|---|
 | EIP-3009 + x402-rs | 가스리스 exact 결제 기준선 | GIWA Sepolia 정산 완료 |
-| ERC-7710 + x402 | 제한·만료·회수 가능한 에이전트 결제 | GIWA Sepolia 정산 완료, caveat 거절은 온체인이 판정 |
+| ERC-7710 + x402 | 제한·만료·회수 가능한 에이전트 결제 | GIWA Sepolia 정산 완료, caveat 거절은 배포된 enforcer가 GIWA 현재 상태를 상대로 판정 |
 
 ## 현재 상태
 
-| 단계 | 결과 |
-|---|---|
-| D1 | MockUSDC 배포·소스 검증, x402-rs facilitator 연결 |
-| D2 | `402 → sign → verify → settle → resource` GIWA 온체인 완주 |
-| D3/D4 | Framework와 owner 스마트계정 GIWA 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 |
-| D5 | MCP tool 한 번 호출로 사람 개입 0 완주 |
-| D6 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 |
+아래에서 "완료"라 부르는 것이 두 종류이고, 열이 그중 무엇인지 말한다. **GIWA**는 GIWA
+Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션이다. **로컬 fork**는 실제 GIWA
+상태와 실제 배포 바이트코드를 상대로 로컬 Anvil fork에서 돈다는 뜻이다 — 강한 결과지만
+채굴된 것은 없고 따라갈 링크도 없다.
+
+| 단계 | 결과 | 증명된 곳 |
+|---|---|---|
+| D1 | MockUSDC 배포·소스 검증, x402-rs facilitator 연결 | **GIWA** |
+| D2 | `402 → sign → verify → settle → resource` 완주 | **GIWA** |
+| D3/D4 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
+| D5 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
+| D6 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
+| D7 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 375 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - D4 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - D4 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
-- 한도 초과와 만료는 백엔드 검사가 아니라 **온체인 enforcer가 거절**한다 —
-  증거표는 [기술 노트](docs/tech-notes.md)에 있다.
-- 회귀 검증: **216 TypeScript tests + 14 Foundry tests**, 그리고 동일한 23개 caveat
-  케이스를 일회용 체인과 GIWA fork 양쪽에서 돌리는 체인 파라미터화 negative-path 수트.
+- **D5 에이전트 자율 정산**, MCP 1회 호출, 사람 개입 0:
+  [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
+  — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
+  이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
+  에이전트는 거절됐다는 답을 받았다. 아래 "settlement-unknown" 참조.
+- 한도 초과와 만료는 백엔드 검사가 아니라 **배포된 enforcer가 거절**한다.
+  **이 둘에는 걸 tx 해시가 없고**, 그것은 빈틈이 아니라 설계가 작동한 결과다:
+  facilitator가 브로드캐스트 전에 `redeemDelegations`를 GIWA 현재 상태에 시뮬레이션하므로
+  enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
+  판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
+  `eth_call`이다. 증거표는 [기술 노트](docs/tech-notes.md)에 있다.
+- 회귀 검증: **375 TypeScript tests (shared/delegation/scripts 278 + MCP 3 + 콘솔 94)
+  + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
+  양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
+  `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
+  실제로 보여주는 어떤 것과도 대조할 수 없다.
 
 ### 증명하지 않은 것
 
 초록 체크를 늘리는 것보다 경계를 분명히 하는 편이 낫다.
 
-- **회수는 온체인으로 증명했고, 지갑 UI와 제출자(submitter)는 증명하지 않았다.**
+- **회수는 GIWA에서 한 번도 실행된 적이 없다.** 아래 결과는 전부 로컬 fork에서 나온
+  것이다 — 실제 배포 바이트코드, 실제 계정, 실제 EntryPoint를 쓰지만 채굴된 트랜잭션도
+  익스플로러 링크도 없다. GIWA에서 payer 계정의 EntryPoint 예치금이 `0`이라, 라이브
+  체인을 상대로는 콘솔의 회수 버튼이 누군가 예치하기 전까지 비활성으로 렌더된다.
   `DeleGatorCore.disableDelegation`은 `onlyEntryPointOrSelf`라 owner는 EntryPoint
-  UserOperation으로 회수한다. 이제 두 분기 모두 양쪽 수트 타깃에서 돈다 — *self*
+  UserOperation으로 회수한다. 두 분기 모두 양쪽 수트 타깃에서 돈다 — *self*
   분기, 그리고 실제 owner 서명 UserOperation을 `handleOps`로 태우는 *EntryPoint*
   분기. 의존 요소가 실제로 작동함을 증명하는 대조군 3개가 함께 붙는다: 예치금이
   없으면 `AA21`, owner가 아닌 서명은 `AA24`, 서명된 `entryPoint` 필드를 변조하면
@@ -104,6 +125,15 @@ Mapae에는 비교 가능한 두 결제 경로가 함께 있습니다.
   `AA21`로 실패한다. relayer가 `EntryPoint.depositTo(payerAccount)`로 채워줄 수
   있으며, 이때 payer의 ETH 잔액은 정확히 0으로 유지되고 relayer는 그 예치금을 다시
   회수할 수 없다. 프레임워크 전체 `DelegationManager.pause()`는 예치금이 필요 없다.
+- **정산이 에이전트의 인내심보다 오래 걸릴 수 있고, 그때 답은 "모름"이다.**
+  D5를 fork가 아니라 GIWA에서 돌려서 찾았다. 결제 하나에 타임아웃 넷이 쌓이는데
+  (facilitator 영수증 대기 → 판매자의 호출 → 판매자 HTTP idle → 에이전트 자신의 기한)
+  순서가 거꾸로였다: `Bun.serve` 기본값 10초가 60초 영수증 대기 밑에 깔려 있었다.
+  이체는 채굴됐고 에이전트는 거절됐다는 답을 받았다. 이제 예산이 바깥으로 갈수록
+  길어지고(25 → 35 → 45 → 50초), 결과가 확정되지 않은 결제는 `PAYMENT_REJECTED`가
+  아니라 `SETTLEMENT_UNKNOWN`을 돌려준다 — 둘은 정반대 대응을 부르고, 앞의 것을
+  재시도하면 두 번 낼 수 있기 때문이다. fork는 즉시 채굴이라 로컬 테스트로는 절대
+  나오지 않는다.
 - **중복방지는 프로세스 내부에서만 보장된다.** 단일 replica에서는 올바르지만
   다중 replica 전에 영속 저장소로 옮겨야 한다.
 - **실제 스테이블코인은 별도의 토큰 동작 검토가 필요하다.** MockUSDC는 테스트넷 rail이다.
@@ -126,24 +156,102 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`bun run check`는 전체 패키지의 strict TypeScript, shared/delegation 테스트,
-MCP 서버 스모크, 콘솔 렌더 테스트, 실제 콘솔 빌드, Foundry 테스트를 모두
-실행합니다. 키도 네트워크도 필요 없습니다.
+`bun run check`는 전체 패키지의 strict TypeScript, 네 가지 상시 검사(문서·로깅·
+의존성 권고·테스트 수치), shared/delegation 테스트, MCP 서버 스모크, 콘솔 렌더
+테스트, 실제 콘솔 빌드, Foundry 테스트를 모두 실행합니다. 키는 필요 없습니다.
+네트워크를 원하는 것은 권고 검사 하나뿐이고, 그것도 닿지 못하면 그렇다고 말하고
+계속 갑니다.
+같은 명령과 hermetic 23-case 위임 수트를 모든 pull request와 `main` push에서
+GitHub Actions가 실행합니다. 재귀 submodule checkout 뒤 D7 재검증에 사용한
+Bun·Foundry 버전을 고정하므로, 로컬에서만 녹색인 상태를 완료로 세지 않습니다.
+
+문서 검사를 게이트에 넣은 이유는 로드맵이 이 README를 곧 제출물로 두기 때문입니다 —
+그러면 문서 부패가 정합성 버그가 됩니다. 코드 블록에 적힌 모든 `bun run`·`make`
+명령이 실제로 존재하는지, 모든 상대 링크가 열리는지, 모든 주소가 두 정본(배포
+아티팩트와 `packages/shared/src/token.ts`) 중 하나와 일치하는지 확인합니다. 첫
+실행에서 MockUSDC 주소가 어떤 아티팩트에도 없다는 것이 드러났는데, 이 저장소는
+그동안 반대로 적어두고 있었습니다.
+
+위 배지의 테스트 수는 이 페이지의 다른 숫자가 아니라 **실제로 존재하는 테스트**와
+대조합니다. 배지·총계·내역이 서로 맞는다는 것은 맞다는 뜻이 아니었습니다 — 손으로
+고치면 셋이 함께 움직이기 때문이고, 실제로 수트가 자란 직후 적힌 수가 12개 모자란
+채로 게이트는 "수치 확인됨"을 출력했습니다. 아무것도 매칭되지 않는 이름 필터로
+`bun test`를 돌리면 파일을 전부 수집한 뒤 본문은 하나도 실행하지 않고 총계를
+보고합니다. 컨트랙트 쪽은 `forge test --list`가 같은 일을 합니다.
+
+권고 검사는 `bun audit`을 돌리고, 모든 발견을 **고치거나 근거를 붙여 명시적으로
+수용**하도록 요구합니다. 현재 수용된 것은 하나입니다 — `@modelcontextprotocol/sdk`가
+우리가 쓰지 않는 트랜스포트를 위해 끌어오는 HTTP 어댑터의 Windows 경로 traversal.
+호환 업데이트로는 닫히지 않습니다(SDK가 `^1.19.9`를 선언하고 수정은 2.0.5에
+들어갔습니다). 그래서 수용의 근거는 오직 "그 어댑터가 우리 번들에 들어오지
+않는다"이고, 그것을 매 실행마다 다시 잽니다. 같은 측정이 먼저 컨트롤 파일 — 일부러
+그 트랜스포트를 import하는 파일 — 을 찾아내야 합니다. 항상 0을 돌려주는 탐지기는
+아무것도 증명하지 않은 채 검사를 통과시키기 때문입니다.
+
+로깅 검사는 `console.*` 인자에 들어간 날것의 에러를 거절합니다. 로컬 fork에 쓰는
+비공개 RPC 엔드포인트는 API 키를 URL **경로**에 실어 인증하고, viem은 모든 에러
+메시지에 transport URL을 박아 넣습니다. 그래서 `console.error(error.message)`는
+자격증명 노출입니다. 에러는 `redactForLog`를 통해서만 싱크에 닿고, 그 함수가 모든
+URL을 `scheme://host`로 줄입니다. 이 규칙은 원래 리뷰로 지켜졌습니다 — 감사가 17개의
+탈출 경로를 찾아 파일 단위로 고쳤지만, 그 스윕의 범위가 두 디렉터리였던 탓에
+`apps/agent`는 금지된 표현을 그대로 통과시켰습니다. 새 코드가 계속 되살리는 규칙은
+게이트에 있어야 합니다.
 
 콘솔 빌드를 게이트에 넣은 이유는 타입 검사만으로는 못 잡기 때문입니다. `node:`
 전용 import는 타입 검사를 멀쩡히 통과한 뒤 번들에서 깨지는데, 이는 브라우저
 코드에서 서버 전용 모듈에 손을 뻗는 것과 같은 부류의 실수입니다.
 
+### 한도가 결제를 거절하는 것을, 당신 것인 체인에서
+
+우리 것이 하나도 없이 확인할 수 있는 가장 강한 결과입니다. 일회용 Anvil을 띄우고
+고정된 38유닛 Framework와 MockUSDC를 거기 배포한 뒤, 배포된 enforcer 바이트코드를
+상대로 23개 케이스를 돌립니다 — 주기 한도와 그 리셋, 만료, 재사용, 잘못된 redeemer,
+수취인 바꿔치기, 침해된 facilitator가 이득을 볼 수 있는 여섯 가지 시도, 그리고
+계정과 EntryPoint 양쪽을 통한 회수.
+
+```bash
+cd apps/delegation-lab
+bun run test:negative
+```
+
+키도, 네트워크도, 우리 쪽 아티팩트도 필요 없습니다. 소유자·에이전트·매니저·자식
+계정을 스스로 만들어 쓰고 기본 타깃이 hermetic입니다. Bun과 Foundry만 설치된
+깨끗한 클론에서 실측했습니다 — `23/23 cases passed`, 종료 코드 0. 모든 거절이
+enforcer 이름과 정확한 revert 문자열을 찍으므로, 무엇이 거절하는지가 주장이 아니라
+읽히는 형태로 남습니다.
+
+같은 23개 케이스를 **로컬 사본이 아니라 GIWA에 실제로 배포된 컨트랙트**를 상대로도
+돌립니다:
+
+```bash
+SUITE_TARGET=fork bun run test:negative
+```
+
+이쪽은 GIWA RPC 엔드포인트가 필요하고 라이브 체인을 로컬로 fork합니다 —
+브로드캐스트는 없습니다. 둘 중 더 강한 결과이고 이 저장소의 주장이 기대는 쪽입니다.
+거절이 [docs/deployed-contracts.md](docs/deployed-contracts.md)의 주소에 놓인
+enforcer 바이트코드에서, 실제 GIWA 상태를 읽고 나오기 때문입니다.
+2026-07-26 실측 — 두 타깃 모두 `23/23 cases passed`, 종료 코드 0.
+
 ### 에이전트가 스스로 결제하고, 회수되는 것까지 한 명령으로
 
-데모 그 자체입니다. GIWA를 로컬로 fork하고 ERC-7710 facilitator와 seller를 그
-fork에 붙인 뒤, MCP 서버에게 유료 리소스를 사게 하고, 이어서 권한을 회수해 같은
-호출이 거절되는 것을 보여줍니다.
+GIWA를 로컬로 fork하고 ERC-7710 facilitator와 seller를 그 fork에 붙인 뒤, MCP
+서버에게 유료 리소스를 사게 하고, 이어서 권한을 회수해 같은 호출이 거절되는 것을
+보여줍니다.
 
 ```bash
 cd apps/delegation-lab
 bun run test:e2e:mcp
 ```
+
+**이건 클론에서는 돌지 않으며, 우회할 결함이 아닙니다.** 이 명령은 *이* 배포를
+재생합니다 — `apps/delegation-lab/.env`와 `open-agent.permission.json`의 서명된 root
+permission이 필요하고, 그 permission은 배포된 계정을 소유한 지갑만 만들 수 있습니다.
+둘 다 gitignore이므로 신선한 클론은
+`RELAYER_ADDRESS must be set (apps/delegation-lab/.env)`에서 멈춥니다. 준비 절차는
+[`docs/giwa-demo-runbook.md`](docs/giwa-demo-runbook.md)에 있고, 직접 끝까지 몰아볼
+결제 루프가 필요하면 위의 `test:negative`를 쓰세요 — 누구의 서명도 없이 같은 강제를
+증명합니다.
 
 중간에 한도로 감당할 수 없는 결제도 한 번 요청하는데, 에이전트는 서명하기 전에
 enforcer 자신의 회계를 읽어 거절합니다 —
