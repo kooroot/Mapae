@@ -13,14 +13,24 @@
 |---|---|---|
 | `forge test` | ❌ | 컨트랙트 로직. 로컬 EVM에서 새로 배포해서 검사 |
 | `forge test --fork-url giwa_sepolia` | 베이스 상태만 | **배포된 컨트랙트에 대해서는 아무것도.** 테스트가 fork 안에 자기 사본을 새로 배포한다 |
+| `make framework-test` | ❌ | 38유닛 **구성과 배선** — 개수·2단계 소유권·enforcer 상호 링크. 로컬 EVM에 새로 배포한다 |
 | `bun run verify:framework` | ✅ | 38개 유닛의 **라이브 런타임 바이트코드**와 CREATE 주소 일치 |
 | `make owner-account-verify` | ✅ | owner 스마트계정이 실제로 배포돼 있고 owner가 맞음 |
-| `bun run preflight:giwa` | ✅ | 결제 한 건이 성공할 조건 17가지 |
+| `bun run preflight:giwa` | ✅ | 결제 한 건이 성공할 조건 전부 (개수는 스크립트가 센다 — 3절) |
 | `bun run run:giwa -- --broadcast` | ✅ **쓰기** | 에이전트가 GIWA에서 실제로 결제함 |
 
 `forge test --fork-url`의 함정은 조용하다는 것이다. 통과하고, 주소를 출력하고, 그 주소는
 실제 GIWA 주소가 아니다 — fork 안에서 방금 만들어진 것이다. 라이브 배포를 검사하는 것은
 `verify:framework` 쪽이다.
+
+**`make framework-test`는 같은 함정의 더 큰 판본이다.** 통과하면서 38줄짜리 주소 표를
+출력하는데, 그건 배포 보고서처럼 읽히고 배포 보고서가 아니다. 실측하면 **38개 중 0개**가
+GIWA 주소와 일치한다(예: `SimpleFactory` 로컬 `0x104fBc01…`, GIWA `0xbED01c51…`). 테스트가
+자기 배포자로 새 체인에 배포하므로 CREATE 주소가 다를 수밖에 없다 — 그리고 그 테스트는
+주소를 주장하지도 않는다. 주장하는 것은 구성이다: 유닛 38개, `pendingOwner`→`owner`
+2단계 이양, `NativeTokenPaymentEnforcer`가 실제 `DelegationManager`를 가리키는지,
+DeleGator 구현들이 같은 manager와 canonical EntryPoint를 물고 있는지, Hybrid가 SCL을
+링크하는지. 주소를 GIWA와 대조하는 것은 `verify:framework` 하나뿐이다.
 
 ---
 
