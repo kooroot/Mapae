@@ -137,12 +137,19 @@ async function main(): Promise<void> {
     for (const [index, status] of statuses.entries()) {
         const tag = index === statuses.length - 1 ? "root" : `link ${index}`;
         record(!status.revoked, `${tag} 회수`, status.revoked ? "회수됨" : "유효");
-        record(!status.expired && !status.notYetActive, `${tag} 유효창`,
+        // `status.validity` 가 없다는 것은 이 링크에 `TimestampEnforcer` caveat 이 아예
+        // 없다는 뜻이고, 그러면 이 위임은 **만료되지 않는다.** 예전에는 그것을 ✅ 로 적고
+        // 상세에 "제한 없음" 이라고만 썼다 — 아래 주기 한도와 정확히 같은 실수다.
+        // 우리 빌더(`preparePeriodDelegation`)는 timestamp caveat 을 무조건 붙이므로,
+        // 이 상태는 손으로 만든 아티팩트에서만 나온다. 그래서 더더욱 눈에 띄어야 한다.
+        record(
+            !status.expired && !status.notYetActive && status.validity !== undefined,
+            `${tag} 유효창`,
             status.expired ? "만료됨"
             : status.notYetActive ? "미개시"
             : status.validity
               ? `~ ${new Date(Number(status.validity.notAfter) * 1000).toISOString()}`
-              : "제한 없음");
+              : "유효창 caveat 없음 — 이 링크는 만료되지 않는다");
         if (status.remaining !== undefined) {
             record(true, `${tag} 주기 잔량`,
                 `${fromTokenAmount(status.remaining)} mUSDC` +
@@ -194,9 +201,18 @@ async function main(): Promise<void> {
             publicClient.getBalance({address: relayer}),
             publicClient.estimateFeesPerGas(),
         ]);
-        const worstCase = REDEMPTION_GAS_CEILING * (fees.maxFeePerGas ?? 0n);
-        record(relayerEth > worstCase, "relayer ETH",
-            `${formatEther(relayerEth)} (최악 ${formatEther(worstCase)})`);
+        // `?? 0n` 은 여기서 쓰면 안 된다. 수수료 상한을 읽지 못하면 `worstCase` 가 0 이
+        // 되고 `relayerEth > 0n` 은 1 wei 로도 통과한다 — 이 조건이 존재하는 이유(정산
+        // 가스를 낼 수 있는가)가 정확히 반대로 뒤집힌다. 위의 주기 한도·유효창과 같은
+        // 모양이다: 읽지 못한 값을 0 으로 갈음하면 없음이 허가가 된다.
+        if (fees.maxFeePerGas === undefined) {
+            record(false, "relayer ETH",
+                `${formatEther(relayerEth)} — 수수료 상한을 읽지 못해 최악 비용을 계산할 수 없다`);
+        } else {
+            const worstCase = REDEMPTION_GAS_CEILING * fees.maxFeePerGas;
+            record(relayerEth > worstCase, "relayer ETH",
+                `${formatEther(relayerEth)} (최악 ${formatEther(worstCase)})`);
+        }
     } else {
         record(false, "relayer ETH", "RELAYER_ADDRESS 미설정 — 확인 불가");
     }

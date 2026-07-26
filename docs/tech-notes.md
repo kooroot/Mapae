@@ -567,6 +567,24 @@ record(tightest === undefined || amount <= tightest, "한도 대비 결제액", 
 현재 데모 permission 의 root 는 `ERC20PeriodTransferEnforcer` 를 갖고 있어 이 변경은
 데모 동작에 영향이 없다. 확인하고 고쳤다.
 
+같은 모양을 이 게이트에서 두 개 더 찾았다. 하나를 고치고 나서 **같은 관용구로 파일을
+다시 훑은 것**이 방법이었다 — 판단 자리에 놓인 `undefined`.
+
+| 자리 | 예전 | 무엇이 뒤집혔나 |
+|---|---|---|
+| 주기 한도 | `tightest === undefined \|\| amount <= tightest` | 한도가 없는데 "한도 안" |
+| 유효창 | `status.validity` 없으면 상세만 `"제한 없음"`, 판정은 ✅ | **만료되지 않는 위임**이 유효창 확인됨으로 |
+| relayer 가스 | `REDEMPTION_GAS_CEILING * (fees.maxFeePerGas ?? 0n)` | 상한을 못 읽으면 최악 비용이 **0** 이 되고 `relayerEth > 0n` 은 1 wei 로도 통과 |
+
+셋째가 가장 구체적으로 위험하다. 이 조건이 존재하는 이유가 "정산 가스를 낼 수 있는가"
+인데, 못 읽었을 때 그 질문의 답이 **자동으로 예**가 된다. 그리고 viem 의
+`estimateFeesPerGas` 는 `maxFeePerGas` 를 nullable 로 선언한다 — 타입으로 확인했다
+(`undefined extends Fees["maxFeePerGas"]` 가 참). 가정이 아니라 실재하는 상태다.
+
+앞의 둘은 우리 빌더로는 만들 수 없는 permission 에서만 나온다 —
+`preparePeriodDelegation` 은 timestamp caveat 과 주기 scope 를 무조건 붙인다. 손으로 만든
+아티팩트에서만 나타난다는 뜻이고, **그래서 아무도 마주친 적이 없어 남아 있었다.**
+
 #### 기억으로 지키던 규칙을 게이트로 옮겼다
 
 `redactForLog`가 있어도 그것을 **부르는 것**은 사람이었다. 6차원 감사가 17개의 탈출
