@@ -79,6 +79,7 @@ a strong result, but nothing was mined and there is no link to follow.
 | D3/D4 | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
 | D5 | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
 | D6 | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
+| D7 | Standing documentation, logging, advisory and test-count gates; 375 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
@@ -167,6 +168,9 @@ checks — documentation, logging, dependency advisories, test counts — the sh
 and delegation suites, the MCP server smoke tests, the console render tests, a
 real console build, and the Foundry contract suite. It needs no keys. Only the
 advisory check wants the network, and it says so and carries on without it.
+The same command and the hermetic 23-case delegation suite run in GitHub Actions
+on every pull request and every push to `main`, from a recursive-submodule checkout
+with Bun and Foundry pinned to the versions used for the D7 re-run.
 
 The documentation check is in the gate because the roadmap makes this README the
 submission, which turns doc rot into a correctness bug. It verifies that every

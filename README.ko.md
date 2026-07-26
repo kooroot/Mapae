@@ -78,6 +78,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 | D3/D4 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
 | D5 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
 | D6 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
+| D7 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 375 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
@@ -160,6 +161,9 @@ bun run check
 테스트, 실제 콘솔 빌드, Foundry 테스트를 모두 실행합니다. 키는 필요 없습니다.
 네트워크를 원하는 것은 권고 검사 하나뿐이고, 그것도 닿지 못하면 그렇다고 말하고
 계속 갑니다.
+같은 명령과 hermetic 23-case 위임 수트를 모든 pull request와 `main` push에서
+GitHub Actions가 실행합니다. 재귀 submodule checkout 뒤 D7 재검증에 사용한
+Bun·Foundry 버전을 고정하므로, 로컬에서만 녹색인 상태를 완료로 세지 않습니다.
 
 문서 검사를 게이트에 넣은 이유는 로드맵이 이 README를 곧 제출물로 두기 때문입니다 —
 그러면 문서 부패가 정합성 버그가 됩니다. 코드 블록에 적힌 모든 `bun run`·`make`

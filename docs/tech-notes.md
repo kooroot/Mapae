@@ -150,6 +150,12 @@ sequenceDiagram
 | `mapae_pay_for_resource` | 402 수신 → caveat 안에서 leaf 서명 → 재요청 → 리소스 |
 | `mapae_status` | 세션키·엔드포인트·배포 검증 여부 (키·permission context는 반환하지 않음) |
 
+이 경로는 GIWA Sepolia에서도 완주했다. MCP tool 한 번이 사람 개입 없이 결제를
+정산했고, 트랜잭션
+[`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
+(block 31634935)에서 payer는 1 mUSDC, vendor는 1 mUSDC만큼 변했고 payer의 ETH는
+그대로 `0`이었다. 따라서 D5의 증거 수준은 로컬 fork가 아니라 **GIWA 채굴**이다.
+
 **실패는 죽지 않고 이유가 된다.** 코어는 예외 대신 판별된 결과를 돌려주며,
 `SELLER_OFFER_INVALID`·`FACILITATOR_UNTRUSTED`·`MANAGER_MISMATCH`·`LIMIT_EXCEEDED`·
 `PERMISSION_INACTIVE`·`SIGNING_FAILED`·`PAYMENT_REJECTED` 등으로 원인을 가리킨다.
@@ -882,12 +888,18 @@ import 한 줄을 더하는 순간 거짓이 되며, 산문은 그걸 알아채�
   facilitator 변조 6종 + 대조군·payer mismatch·root 취소·회수 UserOp 4종·제출
   엔드포인트 2종·manager 합산)를 일회용 체인과 GIWA fork 양쪽에서 체인 파라미터화로
   돌리며, 각 케이스의 온체인 revert 사유까지 대조한다
-- **MCP 자동화 / 콘솔 / 제출 엔드포인트 — 구현 완료, GIWA 실행 이력 0** — §2의 D5·D6
-  참조. 셋 다 로컬 fork에서 완주하고 회수 UserOperation도 EntryPoint 경로까지 돌지만,
-  **어느 것도 GIWA에 채굴된 적이 없다.** 결제(D2/D4)가 GIWA에서 되는 것과 *에이전트가
-  GIWA에서 스스로 결제하는 것*은 다른 문장이고, 지금 증명된 것은 앞쪽이다.
-  남은 것은 세 가지다: MCP 결제 1건의 GIWA 실행, 회수 1건의 GIWA 실행(payer 계정의
-  EntryPoint 예치금이 `0`이라 선입금 필요), 그리고 지갑 UI 승인 화면
+- **D5 MCP 자동화 ✅ GIWA 완료** — MCP tool 한 번으로 사람 개입 없이 정산한
+  `0x533c…9964c`가 block 31634935에 채굴됐고 payer 가스 지출은 `0`이다
+- **D6 콘솔 / 회수 제출 엔드포인트 ✅ fork 완료** — 실제 GIWA 상태·배포 바이트코드를
+  고정한 fork에서 브라우저 CORS leg를 포함해 제출기 E2E 8/8과 EntryPoint 회수를
+  완주했다. 다만 **GIWA에서 회수는 아직 채굴된 적이 없다.** payer의 EntryPoint
+  예치금이 `0`이라 선입금이 필요하고, 실제 지갑 UI 승인 화면도 마지막 수동 검증으로 남는다
+- **D7 기술 완성도 ✅ 완료** — `bun run check` 375 TypeScript + 14 Foundry,
+  negative-path 23/23(일회용 체인·GIWA fork), Framework 실행 bytecode·결정 주소
+  38/38을 재검증했다. 익스플로러 소스는 38/39이며, 유일한 미검증 유닛은 MetaMask SDK
+  artifact/source 리비전 차이 때문에 현재 소스와 안 맞고 Mapae 정책 경로에서는 사용하지
+  않는다(세부 근거는 `docs/deployed-contracts.md`)
+- **D8 제출** — 데모 영상·피치덱·컨트랙트 링크·기술자료 패키징
 - **정산 두뇌** — 트리거·스케줄러, 복합 위임(수취인·주기·상한), 원장, 재시도
 - **등급2 검증 경로** — Dojang KYC 게이트 + EAS 계약/영수증 스키마 + 리졸버
 - **이행검증** — optimistic 구조(기본 통과·이의제기 창·본드). 최종 판정자가 재실행이 아닌 중재이므로 trustless가 아님을 전제로 설계
