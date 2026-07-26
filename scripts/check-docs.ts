@@ -28,6 +28,7 @@ const DOCS = [
     "docs/deployed-contracts.md",
     "docs/revocation-runbook.md",
     "docs/giwa-demo-runbook.md",
+    "docs/archive/2026-07-26-system-architecture-and-flows.ko.md",
 ];
 
 /**

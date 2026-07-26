@@ -415,6 +415,7 @@ docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 
 ## 문서
 
+- [시스템 구조와 전체 온체인·오프체인 흐름](docs/archive/2026-07-26-system-architecture-and-flows.ko.md)
 - [기술 노트](docs/tech-notes.md)
 - [회수 런북](docs/revocation-runbook.md) — 킬 스위치와 그 검증 방법
 - [배포된 컨트랙트](docs/deployed-contracts.md)

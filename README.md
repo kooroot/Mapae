@@ -438,6 +438,7 @@ docs/                      technical notes and the deployed-contract reference
 
 ## Documentation
 
+- [System architecture and complete on-chain/off-chain flow (Korean)](docs/archive/2026-07-26-system-architecture-and-flows.ko.md)
 - [Technical notes](docs/tech-notes.md)
 - [Revocation runbook](docs/revocation-runbook.md) — the kill switch, and how to verify it
 - [Deployed contracts](docs/deployed-contracts.md)
