@@ -219,6 +219,30 @@ async function main(): Promise<void> {
             }
         }
 
+        // ── 2b. every document referenced in a code span exists ───────────────────────
+        // Markdown links are checked above. A path written as a code span is not a link and
+        // was not checked by anything — which is how `docs/mapae-master.md` sat in the
+        // opening paragraph of both agent-facing files pointing at a file that does not
+        // exist. That sentence is the one telling an agent what to read before touching
+        // anything, so following it correctly led nowhere. (The plan lives beside the
+        // repository, in a sibling `mapae-internal-docs/`, deliberately outside the public
+        // tree.)
+        //
+        // Scoped to `*.md` paths containing `docs/`. That set is small, always tracked and
+        // has no gitignored members, so the rule cannot produce the false positives that
+        // would get it switched off — the same reason the cd-tracking checker was abandoned.
+        // A general "every path in a code span exists" rule would flag `apps/*/.env`, which
+        // is absent by design.
+        for (const match of code.matchAll(/`([A-Za-z0-9_./-]*docs\/[A-Za-z0-9_.-]+\.md)`/g)) {
+            const target = match[1];
+            if (!target) continue;
+            try {
+                statSync(resolve(REPO, target));
+            } catch {
+                fail(doc, `\`${target}\` is referenced but no such file exists`);
+            }
+        }
+
         // ── 3. every address is one we actually deployed ──────────────────────────────
         // A wrong address is the one doc error that sends someone to the wrong contract on
         // an explorer and lets them conclude something false about what is deployed.
@@ -240,7 +264,7 @@ async function main(): Promise<void> {
     }
     const note = skipped.length > 0 ? ` (${skipped.join(", ")} absent — local-only)` : "";
     console.log(
-        `[docs] ${checked} documents — commands, links and addresses check out${note}`,
+        `[docs] ${checked} documents — commands, links, document references and addresses check out${note}`,
     );
 }
 
