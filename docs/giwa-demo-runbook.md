@@ -112,7 +112,7 @@ cd apps/delegation-lab && bun run run:giwa -- --broadcast
 3. facilitator가 `redeemDelegations`를 GIWA에 브로드캐스트 — **가스는 relayer가 낸다**
 4. 판매자가 리소스를 내준다
 
-사람은 명령 한 번 외에 개입하지 않는다. 그것이 D5의 완료 판정이다.
+사람은 명령 한 번 외에 개입하지 않는다. 그것이 에이전트 자동화의 완료 판정이다.
 
 스크립트는 전후 상태를 각각 독립적으로 읽어 네 가지를 대조한다:
 

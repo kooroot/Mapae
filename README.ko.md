@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-403%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-419%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -71,20 +71,20 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 상태와 실제 배포 바이트코드를 상대로 로컬 Anvil fork에서 돈다는 뜻이다 — 강한 결과지만
 채굴된 것은 없고 따라갈 링크도 없다.
 
-| 단계 | 결과 | 증명된 곳 |
+| 기능 | 결과 | 증명된 곳 |
 |---|---|---|
-| D1 | MockUSDC 배포·소스 검증, x402-rs facilitator 연결 | **GIWA** |
-| D2 | `402 → sign → verify → settle → resource` 완주 | **GIWA** |
-| D3/D4 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
-| D5 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
-| D6 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
-| D7 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 403 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
+| 토큰 + facilitator | MockUSDC 배포·소스 검증, x402-rs facilitator 연결 | **GIWA** |
+| 직접 결제 | `402 → sign → verify → settle → resource` 완주 | **GIWA** |
+| 위임 결제 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
+| 에이전트 자동화 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
+| 콘솔 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
+| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 419 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
-- D2 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
-- D4 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
-- D4 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
-- **D5 에이전트 자율 정산**, MCP 1회 호출, 사람 개입 0:
+- 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
+- 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
+- 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
+- **에이전트 자율 정산**, MCP 1회 호출, 사람 개입 0:
   [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
   — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
   이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
@@ -95,7 +95,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 노트](docs/tech-notes.md)에 있다.
-- 회귀 검증: **403 TypeScript tests (shared/delegation/scripts 278 + MCP 3 + 콘솔 94 + 웹 28)
+- 회귀 검증: **419 TypeScript tests (shared/delegation/scripts 294 + MCP 3 + 콘솔 94 + 웹 28)
   + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -126,7 +126,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   있으며, 이때 payer의 ETH 잔액은 정확히 0으로 유지되고 relayer는 그 예치금을 다시
   회수할 수 없다. 프레임워크 전체 `DelegationManager.pause()`는 예치금이 필요 없다.
 - **정산이 에이전트의 인내심보다 오래 걸릴 수 있고, 그때 답은 "모름"이다.**
-  D5를 fork가 아니라 GIWA에서 돌려서 찾았다. 결제 하나에 타임아웃 넷이 쌓이는데
+  MCP 결제 루프를 fork가 아니라 GIWA에서 돌려서 찾았다. 결제 하나에 타임아웃 넷이 쌓이는데
   (facilitator 영수증 대기 → 판매자의 호출 → 판매자 HTTP idle → 에이전트 자신의 기한)
   순서가 거꾸로였다: `Bun.serve` 기본값 10초가 60초 영수증 대기 밑에 깔려 있었다.
   이체는 채굴됐고 에이전트는 거절됐다는 답을 받았다. 이제 예산이 바깥으로 갈수록
@@ -144,8 +144,8 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 
 - [Bun](https://bun.sh/)
 - [Foundry](https://book.getfoundry.sh/getting-started/installation)
-- Docker Compose — D2 facilitator 실행 시
-- Anvil — D3/D4 로컬 Framework 통합 검증 시
+- Docker Compose — x402 facilitator 실행 시
+- Anvil — 로컬 Framework 통합 검증 시
 
 ### 설치 및 검증
 
@@ -162,7 +162,7 @@ bun run check
 네트워크를 원하는 것은 권고 검사 하나뿐이고, 그것도 닿지 못하면 그렇다고 말하고
 계속 갑니다.
 같은 명령과 hermetic 23-case 위임 수트를 모든 pull request와 `main` push에서
-GitHub Actions가 실행합니다. 재귀 submodule checkout 뒤 D7 재검증에 사용한
+GitHub Actions가 실행합니다. 재귀 submodule checkout 뒤 최근 전체 게이트 재검증에 사용한
 Bun·Foundry 버전을 고정하므로, 로컬에서만 녹색인 상태를 완료로 세지 않습니다.
 
 문서 검사를 게이트에 넣은 이유는 로드맵이 이 README를 곧 제출물로 두기 때문입니다 —
@@ -318,9 +318,9 @@ cp apps/delegation-lab/.env.example apps/delegation-lab/.env
 | `CASE_2_VENDOR_ADDRESS` | Case 2 vendor 정책의 고정 수취인 |
 | `FRAMEWORK_ADMIN_ADDRESS` | DelegationManager ownership·pause 관리 |
 | `DEPLOYER_ADDRESS` | Framework·owner account 배포 signer의 기대 주소 |
-| `RELAYER_ADDRESS` | D4 정산 relayer 기대 주소, Framework 배포에는 사용하지 않음 |
+| `RELAYER_ADDRESS` | 정산 relayer 기대 주소, Framework 배포에는 사용하지 않음 |
 
-Deployer·relayer·Framework admin·세 D3 case identity는 모두 별도 역할입니다.
+Deployer·relayer·Framework admin·세 데모 case identity는 모두 별도 역할입니다.
 개인키에서 파생된 주소가 설정한 공개주소와 다르면 broadcast 전에 중단합니다.
 
 `.env`, `.secrets`, 실제 세션 주소, 배포 broadcast, permission artifact는 모두
@@ -391,7 +391,7 @@ idempotency는 제품화 전에 Redis/Postgres 같은 영속 저장소로 이전
 Mapae의 기본 MVP는 누구나 사용할 수 있는 무허가 결제 경로입니다.
 향후 검증형 B2B 경로에서는 GIWA의
 [Dojang](https://github.com/giwa-io/dojang) `Verified Address` attestation을
-선택적 KYC 게이트로 결합합니다. Dojang은 현재 D1~D4 결제 경로에 아직
+선택적 KYC 게이트로 결합합니다. Dojang은 현재 결제 경로에 아직
 통합되어 있지 않습니다.
 
 ## 저장소 구조
@@ -401,8 +401,8 @@ contracts/                 MockUSDC + exact Framework Forge 배포
 facilitator/               x402-rs GIWA configuration
 packages/shared/           chain, token, x402 v2 types, error model
 packages/delegation/       policies, signing, revocation, ERC-7710 boundary
-apps/agent/                D2 payer agent
-apps/seller/               D2 x402 seller
+apps/agent/                EIP-3009 payer agent
+apps/seller/               EIP-3009 x402 seller
 apps/delegation-lab/       policy scenarios and deployment previews
 apps/delegated-agent/      ERC-7710 payment agent
 apps/delegated-seller/     ERC-7710 resource seller

@@ -19,6 +19,24 @@ import {join, dirname, resolve, relative} from "node:path";
 
 const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 
+/**
+ * The generated GitBook chapters are listed by reading their directory rather than by
+ * name: `build-gitbook.ts` derives one file per section of tech-notes.md, and a chapter
+ * it starts deriving tomorrow must enter this net without anyone remembering to add it
+ * here — a published page nothing checks is the silent-skip failure the comment below
+ * warns about. An absent directory is left to `check:gitbook`, which reports every
+ * missing chapter by name instead of crashing this gate with a raw ENOENT.
+ */
+function listGeneratedChapters(): string[] {
+    try {
+        return readdirSync(join(REPO, "docs/tech"))
+            .filter((entry) => entry.endsWith(".md"))
+            .map((entry) => `docs/tech/${entry}`);
+    } catch {
+        return [];
+    }
+}
+
 const DOCS = [
     "README.md",
     "README.ko.md",
@@ -28,6 +46,9 @@ const DOCS = [
     "docs/deployed-contracts.md",
     "docs/revocation-runbook.md",
     "docs/giwa-demo-runbook.md",
+    "docs/README.md",
+    "docs/SUMMARY.md",
+    ...listGeneratedChapters(),
 ];
 
 /**
