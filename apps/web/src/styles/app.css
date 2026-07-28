@@ -1,0 +1,233 @@
+/*
+ * The console.
+ *
+ * Same three surfaces as the landing, used differently. The landing is the
+ * record and stays on paper; here the pass itself is on the table, so the
+ * reading panel is obsidian and everything around it stays ivory. It is the same
+ * object seen under a different light, not a second theme.
+ */
+
+.console {
+    padding: 40px 0 96px;
+}
+
+.console-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--hair);
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--hair-strong);
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    color: var(--ink-2);
+}
+
+.badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--red);
+}
+
+.field {
+    margin-top: 28px;
+}
+
+.field label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 8px;
+}
+
+.field textarea {
+    width: 100%;
+    min-height: 96px;
+    padding: 12px 14px;
+    background: var(--paper-0);
+    border: 1px solid var(--hair-strong);
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--ink);
+    resize: vertical;
+    word-break: break-all;
+}
+
+.field textarea:focus {
+    outline: none;
+    border-color: var(--ink);
+}
+
+.field-help {
+    margin-top: 8px;
+}
+
+/* The reading panel: the pass, on the table. */
+.pass {
+    margin-top: 32px;
+    background: var(--obsidian);
+    color: var(--on-obsidian);
+    border-radius: var(--radius);
+    padding: 32px;
+    animation: rise 520ms var(--ease) both;
+}
+
+.pass .eyebrow,
+.pass .label {
+    color: var(--on-obsidian-dim);
+}
+
+.pass-figure {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-top: 6px;
+}
+
+.pass-figure .amount {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 46px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--on-obsidian);
+}
+
+.pass-figure .unit {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--on-obsidian-dim);
+}
+
+/* The marks: the cap as a channel with struck bronze in it. Structure lifted
+   from the console's `.marks`, values remapped to this surface. */
+.marks {
+    position: relative;
+    height: 10px;
+    margin-top: 20px;
+    background: rgba(237, 231, 218, 0.09);
+    border-radius: 1px;
+    overflow: hidden;
+}
+
+.marks .struck {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--red-on-dark);
+    opacity: 0.85;
+    transition: width 420ms var(--ease);
+}
+
+.marks .tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--obsidian);
+}
+
+.legend {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--on-obsidian-dim);
+}
+
+.halted {
+    margin-top: 18px;
+    padding: 10px 12px;
+    background: var(--red-wash-dark);
+    border-left: 2px solid var(--red-on-dark);
+    color: var(--red-on-dark);
+    font-family: var(--mono);
+    font-size: 12.5px;
+}
+
+.terms {
+    margin-top: 28px;
+    border-top: 1px solid rgba(237, 231, 218, 0.14);
+}
+
+.term {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(237, 231, 218, 0.09);
+    font-size: 13.5px;
+}
+
+.term dt {
+    color: var(--on-obsidian-dim);
+}
+
+.term dd {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--on-obsidian);
+    text-align: right;
+    word-break: break-all;
+}
+
+.state {
+    margin-top: 28px;
+    padding: 20px;
+    border: 1px solid var(--hair);
+    border-radius: var(--radius);
+    background: var(--paper-0);
+}
+
+.skeleton {
+    display: inline-block;
+    width: 3.5ch;
+    height: 1em;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--paper-2), var(--paper-0), var(--paper-2));
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    vertical-align: -0.1em;
+}
+
+@keyframes shimmer {
+    to {
+        background-position: -200% 0;
+    }
+}
+
+@media (max-width: 640px) {
+    .pass {
+        padding: 24px 20px;
+    }
+    .pass-figure .amount {
+        font-size: 36px;
+    }
+    .term {
+        flex-direction: column;
+        gap: 2px;
+    }
+    .term dd {
+        text-align: left;
+    }
+}

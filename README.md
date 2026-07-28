@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-375%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-419%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -72,20 +72,20 @@ a transaction was mined on GIWA Sepolia and you can open it in the explorer. **L
 means it runs against real GIWA state and real deployed bytecode in a local Anvil fork —
 a strong result, but nothing was mined and there is no link to follow.
 
-| Milestone | Result | Proven on |
+| Capability | Result | Proven on |
 |---|---|---|
-| D1 | MockUSDC deployed and verified; x402-rs facilitator connected | **GIWA** |
-| D2 | `402 → sign → verify → settle → resource` completed | **GIWA** |
-| D3/D4 | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
-| D5 | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
-| D6 | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
-| D7 | Standing documentation, logging, advisory and test-count gates; 375 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
+| Token + facilitator | MockUSDC deployed and verified; x402-rs facilitator connected | **GIWA** |
+| Direct payment | `402 → sign → verify → settle → resource` completed | **GIWA** |
+| Delegated payment | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
+| Agent automation | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
+| Console | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
+| Standing gates | Documentation, logging, advisory and test-count gates; 419 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
-- D2 settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
-- D4 delegated settlement, 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
-- D4 delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
-- **D5 agent-driven settlement**, one MCP call, no human step:
+- Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
+- Delegated settlement, 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
+- Delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
+- **Agent-driven settlement**, one MCP call, no human step:
   [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
   — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer gas spend 0**.
   This run also surfaced a real defect and its fix is in the same tree: the answer the
@@ -98,7 +98,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical notes](docs/tech-notes.md).
-- Regression suite: **375 TypeScript tests (278 shared/delegation/scripts + 3 MCP + 94 console)
+- Regression suite: **419 TypeScript tests (294 shared/delegation/scripts + 3 MCP + 94 console + 28 web)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
@@ -131,7 +131,7 @@ Being explicit about the edges matters more than a longer list of green checks.
   leaves the payer's ETH balance at exactly zero and cannot be clawed back by the
   relayer. Framework-wide `DelegationManager.pause()` needs no deposit.
 - **A settlement can outlive the agent's patience, and then the answer is "unknown".**
-  Found by running D5 on GIWA rather than on a fork. Four timeouts stack on one payment —
+  Found by running the MCP payment loop on GIWA rather than on a fork. Four timeouts stack on one payment —
   the facilitator's wait for a receipt, the seller's call to it, the seller's HTTP idle
   timeout, and the agent's own deadline — and they were inverted: `Bun.serve`'s 10 s
   default sat underneath a 60 s receipt wait. The transfer was mined and the agent was
@@ -151,8 +151,8 @@ Being explicit about the edges matters more than a longer list of green checks.
 
 - [Bun](https://bun.sh/)
 - [Foundry](https://book.getfoundry.sh/getting-started/installation)
-- Docker Compose for the D2 facilitator
-- Anvil for the local D3/D4 Framework integration
+- Docker Compose for the x402 facilitator
+- Anvil for the local Framework integration
 
 ### Install and verify
 
@@ -170,7 +170,7 @@ real console build, and the Foundry contract suite. It needs no keys. Only the
 advisory check wants the network, and it says so and carries on without it.
 The same command and the hermetic 23-case delegation suite run in GitHub Actions
 on every pull request and every push to `main`, from a recursive-submodule checkout
-with Bun and Foundry pinned to the versions used for the D7 re-run.
+with Bun and Foundry pinned to the versions used for the latest full-gate re-run.
 
 The documentation check is in the gate because the roadmap makes this README the
 submission, which turns doc rot into a correctness bug. It verifies that every
@@ -333,9 +333,9 @@ cp apps/delegation-lab/.env.example apps/delegation-lab/.env
 | `CASE_2_VENDOR_ADDRESS` | Recipient pinned by the Case 2 vendor policy |
 | `FRAMEWORK_ADMIN_ADDRESS` | Controls DelegationManager ownership and pause state |
 | `DEPLOYER_ADDRESS` | Expected signer for Framework and owner-account deployment |
-| `RELAYER_ADDRESS` | Expected D4 settlement relayer; never used for Framework deployment |
+| `RELAYER_ADDRESS` | Expected settlement relayer; never used for Framework deployment |
 
-Deployer, relayer, Framework admin, and the three D3 case identities are
+Deployer, relayer, Framework admin, and the three demo case identities are
 independent roles. The corresponding private key must resolve to its configured
 public address or the operation fails before broadcast.
 
@@ -415,7 +415,7 @@ on-chain security design.
 
 Mapae's default MVP path is permissionless. A future verified B2B path can add
 GIWA [Dojang](https://github.com/giwa-io/dojang) `Verified Address` attestations as
-an optional KYC gate. Dojang is not yet part of the D1-D4 settlement path.
+an optional KYC gate. Dojang is not yet part of the settlement path.
 
 ## Repository
 
@@ -424,8 +424,8 @@ contracts/                 MockUSDC + exact Framework Forge deployment
 facilitator/               x402-rs GIWA configuration
 packages/shared/           chain, token, x402 v2 types, error model
 packages/delegation/       policies, signing, revocation, ERC-7710 boundary
-apps/agent/                D2 payer agent
-apps/seller/               D2 x402 seller
+apps/agent/                EIP-3009 payer agent
+apps/seller/               EIP-3009 x402 seller
 apps/delegation-lab/       policy scenarios, deployment previews, end-to-end proofs
 apps/delegated-agent/      ERC-7710 payment agent
 apps/delegated-seller/     ERC-7710 resource seller

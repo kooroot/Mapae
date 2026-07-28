@@ -115,6 +115,22 @@ const HOST = readHost();
 const PORT = readPort();
 const RPC_URL = readRpcUrl();
 const MAX_AMOUNT = toTokenAmount(process.env.MAX_SETTLEMENT_AMOUNT ?? "10.00");
+// 1.5M was an unsourced guess until 2026-07-28; these are the first measured numbers.
+// Twelve successful `redeemDelegations` receipts scanned out of a local anvil after the
+// 23-case ephemeral negative-path suite ran against it:
+//
+//   333,523–333,547  steady state, the shipped root→leaf payment shape
+//   448,185          first payment of a period into a cold recipient balance slot
+//   635,102          manager→child→leaf, three deep — a lab case, not a shipped flow
+//
+// So the cap carries 4.5x headroom on the ordinary path and 2.4x on the deepest chain
+// that exists anywhere in this repository. It is a backstop against a pathological
+// permission context, not a tuned budget, and lowering it toward the measured figures
+// would start refusing legitimate first-of-period payments.
+//
+// Measured on anvil, and one property of that measurement did not transfer: anvil's
+// `eth_estimateGas` returned the exact `gasUsed` on all twelve, so the broadcast below
+// carries no slack over the estimate. Whether GIWA's node is equally tight is unverified.
 const MAX_REDEMPTION_GAS = readPositiveInteger("MAX_REDEMPTION_GAS", 1_500_000);
 // Configurable like the other limits, and lowering it is how the broadcast-but-
 // unconfirmed path gets exercised without waiting a minute for a real stall.

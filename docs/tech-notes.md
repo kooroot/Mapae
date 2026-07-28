@@ -5,6 +5,10 @@
 
 GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을 집행하고, 그 집행을 검증 가능한 기록으로 남기는 인프라.
 
+**이 파일이 정본이다.** GitBook 렌더링(`docs/SUMMARY.md` + `docs/tech/`)은
+`bun run gitbook:build`가 여기서 생성하며, 손으로 고친 챕터든 재생성을 잊은 챕터든
+`bun run check`가 같은 발견으로 거절한다. 챕터 사본은 문서가 아니라 빌드 산출물이다.
+
 ---
 
 ## 1. 시스템 구성
@@ -22,6 +26,9 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 | `apps/delegated-agent` | parent 위임에서 결제별 leaf 생성 | Bun |
 | `apps/delegated-seller` | ERC-7710 402 발행·리소스 게이트 | Bun + Hono |
 | `apps/agent-mcp` | 결제 루프를 MCP tool로 노출 | Bun + MCP SDK (stdio) |
+| `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` (loopback 전용) | Bun + Hono |
+| `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
+| `apps/web` | 공개 랜딩 + 콘솔 (SSR, 체인 직접 읽기) | TanStack Start + Cloudflare |
 
 **언어 선택 근거** — 위임 레이어가 ERC-7710/7715 구현체(MetaMask Delegation Toolkit)에 의존하고 이는 TypeScript 전용이므로 애플리케이션 계층은 TS. facilitator는 자체 구현 대신 x402-rs 컨테이너를 **운영**하는 포지션.
 
@@ -31,7 +38,7 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 
 Mapae는 회귀 가능한 두 경로를 병렬 유지한다.
 
-### D2 — EIP-3009 직접 결제
+### EIP-3009 직접 결제
 
 ```
 에이전트 → 리소스 요청
@@ -43,7 +50,7 @@ facilitator → 서명 검증 → GIWA에 정산 트랜잭션 브로드캐스트
 
 지불자는 가스를 내지 않는다. 트랜잭션을 실제로 쏘는 건 facilitator의 릴레이어 서명자이며, authorization에 `from`·`to`·`value`가 서명으로 고정되어 있어 릴레이어는 **브로드캐스터 이상의 권한을 갖지 못한다.**
 
-### D3/D4 — ERC-7710 위임 결제
+### ERC-7710 위임 결제
 
 ```text
 account owner wallet → HybridDeleGator owner account
@@ -137,7 +144,7 @@ sequenceDiagram
 거절된다. **한도는 코드의 약속이 아니라 배포된 enforcer가 강제하는 사실이다.** 다만
 그 사실을 확인한 방법이 블록이 아니라 `eth_call`이라는 것을 표가 스스로 말하게 둔다.
 
-### D5 — 에이전트 자동화 (MCP)
+### 에이전트 자동화 (MCP)
 
 결제 루프는 `packages/delegation/src/payment-client.ts`의
 `payForDelegatedResource` 하나로 모여 있고, CLI 에이전트와 MCP 서버가 그것을
@@ -154,7 +161,7 @@ sequenceDiagram
 정산했고, 트랜잭션
 [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
 (block 31634935)에서 payer는 1 mUSDC, vendor는 1 mUSDC만큼 변했고 payer의 ETH는
-그대로 `0`이었다. 따라서 D5의 증거 수준은 로컬 fork가 아니라 **GIWA 채굴**이다.
+그대로 `0`이었다. 따라서 이 경로의 증거 수준은 로컬 fork가 아니라 **GIWA 채굴**이다.
 
 **실패는 죽지 않고 이유가 된다.** 코어는 예외 대신 판별된 결과를 돌려주며,
 `SELLER_OFFER_INVALID`·`FACILITATOR_UNTRUSTED`·`MANAGER_MISMATCH`·`LIMIT_EXCEEDED`·
@@ -197,7 +204,7 @@ permission의 **모든 링크**에 대해 `readDelegationStatus`로 제공한다
 - **stdout은 JSON-RPC 채널이다.** 로깅은 전부 stderr. `console.log` 한 줄이
   스트림을 깨뜨린다.
 
-### D6 — 콘솔 (지갑 모듈)
+### 콘솔 (지갑 모듈)
 
 두 화면 모두 데이터를 체인에서 직접 읽는다.
 
@@ -454,9 +461,9 @@ bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO
 `DomainMismatch`를 별도 태그로 둔 이유: EIP-712 도메인 불일치는 x402 통합에서 가장 흔한 실패이며, generic 500으로 나가면 데모 중에 원인을 특정할 수 없다.
 
 **두 경로가 태그를 다르게 쓴다 (의도적).** 위 태그 유니온을 응답 본문에 그대로 싣는 것은
-D2 EIP-3009 경로(`apps/seller`)다. D3/D4 위임 경로는 다르게 동작한다:
+EIP-3009 직접 결제 경로(`apps/seller`)다. ERC-7710 위임 경로는 다르게 동작한다:
 
-| | D2 (`apps/seller`) | D3/D4 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
+| | 직접 결제 (`apps/seller`) | 위임 결제 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
 | 외부 응답 | `SettlementError._tag` + `describe()` 원인 | `delegation_rejected` / `settlement_unknown` 등 **불투명한 사유** |
 | 상태 코드 | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |
@@ -512,7 +519,7 @@ Foundry 만 있는 깨끗한 클론에서 실측: `23/23 cases passed`, 종료 �
 
 #### 빈 체인은 "한도 없음"이 아니라 "읽은 것이 없음"이다
 
-D5 의 판정 기준은 "실패 시 조용히 죽지 말고 **이유** 반환"이고, 그 이유를 만드는 곳이
+에이전트 자동화 경로의 판정 기준은 "실패 시 조용히 죽지 말고 **이유** 반환"이고, 그 이유를 만드는 곳이
 `judgePreflight` 다. 서명 전에 체인의 회계를 읽어 판매자에게 걸어 들어가는 대신 원인을
 말하는 함수다.
 
@@ -878,28 +885,42 @@ import 한 줄을 더하는 순간 거짓이 되며, 산문은 그걸 알아채�
 
 ---
 
-## 6. 다음 단계
+## 6. 검증 상태와 로드맵
 
-- **GIWA D3/D4 활성화 ✅ 완료** — Framework 배포, owner account 배포, root 위임
+무엇이 어느 수준까지 검증됐는지를 증거 수준과 함께 적는다. §2 증거표와 같은 규칙이다
+— 채굴된 것, fork에서 완주한 것, 시뮬레이션으로 확인한 것을 같은 문장에 섞지 않는다.
+
+- **위임 결제 파이프라인 — GIWA 채굴** — Framework 배포, owner account 배포, root 위임
   서명(ERC-1271 검증), 정상 정산까지 GIWA에 채굴됨. 한도·만료 거절은 GIWA 현재 상태를
   상대로 한 시뮬레이션이며 채굴된 트랜잭션이 아니다(§2 증거표)
-- **real-Framework negative-path 수트 ✅ 완료** — `negative-path-suite.ts`가 동일한
+- **에이전트 자동화 — GIWA 채굴** — MCP tool 한 번으로 사람 개입 없이 정산한
+  `0x533c…9964c`가 block 31634935에 채굴됐고 payer 가스 지출은 `0`이다
+- **negative-path 수트 — 일회용 체인·GIWA fork** — `negative-path-suite.ts`가 동일한
   23개 케이스(정상·주기 cap·주기 reset·만료·wrong-redeemer·수취인 불일치·replay·
   facilitator 변조 6종 + 대조군·payer mismatch·root 취소·회수 UserOp 4종·제출
   엔드포인트 2종·manager 합산)를 일회용 체인과 GIWA fork 양쪽에서 체인 파라미터화로
   돌리며, 각 케이스의 온체인 revert 사유까지 대조한다
-- **D5 MCP 자동화 ✅ GIWA 완료** — MCP tool 한 번으로 사람 개입 없이 정산한
-  `0x533c…9964c`가 block 31634935에 채굴됐고 payer 가스 지출은 `0`이다
-- **D6 콘솔 / 회수 제출 엔드포인트 ✅ fork 완료** — 실제 GIWA 상태·배포 바이트코드를
+- **콘솔·회수 제출 엔드포인트 — GIWA fork** — 실제 GIWA 상태·배포 바이트코드를
   고정한 fork에서 브라우저 CORS leg를 포함해 제출기 E2E 8/8과 EntryPoint 회수를
   완주했다. 다만 **GIWA에서 회수는 아직 채굴된 적이 없다.** payer의 EntryPoint
   예치금이 `0`이라 선입금이 필요하고, 실제 지갑 UI 승인 화면도 마지막 수동 검증으로 남는다
-- **D7 기술 완성도 ✅ 완료** — `bun run check` 375 TypeScript + 14 Foundry,
-  negative-path 23/23(일회용 체인·GIWA fork), Framework 실행 bytecode·결정 주소
-  38/38을 재검증했다. 익스플로러 소스는 38/39이며, 유일한 미검증 유닛은 MetaMask SDK
-  artifact/source 리비전 차이 때문에 현재 소스와 안 맞고 Mapae 정책 경로에서는 사용하지
-  않는다(세부 근거는 `docs/deployed-contracts.md`)
-- **D8 제출** — 데모 영상·피치덱·컨트랙트 링크·기술자료 패키징
+- **상시 게이트 — 로컬 + GIWA 읽기 전용** — `bun run check` 419 TypeScript + 14 Foundry
+  (2026-07-28 재측정 — `apps/web` 28개 포함), negative-path 23/23(일회용 체인·GIWA
+  fork), Framework 실행 bytecode·결정 주소 38/38을 재검증했다. 익스플로러 소스는
+  38/39이며, 유일한 미검증 유닛은 MetaMask SDK artifact/source 리비전 차이 때문에
+  현재 소스와 안 맞고 Mapae 정책 경로에서는 사용하지 않는다(세부 근거는
+  `docs/deployed-contracts.md`)
+- **공개 웹의 수치 규율** — 공개 웹(`apps/web`)은 랜딩과 콘솔을 한 앱으로 묶고,
+  표시하는 수치의 출처는 세 가지로 제한한다 — 체인 직접 읽기, 채굴된 해시,
+  negative-path 수트가 대조한 revert 사유. 이 규칙은 산문이 아니라 실측으로 지킨다:
+  웹의 거절 행 하나가 수취인 고정을 엉뚱한 enforcer
+  (`ERC20TransferAmountEnforcer:allowance-exceeded` — 금액 초과의 revert이며 수취인을
+  읽지 않는다)로 표기한 채 들어왔고, 이 문서의 주장을 저장소와 대조하는 검증 패스가
+  그것을 잡아 수트가 고정한 값(`AllowedCalldataEnforcer:invalid-calldata`)으로
+  바로잡았다
+
+앞으로 만들 것:
+
 - **정산 두뇌** — 트리거·스케줄러, 복합 위임(수취인·주기·상한), 원장, 재시도
 - **등급2 검증 경로** — Dojang KYC 게이트 + EAS 계약/영수증 스키마 + 리졸버
 - **이행검증** — optimistic 구조(기본 통과·이의제기 창·본드). 최종 판정자가 재실행이 아닌 중재이므로 trustless가 아님을 전제로 설계

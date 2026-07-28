@@ -1,0 +1,1211 @@
+/*
+ * The landing, composed as a security document rather than as a page of cards.
+ *
+ * The first draft of this file was a centred column with hairline rules between
+ * equal bands — structurally correct and completely characterless, which is the
+ * shape every generated marketing page converges on. What is here now borrows
+ * from what the object actually is: an engraved credential. Guilloché underprint,
+ * letterpress on the display type, plates that sit *in* the paper rather than on
+ * it, ledger rules, and a composition that is deliberately off-axis.
+ *
+ * Three rules keep it from becoming decoration:
+ *   1. Depth is made of ink alpha and inset shadow, never of a drop shadow that
+ *      floats a card above the page. Paper has grain and impression, not levitation.
+ *   2. Red never appears as a surface, only as a mark, an edge, or a struck line.
+ *   3. Motion happens once, on approach, and then the page is still. Anything
+ *      that keeps moving after it is read is a screensaver.
+ */
+
+/* ── Reveal ────────────────────────────────────────────────────────────── */
+
+.reveal[data-armed] {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 760ms var(--ease), transform 760ms var(--ease);
+    will-change: opacity, transform;
+}
+
+.reveal[data-armed][data-shown] {
+    opacity: 1;
+    transform: none;
+}
+
+/* ── Letterpress ───────────────────────────────────────────────────────────
+   One white highlight below one dark glyph. It is the whole trick, it costs a
+   single shadow, and on warm paper it is the difference between type printed on
+   a surface and type struck into it. Applied only to display sizes: at body size
+   the highlight muddies the stroke instead of defining it. */
+
+.display-1,
+.display-2,
+.h2 {
+    text-shadow: 0 1px 0 rgba(255, 253, 248, 0.9);
+}
+
+/* ── Nav ───────────────────────────────────────────────────────────────── */
+
+.nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--paper-1) 82%, transparent);
+    backdrop-filter: saturate(1.6) blur(14px);
+    border-bottom: 1px solid var(--hair);
+    transition: border-color 240ms var(--ease);
+}
+
+.nav-inner {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    height: 68px;
+}
+
+.lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+}
+
+.nav-links {
+    display: flex;
+    gap: 28px;
+    margin-left: auto;
+}
+
+/* The underline grows from the left on hover rather than fading in — a mark
+   being drawn, which is the gesture this whole system is built on. */
+.nav-links a {
+    position: relative;
+    font-size: 14px;
+    color: var(--ink-2);
+    padding-bottom: 3px;
+    transition: color 180ms var(--ease);
+}
+
+.nav-links a::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 1px;
+    width: 100%;
+    background: var(--red);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 260ms var(--ease);
+}
+
+.nav-links a:hover {
+    color: var(--ink);
+}
+
+.nav-links a:hover::after {
+    transform: scaleX(1);
+}
+
+@media (max-width: 860px) {
+    .nav-links {
+        display: none;
+    }
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+.btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    height: 44px;
+    padding: 0 22px;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    background: var(--ink);
+    color: var(--paper-0);
+    overflow: hidden;
+    box-shadow: 0 1px 0 rgba(255, 253, 248, 0.6);
+    transition: transform 200ms var(--ease);
+}
+
+/* A red edge wipes across on hover — the boundary arriving, not a colour change. */
+.btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--red);
+    transform: translateX(-101%);
+    transition: transform 380ms var(--ease);
+}
+
+.btn > * {
+    position: relative;
+    z-index: 1;
+}
+
+.btn:hover::before {
+    transform: none;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    padding: 0 18px;
+    border: 1px solid var(--hair-strong);
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--ink-2);
+    background: transparent;
+    transition: border-color 200ms var(--ease), color 200ms var(--ease),
+        background 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+
+.ghost:hover:not(:disabled) {
+    border-color: var(--red);
+    color: var(--red-ink);
+    background: var(--red-wash);
+    box-shadow: inset 0 0 0 1px var(--red-wash);
+}
+
+.ghost:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* ── Hero: off-axis, with the object crossing the fold ─────────────────── */
+
+/* `clip`, not `hidden`, and the distinction is the whole reason the dial's
+   readout is visible. The underprint is placed at `right: -24%` and would
+   otherwise widen the page, so the horizontal axis has to be contained — but
+   `overflow: hidden` contains BOTH axes whatever you write on the other one,
+   and the medallion deliberately hangs 72px past this section's bottom edge.
+   Only `clip` accepts a per-axis answer. */
+.hero {
+    position: relative;
+    padding: 96px 0 0;
+    overflow-x: clip;
+    overflow-y: visible;
+    isolation: isolate;
+}
+
+/* The underprint. Masked radially so it never reaches an edge and turns into a
+   texture swatch — a security print fades into the paper, it does not tile. */
+.hero-field {
+    position: absolute;
+    top: -14%;
+    right: -24%;
+    width: min(1180px, 118vw);
+    height: auto;
+    color: var(--ink);
+    opacity: 0.09;
+    z-index: -1;
+    pointer-events: none;
+    mask-image: radial-gradient(closest-side, #000 42%, rgba(0, 0, 0, 0.45) 68%, transparent 100%);
+    animation: turn 240s linear infinite;
+}
+
+@keyframes turn {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-field {
+        animation: none;
+    }
+}
+
+.hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 56px;
+    align-items: center;
+}
+
+.hero-copy {
+    max-width: 620px;
+}
+
+.hero-sub {
+    max-width: 480px;
+    margin-top: 24px;
+}
+
+.hero-cta {
+    display: flex;
+    gap: 12px;
+    margin-top: 36px;
+    flex-wrap: wrap;
+}
+
+/* The medallion is pulled out of its column so it overlaps the ledger strip
+   below. The object rises into the page instead of sitting in a box on it. */
+.hero-object {
+    position: relative;
+    margin-bottom: -72px;
+    z-index: 2;
+}
+
+@media (max-width: 1024px) {
+    .hero-grid {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    .hero-copy {
+        max-width: 100%;
+    }
+    .hero-object {
+        margin: 24px auto -56px;
+        max-width: 440px;
+    }
+    .hero {
+        padding-top: 64px;
+    }
+}
+
+/* ── Ledger strip: full-bleed, double-ruled, the way a register is ─────── */
+
+.ledger {
+    position: relative;
+    border-top: 1px solid var(--hair-strong);
+    border-bottom: 1px solid var(--hair-strong);
+    background: linear-gradient(var(--paper-2), var(--paper-2)) padding-box;
+    box-shadow: inset 0 1px 0 rgba(255, 253, 248, 0.7), inset 0 -1px 0 rgba(255, 253, 248, 0.7);
+}
+
+.ledger-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    height: 62px;
+    flex-wrap: wrap;
+}
+
+.ticker {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+.ticker-track {
+    display: inline-flex;
+    gap: 40px;
+    white-space: nowrap;
+    animation: slide 68s linear infinite;
+}
+
+.ticker:hover .ticker-track {
+    animation-play-state: paused;
+}
+
+@keyframes slide {
+    to {
+        transform: translateX(-50%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ticker-track {
+        animation: none;
+    }
+}
+
+.ticker-item {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--ink-3);
+}
+
+.ticker-item b {
+    color: var(--ink);
+    font-weight: 500;
+}
+
+/* ── Engraved plate: the primitive the numbers and tables sit in ────────────
+   Impression, not elevation. The plate is pressed INTO the sheet: a dark
+   hairline at the top edge where the die bit, a light one at the bottom where
+   the paper lifted back. Reverse those two and it inflates into a button. */
+
+.plate {
+    position: relative;
+    background: linear-gradient(180deg, var(--paper-0), var(--paper-1));
+    border: 1px solid var(--hair);
+    border-radius: var(--radius);
+    box-shadow: inset 0 1px 2px rgba(20, 17, 13, 0.055), inset 0 -1px 0 rgba(255, 253, 248, 0.9),
+        0 1px 0 rgba(255, 253, 248, 0.8);
+}
+
+/* ── Numbers: an off-grid trio, not three equal cards ──────────────────── */
+
+.numbers {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 20px;
+    padding: 84px 0;
+}
+
+.numbers > *:nth-child(1) {
+    grid-column: 1 / span 5;
+}
+
+.numbers > *:nth-child(2) {
+    grid-column: 6 / span 4;
+    margin-top: 44px;
+}
+
+.numbers > *:nth-child(3) {
+    grid-column: 10 / span 3;
+    margin-top: 88px;
+}
+
+.stat {
+    padding: 26px 24px 24px;
+}
+
+.numeral {
+    display: block;
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 52px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    text-shadow: 0 1px 0 rgba(255, 253, 248, 0.95);
+}
+
+.numeral-unit {
+    font-size: 17px;
+    letter-spacing: 0;
+    color: var(--ink-3);
+    margin-left: 6px;
+    text-shadow: none;
+}
+
+@media (max-width: 900px) {
+    .numbers {
+        grid-template-columns: 1fr;
+        gap: 14px;
+        padding: 56px 0;
+    }
+    .numbers > *:nth-child(1),
+    .numbers > *:nth-child(2),
+    .numbers > *:nth-child(3) {
+        grid-column: 1 / -1;
+        margin-top: 0;
+    }
+    .numeral {
+        font-size: 40px;
+    }
+}
+
+/* ── Section frame ─────────────────────────────────────────────────────── */
+
+.band {
+    position: relative;
+    padding: var(--band) 0;
+}
+
+/* A section marker rather than a full-width rule: the wordmark's chevron,
+   turned on its side as a register mark. Rules across the whole page are what
+   made the first draft read as a form. */
+.band::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: var(--gutter);
+    width: 34px;
+    height: 2px;
+    background: var(--red);
+}
+
+.band-ruled {
+    border-top: 1px solid var(--hair);
+}
+
+/* ── Refusal: full-bleed obsidian, with its own underprint ─────────────── */
+
+.refusals {
+    position: relative;
+    background: var(--obsidian);
+    color: var(--on-obsidian);
+    padding: calc(var(--band) + 16px) 0;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.refusals-field {
+    position: absolute;
+    bottom: -46%;
+    left: -18%;
+    width: min(920px, 96vw);
+    color: var(--red-on-dark);
+    opacity: 0.13;
+    z-index: -1;
+    pointer-events: none;
+    mask-image: radial-gradient(closest-side, #000 40%, transparent 100%);
+}
+
+.refusals .eyebrow,
+.refusals .label {
+    color: var(--on-obsidian-dim);
+}
+
+.refusals .h2 {
+    color: var(--on-obsidian);
+    text-shadow: none;
+}
+
+.refusal-table {
+    margin-top: 44px;
+    border-top: 1px solid rgba(237, 231, 218, 0.16);
+}
+
+.refusal-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 18px;
+    align-items: baseline;
+    padding: 22px 0;
+    border-bottom: 1px solid rgba(237, 231, 218, 0.09);
+    transition: background 260ms var(--ease);
+}
+
+.refusal-row:hover {
+    background: rgba(237, 231, 218, 0.03);
+}
+
+.refusal-row .attempt {
+    color: var(--on-obsidian);
+    font-size: 15.5px;
+}
+
+.refusal-row .enforcer {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--on-obsidian-dim);
+    word-break: break-all;
+}
+
+.refusal-row .revert {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--red-on-dark);
+    background: var(--red-wash-dark);
+    border: 1px solid rgba(232, 99, 94, 0.28);
+    padding: 4px 10px;
+    border-radius: var(--radius);
+    justify-self: start;
+    word-break: break-all;
+}
+
+@media (max-width: 860px) {
+    .refusal-row {
+        grid-template-columns: 1fr;
+        gap: 9px;
+    }
+}
+
+/* ── Steps: a rail with the branch stepping out of it ──────────────────── */
+
+.steps {
+    counter-reset: step;
+    margin-top: 48px;
+    position: relative;
+}
+
+.step {
+    counter-increment: step;
+    position: relative;
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 22px;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--hair);
+}
+
+.step:first-child {
+    border-top: 1px solid var(--hair);
+}
+
+.step::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--ink-4);
+    padding-top: 5px;
+    transition: color 240ms var(--ease);
+}
+
+.step:hover::before {
+    color: var(--ink);
+}
+
+/* The refusal branch physically steps out of the rail — the flow leaves the
+   happy path, and the layout says so before the sentence does. */
+.step[data-branch="refuse"] {
+    background: linear-gradient(90deg, var(--red-wash), transparent 78%);
+    border-bottom-color: var(--red-hair);
+    margin-left: -20px;
+    padding-left: 20px;
+    box-shadow: inset 2px 0 0 var(--red);
+}
+
+.step[data-branch="refuse"]::before {
+    color: var(--red-ink);
+}
+
+/* ── Comparison: unequal on purpose ────────────────────────────────────── */
+
+.compare {
+    display: grid;
+    grid-template-columns: 0.85fr 1.15fr;
+    margin-top: 48px;
+    border: 1px solid var(--hair);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.compare-col {
+    padding: 30px 28px;
+}
+
+.compare-col:first-child {
+    background: color-mix(in srgb, var(--paper-2) 55%, transparent);
+}
+
+.compare-col + .compare-col {
+    border-left: 1px solid var(--hair);
+    background: var(--paper-0);
+    box-shadow: inset 0 1px 0 rgba(255, 253, 248, 0.9);
+}
+
+.compare-col ol {
+    list-style: none;
+    margin-top: 20px;
+}
+
+.compare-col li {
+    padding: 12px 0 12px 26px;
+    border-top: 1px solid var(--hair);
+    font-size: 15px;
+    color: var(--ink-2);
+    position: relative;
+}
+
+.compare-col li::before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    color: var(--ink-4);
+}
+
+.compare-col li[data-mark="chain"] {
+    color: var(--ink);
+    font-weight: 500;
+}
+
+.compare-col li[data-mark="chain"]::before {
+    content: "✕";
+    color: var(--red);
+    font-weight: 600;
+}
+
+@media (max-width: 860px) {
+    .compare {
+        grid-template-columns: 1fr;
+    }
+    .compare-col + .compare-col {
+        border-left: 0;
+        border-top: 1px solid var(--hair);
+    }
+}
+
+/* ── Parameter table ───────────────────────────────────────────────────── */
+
+.params {
+    width: 100%;
+    margin-top: 8px;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.params th {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 18px 18px 12px 24px;
+    border-bottom: 1px solid var(--hair-strong);
+    white-space: nowrap;
+}
+
+.params td {
+    padding: 16px 18px 16px 24px;
+    border-bottom: 1px solid var(--hair);
+    vertical-align: top;
+    font-size: 14px;
+}
+
+.params tbody tr {
+    transition: background 220ms var(--ease);
+}
+
+.params tbody tr:hover {
+    background: color-mix(in srgb, var(--paper-2) 60%, transparent);
+}
+
+.params tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.params .k {
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+}
+
+.params .v {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+
+.params .who {
+    font-family: var(--mono);
+    color: var(--ink-3);
+    font-size: 12.5px;
+}
+
+.table-scroll {
+    overflow-x: auto;
+    margin-top: 44px;
+}
+
+/* ── Code well: a plate with a struck edge ─────────────────────────────── */
+
+.code {
+    margin-top: 36px;
+    background: var(--obsidian);
+    border-radius: var(--radius);
+    border-left: 2px solid var(--red);
+    padding: 24px 26px;
+    overflow-x: auto;
+}
+
+.code pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.85;
+    color: var(--on-obsidian);
+    white-space: pre;
+}
+
+.code .c {
+    color: var(--on-obsidian-dim);
+}
+
+.code .s {
+    color: var(--red-on-dark);
+}
+
+/* ── Evidence: ruled like a register ───────────────────────────────────── */
+
+.evidence {
+    margin-top: 36px;
+}
+
+.evidence-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--hair);
+    transition: background 220ms var(--ease), padding-left 220ms var(--ease);
+}
+
+.evidence-row:first-child {
+    border-top: 1px solid var(--hair-strong);
+}
+
+.evidence-row:hover {
+    background: var(--paper-0);
+    padding-left: 26px;
+}
+
+@media (max-width: 640px) {
+    .evidence-row {
+        flex-direction: column;
+        gap: 5px;
+    }
+}
+
+/* ── Notice ────────────────────────────────────────────────────────────── */
+
+.notice {
+    margin-top: 44px;
+    padding: 20px 22px;
+    border-left: 2px solid var(--red);
+    border-radius: var(--radius);
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+
+.foot {
+    position: relative;
+    padding: 64px 0 80px;
+    border-top: 1px solid var(--hair);
+    overflow: hidden;
+}
+
+.foot-inner {
+    display: flex;
+    justify-content: space-between;
+    gap: 32px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.foot-motto {
+    max-width: 360px;
+    margin-top: 16px;
+}
+
+/* ── Pieces the composition added ──────────────────────────────────────── */
+
+/* The seal sits behind the dial as a security print's underprint: it says the
+   surface is engraved, so the number on it reads as struck into the object
+   rather than typeset over a picture of one.
+
+   The width is tuned, not chosen: it puts the band in the gap between the amount
+   track's outer edge and the base of the second ring. Widen it and it collides
+   with the ticks; narrow it and it crosses the sectors. */
+.dial {
+    position: relative;
+    margin: 0 auto;
+    max-width: 470px;
+}
+
+.dial-seal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 84%;
+    height: auto;
+    transform: translate(-50%, -50%);
+    color: var(--ink);
+    opacity: 0.34;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.dial-face {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+/* Every rule below draws the instrument itself. They are load-bearing in a way
+   that is easy to miss: an SVG `<circle>` whose class sets only `stroke` still
+   fills — with black, by specification. Dropping this block does not soften the
+   dial, it replaces it with a solid black disc, which is precisely how it was
+   lost once. The `fill: none` pairs below are the rules doing that work. */
+.bezel {
+    fill: none;
+    stroke: var(--hair-strong);
+    stroke-width: 1.5;
+}
+
+.bezel-inner {
+    fill: none;
+    stroke: var(--hair);
+    stroke-width: 1;
+}
+
+/* The period ring. Non-text weight, so --ink-4 is allowed here and nowhere
+   a sentence goes. */
+.second {
+    stroke: var(--ink-4);
+    stroke-width: 1;
+    opacity: 0.55;
+}
+
+.second-major {
+    stroke: var(--ink-3);
+    stroke-width: 1.3;
+}
+
+.elapsed {
+    fill: none;
+    stroke: var(--ink-4);
+    stroke-width: 2;
+    stroke-linecap: round;
+    opacity: 0.85;
+}
+
+/* The cap. Butt caps, not round: a sector that ends in a dome reads as a
+   progress pill, and the one thing this must not read as is progress. */
+.sector,
+.sector-struck {
+    fill: none;
+    stroke-linecap: butt;
+}
+
+/* An empty slot has to be as legible as a full one — the reading is "one of
+   three", and a track you cannot see turns that into "some red". */
+.sector {
+    stroke: var(--hair-strong);
+}
+
+/* Spent. Struck, not removed — a tally records what was used, it does not erase it. */
+.sector-struck {
+    stroke: var(--red);
+}
+
+.dial[data-refused="true"] .sector {
+    stroke: var(--red-hair);
+    transition: stroke 240ms var(--ease);
+}
+
+.over {
+    fill: none;
+    stroke: var(--red);
+    stroke-width: 2.5;
+    stroke-linecap: butt;
+    stroke-dasharray: 1400;
+    stroke-dashoffset: 1400;
+    animation: draw 460ms var(--ease) forwards;
+}
+
+.over-barb {
+    fill: var(--red);
+    animation: rise 200ms 380ms var(--ease) both;
+}
+
+.boundary {
+    stroke: var(--red);
+    stroke-width: 2;
+}
+
+@keyframes draw {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+.sweep {
+    fill: var(--red);
+    transition: opacity 200ms var(--ease);
+}
+
+.dial[data-refused="true"] .sweep {
+    opacity: 0.3;
+}
+
+/* The centre string, letterpressed: cut into the surface rather than printed on
+   it. One light highlight under one dark glyph is the whole trick. */
+.engraved {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    fill: var(--ink);
+    paint-order: stroke;
+}
+
+/* It says on its face that it is a preview. The dial is the most persuasive
+   thing on the page and it is not reading a live delegation; leaving that to be
+   inferred would be the one dishonest pixel here. */
+.engraved-sub {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    fill: var(--ink-3);
+}
+
+.dial-readout {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid var(--hair);
+}
+
+.dial-live strong {
+    font-weight: 600;
+}
+
+.dial-verdict {
+    position: relative;
+    z-index: 1;
+    margin-top: 12px;
+    min-height: 44px;
+    text-align: left;
+}
+
+.refusal-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    background: var(--red-wash);
+    border-left: 2px solid var(--red);
+    color: var(--red-ink);
+    font-size: 12.5px;
+    word-break: break-all;
+    animation: rise 240ms var(--ease) both;
+}
+
+.refusal-tag {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    background: var(--red);
+    color: var(--paper-0);
+    border-radius: var(--radius);
+    flex: none;
+}
+
+@media (max-width: 560px) {
+    .dial-readout {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+/* Number, seal, sentence. The number stays: this is a procedure, and a procedure
+   that drops its numbering to make room for pictures has traded the thing being
+   read for the thing being looked at. An earlier pass hid the counter when the
+   marks went in, which left six intricate engravings and no order to read them
+   in. */
+.step {
+    align-items: start;
+    grid-template-columns: 32px 56px 1fr;
+    gap: 18px;
+}
+
+/* 56px, not 38px. These are engraved line marks with a horse, a shield and set
+   type inside them — below about 48px the strokes merge and every one of the six
+   collapses into the same grey blob, which is worse than no mark at all. */
+.step-icon {
+    width: 56px;
+    height: 56px;
+    opacity: 0.92;
+    transition: transform 300ms var(--ease);
+}
+
+.step:hover .step-icon {
+    transform: translateY(-2px);
+}
+
+@media (max-width: 640px) {
+    .step {
+        grid-template-columns: 26px 40px 1fr;
+        gap: 12px;
+    }
+    .step-icon {
+        width: 40px;
+        height: 40px;
+    }
+}
+
+.notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: var(--paper-0);
+    border: 1px solid var(--hair);
+    border-left: 2px solid var(--red);
+}
+
+.notice img {
+    flex: none;
+    margin-top: 2px;
+}
+
+/* The tagline, rebuilt from the sheet: the words spaced wide, a red rule either
+   side, the whole thing reading as a struck line rather than as a sentence. */
+.tagline {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-top: 18px;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+}
+
+.tagline::before,
+.tagline::after {
+    content: "";
+    height: 1px;
+    width: 26px;
+    background: var(--red);
+    flex: none;
+}
+
+.foot-meta p + p {
+    margin-top: 4px;
+}
+
+.stat .mono-link {
+    display: inline-block;
+    margin-top: 10px;
+}
+
+
+/* ── Technical detail, folded away ─────────────────────────────────────────
+   Every exact contract name and protocol noun lives behind one of these. The
+   page reads in ordinary Korean and stays honest at the same time: nothing is
+   softened or omitted, it is one click down instead of in the way. Native
+   <details>, so it works with no JavaScript and the browser handles the
+   keyboard and the screen-reader announcement for free. */
+
+.tech {
+    margin-top: 22px;
+    border-top: 1px solid var(--hair);
+}
+
+.tech > summary {
+    list-style: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 14px 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+    transition: color 180ms var(--ease);
+}
+
+.tech > summary::-webkit-details-marker {
+    display: none;
+}
+
+/* A rule that lengthens, not a rotating triangle: the mark this system uses for
+   "there is more here" is a struck line. */
+.tech > summary::before {
+    content: "";
+    width: 16px;
+    height: 1px;
+    background: var(--red);
+    transition: width 240ms var(--ease);
+}
+
+.tech[open] > summary::before {
+    width: 30px;
+}
+
+.tech > summary:hover {
+    color: var(--ink);
+}
+
+.tech-body {
+    padding-bottom: 20px;
+    animation: rise 260ms var(--ease) both;
+}
+
+.tech-map > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+    gap: 16px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--hair);
+}
+
+.tech-map dt {
+    font-size: 13.5px;
+    color: var(--ink-2);
+}
+
+.tech-map dd {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    word-break: break-all;
+}
+
+.tech-body .mono-link {
+    display: inline-block;
+    margin-top: 16px;
+}
+
+/* On obsidian the same component has to invert, and the border colours are not
+   derivable from the light ones — the paper hairlines vanish on a dark ground. */
+.refusals .tech {
+    border-top-color: rgba(237, 231, 218, 0.12);
+}
+
+.refusals .tech > summary {
+    color: var(--on-obsidian-dim);
+}
+
+.refusals .tech > summary:hover {
+    color: var(--on-obsidian);
+}
+
+.refusals .tech-map > div {
+    border-bottom-color: rgba(237, 231, 218, 0.09);
+}
+
+.refusals .tech-map dt {
+    color: var(--on-obsidian);
+}
+
+.refusals .tech-map dd {
+    color: var(--on-obsidian-dim);
+}
+
+/* The exact revert string, kept but demoted: it sits under the sentence that
+   says what happened, on its own line, at the size of a footnote. */
+.refusal-raw {
+    flex-basis: 100%;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    word-break: break-all;
+}
+
+@media (max-width: 640px) {
+    .tech-map > div {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+}

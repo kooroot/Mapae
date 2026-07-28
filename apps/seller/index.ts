@@ -88,9 +88,34 @@ function readPort(): number {
     return value;
 }
 
+/**
+ * The bind address, refused unless it is loopback.
+ *
+ * This seller holds no key, so the blast radius is not here — it is the facilitator this
+ * process calls, which has no application authentication and is funded by the relayer's
+ * key. Binding this port to a routable interface publishes a caller into that facilitator.
+ *
+ * Until 2026-07-28 this was `process.env.HOST?.trim() || "127.0.0.1"` with no check, the
+ * only unguarded bind of the repository's four HTTP surfaces — `readHttpUrl` directly
+ * above and `readPort` directly below both validate, and the three sibling services throw
+ * on exactly this input. A safe default is not a guard: it holds only until someone sets
+ * the variable.
+ *
+ * Deliberately a literal list rather than `isLoopbackHost` from @mapae/shared. That helper
+ * answers "is this destination local", and returns true for `0.0.0.0` — correct for a
+ * destination, and the precise value that must be refused for a bind.
+ */
+function readHost(): string {
+    const value = process.env.HOST?.trim() || "127.0.0.1";
+    if (!["127.0.0.1", "localhost", "::1"].includes(value)) {
+        throw new Error("HOST must be loopback; put a TLS reverse proxy in front for remote access");
+    }
+    return value;
+}
+
 const BASE_URL = readHttpUrl("BASE_URL", "http://localhost:3000");
 const FACILITATOR_URL = readHttpUrl("FACILITATOR_URL", DEFAULT_FACILITATOR_URL);
-const HOST = process.env.HOST?.trim() || "127.0.0.1";
+const HOST = readHost();
 const PORT = readPort();
 
 const DELIVERABLES: Record<

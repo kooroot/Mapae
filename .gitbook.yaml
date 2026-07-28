@@ -1,0 +1,6 @@
+# GitBook Git Sync — 책의 루트는 docs/, 표지는 원페이저(README.md)다.
+# 이 파일은 scripts/build-gitbook.ts 가 소유한다. 바꾸려면 그 스크립트를 바꿀 것.
+root: ./docs/
+structure:
+  readme: README.md
+  summary: SUMMARY.md

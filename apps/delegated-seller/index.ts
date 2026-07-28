@@ -175,6 +175,37 @@ const DELIVERABLES: Record<
     },
 };
 
+/**
+ * No two deliverables may cost the same, and that is a security condition rather than a
+ * catalogue preference.
+ *
+ * A payment is bound to its offer by `sameRequirement`, which compares network, asset,
+ * amount, payTo and maxTimeoutSeconds. None of those is the resource: x402 v2 keeps
+ * `resource` at the top level of the 402 body, so it never reaches the validator, and
+ * `paymentIntentId` does not hash it either. Two entries at one price therefore produce
+ * byte-identical requirements, and a header bought for one satisfies the offer for the
+ * other. Nothing downstream catches it — this seller holds no record of which intent it
+ * has already served, so it would ship both.
+ *
+ * The catalogue is safe today because 1.00 and 2.50 happen to differ. That is a
+ * coincidence, not a mechanism, and the failure it prevents would arrive silently with
+ * whoever adds a third item. Refusing to start converts it into something that cannot be
+ * reintroduced without being noticed. Keyed on the encoded token amount rather than the
+ * decimal string, because "1.0" and "1.00" are different strings and the same offer.
+ */
+const priceOwners = new Map<string, string>();
+for (const [id, item] of Object.entries(DELIVERABLES)) {
+    const amount = toTokenAmount(item.price).toString();
+    const owner = priceOwners.get(amount);
+    if (owner !== undefined) {
+        throw new Error(
+            `DELIVERABLES ${owner} and ${id} both cost ${item.price}; payment requirements ` +
+                "carry no resource identity, so one payment would buy both",
+        );
+    }
+    priceOwners.set(amount, id);
+}
+
 const app = new Hono();
 app.use("*", async (c, next) => {
     await next();

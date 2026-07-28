@@ -79,7 +79,7 @@ Delegation Framework의 코어. `DelegationManager`가 위임 서명 검증과
 ## 4. Caveat 인포서 (32)
 
 각 인포서는 위임에 붙는 온체인 제약이다. `redeemDelegations` 실행 전후에
-`beforeHook`/`afterHook`으로 강제된다. **Mapae D3/D4 결제 흐름이 실제로 쓰는 것**은
+`beforeHook`/`afterHook`으로 강제된다. **Mapae 위임 결제 흐름이 실제로 쓰는 것**은
 `Mapae` 열에 ✓ 표시했다 — 나머지는 Framework가 함께 배포한 표준 인포서로, 등급2의
 복합 caveat에서 쓰일 수 있다.
 
@@ -137,7 +137,7 @@ Delegation Framework의 코어. `DelegationManager`가 위임 서명 검증과
 | Payer 스마트계정 | [`0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382`](https://sepolia-explorer.giwa.io/address/0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382) | 지출 주체. HybridDeleGator 프록시, 가스 0 by design |
 | Payer 소유 EOA | [`0x011234B8959c1e5Ae9eB833764FaA861C24dB901`](https://sepolia-explorer.giwa.io/address/0x011234B8959c1e5Ae9eB833764FaA861C24dB901) | 위 스마트계정의 owner. root 위임에 ERC-1271로 서명 |
 
-### D3 세션 키 (delegate 주소)
+### 세션 키 (delegate 주소)
 
 owner가 각 역할에 위임한 세션 키. 개별 지출 한도의 수신자다.
 

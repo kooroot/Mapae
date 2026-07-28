@@ -37,6 +37,7 @@ const SUITES = [
     {label: "shared/delegation/scripts", cwd: REPO, args: ["packages/shared/src", "packages/delegation/src", "scripts"]},
     {label: "MCP", cwd: join(REPO, "apps/agent-mcp"), args: []},
     {label: "console", cwd: join(REPO, "apps/console"), args: []},
+    {label: "web", cwd: join(REPO, "apps/web"), args: []},
 ] as const;
 
 const DOCS = ["README.md", "README.ko.md"];
