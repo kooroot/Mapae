@@ -174,15 +174,20 @@ export function renderSummary(sections: TechNotesSection[]): string {
     // headings and list items only, and what it does with an HTML comment ahead of the
     // required top-level heading is documented nowhere. The drift gate pins these bytes
     // anyway, so the ownership marker is not load-bearing in this one file.
+    // The English parentheticals are load-bearing, not decoration: GitBook derives each
+    // group's URL segment from the ASCII left after slugifying the heading, so a
+    // Korean-only title slugs to an empty string and the site falls back to
+    // /undefined/, /undefined-1/. "(Tech)" and "(Operations)" make the URLs
+    // /tech/… and /operations/….
     return `# Summary
 
 * [Mapae 원페이저](README.md)
 
-## 기술자료
+## 기술자료 (Tech)
 
 ${chapters}
 
-## 증거와 운영
+## 증거와 운영 (Operations)
 
 * [배포 컨트랙트](deployed-contracts.md)
 * [MCP 연결 가이드](mcp-guide.md)
