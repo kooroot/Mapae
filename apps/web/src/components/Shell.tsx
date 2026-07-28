@@ -1,7 +1,7 @@
 import {Link} from "@tanstack/react-router";
 import {useEffect, useState} from "react";
 import {formatEther} from "viem";
-import {Lockup, Wordmark} from "../brand/marks";
+import {Lockup, PassEmblem, Tagline, Wordmark} from "../brand/marks";
 import {accounts, publicClient} from "../lib/config";
 
 export function Nav() {
@@ -15,6 +15,13 @@ export function Nav() {
                     <a href="/#how">작동 방식</a>
                     <a href="/#engraved">새겨진 것</a>
                     <a href="/#evidence">증거</a>
+                    <a
+                        href="https://github.com/kooroot/Mapae/blob/main/docs/tech-notes.md"
+                        target="_blank"
+                        rel="noreferrer noopener"
+                    >
+                        문서
+                    </a>
                 </nav>
                 <Link to="/app" className="btn">
                     콘솔 열기
@@ -77,13 +84,18 @@ export function Footer() {
         <footer className="foot">
             <div className="wrap foot-inner">
                 <div>
-                    <Wordmark height={20} />
+                    <span className="lockup">
+                        <PassEmblem size={34} />
+                        <Wordmark height={19} />
+                    </span>
+                    <Tagline />
                     <p className="label foot-motto">
-                        마패는 특권의 증표가 아니라 <span style={{color: "var(--ink)"}}>한계의 증표다</span>.
-                        새겨진 말의 수는 권한이 끝나는 지점이었다.
+                        마패는 특권의 증표가 아니라{" "}
+                        <span style={{color: "var(--ink)"}}>한계의 증표다</span>. 새겨진 말의 수는
+                        권한이 끝나는 지점이었다.
                     </p>
                 </div>
-                <div className="label">
+                <div className="label foot-meta">
                     <p>GIWA Sepolia · eip155:91342</p>
                     <p>테스트넷 자산으로만 동작합니다.</p>
                 </div>

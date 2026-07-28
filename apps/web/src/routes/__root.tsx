@@ -39,7 +39,8 @@ export const Route = createRootRoute({
             {name: "twitter:card", content: "summary_large_image"},
         ],
         links: [
-            {rel: "icon", href: "/favicon.svg", type: "image/svg+xml"},
+            {rel: "icon", href: "/favicon.png", type: "image/png"},
+            {rel: "apple-touch-icon", href: "/favicon.png"},
             // Preconnect, not preload: the RPC host is contacted only by routes
             // that read the chain, and a preload of a request that never happens
             // is a warning in every console that opens this page.

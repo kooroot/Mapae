@@ -40,7 +40,7 @@ function Console() {
                     <div className="console-head">
                         <div>
                             <span className="eyebrow">콘솔</span>
-                            <h1 className="display-2">새겨진 것을 읽는다</h1>
+                            <h1 className="display-2">지금 새겨져 있는 것</h1>
                         </div>
                         <span className="badge">
                             {chain.name} · {chain.id}
@@ -155,7 +155,7 @@ function Pass({parsed}: {parsed: Extract<ParsedPermission, {kind: "ok"}>}) {
 
     return (
         <div className="pass">
-            <span className="eyebrow">이 위임으로 지금 쓸 수 있는 금액</span>
+            <span className="eyebrow">이 권한으로 지금 쓸 수 있는 금액</span>
             {headline === undefined || cap === undefined ? (
                 <p className="body" style={{color: "var(--on-obsidian-dim)"}}>
                     이 위임에는 주기 한도 caveat이 없습니다.
@@ -173,7 +173,7 @@ function Pass({parsed}: {parsed: Extract<ParsedPermission, {kind: "ok"}>}) {
                                 ? `이번 주기 사용 ${fromTokenAmount(
                                       cap > (remaining ?? cap) ? cap - (remaining ?? cap) : 0n,
                                   )}`
-                                : "주기 미개시"}
+                                : "아직 시작 전"}
                         </span>
                         <span>
                             한도 {fromTokenAmount(cap)} / {String(status.limit?.periodDuration)}초
@@ -188,11 +188,11 @@ function Pass({parsed}: {parsed: Extract<ParsedPermission, {kind: "ok"}>}) {
 
             <dl className="terms">
                 <div className="term">
-                    <dt>위임 사슬</dt>
+                    <dt>권한 단계</dt>
                     <dd>{parsed.links}단</dd>
                 </div>
                 <div className="term">
-                    <dt>지불자</dt>
+                    <dt>돈이 나가는 지갑</dt>
                     <dd>
                         <a
                             className="mono-link"
@@ -206,11 +206,11 @@ function Pass({parsed}: {parsed: Extract<ParsedPermission, {kind: "ok"}>}) {
                     </dd>
                 </div>
                 <div className="term">
-                    <dt>수임자</dt>
+                    <dt>쓰는 쪽</dt>
                     <dd>{short(parsed.root.delegate)}</dd>
                 </div>
                 <div className="term">
-                    <dt>현재 주기</dt>
+                    <dt>현재 회차</dt>
                     <dd>{started ? `#${String(status.currentPeriod)}` : "미개시"}</dd>
                 </div>
             </dl>

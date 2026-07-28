@@ -54,12 +54,12 @@ export const accounts = {
 /** Settled payments, each linkable. Amounts are what the seller charged. */
 export const settlements = [
     {
-        label: "위임 결제 · 1 mUSDC",
+        label: "에이전트 결제 · 1 mUSDC",
         labelEn: "Delegated payment · 1 mUSDC",
         hash: "0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d",
     },
     {
-        label: "위임 결제 · 2.5 mUSDC",
+        label: "에이전트 결제 · 2.5 mUSDC",
         labelEn: "Delegated payment · 2.5 mUSDC",
         hash: "0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4",
     },
@@ -82,7 +82,7 @@ export const settlements = [
  */
 export const refusals = [
     {
-        attempt: "주기 한도를 넘겨 결제",
+        attempt: "정해진 한도를 넘겨 결제",
         attemptEn: "Pay past the period cap",
         enforcer: "ERC20PeriodTransferEnforcer",
         revert: "transfer-amount-exceeded",
@@ -94,7 +94,7 @@ export const refusals = [
         revert: "expired-delegation",
     },
     {
-        attempt: "지정되지 않은 수취인에게 송금",
+        attempt: "허락하지 않은 사람에게 송금",
         attemptEn: "Send to a payee that was never named",
         enforcer: "ERC20TransferAmountEnforcer",
         revert: "allowance-exceeded",
