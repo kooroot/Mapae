@@ -44,6 +44,7 @@ const DOCS = [
     "CLAUDE.md",
     "docs/tech-notes.md",
     "docs/deployed-contracts.md",
+    "docs/mcp-guide.md",
     "docs/revocation-runbook.md",
     "docs/giwa-demo-runbook.md",
     "docs/README.md",

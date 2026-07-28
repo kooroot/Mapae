@@ -123,6 +123,9 @@ enforcer가 강제하는 상태다.
 | `mapae_pay_for_resource` | 402 수신 → caveat 안에서 leaf 서명 → 재요청 → 리소스 |
 | `mapae_status` | 세션키·엔드포인트·배포 검증 여부 (키·permission context는 반환하지 않음) |
 
+서버를 MCP 클라이언트에 등록하는 절차와 환경 변수는
+[MCP 연결 가이드](../mcp-guide.md)에 있다.
+
 이 경로는 GIWA Sepolia에서 완주했다. MCP tool 호출 한 번이 사람 개입 없이 결제를
 정산했고, 트랜잭션
 [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)

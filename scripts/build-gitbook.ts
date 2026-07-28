@@ -185,6 +185,7 @@ ${chapters}
 ## 증거와 운영
 
 * [배포 컨트랙트](deployed-contracts.md)
+* [MCP 연결 가이드](mcp-guide.md)
 * [GIWA 데모 런북](giwa-demo-runbook.md)
 * [회수 런북](revocation-runbook.md)
 `;
