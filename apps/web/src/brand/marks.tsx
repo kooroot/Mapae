@@ -1,3 +1,16 @@
+import {
+    BadgeCheck,
+    CircleDollarSign,
+    CircleGauge,
+    DoorOpen,
+    HandCoins,
+    ReceiptText,
+    ShieldCheck,
+    SlidersHorizontal,
+    TimerReset,
+    type LucideIcon,
+} from "lucide-react";
+
 /*
  * The brand marks.
  *
@@ -18,8 +31,8 @@
  * clipped eighteen of the twenty marks — every icon lost an edge, and the
  * wordmark lost its baseline. The regenerator keys the sheet, takes a projection
  * profile to locate the gutters, then crops to each mark's own alpha bounds plus
- * 7% padding. The invariant it restores is checkable rather than eyeballed: no
- * asset's alpha bounding box may touch its canvas edge.
+ * padding. The small `pass-emblem` cell on the supplied sheet still truncates
+ * the hanging loop, so product seals use the complete `emblem.png` instead.
  *
  * Icons land on a SQUARE canvas with the mark centred, because every use renders
  * them into a square box. The sheet's cells are not square, so the old crops were
@@ -48,6 +61,20 @@ const ICONS = [
 ] as const;
 
 export type IconName = (typeof ICONS)[number];
+
+const INTERFACE_ICONS = {
+    "asset-recipient": HandCoins,
+    "amount-cadence": CircleGauge,
+    "start-expiry": TimerReset,
+    "owner-revoke": ShieldCheck,
+    request: ReceiptText,
+    scope: SlidersHorizontal,
+    enforce: BadgeCheck,
+    settle: CircleDollarSign,
+    proceed: DoorOpen,
+} satisfies Record<string, LucideIcon>;
+
+export type InterfaceIconName = keyof typeof INTERFACE_ICONS;
 
 // Measured from the extracted files, not estimated: emblem 439×512, wordmark
 // 900×154. These exist so width and height are both on the tag — the marks sit
@@ -110,6 +137,36 @@ export function BrandIcon({
             className={className}
             loading="lazy"
             decoding="async"
+        />
+    );
+}
+
+/**
+ * Product UI icons use one vector system rather than the supplied concept
+ * sheet. Several tiny sheet cells have artwork cut off inside the source PNG,
+ * which CSS padding cannot recover. These marks stay crisp and fully visible at
+ * every responsive size while the horse emblem remains the brand signature.
+ */
+export function InterfaceIcon({
+    name,
+    size = 28,
+    className,
+}: {
+    name: InterfaceIconName;
+    size?: number;
+    className?: string;
+}) {
+    const Icon = INTERFACE_ICONS[name];
+
+    return (
+        <Icon
+            width={size}
+            height={size}
+            className={className}
+            aria-hidden="true"
+            focusable="false"
+            strokeWidth={1.7}
+            absoluteStrokeWidth
         />
     );
 }

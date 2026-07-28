@@ -1,87 +1,35 @@
 import {Link} from "@tanstack/react-router";
-import {useEffect, useState} from "react";
-import {formatEther} from "viem";
 import {Lockup, PassEmblem, Tagline, Wordmark} from "../brand/marks";
-import {accounts, publicClient} from "../lib/config";
+import {appUrl, docsUrl} from "../lib/config";
 
-export function Nav() {
+export function Nav({variant = "paper"}: {variant?: "paper" | "dark"}) {
     return (
-        <header className="nav">
+        <header className={`nav nav-${variant}`}>
             <div className="wrap nav-inner">
                 <Link to="/" aria-label="Mapae 홈">
                     <Lockup />
                 </Link>
                 <nav className="nav-links">
-                    <a href="/#how">작동 방식</a>
-                    <a href="/#engraved">새겨진 것</a>
+                    <a href="/#authority">제품</a>
+                    <a href="/#boundaries">권한 경계</a>
+                    <a href="/#security">보안</a>
                     <a href="/#evidence">증거</a>
-                    <a
-                        href="https://github.com/kooroot/Mapae/blob/main/docs/tech-notes.md"
-                        target="_blank"
-                        rel="noreferrer noopener"
-                    >
+                    <a href={docsUrl} target="_blank" rel="noreferrer noopener">
                         문서
                     </a>
                 </nav>
-                <Link to="/app" className="btn">
-                    콘솔 열기
-                </Link>
+                <a href={appUrl} className="btn">
+                    <span>Studio 열기</span>
+                    <span aria-hidden="true">↗</span>
+                </a>
             </div>
         </header>
     );
 }
 
-/**
- * The payer's native balance, read from the chain.
- *
- * This is the one number on the landing page that is fetched rather than
- * written, and it is fetched precisely because it is the product's central
- * claim: the account that holds the funds holds no gas, and the relayer carries
- * every transaction. A zero you can watch arrive is evidence; a zero typed into
- * a marketing page is a slogan.
- *
- * It renders a skeleton until it has an answer and never a literal `0` before
- * one. A prerendered `0` that later turns out to be wrong is worse than no
- * number at all — the visitor has already read it, and the correction arrives
- * after they have moved on.
- */
-export function PayerGas() {
-    const [state, setState] = useState<
-        {kind: "loading"} | {kind: "ok"; wei: bigint} | {kind: "unreachable"}
-    >({kind: "loading"});
-
-    useEffect(() => {
-        let live = true;
-        publicClient
-            .getBalance({address: accounts.payer})
-            .then((wei) => live && setState({kind: "ok", wei}))
-            .catch(() => live && setState({kind: "unreachable"}));
-        return () => {
-            live = false;
-        };
-    }, []);
-
-    if (state.kind === "loading") {
-        return <span className="numeral skeleton" aria-hidden="true" />;
-    }
-    if (state.kind === "unreachable") {
-        return (
-            <span className="numeral dim" title="GIWA 노드에 닿지 못했습니다">
-                —
-            </span>
-        );
-    }
+export function Footer({variant = "paper"}: {variant?: "paper" | "dark"}) {
     return (
-        <span className="numeral">
-            {formatEther(state.wei)}
-            <span className="numeral-unit">ETH</span>
-        </span>
-    );
-}
-
-export function Footer() {
-    return (
-        <footer className="foot">
+        <footer className={`foot foot-${variant}`}>
             <div className="wrap foot-inner">
                 <div>
                     <span className="lockup">

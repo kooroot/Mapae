@@ -34,7 +34,7 @@ describe("parsePermissionContext", () => {
     test("text that is not hex is refused with a reason", () => {
         const parsed = parsePermissionContext("permission context goes here");
         expect(parsed.kind).toBe("invalid");
-        expect(parsed.kind === "invalid" && parsed.reason).toContain("16진");
+        expect(parsed.kind === "invalid" && parsed.reason).toContain("0x");
     });
 
     test("well-formed hex that is not a delegation array is refused, not thrown", () => {
@@ -43,7 +43,7 @@ describe("parsePermissionContext", () => {
         // page and leave nothing on screen at all.
         const parsed = parsePermissionContext(`0x${"ab".repeat(64)}`);
         expect(parsed.kind).toBe("invalid");
-        expect(parsed.kind === "invalid" && parsed.reason).toContain("잘린");
+        expect(parsed.kind === "invalid" && parsed.reason).toContain("전체");
     });
 
     test("the root is the LAST link, because the leaf is the throwaway", () => {

@@ -3,6 +3,26 @@
     "name": "mapae",
     "compatibility_date": "2025-09-02",
     "compatibility_flags": ["nodejs_compat"],
-    "main": "@tanstack/react-start/server-entry",
-    "observability": {"enabled": true}
+    "main": "src/server.ts",
+    "observability": {"enabled": true},
+    "workers_dev": false,
+    "preview_urls": false,
+    "env": {
+        "landing": {
+            "name": "mapae",
+            "workers_dev": false,
+            "preview_urls": false,
+            "routes": [
+                {"pattern": "mapae.io", "custom_domain": true}
+            ]
+        },
+        "app": {
+            "name": "mapae-app",
+            "workers_dev": false,
+            "preview_urls": false,
+            "routes": [
+                {"pattern": "app.mapae.io", "custom_domain": true}
+            ]
+        }
+    }
 }

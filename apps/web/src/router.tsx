@@ -1,4 +1,5 @@
 import {createRouter as createTanStackRouter} from "@tanstack/react-router";
+import {createSsrNonce} from "./lib/security";
 import {routeTree} from "./routeTree.gen";
 
 /**
@@ -8,10 +9,13 @@ import {routeTree} from "./routeTree.gen";
  * rather than at this one.
  */
 export function getRouter() {
+    const nonce = createSsrNonce();
+
     return createTanStackRouter({
         routeTree,
         scrollRestoration: true,
         defaultPreload: "intent",
+        ...(nonce ? {ssr: {nonce}} : {}),
     });
 }
 

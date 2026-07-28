@@ -1,529 +1,445 @@
 import {Link, createFileRoute} from "@tanstack/react-router";
-import {BrandIcon, type IconName} from "../brand/marks";
-import {Guilloche} from "../brand/Guilloche";
-import {Footer, Nav, PayerGas} from "../components/Shell";
+import {Suspense, lazy, type ReactNode} from "react";
+import {InterfaceIcon, type InterfaceIconName} from "../brand/marks";
+import {Footer, Nav} from "../components/Shell";
 import {Reveal} from "../components/Reveal";
 import {Dial} from "../landing/Dial";
-import {accounts, explorerAddressUrl, explorerTxUrl, refusals, settlements} from "../lib/config";
+import {
+    appUrl,
+    docsUrl,
+    explorerTxUrl,
+    refusals,
+    settlements,
+    siteSurface,
+} from "../lib/config";
 import {short} from "../lib/dial";
 
-/*
- * Where the vocabulary went.
- *
- * The protocol nouns — caveat, enforcer, redeemDelegations, and the six contract
- * names — used to sit in the running sentences. They are accurate and they are
- * unreadable to anyone who has not already built one of these, which on a landing
- * page means the reader stops at the word instead of at the idea.
- *
- * So the page states the idea in ordinary Korean and every exact name lives in
- * one disclosure per section, closed by default, plus the technical notes. The
- * detail is not softened or dropped — a judge who wants the contract that
- * enforces the cap is two clicks from it. It just is not the first thing a
- * visitor has to parse.
- */
-const DOCS = "https://github.com/kooroot/Mapae/blob/main/docs/tech-notes.md";
+const LazyStudio = lazy(() =>
+    import("../dapp/Studio").then(({Studio}) => ({default: Studio})),
+);
 
-function TechDetails({summary, children}: {summary: string; children: React.ReactNode}) {
-    return (
-        <details className="tech">
-            <summary>{summary}</summary>
-            <div className="tech-body">
-                {children}
-                <a className="mono-link" href={DOCS} target="_blank" rel="noreferrer noopener">
-                    기술 문서 전체 보기
-                </a>
-            </div>
-        </details>
+export const Route = createFileRoute("/")({
+    component: RootSurface,
+    head: () =>
+        siteSurface === "app"
+            ? {
+                  meta: [
+                      {title: "Mapae Studio — Delegated payment control"},
+                      {
+                          name: "description",
+                          content:
+                              "자산·금액·기간·수취인 경계를 지갑으로 승인하고, GIWA에서 에이전트 결제 권한과 정산 상태를 관리합니다.",
+                      },
+                  ],
+              }
+            : {},
+});
+
+function RootSurface() {
+    return siteSurface === "app" ? (
+        <Suspense fallback={<StudioEntryLoading />}>
+            <LazyStudio />
+        </Suspense>
+    ) : (
+        <Landing />
     );
 }
 
-export const Route = createFileRoute("/")({component: Landing});
-
-function Landing() {
+function StudioEntryLoading() {
     return (
-        <>
-            <Nav />
-            <main>
-                <Hero />
-                <Ledger />
-                <Numbers />
-                <Refused />
-                <HowItWorks />
-                <OneCall />
-                <Comparison />
-                <Engraved />
-                <Evidence />
-            </main>
-            <Footer />
-        </>
-    );
-}
-
-/*
- * The hero is off-axis on purpose.
- *
- * Copy holds the left, the object sits right and is pulled down so it crosses
- * the ledger strip below it — the medallion rises into the page rather than
- * being photographed flat inside a section. A centred stack of headline, subhead,
- * button, image is the composition every generated page arrives at, and it reads
- * as one.
- *
- * The headline states a substitution, because substitution is the product: the
- * agent stops holding a key and starts holding a limit. It deliberately does not
- * open with the word 마패 — that arrives in the next sentence with its
- * explanation attached, which is how a loanword earns its place.
- */
-function Hero() {
-    return (
-        <section className="hero">
-            <Guilloche size={1180} rings={5} seed={2} className="hero-field" />
-            <div className="wrap hero-grid">
-                <div className="hero-copy">
-                    <Reveal>
-                        <span className="eyebrow">x402 · GIWA SEPOLIA</span>
-                        <h1 className="display-1">
-                            에이전트에게 <span className="dim">지갑이 아니라</span> 한도를 준다
-                        </h1>
-                    </Reveal>
-                    <Reveal delay={90}>
-                        <p className="body-lg hero-sub">
-                            마패에 새겨진 말의 수는, 권한이 끝나는 지점이었습니다. Mapae는 그 새김을
-                            체인에 옮깁니다. 한도를 넘는 결제는 거절되는 것이 아니라 아예 일어나지
-                            않고, 수수료는 지갑 주인이 내지 않습니다.
-                        </p>
-                        <div className="hero-cta">
-                            <Link to="/app" className="btn">
-                                <span>콘솔 열기</span>
-                            </Link>
-                            <a className="ghost" href="#how">
-                                작동 방식 보기
-                            </a>
-                        </div>
-                    </Reveal>
-                </div>
-                <div className="hero-object">
-                    <Dial />
-                </div>
-            </div>
-        </section>
-    );
-}
-
-/*
- * A register strip, full-bleed and double-ruled. The hashes scrolling through it
- * are the actual settlements — the page's evidence is present in the first
- * screen rather than filed at the bottom, and it is moving because a ledger is
- * a thing that keeps going.
- */
-function Ledger() {
-    const entries = [
-        ...settlements.map((s) => ({label: s.label, value: short(s.hash)})),
-        {label: "결제 지갑 수수료", value: "0 ETH"},
-        {label: "체인에 새긴 한도", value: "3 mUSDC / 60초"},
-        {label: "네트워크", value: "GIWA Sepolia · eip155:91342"},
-    ];
-    return (
-        <div className="ledger">
-            <div className="wrap ledger-inner">
-                <span className="micro" style={{flex: "none"}}>
-                    ON CHAIN
-                </span>
-                <div className="ticker">
-                    {/* The track is duplicated so the -50% translate loops with no
-                        seam. Halving the content would show the gap instead. */}
-                    <div className="ticker-track" aria-hidden="true">
-                        {[...entries, ...entries].map((entry, index) => (
-                            <span className="ticker-item" key={index}>
-                                {entry.label} <b>{entry.value}</b>
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            </div>
+        <div className="studio-entry-loading" aria-label="Mapae Studio 불러오는 중">
+            <i aria-hidden="true" />
+            <span>MAPAE STUDIO</span>
         </div>
     );
 }
 
-/*
- * Three numerals on a stepped grid rather than three equal cards. The zero is
- * the best number on the page — it is memorable, it is the product's central
- * claim, and it is fetched from the chain rather than typed here.
- */
-function Numbers() {
-    return (
-        <section className="wrap numbers">
-            <Reveal className="plate stat">
-                <span className="eyebrow">결제 지갑이 가진 수수료</span>
-                <PayerGas />
-                <p className="label" style={{marginTop: 10}}>
-                    돈을 쥔 지갑이 수수료는 한 푼도 들고 있지 않습니다. 대신 내주는 서버가
-                    있습니다.
-                </p>
-                <a
-                    className="mono-link"
-                    href={explorerAddressUrl(accounts.payer)}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                >
-                    {short(accounts.payer)}
-                </a>
-            </Reveal>
-            <Reveal className="plate stat" delay={110}>
-                <span className="eyebrow">체인에 새긴 한도</span>
-                <span className="numeral">
-                    3<span className="numeral-unit">mUSDC / 60초</span>
-                </span>
-                <p className="label" style={{marginTop: 10}}>
-                    60초마다 초기화되는 상한. 서버 설정이 아니라 체인에 적힌 값이라, 넘기면
-                    체인이 막습니다.
-                </p>
-            </Reveal>
-            <Reveal className="plate stat" delay={220}>
-                <span className="eyebrow">사람이 서명하는 횟수</span>
-                <span className="numeral">
-                    1<span className="numeral-unit">회</span>
-                </span>
-                <p className="label" style={{marginTop: 10}}>
-                    처음 한 번만 승인하면 끝. 이후 결제는 에이전트가 그 한도 안에서 알아서
-                    합니다.
-                </p>
-            </Reveal>
-        </section>
-    );
-}
+const STANDARDS = [
+    {name: "GIWA", detail: "Settlement network"},
+    {name: "x402", detail: "Payment handshake"},
+    {name: "ERC-7710", detail: "Delegated authority"},
+    {name: "ERC-4337", detail: "Smart account"},
+] as const;
 
-/*
- * The refusal band, and the only obsidian surface on the site.
- *
- * Not one site in this product's competitive set shows a rejection — they show
- * throughput, latency and integrations. The refusal is the differentiator, so it
- * sits above the explanation rather than in a FAQ.
- */
-function Refused() {
-    return (
-        <section className="refusals" id="refusals">
-            <Guilloche size={920} rings={3} seed={7} className="refusals-field" />
-            <div className="wrap">
-                <Reveal>
-                    <span className="eyebrow">거절</span>
-                    <h2 className="h2">
-                        한도를 넘긴 결제는{" "}
-                        <span style={{color: "var(--red-on-dark)"}}>아예 일어나지 않는다</span>
-                    </h2>
-                    <p
-                        className="body"
-                        style={{color: "var(--on-obsidian-dim)", maxWidth: "58ch", marginTop: 18}}
-                    >
-                        결제는 체인에 올리기 전에 먼저 그대로 돌려봅니다. 거기서 걸리면 그걸로
-                        끝입니다 — 실패한 기록조차 남지 않고, 수수료도 쓰이지 않고, 잔고는
-                        그대로입니다. 보여드릴 해시가 없다는 것이 오히려 증거입니다.
-                    </p>
-                </Reveal>
-                <div className="refusal-table">
-                    {refusals.map((r, index) => (
-                        <Reveal key={r.revert + r.enforcer} delay={index * 90}>
-                            <div className="refusal-row">
-                                <span className="attempt">{r.attempt}</span>
-                                <span className="revert">{r.revert}</span>
-                            </div>
-                        </Reveal>
-                    ))}
-                </div>
-                <Reveal delay={260}>
-                    <TechDetails summary="어떤 계약이 막았는지 보기">
-                        <dl className="tech-map">
-                            {refusals.map((r) => (
-                                <div key={r.enforcer}>
-                                    <dt>{r.attempt}</dt>
-                                    <dd>{r.enforcer}</dd>
-                                </div>
-                            ))}
-                        </dl>
-                    </TechDetails>
-                </Reveal>
-            </div>
-        </section>
-    );
-}
-
-const STEPS: {icon: IconName; body: React.ReactNode; branch?: "refuse"}[] = [
+const BOUNDARIES: Array<{
+    index: string;
+    icon: InterfaceIconName;
+    title: string;
+    body: string;
+    meta: string;
+}> = [
     {
-        icon: "gate-402",
-        body: (
-            <>
-                에이전트가 유료 자료를 요청하면, 서버가{" "}
-                <code className="value">402 결제가 필요합니다</code>와 가격을 돌려줍니다.
-            </>
-        ),
+        index: "01",
+        icon: "asset-recipient",
+        title: "자산과 상대",
+        body: "어떤 자산을 누구에게 보낼 수 있는지 먼저 좁힙니다.",
+        meta: "ASSET · RECIPIENT",
     },
     {
-        icon: "credential-token",
-        body: (
-            <>
-                에이전트가 이 결제 한 건에만 쓰이는 허가증을 만듭니다. 금액과 받는 사람이 거기
-                박힙니다.
-            </>
-        ),
+        index: "02",
+        icon: "amount-cadence",
+        title: "금액과 주기",
+        body: "한 번의 결제와 일정 기간 동안 쓸 수 있는 상한을 정합니다.",
+        meta: "AMOUNT · CADENCE",
     },
     {
-        icon: "auto-approval",
-        body: (
-            <>
-                결제를 체인에 올리기 전에, 올릴 그 내용 그대로 한 번 돌려봅니다.
-            </>
-        ),
+        index: "03",
+        icon: "start-expiry",
+        title: "유효 기간",
+        body: "권한이 시작되고 끝나는 시간을 체인이 직접 확인합니다.",
+        meta: "START · EXPIRY",
     },
     {
-        icon: "shielded-pass",
-        branch: "refuse",
-        body: (
-            <>
-                체인이 새겨둔 조건을 확인합니다. 금액·기간·받는 사람 중 하나라도 어긋나면 여기서
-                멈추고, <strong>체인에는 아무것도 올라가지 않습니다</strong>.
-            </>
-        ),
-    },
-    {
-        icon: "autonomous-settlement",
-        body: (
-            <>
-                통과하면 대신 내주는 서버가 결제를 올리고 수수료까지 냅니다. 지갑 주인은 서명도
-                수수료도 하지 않습니다.
-            </>
-        ),
-    },
-    {
-        icon: "paid-access-stamp",
-        body: <>정산이 끝나면 서버가 자료를 내줍니다. 영수증은 거래 기록 그 자체입니다.</>,
+        index: "04",
+        icon: "owner-revoke",
+        title: "소유자 통제",
+        body: "필요하면 만료를 기다리지 않고 권한을 즉시 회수합니다.",
+        meta: "OWNER · REVOKE",
     },
 ];
 
-function HowItWorks() {
+const FLOW: Array<{icon: InterfaceIconName; title: string; body: ReactNode}> = [
+    {
+        icon: "request",
+        title: "Request",
+        body: "에이전트가 유료 리소스를 요청하고 402 결제 조건을 받습니다.",
+    },
+    {
+        icon: "scope",
+        title: "Scope",
+        body: "해당 결제의 금액과 수취인만 담은 일회성 권한을 만듭니다.",
+    },
+    {
+        icon: "enforce",
+        title: "Enforce",
+        body: "체인이 자산·한도·기간·상대가 위임 범위 안인지 검사합니다.",
+    },
+    {
+        icon: "settle",
+        title: "Settle",
+        body: "통과한 거래만 릴레이어가 GIWA에 정산합니다.",
+    },
+    {
+        icon: "proceed",
+        title: "Proceed",
+        body: "정산 영수증이 확인되면 리소스가 에이전트에게 열립니다.",
+    },
+];
+
+export function Landing() {
     return (
-        <section className="band band-ruled" id="how">
-            <div className="wrap-narrow">
-                <Reveal>
-                    <span className="eyebrow">작동 방식</span>
-                    <h2 className="h2">
-                        x402는 기계가 <span className="dim">어떻게</span> 지불하는지를 정한다.
-                        마패는 <span className="dim">얼마까지</span>인지를 정한다.
-                    </h2>
-                    <p className="body" style={{marginTop: 18, maxWidth: "var(--measure)"}}>
-                        새로 외울 단어는 없습니다. 한도를 한 번 정해두면, 그 다음부터는 체인이
-                        그 한도를 지킵니다.
+        <>
+            <Nav variant="dark" />
+            <main className="home">
+                <Hero />
+                <StandardRail />
+                <Authority />
+                <Mandate />
+                <PaymentFlow />
+                <Security />
+                <Evidence />
+                <FinalCall />
+            </main>
+            <Footer variant="dark" />
+        </>
+    );
+}
+
+function Hero() {
+    return (
+        <section className="home-hero hero-action" aria-labelledby="hero-title">
+            <div className="hero-action-sticky">
+                <div className="home-hero-copy">
+                    <span className="home-kicker">SCOPED PAYMENT AUTHORITY</span>
+                    <h1 id="hero-title">
+                        권한을 넘기지 말고,
+                        <strong>경계를 위임하세요.</strong>
+                    </h1>
+                    <p>
+                        자산·금액·기간·수취인을 정하면 에이전트가 그 안에서 스스로
+                        결제합니다. 소유자는 언제든 끝낼 수 있습니다.
                     </p>
+                    <div className="home-actions">
+                        <a href={appUrl} className="home-button home-button-primary">
+                            Studio 열기
+                            <span aria-hidden="true">↗</span>
+                        </a>
+                        <a className="home-button home-button-secondary" href="#authority">
+                            작동 방식
+                            <span aria-hidden="true">↓</span>
+                        </a>
+                    </div>
+                </div>
+                <div className="home-hero-meta" aria-hidden="true">
+                    <span>MAPAE · GIWA</span>
+                    <span>LIMIT THE AUTHORITY · LET THE AGENT ACT</span>
+                </div>
+                <Dial />
+            </div>
+        </section>
+    );
+}
+
+function StandardRail() {
+    return (
+        <section className="home-standard-rail" aria-label="Mapae protocol foundation">
+            <div className="home-wrap home-standard-grid">
+                <p>BUILT ON OPEN RAILS</p>
+                {STANDARDS.map((standard) => (
+                    <div key={standard.name}>
+                        <strong>{standard.name}</strong>
+                        <span>{standard.detail}</span>
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function Authority() {
+    return (
+        <section className="home-section home-authority" id="authority">
+            <div className="home-wrap">
+                <Reveal className="home-section-head">
+                    <span className="home-kicker">THE CONTROL LAYER</span>
+                    <h2 className="home-authority-title">
+                        <span>에이전트에게 필요한 건</span>
+                        <span>지갑 전체가 아니라,</span>
+                        <strong>목적에 맞는 경제적 권한입니다.</strong>
+                    </h2>
                 </Reveal>
-                <div className="steps">
-                    {STEPS.map((step, index) => (
-                        <Reveal key={index} delay={index * 60}>
-                            <div className="step" data-branch={step.branch}>
-                                <BrandIcon name={step.icon} size={38} className="step-icon" />
-                                <p className="body" style={{color: "var(--ink)"}}>
-                                    {step.body}
-                                </p>
-                            </div>
-                        </Reveal>
-                    ))}
+                <div className="home-contrast">
+                    <Reveal className="home-contrast-panel home-contrast-before">
+                        <span className="home-panel-index">WITHOUT MAPAE</span>
+                        <h3>키를 건네고 믿는다</h3>
+                        <ul>
+                            <li>지갑 전체에 접근</li>
+                            <li>백엔드가 한도를 약속</li>
+                            <li>문제가 생긴 뒤 발견</li>
+                        </ul>
+                    </Reveal>
+                    <Reveal className="home-contrast-divider" delay={80}>
+                        <span aria-hidden="true">→</span>
+                    </Reveal>
+                    <Reveal className="home-contrast-panel home-contrast-after" delay={120}>
+                        <span className="home-panel-index">WITH MAPAE</span>
+                        <h3>경계를 정하고 맡긴다</h3>
+                        <ul>
+                            <li>필요한 범위만 위임</li>
+                            <li>체인이 매 결제를 강제</li>
+                            <li>언제든 권한을 회수</li>
+                        </ul>
+                    </Reveal>
                 </div>
             </div>
         </section>
     );
 }
 
-function OneCall() {
+function Mandate() {
     return (
-        <section className="band">
-            <div className="wrap-narrow">
-                <Reveal>
-                    <span className="eyebrow">한 번의 호출</span>
-                    <h2 className="h2">사람이 끼어들 자리가 없다</h2>
-                    <div className="code">
-                        <pre>
-                            <span className="c">
-                                {"// MCP 도구 하나. 승인 창도, 붙여넣기도 없다."}
-                            </span>
-                            {"\n"}
-                            {"mapae_pay_for_resource({\n"}
-                            {'  url: "https://seller.example/deliverable/inv-001"\n'}
-                            {"})\n\n"}
-                            <span className="c">{"// → { settled: true,"}</span>
-                            {"\n"}
-                            <span className="c">{"//     transaction: "}</span>
-                            <span className="s">{'"0x533c5cb2…fd9964c"'}</span>
-                            <span className="c">{","}</span>
-                            {"\n"}
-                            <span className="c">{"//     payerGasSpend: "}</span>
-                            <span className="s">0</span>
-                            <span className="c">{" }"}</span>
-                        </pre>
+        <section className="home-section home-mandate" id="boundaries">
+            <div className="home-wrap">
+                <Reveal className="home-section-head home-section-head-split">
+                    <div>
+                        <span className="home-kicker">ONE MANDATE · FOUR BOUNDARIES</span>
+                        <h2>소유자가 정하고, 체인이 지킵니다.</h2>
                     </div>
-                    <p className="label" style={{marginTop: 16}}>
-                        위 기록은 실제로 GIWA Sepolia에 올라간 결제입니다.{" "}
-                        <a
-                            className="mono-link"
-                            href={explorerTxUrl(settlements[2].hash)}
-                            target="_blank"
-                            rel="noreferrer noopener"
-                        >
-                            탐색기에서 확인
-                        </a>
+                    <p>
+                        숫자는 제품에 고정되어 있지 않습니다. 각 권한은 사용 목적에 맞게
+                        구성되고, 에이전트는 새겨진 범위를 넘어설 수 없습니다.
                     </p>
                 </Reveal>
+
+                <div className="home-boundary-grid">
+                    <div className="home-boundary-core" aria-hidden="true">
+                        <span className="home-core-orbit home-core-orbit-a" />
+                        <span className="home-core-orbit home-core-orbit-b" />
+                        <span className="home-core-seal">
+                            <img
+                                src="/brand/emblem.png"
+                                alt=""
+                                width={439}
+                                height={512}
+                            />
+                        </span>
+                        <small>OWNER-SIGNED AUTHORITY</small>
+                    </div>
+                    <ol className="home-boundary-list">
+                        {BOUNDARIES.map((boundary, index) => (
+                            <Reveal as="li" key={boundary.title} delay={index * 70}>
+                                <article className="home-boundary-card">
+                                    <span className="home-boundary-index">{boundary.index}</span>
+                                    <span className="home-boundary-symbol" aria-hidden="true">
+                                        <InterfaceIcon
+                                            name={boundary.icon}
+                                            size={28}
+                                            className="home-boundary-icon"
+                                        />
+                                    </span>
+                                    <div>
+                                        <span className="home-boundary-meta">{boundary.meta}</span>
+                                        <h3>{boundary.title}</h3>
+                                        <p>{boundary.body}</p>
+                                    </div>
+                                </article>
+                            </Reveal>
+                        ))}
+                    </ol>
+                </div>
             </div>
         </section>
     );
 }
 
-function Comparison() {
+function PaymentFlow() {
     return (
-        <section className="band band-ruled">
-            <div className="wrap">
-                <Reveal>
-                    <span className="eyebrow">차이</span>
-                    <h2 className="h2">권한은 새겨진 곳에서 끝난다</h2>
+        <section className="home-section home-flow" id="flow">
+            <div className="home-wrap">
+                <Reveal className="home-section-head">
+                    <span className="home-kicker">REQUEST · PAY · PROCEED</span>
+                    <h2>
+                        결제는 자동으로 흐르지만,
+                        <strong>권한 검사는 생략되지 않습니다.</strong>
+                    </h2>
                 </Reveal>
-                <Reveal delay={80}>
-                    <div className="compare">
-                        <div className="compare-col">
-                            <h3 className="h3 dim">지금까지</h3>
-                            <ol>
-                                <li>에이전트에게 키를 준다</li>
-                                <li>백엔드가 한도를 확인한다</li>
-                                <li>코드가 약속을 지키기를 믿는다</li>
-                                <li>초과분은 사후에 발견된다</li>
-                            </ol>
-                        </div>
-                        <div className="compare-col">
-                            <h3 className="h3">마패</h3>
-                            <ol>
-                                <li>처음 한 번만 승인한다</li>
-                                <li>결제마다 1회용 허가증을 만든다</li>
-                                <li data-mark="chain">체인이 막는다</li>
-                                <li>초과분은 애초에 실리지 않는다</li>
-                            </ol>
-                        </div>
-                    </div>
-                </Reveal>
-            </div>
-        </section>
-    );
-}
-
-const TERMS = [
-    ["한 주기에 쓸 수 있는 금액", "3.000000 mUSDC", "ERC20PeriodTransferEnforcer"],
-    ["주기가 초기화되는 간격", "60초", "ERC20PeriodTransferEnforcer"],
-    ["권한이 살아 있는 기간", "시작 · 만료 시각", "TimestampEnforcer"],
-    ["결제를 올릴 수 있는 곳", "지정된 한 곳만", "RedeemerEnforcer"],
-    ["결제 한 건의 금액과 상대", "결제마다 고정", "ERC20TransferAmountEnforcer"],
-    ["권한 회수", "서명 한 번", "DelegationManager"],
-] as const;
-
-function Engraved() {
-    return (
-        <section className="band" id="engraved">
-            <div className="wrap">
-                <Reveal>
-                    <span className="eyebrow">새겨진 것</span>
-                    <h2 className="h2">한도는 설정값이 아니라 체인에 적힌 값이다</h2>
-                    <p className="body" style={{marginTop: 18, maxWidth: "var(--measure)"}}>
-                        아래 값은 전부 체인에 올라가 있고, 결제 직전에 체인이 직접 읽습니다. 우리가
-                        지키겠다고 적어둔 약속이 아닙니다.
-                    </p>
-                </Reveal>
-                <Reveal delay={80}>
-                    <div className="table-scroll plate">
-                        <table className="params">
-                            <thead>
-                                <tr>
-                                    <th>항목</th>
-                                    <th>값</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {TERMS.map(([k, v]) => (
-                                    <tr key={k}>
-                                        <td className="k">{k}</td>
-                                        <td className="v">{v}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Reveal>
-                <Reveal delay={110}>
-                    <TechDetails summary="각 항목을 검사하는 컨트랙트 보기">
-                        <dl className="tech-map">
-                            {TERMS.map(([k, , who]) => (
-                                <div key={k}>
-                                    <dt>{k}</dt>
-                                    <dd>{who}</dd>
+                <ol className="home-flow-list">
+                    {FLOW.map((step, index) => (
+                        <Reveal as="li" key={step.title} delay={index * 70}>
+                            <article className="home-flow-step">
+                                <div className="home-flow-marker">
+                                    <span>{String(index + 1).padStart(2, "0")}</span>
+                                    <i className="home-flow-symbol" aria-hidden="true">
+                                        <InterfaceIcon
+                                            name={step.icon}
+                                            size={26}
+                                            className="home-flow-icon"
+                                        />
+                                    </i>
                                 </div>
-                            ))}
-                        </dl>
-                    </TechDetails>
+                                <h3>{step.title}</h3>
+                                <p>{step.body}</p>
+                            </article>
+                        </Reveal>
+                    ))}
+                </ol>
+            </div>
+        </section>
+    );
+}
+
+function Security() {
+    return (
+        <section className="home-section home-security" id="security">
+            <div className="home-wrap home-security-grid">
+                <Reveal className="home-security-copy">
+                    <span className="home-kicker">SECURITY BY REFUSAL</span>
+                    <h2>
+                        안전성은 성공한 결제가 아니라,
+                        <strong>거절할 수 있는 결제에서 드러납니다.</strong>
+                    </h2>
+                    <p>
+                        정산 전에 실행될 내용을 그대로 시뮬레이션합니다. 권한 범위를 벗어나면
+                        브로드캐스트하지 않으므로 자금 이동과 불필요한 가스 지출이 없습니다.
+                    </p>
+                    <a href={docsUrl} target="_blank" rel="noreferrer noopener">
+                        기술 문서에서 신뢰 경계 보기 <span aria-hidden="true">↗</span>
+                    </a>
                 </Reveal>
-                <Reveal delay={140}>
-                    <div className="notice">
-                        <BrandIcon name="agent-route" size={34} />
-                        <p className="body" style={{color: "var(--ink)"}}>
-                            <strong>만료를 기다릴 필요가 없습니다.</strong> 언제든 서명 한 번으로
-                            권한을 끝낼 수 있고, 그 즉시 같은 허가증으로는 아무것도 결제되지
-                            않습니다.
-                        </p>
-                    </div>
-                </Reveal>
+                <div className="home-refusal-list">
+                    {refusals.map((refusal, index) => (
+                        <Reveal key={refusal.revert} delay={index * 90}>
+                            <article className="home-refusal">
+                                <span>{String(index + 1).padStart(2, "0")}</span>
+                                <div>
+                                    <h3>{refusal.attempt}</h3>
+                                    <code>{refusal.revert}</code>
+                                </div>
+                                <strong>REFUSED</strong>
+                            </article>
+                        </Reveal>
+                    ))}
+                </div>
             </div>
         </section>
     );
 }
 
 function Evidence() {
-    const rows = [
-        ...settlements.map((s) => ({label: s.label, href: explorerTxUrl(s.hash), text: short(s.hash)})),
-        {
-            label: "결제 지갑",
-            href: explorerAddressUrl(accounts.payer),
-            text: short(accounts.payer),
-        },
-        {
-            label: "결제 자산 (mUSDC)",
-            href: explorerAddressUrl(accounts.token),
-            text: short(accounts.token),
-        },
-    ];
     return (
-        <section className="band band-ruled" id="evidence">
-            <div className="wrap-narrow">
-                <Reveal>
-                    <span className="eyebrow">증거</span>
-                    <h2 className="h2">전부 열어볼 수 있다</h2>
+        <section className="home-section home-evidence" id="evidence">
+            <div className="home-wrap">
+                <Reveal className="home-section-head home-section-head-split">
+                    <div>
+                        <span className="home-kicker">GIWA SEPOLIA EVIDENCE</span>
+                        <h2>설명보다 먼저, 확인할 수 있는 기록.</h2>
+                    </div>
+                    <p>
+                        아래 링크는 테스트넷에서 실제로 정산된 위임 결제입니다. 제품의 고정
+                        한도나 운영 지표가 아니라 기술 동작을 검증하는 공개 증거입니다.
+                    </p>
                 </Reveal>
-                <div className="evidence">
-                    {rows.map((row, index) => (
-                        <Reveal key={row.href} delay={index * 55}>
-                            <div className="evidence-row">
-                                <span className="small" style={{color: "var(--ink)"}}>
-                                    {row.label}
-                                </span>
-                                <a
-                                    className="mono-link"
-                                    href={row.href}
-                                    target="_blank"
-                                    rel="noreferrer noopener"
-                                >
-                                    {row.text}
-                                </a>
-                            </div>
+
+                <div className="home-evidence-table">
+                    <div className="home-evidence-head" aria-hidden="true">
+                        <span>RECEIPT</span>
+                        <span>NETWORK</span>
+                        <span>TRANSACTION</span>
+                    </div>
+                    {settlements.map((settlement, index) => (
+                        <Reveal key={settlement.hash} delay={index * 70}>
+                            <a
+                                className="home-evidence-row"
+                                href={explorerTxUrl(settlement.hash)}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                            >
+                                <span>SETTLEMENT {String(index + 1).padStart(2, "0")}</span>
+                                <span>GIWA SEPOLIA</span>
+                                <strong>
+                                    {short(settlement.hash)}
+                                    <i aria-hidden="true">↗</i>
+                                </strong>
+                            </a>
                         </Reveal>
                     ))}
                 </div>
-                <Reveal delay={80}>
-                    <div className="notice">
-                        <BrandIcon name="verified-credential" size={34} />
-                        <p className="body" style={{color: "var(--ink)"}}>
-                            <strong>테스트넷입니다.</strong> GIWA Sepolia 위에서 테스트 자산으로만
-                            동작하며, 실제 가치를 가진 자산에는 아직 쓰지 않습니다.
-                        </p>
+                <Reveal className="home-testnet-note">
+                    <span>TESTNET ONLY</span>
+                    <p>
+                        현재 공개 증거는 GIWA Sepolia의 테스트 자산으로 생성되었습니다. 실제
+                        가치 자산을 위한 운영 준비 상태를 의미하지 않습니다.
+                    </p>
+                </Reveal>
+            </div>
+        </section>
+    );
+}
+
+function FinalCall() {
+    return (
+        <section className="home-final">
+            <div className="home-final-glow" aria-hidden="true" />
+            <div className="home-wrap">
+                <Reveal>
+                    <span className="home-kicker">PASS · PAY · PROCEED</span>
+                    <h2>
+                        경계를 정하세요.
+                        <strong>에이전트가 그 안에서 움직입니다.</strong>
+                    </h2>
+                    <p>지갑을 넘기지 않고도 자율 결제를 시작할 수 있습니다.</p>
+                    <div className="home-actions home-final-actions">
+                        <a href={appUrl} className="home-button home-button-primary">
+                            Studio 열기 <span aria-hidden="true">↗</span>
+                        </a>
+                        <a
+                            className="home-button home-button-secondary"
+                            href={docsUrl}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                        >
+                            기술 문서 <span aria-hidden="true">↗</span>
+                        </a>
                     </div>
                 </Reveal>
             </div>

@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-419%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-427%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -78,7 +78,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 | 위임 결제 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
 | 에이전트 자동화 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
 | 콘솔 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
-| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 419 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
+| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 427 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
@@ -94,8 +94,8 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   facilitator가 브로드캐스트 전에 `redeemDelegations`를 GIWA 현재 상태에 시뮬레이션하므로
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
-  `eth_call`이다. 증거표는 [기술 노트](docs/tech-notes.md)에 있다.
-- 회귀 검증: **419 TypeScript tests (shared/delegation/scripts 294 + MCP 3 + 콘솔 94 + 웹 28)
+  `eth_call`이다. 증거표는 [기술 문서](https://gitbook.mapae.io)에 있다.
+- 회귀 검증: **427 TypeScript tests (shared/delegation/scripts 294 + MCP 3 + 콘솔 94 + 웹 36)
   + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -375,7 +375,7 @@ facilitator는 릴레이어 키를 쥐고, 서명된 `X-PAYMENT`를 받고, leaf
 현재 프로세스 내 중복방지는 안전하지만, 재시작과 다중 replica를 넘는
 idempotency는 제품화 전에 Redis/Postgres 같은 영속 저장소로 이전해야 합니다.
 
-위협 모델과 온체인 보안 설계는 [기술 노트](docs/tech-notes.md)에 정리되어 있습니다.
+위협 모델과 온체인 보안 설계는 [기술 문서](https://gitbook.mapae.io)에 정리되어 있습니다.
 
 ## GIWA 연동
 
@@ -410,12 +410,16 @@ apps/facilitator-erc7710/  delegated settlement adapter
 apps/agent-mcp/            요청 시 리소스를 결제하는 MCP 서버
 apps/revocation-submitter/ 서명된 회수를 실어 나르는 loopback 엔드포인트
 apps/console/              위임·영수증 화면, 지갑 모듈 크기
+apps/web/                  공개 랜딩(mapae.io)과 Studio(app.mapae.io)
 docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 ```
 
 ## 문서
 
-- [기술 노트](docs/tech-notes.md)
+- [mapae.io](https://mapae.io) — 온체인 증거를 담은 라이브 랜딩
+- [app.mapae.io](https://app.mapae.io) — Studio: 위임 발급·조회·회수
+- [기술 문서](https://gitbook.mapae.io)
+- [MCP 가이드](docs/mcp-guide.md) — 결제 서버를 MCP 클라이언트에 등록하는 절차
 - [회수 런북](docs/revocation-runbook.md) — 킬 스위치와 그 검증 방법
 - [배포된 컨트랙트](docs/deployed-contracts.md)
 

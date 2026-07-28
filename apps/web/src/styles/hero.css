@@ -1,0 +1,703 @@
+/*
+ * The hero is one object with three semantic states, not a sequence of cards.
+ * Copy, proof and boundaries stay in the DOM; WebGL only supplies the energy
+ * field around the pass. This keeps the product legible when the canvas is
+ * unavailable and makes the scroll transition mean something.
+ */
+
+@keyframes ritual-canvas-in {
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes ritual-field-turn {
+    to {
+        rotate: 360deg;
+    }
+}
+
+@keyframes ritual-pull {
+    0% {
+        transform: translateX(-100%);
+    }
+    55%,
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.hero-action {
+    position: relative;
+    height: 240svh;
+    min-height: 1640px;
+    overflow: clip;
+    background: #050505;
+}
+
+.hero-action-sticky {
+    position: sticky;
+    top: 68px;
+    height: calc(100svh - 68px);
+    min-height: 620px;
+    overflow: hidden;
+    isolation: isolate;
+    background:
+        radial-gradient(circle at 74% 47%, rgba(222, 77, 49, 0.14), transparent 22%),
+        radial-gradient(circle at 72% 51%, rgba(192, 133, 72, 0.1), transparent 36%),
+        linear-gradient(135deg, #070706 0%, #030303 58%, #080604 100%);
+}
+
+.hero-action-sticky::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    opacity: 0.26;
+    background-image:
+        linear-gradient(rgba(240, 216, 184, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(240, 216, 184, 0.045) 1px, transparent 1px);
+    background-size: 88px 88px;
+    mask-image: radial-gradient(circle at 72% 48%, #000, transparent 69%);
+    pointer-events: none;
+}
+
+.hero-action-sticky::after {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    background:
+        radial-gradient(circle at 86% 24%, rgba(239, 84, 68, 0.58) 0 1px, transparent 1.8px),
+        radial-gradient(circle at 79% 75%, rgba(224, 177, 113, 0.38) 0 1px, transparent 1.7px),
+        radial-gradient(circle at 55% 20%, rgba(239, 84, 68, 0.32) 0 0.8px, transparent 1.5px),
+        radial-gradient(circle at 95% 56%, rgba(237, 231, 218, 0.24) 0 0.8px, transparent 1.5px);
+    pointer-events: none;
+}
+
+.ritual {
+    position: absolute;
+    z-index: 3;
+    inset: 0;
+}
+
+.ritual::before,
+.ritual::after,
+.ritual-object::after {
+    display: none;
+    content: none;
+}
+
+.ritual-object {
+    position: absolute;
+    z-index: 4;
+    top: 52%;
+    left: 73%;
+    width: min(46vw, 650px);
+    aspect-ratio: 1;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    color: inherit;
+    background: transparent;
+    transform: translate(-50%, -50%);
+    touch-action: manipulation;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition:
+        top 980ms var(--ease),
+        left 980ms var(--ease),
+        width 1080ms var(--ease),
+        filter 520ms var(--ease);
+}
+
+.ritual[data-phase="1"] .ritual-object {
+    top: 51%;
+    left: 62%;
+    width: min(54vw, 720px);
+}
+
+.ritual[data-phase="2"] .ritual-object {
+    top: 52%;
+    left: 50%;
+    width: min(61vw, 820px);
+}
+
+.ritual-object:focus-visible {
+    outline: 0;
+}
+
+.ritual-object::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    inset: 5%;
+    border-radius: 50%;
+    background-image:
+        radial-gradient(circle, rgba(240, 216, 184, 0.88) 0 0.8px, transparent 1.35px),
+        radial-gradient(circle, rgba(197, 138, 82, 0.68) 0 0.75px, transparent 1.3px),
+        radial-gradient(circle, rgba(239, 84, 68, 0.58) 0 0.7px, transparent 1.2px);
+    background-position:
+        0 0,
+        8px 6px,
+        3px 11px;
+    background-size:
+        13px 15px,
+        19px 17px,
+        23px 21px;
+    box-shadow:
+        inset 0 0 52px rgba(5, 5, 5, 0.72),
+        0 0 72px rgba(197, 85, 48, 0.12);
+    opacity: 0.12;
+    mask-image: radial-gradient(
+        circle,
+        transparent 0 27%,
+        rgba(0, 0, 0, 0.72) 31%,
+        #000 53%,
+        rgba(0, 0, 0, 0.42) 69%,
+        transparent 73%
+    );
+    animation: ritual-field-turn 42s linear infinite;
+    transition:
+        opacity 500ms var(--ease),
+        transform 900ms var(--ease);
+    pointer-events: none;
+}
+
+.ritual[data-render="fallback"] .ritual-object::before,
+.ritual[data-render="loading"] .ritual-object::before {
+    opacity: 0.84;
+}
+
+.ritual[data-phase="1"] .ritual-object::before,
+.ritual[data-phase="2"] .ritual-object::before {
+    transform: scale(1.08);
+}
+
+.ritual-canvas-host {
+    position: absolute;
+    z-index: 1;
+    inset: -7%;
+    display: block;
+    pointer-events: none;
+}
+
+.ritual-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    filter:
+        drop-shadow(0 0 20px rgba(217, 117, 70, 0.2))
+        drop-shadow(0 0 58px rgba(148, 54, 36, 0.12));
+    animation: ritual-canvas-in 900ms 120ms var(--ease) forwards;
+}
+
+.ritual-medallion {
+    position: absolute;
+    z-index: 3;
+    top: 50%;
+    left: 50%;
+    display: grid;
+    width: 31%;
+    aspect-ratio: 1;
+    place-items: center;
+    border: 1px solid rgba(240, 216, 184, 0.46);
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 42% 34%, #fffaf0 0%, #e7d8bf 56%, #aa8052 100%);
+    box-shadow:
+        inset 0 0 0 5px rgba(30, 21, 13, 0.94),
+        inset 0 0 0 7px rgba(224, 172, 105, 0.74),
+        inset 0 0 30px rgba(82, 48, 24, 0.34),
+        0 0 0 1px rgba(213, 154, 93, 0.48),
+        0 18px 68px rgba(0, 0, 0, 0.58),
+        0 0 80px rgba(211, 85, 54, 0.2);
+    transform: translate(-50%, -50%);
+    transition:
+        width 980ms var(--ease),
+        box-shadow 520ms var(--ease);
+}
+
+.ritual-medallion::before,
+.ritual-medallion::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.ritual-medallion::before {
+    inset: 8%;
+    border: 1px solid rgba(48, 31, 18, 0.48);
+}
+
+.ritual-medallion::after {
+    inset: -9%;
+    border: 1px solid rgba(239, 84, 68, 0.16);
+    box-shadow: 0 0 32px rgba(239, 84, 68, 0.12);
+}
+
+.ritual-medallion > span {
+    display: grid;
+    width: 66%;
+    height: 74%;
+    place-items: center;
+    overflow: visible;
+}
+
+.ritual-medallion img {
+    width: auto;
+    height: 100%;
+    object-fit: contain;
+    filter: contrast(1.05) saturate(0.9);
+}
+
+.ritual[data-phase="1"] .ritual-medallion {
+    width: 25%;
+}
+
+.ritual[data-phase="2"] .ritual-medallion {
+    width: 20%;
+}
+
+.ritual-object:focus-visible .ritual-medallion {
+    box-shadow:
+        inset 0 0 0 5px rgba(30, 21, 13, 0.94),
+        inset 0 0 0 7px rgba(224, 172, 105, 0.74),
+        0 0 0 3px #050505,
+        0 0 0 5px var(--red-on-dark),
+        0 0 80px rgba(211, 85, 54, 0.26);
+}
+
+.ritual-tap {
+    position: absolute;
+    z-index: 5;
+    top: calc(50% + 19%);
+    left: 50%;
+    color: rgba(237, 231, 218, 0.36);
+    font-family: var(--mono);
+    font-size: 7px;
+    letter-spacing: 0.15em;
+    transform: translateX(-50%);
+    transition: opacity 360ms var(--ease);
+    white-space: nowrap;
+}
+
+.ritual[data-phase="2"] .ritual-tap {
+    opacity: 0;
+}
+
+.ritual-proof {
+    position: absolute;
+    z-index: 7;
+    right: max(40px, calc((100vw - 1280px) / 2));
+    bottom: 34px;
+    display: grid;
+    width: min(48vw, 650px);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    color: var(--on-obsidian);
+    opacity: 1;
+    transition:
+        opacity 520ms var(--ease),
+        transform 620ms var(--ease);
+}
+
+.ritual-proof > div {
+    min-width: 0;
+    padding: 0 18px;
+    border-left: 1px solid rgba(237, 231, 218, 0.13);
+}
+
+.ritual-proof > div:first-child {
+    border-left: 0;
+}
+
+.ritual-proof dt {
+    color: rgba(240, 216, 184, 0.4);
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.14em;
+}
+
+.ritual-proof dd {
+    margin-top: 7px;
+    color: rgba(237, 231, 218, 0.8);
+    font-family: var(--sans);
+    font-size: clamp(12px, 1.1vw, 15px);
+    font-weight: 540;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+
+.ritual[data-phase="1"] .ritual-proof,
+.ritual[data-phase="2"] .ritual-proof {
+    opacity: 0;
+    transform: translateY(18px);
+    pointer-events: none;
+}
+
+.ritual-boundaries {
+    position: absolute;
+    z-index: 8;
+    inset: 0;
+    pointer-events: none;
+}
+
+.ritual-boundaries li {
+    position: absolute;
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+        opacity 480ms var(--ease),
+        transform 620ms var(--ease);
+    list-style: none;
+    pointer-events: auto;
+}
+
+.ritual[data-phase="2"] .ritual-boundaries li {
+    opacity: 1;
+    transform: none;
+}
+
+.ritual-boundaries li:nth-child(1) {
+    top: 27%;
+    left: max(40px, calc((100vw - 1280px) / 2));
+    transition-delay: 40ms;
+}
+
+.ritual-boundaries li:nth-child(2) {
+    top: 48%;
+    right: max(40px, calc((100vw - 1280px) / 2));
+    transition-delay: 100ms;
+}
+
+.ritual-boundaries li:nth-child(3) {
+    bottom: 13%;
+    left: max(56px, calc((100vw - 1120px) / 2));
+    transition-delay: 160ms;
+}
+
+.ritual-boundaries button {
+    display: grid;
+    min-width: 196px;
+    grid-template-columns: 12px 1fr;
+    gap: 3px 10px;
+    padding: 13px 15px;
+    border: 1px solid rgba(237, 231, 218, 0.13);
+    border-radius: 2px;
+    color: rgba(237, 231, 218, 0.54);
+    text-align: left;
+    background: rgba(8, 7, 6, 0.68);
+    backdrop-filter: blur(14px);
+    transition:
+        border-color 220ms var(--ease),
+        color 220ms var(--ease),
+        background 220ms var(--ease),
+        transform 220ms var(--ease);
+}
+
+.ritual-boundaries button:hover,
+.ritual-boundaries button:focus-visible,
+.ritual-boundaries li[data-active="true"] button {
+    border-color: rgba(239, 84, 68, 0.46);
+    color: var(--on-obsidian);
+    background: rgba(20, 13, 10, 0.84);
+    transform: translateY(-2px);
+}
+
+.ritual-boundaries i {
+    width: 7px;
+    height: 7px;
+    margin-top: 2px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    grid-row: 1 / span 2;
+    transition:
+        background 220ms var(--ease),
+        box-shadow 220ms var(--ease);
+}
+
+.ritual-boundaries li[data-active="true"] i {
+    border-color: var(--red-on-dark);
+    background: var(--red-on-dark);
+    box-shadow: 0 0 15px rgba(239, 84, 68, 0.72);
+}
+
+.ritual-boundaries span {
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.14em;
+}
+
+.ritual-boundaries strong {
+    color: inherit;
+    font-size: 14px;
+    font-weight: 560;
+    line-height: 1.2;
+}
+
+.ritual-readout {
+    position: absolute;
+    z-index: 7;
+    top: 12%;
+    right: auto;
+    bottom: auto;
+    left: 50%;
+    display: grid;
+    width: min(460px, 54vw);
+    height: auto;
+    min-height: 0;
+    gap: 7px;
+    padding-top: 0;
+    border-top: 0;
+    opacity: 0;
+    text-align: center;
+    transform: translate(-50%, -12px);
+    transition:
+        opacity 520ms var(--ease),
+        transform 620ms var(--ease);
+    pointer-events: none;
+}
+
+.ritual[data-phase="2"] .ritual-readout {
+    opacity: 1;
+    transform: translateX(-50%);
+}
+
+.ritual-readout span {
+    color: rgba(240, 216, 184, 0.46);
+    font-family: var(--mono);
+    font-size: 7px;
+    letter-spacing: 0.18em;
+}
+
+.ritual-readout strong {
+    display: block;
+    margin: 0;
+    color: var(--on-obsidian);
+    font-family: var(--sans);
+    font-size: clamp(18px, 1.65vw, 24px);
+    font-weight: 560;
+    letter-spacing: -0.012em;
+    line-height: 1.1;
+}
+
+.ritual-readout small {
+    color: rgba(237, 231, 218, 0.45);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.ritual-scroll-cue {
+    position: absolute;
+    z-index: 7;
+    bottom: 36px;
+    left: max(40px, calc((100vw - 1280px) / 2));
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: rgba(237, 231, 218, 0.34);
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.15em;
+    transition: opacity 420ms var(--ease);
+    pointer-events: none;
+}
+
+.ritual-scroll-cue i {
+    position: relative;
+    width: 48px;
+    height: 1px;
+    overflow: hidden;
+    background: rgba(237, 231, 218, 0.13);
+}
+
+.ritual-scroll-cue i::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, var(--red-on-dark), transparent);
+    animation: ritual-pull 1.8s ease-in-out infinite;
+}
+
+.ritual[data-phase="1"] .ritual-scroll-cue,
+.ritual[data-phase="2"] .ritual-scroll-cue {
+    opacity: 0;
+}
+
+@media (max-width: 1080px) {
+    .ritual-object {
+        left: 70%;
+        width: min(49vw, 580px);
+    }
+
+    .ritual-proof {
+        width: min(52vw, 560px);
+    }
+
+    .ritual-boundaries button {
+        min-width: 172px;
+    }
+}
+
+@media (max-width: 767px) {
+    .hero-action {
+        height: 190svh;
+        min-height: 1220px;
+    }
+
+    .hero-action-sticky {
+        top: 60px;
+        height: calc(100svh - 60px);
+        min-height: 590px;
+        background:
+            radial-gradient(circle at 50% 61%, rgba(202, 77, 48, 0.14), transparent 28%),
+            radial-gradient(circle at 50% 58%, rgba(192, 133, 72, 0.08), transparent 48%),
+            #050505;
+    }
+
+    .hero-action-sticky::before {
+        background-size: 62px 62px;
+        mask-image: radial-gradient(circle at 50% 58%, #000, transparent 72%);
+    }
+
+    .ritual-object {
+        top: 63%;
+        left: 50%;
+        width: min(76vw, 390px);
+    }
+
+    .ritual[data-phase="1"] .ritual-object {
+        top: 51%;
+        left: 50%;
+        width: min(84vw, 440px);
+    }
+
+    .ritual[data-phase="2"] .ritual-object {
+        top: 51%;
+        left: 50%;
+        width: min(94vw, 500px);
+    }
+
+    .ritual-canvas-host {
+        inset: -5%;
+    }
+
+    .ritual-medallion {
+        width: 33%;
+        box-shadow:
+            inset 0 0 0 4px rgba(30, 21, 13, 0.94),
+            inset 0 0 0 6px rgba(224, 172, 105, 0.74),
+            inset 0 0 22px rgba(82, 48, 24, 0.34),
+            0 0 0 1px rgba(213, 154, 93, 0.48),
+            0 12px 50px rgba(0, 0, 0, 0.58),
+            0 0 60px rgba(211, 85, 54, 0.2);
+    }
+
+    .ritual[data-phase="1"] .ritual-medallion {
+        width: 27%;
+    }
+
+    .ritual[data-phase="2"] .ritual-medallion {
+        width: 25%;
+    }
+
+    .ritual-tap {
+        top: calc(50% + 22%);
+        font-size: 6px;
+    }
+
+    .ritual-proof {
+        right: 14px;
+        bottom: 24px;
+        width: calc(100vw - 28px);
+    }
+
+    .ritual-proof > div {
+        padding: 0 8px;
+        text-align: center;
+    }
+
+    .ritual-proof dt {
+        font-size: 6px;
+    }
+
+    .ritual-proof dd {
+        margin-top: 5px;
+        font-size: 10px;
+    }
+
+    .ritual-scroll-cue {
+        display: none;
+    }
+
+    .ritual-readout {
+        top: 7.5%;
+        width: min(86vw, 380px);
+    }
+
+    .ritual-readout strong {
+        font-size: 18px;
+    }
+
+    .ritual-readout small {
+        padding-inline: 24px;
+        font-size: 10px;
+    }
+
+    .ritual-boundaries li:nth-child(1) {
+        top: 27%;
+        left: 12px;
+    }
+
+    .ritual-boundaries li:nth-child(2) {
+        top: 49%;
+        right: 12px;
+    }
+
+    .ritual-boundaries li:nth-child(3) {
+        bottom: 10%;
+        left: 12px;
+    }
+
+    .ritual-boundaries button {
+        min-width: 148px;
+        padding: 10px 11px;
+    }
+
+    .ritual-boundaries span {
+        font-size: 7px;
+    }
+
+    .ritual-boundaries strong {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 390px) {
+    .ritual-object {
+        width: 78vw;
+    }
+
+    .ritual-proof dd {
+        font-size: 9px;
+    }
+
+    .ritual-boundaries button {
+        min-width: 138px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ritual-scroll-cue i::after,
+    .ritual-object::before {
+        animation: none;
+    }
+
+    .ritual-canvas {
+        opacity: 1;
+        animation: none;
+    }
+}

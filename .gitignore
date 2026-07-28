@@ -82,3 +82,6 @@ temp/
 # Cloudflare Workers local state and build output (apps/web)
 .wrangler/
 .output/
+
+# dev-tool artifacts
+.openai/

@@ -5,8 +5,11 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:landing": "CLOUDFLARE_ENV=landing VITE_SITE_SURFACE=landing vite build",
+    "build:app": "CLOUDFLARE_ENV=app VITE_SITE_SURFACE=app vite build",
     "preview": "vite preview",
-    "deploy": "vite build && wrangler deploy"
+    "deploy:landing": "bun run build:landing && wrangler deploy --env landing",
+    "deploy:app": "bun run build:app && wrangler deploy --env app"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",
@@ -18,15 +21,19 @@
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-start": "^1.168.32",
+    "lucide-react": "^1.27.0",
     "pretendard": "1.3.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "viem": "^2.55.8"
+    "three": "0.185.1",
+    "viem": "^2.55.8",
+    "wagmi": "^3.7.4"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.47.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
+    "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^5.0.4",
     "vite": "^7.1.12",
     "wrangler": "^4.114.0"

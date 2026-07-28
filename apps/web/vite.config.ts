@@ -1,10 +1,48 @@
 import {cloudflare} from "@cloudflare/vite-plugin";
 import {tanstackStart} from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
-import {defineConfig, loadEnv} from "vite";
+import {defineConfig, loadEnv, searchForWorkspaceRoot} from "vite";
+import type {Plugin} from "vite";
 
 const PUBLIC_GIWA_HOST = "sepolia-rpc.giwa.io";
 const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1", "[::1]"];
+const SITE_SURFACES = new Set(["combined", "landing", "app"]);
+
+function assertSiteSurface(raw: string | undefined): void {
+    const value = raw?.trim();
+    if (!value || SITE_SURFACES.has(value)) return;
+    throw new Error(
+        `VITE_SITE_SURFACE must be one of combined, landing, or app; got "${value}".`,
+    );
+}
+
+// Only these are the duplicated media the client build already owns. An
+// allowlist of extensions, NOT `output.type === "asset"`: the Cloudflare
+// adapter emits `wrangler.json` — the deploy manifest itself — as an asset in
+// this same bundle, and deleting every asset deletes it too. That version
+// built green and then failed at the first command that reads the manifest
+// (`vite preview`: "Could not read file: dist/server/wrangler.json"), which is
+// exactly how `wrangler deploy` would have failed later. Measured both ways:
+// at HEAD the file exists; with the blanket delete it does not.
+const DUPLICATED_MEDIA = /\.(woff2?|ttf|otf|png|jpe?g|webp|avif|svg|gif|css)$/i;
+
+function keepStaticAssetsOutOfWorker(): Plugin {
+    return {
+        name: "mapae-client-assets-only",
+        apply: "build",
+        applyToEnvironment: (environment) => environment.name === "ssr",
+        generateBundle(_options, bundle) {
+            // The client build already owns fonts, images and CSS. Cloudflare's
+            // adapter otherwise emits a second copy beside the Worker modules,
+            // where it counts against the Worker upload limit.
+            for (const [fileName, output] of Object.entries(bundle)) {
+                if (output.type === "asset" && DUPLICATED_MEDIA.test(fileName)) {
+                    delete bundle[fileName];
+                }
+            }
+        },
+    };
+}
 
 /**
  * Refuse to build when `VITE_RPC_URL` points anywhere that is not public.
@@ -75,27 +113,37 @@ export default defineConfig(({mode}) => {
     // `loadEnv` sees .env files too, not just the process environment — a credential pasted
     // into apps/web/.env must fail the same way one passed inline does.
     const env = loadEnv(mode, process.cwd(), "VITE_");
+    assertSiteSurface(env["VITE_SITE_SURFACE"] ?? process.env["VITE_SITE_SURFACE"]);
     assertPublishableRpc(env["VITE_RPC_URL"] ?? process.env["VITE_RPC_URL"]);
     assertLoopbackSubmitter(
         env["VITE_REVOCATION_SUBMITTER_URL"] ?? process.env["VITE_REVOCATION_SUBMITTER_URL"],
     );
-
     return {
         plugins: [
             cloudflare({viteEnvironment: {name: "ssr"}}),
             tanstackStart({
-                // The landing is fixed copy over a handful of committed addresses, so it
-                // ships as HTML rather than as a bundle that has to boot before anything
-                // is readable. The dapp routes hydrate normally.
-                prerender: {enabled: true, crawlLinks: true},
+                // Make the custom entry explicit. It attaches the request nonce
+                // to the CSP response header; silently falling back to Start's
+                // default entry would emit nonce-bearing scripts without the
+                // matching policy.
+                server: {entry: "./server.ts"},
+                // Cloudflare renders both routes on the server. Keeping prerender disabled
+                // avoids a second local Worker boot during `vite build`; that boot is
+                // unstable under constrained file-watcher limits and adds no user-visible
+                // benefit over the same SSR response.
+                prerender: {enabled: false},
             }),
             react(),
+            keepStaticAssetsOutOfWorker(),
         ],
         server: {
             host: "127.0.0.1",
             port: 5174,
-            // The app reads the committed deployment artifact from the repository root.
-            fs: {allow: [".."]},
+            // Workspace dependencies and the bundled font packages live at the Bun
+            // workspace root. Limiting this to `apps/` makes Vite reject those
+            // files during local visual QA even though the production build owns
+            // the same assets correctly.
+            fs: {allow: [searchForWorkspaceRoot(process.cwd())]},
         },
     };
 });

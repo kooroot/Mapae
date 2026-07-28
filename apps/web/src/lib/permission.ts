@@ -38,17 +38,28 @@ export function parsePermissionContext(raw: string): ParsedPermission {
     const value = raw.trim();
     if (!value) return {kind: "empty"};
     if (!isHex(value)) {
-        return {kind: "invalid", reason: "0x로 시작하는 16진 문자열이 아닙니다"};
+        return {
+            kind: "invalid",
+            reason: "권한 코드는 0x로 시작해야 합니다. 복사한 값을 다시 확인해 주세요.",
+        };
     }
     try {
         const links = decodeDelegations(value);
         const root = links.at(-1);
-        if (!root) return {kind: "invalid", reason: "위임이 하나도 들어 있지 않습니다"};
+        if (!root) {
+            return {
+                kind: "invalid",
+                reason: "비어 있는 권한 코드입니다. 승인 결과 전체를 다시 복사해 주세요.",
+            };
+        }
         return {kind: "ok", context: value, root, links: links.length};
     } catch {
         // The likely first-run mistake is a truncated paste of a ~2 kB context,
         // which is well-formed hex and not a delegation array. Saying so is more
         // use than reporting the decoder's own message.
-        return {kind: "invalid", reason: "위임 구조로 해석되지 않습니다 (잘린 값일 수 있습니다)"};
+        return {
+            kind: "invalid",
+            reason: "올바른 마패 권한 코드가 아닙니다. 값 전체가 복사됐는지 확인해 주세요.",
+        };
     }
 }

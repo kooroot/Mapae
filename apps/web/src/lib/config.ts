@@ -6,6 +6,33 @@ import {explorerAddressUrl, explorerTxUrl, giwaSepolia} from "@mapae/shared";
 import {createPublicClient, http, isAddress, type Address} from "viem";
 import frameworkArtifact from "../../../../deployments/giwa-sepolia.framework.json";
 
+export type SiteSurface = "combined" | "landing" | "app";
+
+function readSiteSurface(raw: string | undefined): SiteSurface {
+    const value = raw?.trim();
+    if (!value) return "combined";
+    if (value === "combined" || value === "landing" || value === "app") return value;
+    return "combined";
+}
+
+/**
+ * One codebase, two public products.
+ *
+ * Local development keeps both `/` and `/app`. Production builds select a
+ * surface so `mapae.io/` is the landing and `app.mapae.io/` is the product
+ * root. URLs stay configurable for previews without teaching components about
+ * deployment environments.
+ */
+export const siteSurface = readSiteSurface(import.meta.env["VITE_SITE_SURFACE"]);
+export const landingUrl =
+    import.meta.env["VITE_LANDING_URL"]?.trim() ||
+    (import.meta.env.DEV ? "/" : "https://mapae.io");
+export const appUrl =
+    import.meta.env["VITE_APP_URL"]?.trim() ||
+    (import.meta.env.DEV ? "/app" : "https://app.mapae.io");
+export const docsUrl =
+    import.meta.env["VITE_DOCS_URL"]?.trim() || "https://gitbook.mapae.io";
+
 /**
  * The committed deployment artifact is the source of truth for enforcer and
  * manager addresses. `docs/deployed-contracts.md` mirrors it for humans; code
@@ -37,19 +64,6 @@ export const chain = giwaSepolia;
 export const publicClient = createPublicClient({chain: giwaSepolia, transport: http(rpcUrl)});
 
 export {explorerAddressUrl, explorerTxUrl};
-
-/**
- * The demo identities, as deployed.
- *
- * `payer` is the one that carries the argument: it is an ERC-4337 smart account
- * that holds the funds and, deliberately, no gas at all. The page reads its
- * native balance live for exactly that reason — a zero you fetch is evidence,
- * and a zero you hardcode is a slogan.
- */
-export const accounts = {
-    payer: "0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382" as Address,
-    token: "0xcfeb694719A09caeb80798e2011298F29CDa4e92" as Address,
-} as const;
 
 /** Settled payments, each linkable. Amounts are what the seller charged. */
 export const settlements = [
@@ -94,26 +108,20 @@ export const refusals = [
         revert: "expired-delegation",
     },
     {
+        // The recipient is pinned by the `allowedCalldata` caveat, so a swapped
+        // payee dies in AllowedCalldataEnforcer — NOT in the amount enforcer.
+        // This row shipped once with `ERC20TransferAmountEnforcer:
+        // allowance-exceeded`, which is the amount-overrun revert and never
+        // reads the recipient; the negative-path suite pins the correct pair
+        // (recipient swap → `AllowedCalldataEnforcer:invalid-calldata`).
+        // Every string here must match what the deployed enforcers actually
+        // return, because these rows are quoted as evidence.
         attempt: "허락하지 않은 사람에게 송금",
         attemptEn: "Send to a payee that was never named",
-        enforcer: "ERC20TransferAmountEnforcer",
-        revert: "allowance-exceeded",
+        enforcer: "AllowedCalldataEnforcer",
+        revert: "invalid-calldata",
     },
 ] as const;
-
-/**
- * The permission this page illustrates: 3 mUSDC per 60 seconds.
- *
- * These are the caveat's own terms, in the units the enforcer stores them in.
- * The dial derives everything it draws from these three numbers rather than from
- * anything laid out by hand, so a change here moves the ticks, the sweep and the
- * countdown together — the drawing cannot disagree with the policy it depicts.
- */
-export const shownPolicy = {
-    periodAmount: 3_000_000n, // 3 mUSDC, 6 decimals
-    periodDurationSeconds: 60n,
-    asset: "mUSDC",
-} as const;
 
 /**
  * Whether a revocation submitter is reachable at all.

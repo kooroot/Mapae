@@ -1,5 +1,4 @@
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://sepolia-rpc.giwa.io https://sepolia-explorer.giwa.io; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
   Cross-Origin-Opener-Policy: same-origin
@@ -7,3 +6,12 @@
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+/og-hero-v2.png
+  Cache-Control: public, max-age=86400
+
+/favicon.ico
+  Cache-Control: public, max-age=86400
+
+/favicon.png
+  Cache-Control: public, max-age=86400
