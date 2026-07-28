@@ -19,4 +19,8 @@
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
 | `apps/web` | 공개 랜딩 + 콘솔 (SSR, 체인 직접 읽기) | TanStack Start + Cloudflare |
 
-**언어 선택 근거** — 위임 레이어가 ERC-7710/7715 구현체(MetaMask Delegation Toolkit)에 의존하고 이는 TypeScript 전용이므로 애플리케이션 계층은 TS. facilitator는 자체 구현 대신 x402-rs 컨테이너를 **운영**하는 포지션.
+**언어 선택 근거** — 위임 레이어가 ERC-7710/7715 TS SDK인 MetaMask Smart
+Accounts Kit(구 Delegation Toolkit)에 의존하고 이는 TypeScript 전용이므로
+애플리케이션 계층은 TS다. 온체인 Delegation Framework 컨트랙트는 이 SDK와
+별개의 산출물로 GIWA에 배포되어 있다. facilitator는 자체 구현 대신 x402-rs
+컨테이너를 **운영**하는 포지션이다.

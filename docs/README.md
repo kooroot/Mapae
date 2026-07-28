@@ -41,7 +41,7 @@ GIWA의 현재 상태를 상대로 한 `eth_call`이다. 거절에 해시가 없
 
 ## 직접 확인하기
 
-이 책의 수치는 믿으라고 적은 것이 아니다.
+이 문서의 수치는 아래 명령으로 직접 재현할 수 있다.
 
 ```bash
 bun run check                # 키·네트워크 없이 전 계층 회귀 + 문서 게이트
@@ -49,9 +49,8 @@ cd apps/delegation-lab
 bun run test:negative        # 일회용 체인에 프레임워크를 직접 배포해 거절 케이스를 실행
 ```
 
-`test:negative`는 키도, 네트워크도, 우리 배포 아티팩트도 필요 없다 — 깨끗한
-클론에서 Bun과 Foundry만으로 돈다. 케이스 개수는 문서가 아니라 수트 자신이
-세어 출력한다.
+`test:negative`는 키도, 네트워크도, 별도 배포 아티팩트도 필요 없다 — 깨끗한
+클론에서 Bun과 Foundry만으로 돈다. 케이스 개수는 수트가 스스로 세어 출력한다.
 
 ## 읽는 순서
 
@@ -59,10 +58,11 @@ bun run test:negative        # 일회용 체인에 프레임워크를 직접 배
 |---|---|
 | [1. 시스템 구성](tech/01-architecture.md) | 컴포넌트와 언어 선택 근거 |
 | [2. 결제 흐름](tech/02-payment-flows.md) | 직접 결제, 위임 결제, MCP 자동화, 콘솔과 회수 — 증거표 포함 |
-| [3. 에러 모델](tech/03-error-model.md) | 실패가 죽지 않고 이유가 되는 방식 |
+| [3. 에러 모델](tech/03-error-model.md) | 실패 분류와 사유 반환 정책 |
 | [4. 보안 고려](tech/04-security.md) | facilitator 신뢰 경계 — 침해 시 최대 피해의 상한 |
 | [5. 확인된 온체인 환경](tech/05-onchain-environment.md) | 직접 읽어 확인한 주소만 담은 표 |
-| [6. 검증 상태와 로드맵](tech/06-roadmap.md) | 무엇이 어느 수준까지 검증됐고, 무엇을 앞으로 만드나 |
+| [6. 검증 상태와 로드맵](tech/06-roadmap.md) | 검증 수준별 현재 상태와 향후 계획 |
 
+공개 문서: [gitbook.mapae.io](https://gitbook.mapae.io) ·
 저장소: [github.com/kooroot/Mapae](https://github.com/kooroot/Mapae) ·
 원문 단일 문서: [tech-notes.md](https://github.com/kooroot/Mapae/blob/main/docs/tech-notes.md)

@@ -11,10 +11,9 @@ Mapae가 **GIWA Sepolia**에 배포한 모든 온체인 컨트랙트의 단일 �
 | Framework 38 유닛, 데모 계정 | `deployments/giwa-sepolia.framework*.json`, `deployments/giwa-sepolia.owner-account.json` |
 | **MockUSDC** | **`packages/shared/src/token.ts`** — 배포 아티팩트에 없다 |
 
-MockUSDC가 아티팩트에 없는 것은 누락이다. 이 문서는 오래도록 "모든 주소가 아티팩트에서
-온다"고 적어뒀는데 그 하나에 대해서는 참인 적이 없었고, `scripts/check-docs.ts` 를
-쓰면서 처음 드러났다. 검사기는 두 정본을 모두 읽는다 — MockUSDC 를 예외 목록에 넣었다면
-이 사실이 다시 묻혔을 것이다.
+MockUSDC는 Framework와 별도로 배포되어 배포 아티팩트에 포함되어 있지 않고,
+토큰 정의 파일이 그 주소의 정본이다. 문서 검사기는 두 정본을 모두 읽어 이 표의
+주소를 대조한다.
 
 > 값이 바뀌면 이 문서가 아니라 정본이 먼저 바뀐다. 불일치가 보이면 정본이 옳다.
 > `bun run check:docs` 가 이 표의 모든 주소를 두 정본에 대조한다.
@@ -58,7 +57,7 @@ Delegation Framework의 코어. `DelegationManager`가 위임 서명 검증과
 |---|---|---|
 | DelegationManager | [`0xF2F782FafBB278eBe46a4F4004B6d45d125EF40C`](https://sepolia-explorer.giwa.io/address/0xF2F782FafBB278eBe46a4F4004B6d45d125EF40C) | EIP-712 도메인 `DelegationManager` / `1`. Mapae가 배포·소유 |
 | SimpleFactory | [`0xbED01c51285771437154B01D7EB1E942B96A30b2`](https://sepolia-explorer.giwa.io/address/0xbED01c51285771437154B01D7EB1E942B96A30b2) | DeleGator 스마트계정 CREATE2 팩토리 |
-| EntryPoint (v0.7) | [`0x0000000071727De22E5E9d8BAf0edAc6f37da032`](https://sepolia-explorer.giwa.io/address/0x0000000071727De22E5E9d8BAf0edAc6f37da032) | ERC-4337 canonical. 우리가 배포한 게 아니라 체인에 이미 있는 표준 주소 |
+| EntryPoint (v0.7) | [`0x0000000071727De22E5E9d8BAf0edAc6f37da032`](https://sepolia-explorer.giwa.io/address/0x0000000071727De22E5E9d8BAf0edAc6f37da032) | ERC-4337 canonical. Mapae가 배포한 것이 아니라 체인에 이미 존재하는 표준 주소 |
 
 ---
 
@@ -80,8 +79,8 @@ Delegation Framework의 코어. `DelegationManager`가 위임 서명 검증과
 
 각 인포서는 위임에 붙는 온체인 제약이다. `redeemDelegations` 실행 전후에
 `beforeHook`/`afterHook`으로 강제된다. **Mapae 위임 결제 흐름이 실제로 쓰는 것**은
-`Mapae` 열에 ✓ 표시했다 — 나머지는 Framework가 함께 배포한 표준 인포서로, 등급2의
-복합 caveat에서 쓰일 수 있다.
+`Mapae` 열에 ✓ 표시했다 — 나머지는 Framework가 함께 배포한 표준 인포서로,
+로드맵의 복합 caveat 단계에서 쓰일 수 있다.
 
 | 인포서 | 주소 | Mapae | 강제하는 것 |
 |---|---|:---:|---|
@@ -118,10 +117,9 @@ Delegation Framework의 코어. `DelegationManager`가 위임 서명 검증과
 | NativeTokenPaymentEnforcer | [`0x2224e1e92bCddAc18530557880B78f04655e2836`](https://sepolia-explorer.giwa.io/address/0x2224e1e92bCddAc18530557880B78f04655e2836) | | 상환 대가로 네이티브 지불 강제 |
 | NativeBalanceChangeEnforcer | [`0x097c6b710bC38E60797E1F9F396BC1782cC12714`](https://sepolia-explorer.giwa.io/address/0x097c6b710bC38E60797E1F9F396BC1782cC12714) | | 네이티브 잔액 변화 한도 |
 
-> 38-unit = 위 핵심 프로토콜(EntryPoint 제외) 5 + DeleGator 구현체 4 + Caveat 인포서 32 −
-> DelegationManager·SimpleFactory 중복 없이 정리하면: DelegationManager 1 + SimpleFactory 1 +
-> 구현체 3(Hybrid/MultiSig/EIP7702) + SCL_RIP7212 1 + 인포서 32 = **38**. EntryPoint는
-> 체인의 canonical 주소라 카운트에서 제외된다.
+> 38-unit = DelegationManager 1 + SimpleFactory 1 + 구현체 3(Hybrid/MultiSig/EIP7702) +
+> SCL_RIP7212 1 + 인포서 32 = **38**. EntryPoint는 체인의 canonical 주소라 카운트에서
+> 제외된다.
 
 ---
 
@@ -172,19 +170,17 @@ owner가 각 역할에 위임한 세션 키. 개별 지출 한도의 수신자�
 bun run verify:explorer
 ```
 
-2026-07-26 재측정에서 위 표 그대로였다. 이 명령이 생기기 전의 재확인 절차는 주소당
-`curl` 한 번이었고, 39번을 돌려 손으로 집계해야 했다 — 그래서 아무도 다시 돌리지
-않는 종류의 확인이었다. 한 건만 볼 때는 여전히 이쪽이 빠르다:
+2026-07-26 재측정 결과는 위 표와 같다. 주소 한 건만 확인할 때는 다음이 빠르다:
 
 ```bash
 curl -s https://sepolia-explorer.giwa.io/api/v2/smart-contracts/<주소> \
   | jq '{name, is_verified, is_partially_verified}'
 ```
 
-`verify:explorer` 는 **읽기만** 한다. 소스를 게시하는 것은
-`scripts/verify-framework.sh` 이고, 그건 제3자 서비스에 쓰는 동작이라 별개로
-의도해서 실행하는 것이다. 미검증 1건이 있어도 이 명령은 0으로 끝난다 —
-익스플로러의 상태를 보고하는 도구가 남의 서비스 장애를 우리 실패로 만들면 안 된다.
+`verify:explorer`는 **읽기만** 한다. 소스를 게시하는 것은
+`scripts/verify-framework.sh`이고, 제3자 서비스에 쓰는 동작이라 별개로 의도해서
+실행한다. 미검증 1건이 있어도 이 명령은 0으로 끝난다 — 익스플로러 상태를
+보고하는 도구가 외부 서비스의 상태를 이 저장소의 실패로 바꾸면 안 된다.
 
 ### 그 하나가 검증되지 않는 이유
 
@@ -202,9 +198,9 @@ curl -s https://sepolia-explorer.giwa.io/api/v2/smart-contracts/<주소> \
 | `firstCalldata` 시작 | `_terms[92:]` | `_terms[124:]` |
 | `TermsData` 필드 수 | 5 | 6 (`firstValue` 추가) |
 
-**`terms`는 `bytes`이므로 외부 ABI가 바뀌지 않았다.** 이게 이 건이 헷갈리는
-이유다 — 익스플로러에서 ABI는 맞아떨어지는데 바이트코드만 어긋난다. 로컬 컴파일
-runtime은 3333바이트, 배포된 것은 3279바이트로 **54바이트 짧다.**
+**`terms`는 `bytes`이므로 외부 ABI가 바뀌지 않았다.** 그래서 익스플로러에서
+ABI는 일치하고 바이트코드만 어긋난다. 로컬 컴파일 runtime은 3333바이트, 배포된
+것은 3279바이트로 **54바이트 짧다.**
 
 바이트 수는 정황이고, 결정적 증거는 배포된 컨트랙트의 동작이다. 92바이트 terms를
 넣어 읽어보면 확정된다(읽기 전용):
@@ -223,9 +219,9 @@ cast call 0xc2dCDaaBec97C4b3118075641A852D5884Da4e74 "getTermsInfo(bytes)" "$T92
 배포 시점의 `@metamask/delegation-abis`가 소스 저장소보다 뒤처져 있었고,
 결정적(CREATE2) 컴포지션은 그 시점 바이트코드로 굳었다.
 
-### 그래서 이게 문제인가 — 아니다
+### Mapae 정책 경로와의 관계
 
-**Mapae는 이 enforcer를 정책 경로에서 쓰지 않는다.** 자기 NatSpec이 *정확히 2건짜리
+**Mapae는 이 enforcer를 정책 경로에서 사용하지 않는다.** 자기 NatSpec이 *정확히 2건짜리
 배치*(`a batch of exactly 2 transactions`), *배치 실행 콜타입 전용*, *1회용*
 (`can only be executed once`)을 요구하는데, Mapae의 x402 결제는 단일 실행
 (`ExecutionMode.SingleDefault`)이고 주기 한도는 재사용된다 — 구조적으로 맞지 않는다.
@@ -253,16 +249,18 @@ contracts/script/DeployDelegationFramework.s.sol:253   배포 스크립트
 
 | | |
 |---|---|
-| 정본 아티팩트 | `deployments/giwa-sepolia.framework.json`, `deployments/giwa-sepolia.framework-forge-addresses.json` |
+| 정본 아티팩트 | `deployments/giwa-sepolia.framework-manifest.json` (38유닛 전체), `deployments/giwa-sepolia.framework.json`, `deployments/giwa-sepolia.framework-forge-addresses.json`, `deployments/giwa-sepolia.owner-account.json`, `packages/shared/src/token.ts` (MockUSDC) |
 | Ownership 이전 tx | [`0x1e9fde1a…89531fc`](https://sepolia-explorer.giwa.io/tx/0x1e9fde1ad06f6f803ee70e204f24da07e2dc03261cb184901f0b1c45f89531fc) |
 | Ownership 수락 tx | [`0x2b5eaf94…399b8d8`](https://sepolia-explorer.giwa.io/tx/0x2b5eaf94df6e9a9126a5813ff171d6ce2087a4fd92c5ff0c32fe3573b399b8d8) |
 | 검증 블록 | `31520346` |
 | 배포 절차 | `contracts/script/DeployDelegationFramework.s.sol` + `contracts/Makefile` (`make framework-deploy`) |
 | Negative-path 검증 | `apps/delegation-lab/negative-path-suite.ts` — 이 컨트랙트들을 실제 GIWA fork(`SUITE_TARGET=fork`)와 ephemeral 양쪽에서 상환·거절 실증 |
 
-주소가 배포 결과와 일치하는지 확인하려면 아티팩트를 직접 비교한다:
+주소가 배포 결과와 일치하는지 확인하려면 아티팩트를 직접 비교한다. 38개 유닛
+전체를 담은 것은 manifest다 — `framework.json`의 `environment`에는
+`SCL_RIP7212`가 빠져 있어 37개 유닛(+EntryPoint)만 나온다:
 
 ```bash
-# 리포지토리 루트에서 실행
-jq '.environment' deployments/giwa-sepolia.framework.json
+# 리포지토리 루트에서 실행 — 38개 유닛의 이름·주소 전체
+jq -r '.deployments[] | "\(.name) \(.address)"' deployments/giwa-sepolia.framework-manifest.json
 ```

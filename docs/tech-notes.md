@@ -6,8 +6,8 @@
 GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을 집행하고, 그 집행을 검증 가능한 기록으로 남기는 인프라.
 
 **이 파일이 정본이다.** GitBook 렌더링(`docs/SUMMARY.md` + `docs/tech/`)은
-`bun run gitbook:build`가 여기서 생성하며, 손으로 고친 챕터든 재생성을 잊은 챕터든
-`bun run check`가 같은 발견으로 거절한다. 챕터 사본은 문서가 아니라 빌드 산출물이다.
+`bun run gitbook:build`가 이 파일에서 생성하며, `bun run check`의 드리프트
+게이트가 생성물과 정본의 불일치를 거절한다.
 
 ---
 
@@ -30,7 +30,11 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
 | `apps/web` | 공개 랜딩 + 콘솔 (SSR, 체인 직접 읽기) | TanStack Start + Cloudflare |
 
-**언어 선택 근거** — 위임 레이어가 ERC-7710/7715 구현체(MetaMask Delegation Toolkit)에 의존하고 이는 TypeScript 전용이므로 애플리케이션 계층은 TS. facilitator는 자체 구현 대신 x402-rs 컨테이너를 **운영**하는 포지션.
+**언어 선택 근거** — 위임 레이어가 ERC-7710/7715 TS SDK인 MetaMask Smart
+Accounts Kit(구 Delegation Toolkit)에 의존하고 이는 TypeScript 전용이므로
+애플리케이션 계층은 TS다. 온체인 Delegation Framework 컨트랙트는 이 SDK와
+별개의 산출물로 GIWA에 배포되어 있다. facilitator는 자체 구현 대신 x402-rs
+컨테이너를 **운영**하는 포지션이다.
 
 ---
 
@@ -48,7 +52,9 @@ facilitator → 서명 검증 → GIWA에 정산 트랜잭션 브로드캐스트
         ← 리소스 + 영수증
 ```
 
-지불자는 가스를 내지 않는다. 트랜잭션을 실제로 쏘는 건 facilitator의 릴레이어 서명자이며, authorization에 `from`·`to`·`value`가 서명으로 고정되어 있어 릴레이어는 **브로드캐스터 이상의 권한을 갖지 못한다.**
+지불자는 가스를 내지 않는다. 트랜잭션을 브로드캐스트하는 것은 facilitator의
+릴레이어 서명자이며, authorization에 `from`·`to`·`value`가 서명으로 고정되어
+있어 릴레이어는 브로드캐스터 이상의 권한을 갖지 못한다.
 
 ### ERC-7710 위임 결제
 
@@ -62,13 +68,15 @@ facilitator → DelegationManager.redeemDelegations
             → mUSDC.transfer(payTo, amount)
 ```
 
-parent caveat는 60초 주기 한도와 만료창(기본 30분, 데모는 `PERMISSION_TTL_SECONDS`로
-연장)을 온체인으로 강제한다. Vendor 프로필은 ERC-20 `transfer` calldata의 수취인
-위치도 고정한다. Manager→Child 재위임에서는 child의 개별 한도와 manager의 합산
-한도가 동시에 적용된다.
+이 문서에서 권한(permission)과 위임(delegation)은 같은 서명 아티팩트를 가리킨다
+— ERC-7715와 ERC-7710의 표기 차이다. parent caveat는 60초 주기 한도와
+만료창(기본 30분, 데모에서는 `PERMISSION_TTL_SECONDS`로 연장)을 온체인으로
+강제한다. Vendor 프로필은 ERC-20
+`transfer` calldata의 수취인 위치도 고정한다. Manager→Child 재위임에서는
+child의 개별 한도와 manager의 합산 한도가 동시에 적용된다.
 
-아래 시퀀스는 데모의 세 경로 — 정상 정산, 주기 한도 초과 거절, 만료 거절 — 를
-같은 위임 하나에 대해 보여준다. 거절은 백엔드가 아니라 온체인 caveat이 판정한다.
+아래 시퀀스는 같은 위임 하나에 대한 세 경로 — 정상 정산, 주기 한도 초과 거절,
+만료 거절 — 를 보여준다. 거절의 판정 주체는 백엔드가 아니라 온체인 caveat이다.
 
 ```mermaid
 sequenceDiagram
@@ -119,13 +127,12 @@ sequenceDiagram
     end
 ```
 
-#### 라이브 데모 증거 — GIWA Sepolia (2026-07-24)
+#### 정산 증거 — GIWA Sepolia (2026-07-24)
 
-**증거 수준** 열을 먼저 읽을 것. `채굴됨`은 GIWA에 블록으로 들어가 익스플로러에서
-열리는 트랜잭션이다. `시뮬레이션`은 GIWA의 현재 상태를 상대로 한 `eth_call`이다 —
-판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만, 블록에 들어간
-것은 없고 따라서 걸 링크도 없다. 둘을 한 열에 섞으면 표가 실제보다 더 많은 것을
-증명한 것처럼 읽힌다.
+증거 수준을 구분해 표기한다. **채굴됨**은 GIWA에 블록으로 들어가 익스플로러에서
+열리는 트랜잭션이고, **시뮬레이션**은 GIWA의 현재 상태를 상대로 한 `eth_call`이다
+— 판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만, 블록에
+들어간 것은 없다.
 
 | 경로 | 결과 | 증거 수준 | 증거 |
 |---|---|---|---|
@@ -135,74 +142,58 @@ sequenceDiagram
 | **주기 한도 초과** (누적 5.0 > 3.0) | **거절, 자금 불변** | 시뮬레이션 | revert `ERC20PeriodTransferEnforcer:transfer-amount-exceeded` |
 | **만료** (유효창 경과) | **거절** | 시뮬레이션 | revert `TimestampEnforcer:expired-delegation` |
 
-거절 두 건에 tx 해시가 없는 것은 빈틈이 아니라 설계가 작동한 결과다. facilitator의
-`/verify`가 `simulate.redeemDelegations`로 먼저 걸러내므로, 어차피 revert할
-트랜잭션에 가스를 쓰지 않는다. 대신 그 거절을 **채굴된 revert로 보여주려면** 일부러
-실패할 트랜잭션을 브로드캐스트해야 한다 — 지금은 하지 않는다.
-
-핵심은 그대로다: 동일한 2.5 mUSDC 결제가 여유가 있을 땐 정산되고 누적이 cap을 넘으면
-거절된다. **한도는 코드의 약속이 아니라 배포된 enforcer가 강제하는 사실이다.** 다만
-그 사실을 확인한 방법이 블록이 아니라 `eth_call`이라는 것을 표가 스스로 말하게 둔다.
+거절 두 건에 트랜잭션 해시가 없는 것은 설계의 결과다. facilitator의 `/verify`가
+`simulate.redeemDelegations`로 먼저 걸러내므로, revert가 예정된 트랜잭션에는
+가스를 쓰지 않는다. 동일한 2.5 mUSDC 결제가 잔량이 있을 때는 정산되고 누적이
+cap을 넘으면 거절된다 — 한도는 애플리케이션 코드의 약속이 아니라 배포된
+enforcer가 강제하는 상태다.
 
 ### 에이전트 자동화 (MCP)
 
 결제 루프는 `packages/delegation/src/payment-client.ts`의
-`payForDelegatedResource` 하나로 모여 있고, CLI 에이전트와 MCP 서버가 그것을
-공유한다. 두 벌로 두면 x402 도메인이 두 벌일 때와 같은 방식으로 어긋난다.
+`payForDelegatedResource` 하나로 수렴하며, CLI 에이전트와 MCP 서버가 같은
+구현을 공유한다. 구현이 두 벌이면 어긋난다.
 
 `apps/agent-mcp`가 노출하는 tool은 둘이다.
 
-| tool | 하는 일 |
+| tool | 역할 |
 |---|---|
 | `mapae_pay_for_resource` | 402 수신 → caveat 안에서 leaf 서명 → 재요청 → 리소스 |
 | `mapae_status` | 세션키·엔드포인트·배포 검증 여부 (키·permission context는 반환하지 않음) |
 
-이 경로는 GIWA Sepolia에서도 완주했다. MCP tool 한 번이 사람 개입 없이 결제를
+이 경로는 GIWA Sepolia에서 완주했다. MCP tool 호출 한 번이 사람 개입 없이 결제를
 정산했고, 트랜잭션
 [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
-(block 31634935)에서 payer는 1 mUSDC, vendor는 1 mUSDC만큼 변했고 payer의 ETH는
-그대로 `0`이었다. 따라서 이 경로의 증거 수준은 로컬 fork가 아니라 **GIWA 채굴**이다.
+(block 31634935)에서 payer −1 mUSDC, vendor +1 mUSDC, payer의 ETH 지출은 `0`이다.
+이 경로의 증거 수준은 로컬 fork가 아니라 **GIWA 채굴**이다. 같은 트랜잭션이
+§3의 타임아웃 사례이기도 하다 — 온체인 정산은 성공했고, 보고 경로의 타임아웃
+예산은 이후 재설계되었다.
 
-**실패는 죽지 않고 이유가 된다.** 코어는 예외 대신 판별된 결과를 돌려주며,
+**실패는 이유로 반환된다.** 코어는 예외 대신 판별된 결과를 돌려주며
 `SELLER_OFFER_INVALID`·`FACILITATOR_UNTRUSTED`·`MANAGER_MISMATCH`·`LIMIT_EXCEEDED`·
 `PERMISSION_INACTIVE`·`SIGNING_FAILED`·`PAYMENT_REJECTED` 등으로 원인을 가리킨다.
-서명 실패를 `TRANSPORT_ERROR`에 뭉개면 읽는 사람이 네트워크를 들여다보게 된다.
 
-**온체인 pre-flight.** 서명 전에 enforcer 자신의 회계를 읽어 못 낼 결제를 먼저
-거른다. 한도는 어차피 온체인이 강제하므로 이건 안전장치가 아니라 **사유의 정확도**를
-위한 것이다 — seller까지 갔다가 403을 받고 "거절됨"이라고 말하는 대신
-`payment of 2500000 exceeds 2000000 left in this period`라고 말한다. 낼 수 없는
-결제에 leaf를 서명하지 않는다는 부수 효과도 있다(leaf는 bearer authorization이다).
+**온체인 pre-flight.** 서명 전에 enforcer의 회계를 직접 읽어, 성공할 수 없는
+결제를 미리 거른다. 한도는 어차피 온체인이 강제하므로 이 단계의 목적은 안전이
+아니라 **사유의 정확도**다 — 판매자까지 갔다가 403을 받는 대신
+`payment of 2500000 exceeds 2000000 left in this period`처럼 원인을 말한다.
+성공할 수 없는 결제에 leaf를 서명하지 않는 부수 효과도 있다(leaf는 bearer
+authorization이다).
 
-pre-flight는 콜백으로 주입한다. 결제 코어 자체는 체인 비의존으로 남아야 mock
-fetch만으로 단위 테스트가 되기 때문이다. 실제 구현은 `agent-runtime`이 부모
-permission의 **모든 링크**에 대해 `readDelegationStatus`로 제공한다 — root만 보면
-재위임된 child의 더 빡빡한 한도를 통과시키고, 그 결제는 온체인에서 revert한다.
+pre-flight 판정(`judgePreflight`)은 순수 함수로 분리되어 있고, 체인 읽기는
+콜백으로 주입된다. 상태 조회는 부모 permission의 **모든 링크**에 대해
+`readDelegationStatus`로 수행한다 — root만 보면 재위임된 child의 더 좁은 한도를
+놓친다. 판정 규칙 두 가지가 테스트로 고정되어 있다: **비활성 사유가 한도보다
+우선한다**(어떤 금액으로도 쓸 수 없는 permission을 `LIMIT_EXCEEDED`로 보고하면
+운영자가 원인이 아닌 한도를 조정하게 된다), 그리고 **한도는 체인의 최솟값이지
+root의 값이 아니다.**
 
-**판정은 순수 함수로 분리했다** (`judgePreflight`). 콘솔의 회수 게이트를
-`revoke-state.ts`로 뽑아낸 것과 같은 이유다: 이건 에이전트와 서명 사이에 서 있는
-판정인데, env·파일·RPC를 요구하는 부트스트랩을 통해서만 닿을 수 있으면 아무도
-테스트하지 않는다. 실제로 그랬다 — 이 leg만 실행 증거가 0건이었다.
+런타임 동작 두 가지:
 
-두 가지 순서를 뮤테이션으로 고정했다. **비활성이 한도보다 먼저**여야 한다. 어떤
-금액으로도 못 쓰는 permission을 `LIMIT_EXCEEDED`로 보고하면 운영자가 원인이 아닌
-한도를 올리러 간다. 그리고 **최솟값이지 root값이 아니다.** 처음 쓴 순서 테스트는
-한도 분기가 애초에 발화하지 않는 금액을 써서 이름만 그 속성이었고, 뮤테이션이
-그걸 잡았다 — 둘 다 발화하는 입력으로 바꾼 뒤에야 실제로 고정됐다.
-
-`readDelegationStatus`는 kit 헬퍼가 `readContract`가 아니라
-`client.request({method:"eth_call"})`로 내려가므로 JSON-RPC 이음매에서 스크립트한다.
-덕분에 테스트가 프로덕션 ABI 인코딩/디코딩 경로를 그대로 태운다. 핵심 단언은
-**남은 잔액이 terms에서 계산한 값이 아니라 enforcer가 답한 값**이라는 것이다 —
-캡과 모순되는 값을 답하게 해두고 그 값이 그대로 올라오는지 본다.
-
-두 가지 비자명한 결정:
-
-- **런타임 로딩은 lazy이고 성공만 캐시한다.** 즉시 부팅하면 env·네트워크 실패가
-  "서버 기동 실패"로 프로세스를 죽여, 이유를 돌려주기로 한 설계를 정면으로
-  위반한다. lazy면 tool 결과로 사유가 나가고 환경을 고친 뒤 재시작 없이 복구된다.
-- **stdout은 JSON-RPC 채널이다.** 로깅은 전부 stderr. `console.log` 한 줄이
-  스트림을 깨뜨린다.
+- **런타임 로딩은 lazy이며 성공만 캐시한다.** 부팅 시점의 env·네트워크 실패가
+  프로세스를 죽이는 대신 tool 결과로 사유가 반환되고, 환경을 고치면 재시작 없이
+  복구된다.
+- **stdout은 JSON-RPC 채널이다.** 로깅은 전부 stderr로 나간다.
 
 ### 콘솔 (지갑 모듈)
 
@@ -213,199 +204,140 @@ permission의 **모든 링크**에 대해 `readDelegationStatus`로 제공한다
 | 위임·한도 | `ERC20PeriodTransferEnforcer.getAvailableAmount` (남은 주기 잔액), caveat terms (한도·유효창), `DelegationManager.disabledDelegations` (회수 여부) |
 | 영수증 | `TransferredInPeriod` 이벤트 |
 
-캡을 소모한 정산은 반드시 그 이벤트를 남기므로 **영수증에는 별도 원장도 계정
-체계도 필요 없다.** 지갑 연결이 곧 신원이다.
+캡을 소모한 정산은 반드시 이 이벤트를 남기므로 영수증에 별도 원장이 필요 없다.
+남은 잔액을 오프체인에서 자체 집계하지 않는 이유는 그것이 두 번째 진실이 되어
+실제로 강제하는 쪽과 어긋날 수 있기 때문이다.
 
-남은 잔액을 오프체인에서 자체 집계하지 않는 이유는 그것이 곧 두 번째 진실이
-되어, 실제로 강제하는 쪽과 어긋날 수 있기 때문이다.
+유효창 해석에는 `TimestampEnforcer`의 0 값 의미가 반영되어 있다 — enforcer는
+유효창의 각 절반을 `> 0`일 때만 검사하므로, term의 0은 1970이 아니라
+**무제한**이다.
 
-영수증 조회는 `fromBlock`을 필수 인자로 받는다. GIWA가 `eth_getLogs` 10만 블록
-초과를 거절하므로 `earliest` 기본값은 실패하거나 **잘린 이력을 완전한 것처럼**
-돌려준다.
-
-**그 창은 생각보다 짧고, 그래서 화면이 창을 말한다.** 기본 50,000 블록인데 GIWA는
-블록을 약 1초에 하나씩 낸다(31634888→31634935 측정) — 하루가 안 된다. 정산 다음 날
-아침에 데모를 열면 영수증 목록이 비고, 거기에 "정산 기록이 없습니다"만 떠 있으면
-**작동한 적 없다는 뜻으로 읽힌다.** 실제로 참인 명제는 "그 정산이 창 밖으로
-밀려났다"이다. 그래서 헤더와 빈 목록 문구가 창이 열린 시각을 말하며, 그 시각은
-가정한 블록타임이 아니라 `fromBlock`의 블록 타임스탬프를 체인에서 읽어 쓴다.
-노드가 그 블록을 안 주면(pruned) 문구만 블록 수로 후퇴하고 화면은 살아 있다.
-`fromBlock === 0`이면 창이 아무것도 잘라내지 않으므로 "전체 이력"이라고 말한다 —
-거기서 시각을 찍으면 적용되지도 않는 컷오프를 있다고 주장하는 셈이다.
-
-`VITE_RECEIPT_LOOKBACK_BLOCKS`로 넓힐 수 있지만 위의 10만 블록 천장 위로는 못 간다.
-**이 콘솔은 페이징하지 않으며, 패널이 그렇게 적어둔다.** 조용히 자르고 완전한 이력인
-척하는 쪽이 더 나쁘다.
+**영수증 조회 창.** 조회는 `fromBlock`을 필수 인자로 받는다. GIWA는
+`eth_getLogs` 10만 블록 초과를 거절하므로 무제한 기본값은 실패하거나 잘린 이력을
+완전한 것처럼 반환하게 된다. 기본 창은 50,000 블록이며, GIWA의 블록 생성이 약
+1초에 1개(31634888→31634935 구간 측정)이므로 하루가 되지 않는다. 그래서 화면
+헤더와 빈 목록 문구가 창이 열린 시각을 함께 표시하고, 그 시각은 가정한
+블록타임이 아니라 `fromBlock` 블록의 타임스탬프를 체인에서 읽어 쓴다. 노드가 그
+블록을 주지 못하면(pruned) 문구는 블록 수 표기로 후퇴하고 화면은 유지된다.
+`fromBlock === 0`이면 "전체 이력"으로 표기한다. 창은
+`VITE_RECEIPT_LOOKBACK_BLOCKS`로 넓힐 수 있으나 10만 블록 상한 위로는 갈 수
+없고, 콘솔은 페이징하지 않으며 패널에 그렇게 적혀 있다.
 
 **회수의 경계.** `DeleGatorCore.disableDelegation`은 `onlyEntryPointOrSelf`라
-owner EOA가 직접 호출할 수 없고 EntryPoint UserOperation이어야 한다. 두 분기 모두
-수트에서 돈다.
+owner EOA가 직접 호출할 수 없고 EntryPoint UserOperation이어야 한다. 두 분기
+모두 수트가 실행한다 — *self* 분기는 impersonation으로 결과(회수 후
+`disabledDelegations`가 참, 동일 결제가 `PERMISSION_INACTIVE`로 거절)를
+증명하고, *EntryPoint* 분기는 실제 owner 키로 서명한 UserOperation을
+`handleOps`로 태운다. 이 UserOperation의 `callData`는
+`buildRevocationCall(...).data` 그대로이며 `execute()`로 감싸지 않는다 — 감싸면
+EntryPoint → `execute` → self 호출이 되어 이미 덮은 *self* 분기로 되돌아간다.
+각 의존 요소에는 대조군이 붙는다.
 
-**두 화면은 이제 테스트에서 실제로 렌더된다.** 이전에는 브라우저 밖에서 한 번도
-렌더된 적이 없었고, 그래서 caveat 존재 여부만 보고 만료 행을 그리는 버그가
-`유효` 뱃지 옆에 `만료 1970-01-01`을 띄운 채로 들어갔다 — `TimestampEnforcer`는
-각 절반을 `> 0`으로 검사하므로 0은 1970이 아니라 **무제한**이다. `Screens.test.tsx`가
-`renderToStaticMarkup` + 미리 채운 쿼리 캐시로 로딩·성공·실패 세 분기를 모두 찍는다.
-
-실패 분기를 찍으려면 `retryOnMount: false`가 필요하다. 기본값 `true`에서는
-`QueryObserver`가 에러 상태의 쿼리에 대해 마운트하는 관찰자에게 **낙관적 pending**을
-돌려주므로, 읽기에 실패한 화면을 정적 렌더하면 로딩 패널이 나오고 에러 문구에 대한
-단언이 전부 공허하게 통과한다. 추측이 아니라 측정했다 — 같은 시드가 기본값에서는
-PENDING, 이 플래그에서는 ERROR를 렌더한다.
-
-렌더 단언은 전부 mutation-prove했다: 만료 행 게이트, 영수증 역순, 파생 불가 금액을
-결제액으로 표시, `faultLine` 한 줄 절단, 상태 뱃지 tone, 재위임 경고, 연결 경로를
-`ready` 전용 disable로 접기, 해시 없는 성공의 익스플로러 링크, 잘못된 지갑 주소
-표기, `relayer_unfunded`를 EntryPoint 예치금으로 오도 — 10개 변이가 각각 자기를
-잡는다고 주장한 테스트만 정확히 깨뜨린다.
-
-*self* 분기는 impersonation으로 태워 **결과**를 증명한다 — 회수 후
-`disabledDelegations`가 참으로 바뀌고 동일한 MCP 결제가 `PERMISSION_INACTIVE`로
-거절된다. 셀러가 403을 주는 게 아니라 pre-flight가 첫 402 응답만 보고 서명 전에
-끊으므로 HTTP 상태코드는 없다.
-
-*EntryPoint* 분기는 impersonation 없이, 실제 owner 키로 서명한 UserOperation을
-`handleOps`로 태운다. `packages/delegation/src/revocation.ts`의
-`buildRevocationUserOperation`이 EIP-712 페이로드를 만들고(순수 함수, 네트워크
-접근 없음), 서명은 kit이 아니라 맨 viem EOA로 받아 **구성 자체**를 검증한다 —
-kit으로 서명하면 kit을 kit으로 검증하는 셈이 된다. 두 서명이 바이트 단위로 같은지
-함께 확인한다. `callData`는 `buildRevocationCall(...).data` 그대로이며 `execute()`로
-감싸지 않는다. 감싸면 EntryPoint → `execute` → self-call이 되어 이미 덮은 self
-분기로 되돌아가기 때문이다.
-
-| 대조군 | 무엇을 증명하나 | 실제 revert |
+| 대조군 | 증명 대상 | 실제 결과 |
 |---|---|---|
 | `revocation-userop` | 정상 경로 | 성공 — `UserOperationEvent.success == true`, `disabledDelegations` 참 |
-| `revocation-userop-unfunded` | 예치금이 실제로 게이트 역할을 한다 | `FailedOp(0,AA21 didn't pay prefund)` |
-| `revocation-userop-wrong-signer` | 계정이 `owner()`를 실제로 검증한다 | `FailedOp(0,AA24 signature error)` |
+| `revocation-userop-unfunded` | 예치금이 실제 게이트다 | `FailedOp(0,AA21 didn't pay prefund)` |
+| `revocation-userop-wrong-signer` | 계정이 `owner()`를 검증한다 | `FailedOp(0,AA24 signature error)` |
 | `revocation-userop-tampered-field` | 서명된 `entryPoint` 필드가 유효하다 | `FailedOp(0,AA24 signature error)` |
-| `revocation-submitter` | JSON 와이어로 온 제출이 검증기를 거쳐 실제로 회수된다 | 성공 — 검증된 struct가 서명된 struct와 9필드 전부 동일 |
-| `revocation-submitter-foreign-sender` | 남의 계정 회수는 체인을 읽기도 전에 거절된다 | `sender is not the account this submitter serves` |
+| `revocation-submitter` | JSON 와이어 제출이 검증기를 거쳐 회수된다 | 성공 — 검증된 struct가 서명된 struct와 9필드 동일 |
+| `revocation-submitter-foreign-sender` | 타 계정 회수는 체인 읽기 전에 거절 | `sender is not the account this submitter serves` |
 
-**제출 엔드포인트 (`apps/revocation-submitter`).** `handleOps`는 누구나 부를 수 있고
-릴레이어가 가스를 먼저 낸다. 그래서 받은 것을 그대로 흘려보내는 서비스는 **남의 키로
-굴러가는 범용 UserOperation 릴레이**가 된다. `validateRevocationSubmission`이 그 구멍을
-막는다 — `sender` 허용목록, 루트의 `delegator == sender`, `initCode`·`paymasterAndData`
-빈 값 강제, 가스 4종 상한, 그리고 **`callData` 바이트 일치**.
+**제출 엔드포인트 (`apps/revocation-submitter`).** `handleOps`는 누구나 호출할
+수 있고 릴레이어가 가스를 선지급하므로, 받은 것을 그대로 전달하는 서비스는 타인
+자금으로 구동되는 범용 UserOperation 릴레이가 된다. `validateRevocationSubmission`이
+이를 한 계정의 한 연산으로 좁힌다 — `sender` 허용목록, 루트의
+`delegator == sender`, `initCode`·`paymasterAndData` 빈 값 강제, 가스 4종 상한,
+그리고 `callData`의 **재인코딩 바이트 일치**. 마지막 검사가 decode가 아닌 이유는
+decode가 뒤에 덧붙은 바이트를 통과시키기 때문이다.
 
-마지막 것이 decode가 아니라 **재인코딩 동치**인 게 핵심이다. decode는 앞부분만 파싱되면
-통과하므로 뒤에 바이트를 덧붙인 calldata를 받아준다. 뮤테이션으로 확인했다: 동치 검사를
-prefix 검사로 바꾸면 정확히 `trailing bytes` 케이스 하나만 깨진다.
+서명은 의도적으로 오프라인에서 검증하지 않는다. 계정이 `HybridDeleGator`라
+ERC-1271로 검증되므로 오프라인 `ecrecover`는 계정과 조용히 어긋날 수 있다.
+서명의 권위는 브로드캐스트 전 시뮬레이션에서 EntryPoint가 돌려주는 `AA24`다.
 
-서명은 **일부러 오프라인에서 검증하지 않는다.** 계정이 `HybridDeleGator`라 ERC-1271로
-검증하므로, 오프라인 `ecrecover`는 계정과 조용히 어긋난다. 권위는 EntryPoint의 `AA24`이고,
-브로드캐스트 전 시뮬레이션에서 잡는다.
+`judgeSubmissionReadiness`는 체인 상태에서 판정 가능한 거절 사유를 구분해
+반환한다 — `prefund_short`(payer는 설계상 ETH 0이라 예치금이 유일한 재원이며,
+가장 흔한 상태), `fee_below_basefee`(EntryPoint는
+`min(maxFeePerGas, baseFee+priority)`로 보전하는데 릴레이어의 트랜잭션은
+`baseFee` 아래로 포함되지 못하므로, 그대로 태우면 성공하면서 운영자만 손해를
+본다), `base_fee_unreadable`(base fee를 읽지 못한 상태 — 재서명이 아니라 재시도
+대상이므로 앞의 것과 사유를 분리한다), `relayer_unfunded`.
 
-`judgeSubmissionReadiness`는 체인을 읽기 전에 알 수 있는 거절 사유 3종을 분리한다 —
-`prefund_short`(가장 흔하다. payer는 설계상 ETH 0이라 예치금이 유일한 재원이다),
-`fee_below_basefee`(EntryPoint는 `min(maxFeePerGas, baseFee+priority)`로 정산하는데
-릴레이어의 트랜잭션은 `baseFee` 아래로 실릴 수 없다 → 성공하면서 운영자만 잃는 브로드캐스트),
-`relayer_unfunded`. 소유자에게 "거절됨" 대신 "0.0035 ETH 모자람"을 돌려주기 위한 구분이다.
+성공 판정은 receipt status가 아니라 `UserOperationEvent.success`를 직접
+확인한다. EntryPoint는 내부 호출의 revert를 `UserOperationRevertReason`으로
+흡수하고 트랜잭션 자체는 성공시키므로(`EntryPoint.sol:340-353`), receipt만 보면
+`disableDelegation`이 revert해도 성공으로 읽힌다.
 
-성공 케이스가 receipt status만 보고 통과하지 않도록 `UserOperationEvent.success`를
-직접 확인한다. `EntryPoint.sol:340-353`은 내부 호출 revert를
-`UserOperationRevertReason`으로 삼키고 트랜잭션 자체는 성공시키므로, receipt만
-보면 `disableDelegation`이 revert해도 초록으로 보인다(뮤테이션으로 확인함).
+**서비스 기동 검증** (`bun run test:e2e:revoke`). 검증기와 온체인 강제는 단위
+테스트와 반례 수트가 덮지만, 프로세스 자체의 기동 — env 파싱, 배포 아티팩트
+읽기, 부팅 시 릴레이어 대조, `/health`, single-flight, simulate→broadcast — 은
+별도 e2e가 GIWA fork 위에 서비스를 실제로 띄워 왕복한다. 케이스 수는 수트가
+스스로 세어 `PASS — N cases (ABC…)`로 출력한다.
 
-**서비스를 실제로 띄운 검증** (`bun run test:e2e:revoke`). 위 표는 수트가 검증기와
-온체인 강제를 덮는다는 뜻이지 **프로세스가 뜬다는 뜻은 아니었다.** env 파싱, 배포
-아티팩트 읽기, 부팅 시 릴레이어 대조, `/health`, single-flight, simulate→broadcast는
-별도 e2e가 GIWA fork 위에 서비스를 실제로 spawn해서 왕복한다. 케이스는 A부터
-글자로 붙고, 수트가 통과한 글자를 세어 마지막 줄에 그대로 출력한다
-(`PASS — N cases (ABC…)`) — 한 건이 빠지면 글자와 숫자가 같이 줄어든다.
+이 수트의 두 설계가 비자명하다. 첫째, **리플레이 방어는 두 케이스로 나뉜다.**
+같은 바디의 재전송을 막는 첫 방어선은 예치금 게이트인데, 그 상태에서 nonce는
+실행된 적이 없다. 그래서 예치금을 다시 채워 게이트를 치운 뒤 동일 바디를
+재전송하고, 남은 유일한 방어선인 EntryPoint nonce가
+`AA25 invalid account nonce`로 끊는 것까지 확인한다. 둘째, **성공 케이스는
+릴레이어의 수지를 검증한다.** GIWA에서 잘 알려진 Anvil 개발 주소들은 EIP-7702
+designator가 붙어 있고 그 대상은 유입 잔액을 전액 이체하는 스위퍼다.
+`EntryPoint._compensate`가 beneficiary에게 `call{value:…}`로 지급하므로 그런
+주소를 beneficiary로 쓰면 `handleOps` 한 번에 릴레이어가 비워진다(fork 측정:
+1 ETH → 0.00024 ETH, 트랜잭션 비용 0.00017 ETH). 수트는 beneficiary 주소에
+코드가 없음을 시작 시점에 강제한다.
 
-마지막 세 케이스는 **브라우저 레그**다. 나머지가 Bun의 서버 사이드 `fetch`를 쓰는데
-그건 CORS를 강제하지 않아서, 콘솔의 회수 버튼이 페이지에서 제출기에 아예 닿지 못하는
-동안에도 수트는 계속 초록이었다. 콘솔(:5173)과 제출기(:8082)는 출처가 다르고 요청이
-`content-type: application/json`을 실으므로 브라우저는 preflight를 먼저 보낸다 — 그
-preflight가 404면 POST는 나가지 않고 소유자의 서명은 버려진다. 그래서 F/G/H는 강제에
-기대지 않고 **응답을 직접 확인한다**: 허용된 출처의 preflight가 204인지, 낯선 출처가
-403인지, `Origin` 없는 요청(즉 스크립트)이 그대로 동작하는지.
+브라우저 레그도 응답을 직접 확인한다. 콘솔(:5173)과 제출기(:8082)는 출처가
+다르고 요청이 `content-type: application/json`을 실으므로 브라우저는 preflight를
+먼저 보낸다 — preflight가 실패하면 POST는 나가지 않는다. 수트는 허용된 출처의
+preflight가 204인지, 낯선 출처가 403인지, `Origin` 없는 요청(서버 사이드
+호출)이 그대로 동작하는지를 각각 검사한다.
 
-그중 두 케이스가 분리된 이유가 비자명하다. "같은 바디를 다시 보내면 거절된다"만으로는
-리플레이 방어를 증명하지 못한다 — 그걸 막은 건 체인 **앞단의** 예치금 게이트고 nonce는
-실행된 적이 없다. 그래서 예치금을 다시 채워 그 게이트를 치운 뒤 동일 바디를 재전송하고,
-그때 남는 유일한 방어선인 EntryPoint nonce가 `AA25 invalid account nonce`로 끊는 것을
-확인한다. 처음 작성했을 때는 이 구분이 없어 **틀린 이유로 통과하고 있었다.**
+**콘솔 버튼 (`RevokeButton`).** 지갑 연결 → `owner()` 대조 → nonce 읽기 → 빌드
+→ `signTypedData` → 제출 엔드포인트 POST. 설계 결정 세 가지: (1) **서명 전에
+연결 지갑을 계정의 `owner()`와 대조한다**(`HybridDeleGator.sol:233`) — 다른
+지갑의 서명은 EntryPoint에서 `AA24`로 나타나 nonce·가스 문제와 구별되지 않는다.
+(2) **nonce를 클릭 시점에 읽고 한 번에 빌드한다** — 빌드와 서명 사이에 값이
+다시 읽히면 digest가 낡고 역시 `AA24`가 된다. `buildRevocationUserOperation`이
+순수 함수인 이유다. (3) 와이어 바디는 제출 엔드포인트가 검증에 쓰는 것과 같은
+모듈의 `buildRevocationSubmissionBody`가 만든다 — 인코더와 디코더가 갈라지지
+않도록 라운드트립 테스트가 바이트 단위 재현을 고정한다.
 
-성공 케이스는 릴레이어의 **수지**도 확인한다 — 가스로 쓴 것보다 더 줄었으면 실패시킨다.
-이건 형식적인 검사가 아니다: GIWA에서 잘 알려진 Anvil 주소들은 EIP-7702 designator를
-달고 있고 그 대상이 들어온 잔액을 전액 쓸어가는 스위퍼다. `_compensate`가 beneficiary에게
-`call{value: …}`로 지급하므로 그 주소를 릴레이어로 쓰면 `handleOps` 한 번에 릴레이어가
-빈다(측정: 1 ETH → 0.00024 ETH, 트랜잭션 비용은 0.00017 ETH). 트랜잭션이 성공했다는
-사실만으로는 릴레이어가 보전됐다는 뜻이 아니다. 절차는
-[회수 런북](revocation-runbook.md)에 있다.
+버튼이 잠기는 사유는 다섯 가지이고 각각 다른 문구를 표시한다 — 제출 엔드포인트
+미설정, 이미 회수됨, 지갑 미연결, 소유자 아님, 예치금 부족. 소유자 불일치를
+예치금 부족보다 먼저 알린다 — 지갑은 화면 앞의 사람이 바꿀 수 있는 유일한
+요소이기 때문이다.
 
-반례 수트도 같은 이유로 `handleOps` beneficiary를 릴레이어와 분리해 두고 있었는데,
-주석에 적힌 원인은 "fork에서 Anvil이 dev 계정 잔액 override를 잃는다"였고 이는
-측정 결과 **틀렸다.** 원인이 로컬 도구가 아니라 체인 상태이므로 고치는 방법도
-달라진다 — beneficiary는 **대상 체인에서 코드가 없는 주소**여야 하고,
-`assertBeneficiaryIsCodeFree`가 주석 대신 그것을 강제한다. 뮤테이션으로 고정했다:
-beneficiary를 designator가 붙은 주소로 바꾸면 fork 타깃에서만 걸리고 ephemeral은
-그대로 통과한다 — 위험이 있는 곳에서만 정확히 발화한다.
+**검증되지 않은 구간:** 지갑 확장이 서명 요청 구조체(9개 필드)를 사람이 읽을 수
+있게 렌더링하는지는 실제 지갑을 띄워야 확인된다. 자동화가 덮지 못하는 유일한
+구간으로 남아 있다.
 
-**콘솔 버튼 (`RevokeButton`).** 지갑 연결 → `owner()` 대조 → nonce 읽기 → 빌드 →
-`signTypedData` → 제출 엔드포인트 POST. 세 가지가 비자명하다.
-
-첫째, **서명 전에 연결된 지갑을 계정의 `owner()`와 대조한다**
-(`HybridDeleGator.sol:233`). 계정이 ERC-1271로 검증하므로 다른 지갑으로 서명하면
-EntryPoint가 `AA24 signature error`를 돌려주는데, 사람 눈에는 nonce나 가스 문제와
-구별되지 않는다. 둘째, **nonce를 클릭 시점에 읽고 한 번에 빌드한다.**
-`buildRevocationUserOperation`이 순수 함수인 이유가 이것이다 — 빌드와 서명 사이에
-다시 읽히는 값이 있으면 digest가 낡고, 역시 `AA24`로 나온다. 셋째, 바디는 제출
-엔드포인트가 **검증에 쓰는 바로 그 모듈**의 `buildRevocationSubmissionBody`가 만든다.
-와이어 포맷의 인코더와 디코더가 갈라지는 건 이 저장소가 EIP-712 도메인으로 이미 한 번
-값을 치른 실패다. 라운드트립 유닛 테스트가 서명된 struct를 바이트 단위로 재현하는지
-고정한다.
-
-버튼이 잠기는 이유는 다섯 가지고 각각 다른 문장을 보여준다 — 제출 엔드포인트 미설정,
-이미 회수됨, 지갑 미연결, 소유자 아님, 예치금 부족. 순서도 의도적이다: **소유자 불일치를
-예치금 부족보다 먼저** 알린다. 예치금은 relayer가 채워야 하지만 지갑은 화면 앞 사람이
-바꿀 수 있는 유일한 것이라, 예치금을 먼저 띄우면 정작 고칠 수 있는 걸 가린다. 두 순서
-결정 모두 뮤테이션으로 고정했다.
-
-**아직 증명하지 않은 것:** MetaMask가 그 구조체를 **사람에게 렌더링**하는 화면.
-viem `LocalAccount.signTypedData`와 `eth_signTypedData_v4`가 바이트 동일한 서명을
-낸다는 것은 확인했지만, 지갑이 9개 필드를 읽을 수 있게 보여주는지는 실제 지갑을
-띄워봐야 한다.
-
-대신 콘솔은 그 자리에서 **재원 상태**를 읽어 보여준다
-(`apps/console/src/Revocation.tsx`): EntryPoint 예치금, 1회 필요액, 부족분,
-그리고 지불 계정의 ETH 잔액. 마지막 항목은 0일 때도 — 0일 때야말로 — 계속
-보인다. 가스리스가 이 데모의 핵심 주장인데, 값이 0이 아닐 때만 나타나는 행은
-불변식이 지켜졌음을 아무도 확인할 수 없는 행이기 때문이다. 필요액은
-`revocationPrefund(DEFAULT_REVOCATION_GAS)`로 계산한다 — prefund는 가스
-파라미터만의 순수 함수라 아무도 서명하지 않을 UserOperation의 nonce를 체인에
-물어볼 이유가 없고, 빌더와 같은 헬퍼를 쓰므로 표시값과 실제 필요액이 어긋날 수
-없다.
+콘솔은 회수의 **재원 상태**를 함께 표시한다(`apps/console/src/Revocation.tsx`):
+EntryPoint 예치금, 1회 필요액, 부족분, 지불 계정의 ETH 잔액. 마지막 항목은 0일
+때도 표시한다 — 가스리스가 핵심 주장인 이상, 값이 0이 아닐 때만 나타나는 행은
+불변식 준수를 확인할 수 없는 행이다. 필요액은
+`revocationPrefund(DEFAULT_REVOCATION_GAS)`로 계산하며, 빌더와 같은 헬퍼를
+쓰므로 표시값과 실제 필요액이 어긋나지 않는다.
 
 **킬 스위치의 가스 재원.** 결제는 EntryPoint를 거치지 않는다 — relayer가
 `redeemDelegations`를 직접 호출하므로 payer의 zero-ETH 불변식은 결제에 대해
-그대로다. 회수만은 EntryPoint를 피할 수 없고, EntryPoint는 계정의 native 잔액이
-아니라 **예치금**(`StakeManager.deposits[sender].deposit`)에서 걷는다.
-`DeleGatorCore._payPrefund`(:559-566)는 실패한 송금을 삼키므로, 잔액도 예치금도
-없으면 계정이 아니라 EntryPoint가 `AA21`로 거절한다 — `AA23`이 아니다.
+유지된다. 회수만은 EntryPoint를 피할 수 없고, EntryPoint는 계정의 native 잔액이
+아니라 예치금(`StakeManager.deposits`)에서 가스를 걷는다.
+`DeleGatorCore._payPrefund`(:559-566)는 실패한 송금을 흡수하므로 예치금이
+없으면 계정이 아니라 EntryPoint가 `AA21`로 거절한다 — `AA23`이 아니다. `EntryPoint.depositTo(address)`는 접근
+제어 없는 `public payable`이라 relayer가 타 계정의 예치금을 채울 수 있고, 이때
+payer의 native 잔액은 0으로 유지된다. 단 `withdrawTo`는 `deposits[msg.sender]`를
+읽으므로 relayer가 회수할 수 없는 편도 비용이다. 로컬에서 회수 경로를 완주하는
+절차는 [회수 런북](revocation-runbook.md)에 있다.
 
-`EntryPoint.depositTo(address)`는 접근 제어가 없는 `public payable`이라 relayer가
-남의 계정 예치금을 채워줄 수 있고, 이때 payer의 native 잔액은 정확히 0으로
-유지된다(수트가 매번 확인한다). 다만 `withdrawTo`는 `deposits[msg.sender]`를
-읽으므로 relayer가 도로 빼올 수 없다 — 편도 비용이다. 예치금이 없는 백스톱은
-`DelegationManager.pause()`로, 이건 평범한 `onlyOwner` EOA 트랜잭션이다.
-
-**Framework 킬 스위치.** 회수가 위임 하나를 끊는다면, `DelegationManager.pause()`는
-프레임워크 전체를 멈춘다 (`onlyOwner`). 방어는 두 겹이다:
-
-1. **우리 게이트** — `verifyFrameworkOperationalState`가 매 요청마다 `paused`를
-   확인하고, 참이면 정산 전에 거절한다.
-2. **온체인 백스톱** — `redeemDelegations`에 `whenNotPaused`가 걸려 있어
-   (`DelegationManager.sol:132`), 게이트를 우회해도 리딤 자체가 revert한다.
-
-fork에서 owner를 impersonate해 `pause()`를 실행하고 **1번이 실제로 막는지**를
-증명한다. 퍼실리테이터의 준비상태 캐시(5초)를 기다린 뒤 요청하므로, 거절이
-온체인 revert가 아니라 게이트 자신의 판정임이 보장된다 — 결제는
-`PAYMENT_REJECTED 403`으로 거절되고 `/health`가 `ok=false`와 함께
-`DelegationManager is not operationally active`를 이유로 보고한다. 증명 후
-`unpause()`로 되돌려 뒤따르는 회수 증명을 독립적으로 유지한다.
+**Framework 킬 스위치.** 회수가 위임 하나를 끊는다면
+`DelegationManager.pause()`는 프레임워크 전체를 멈춘다(`onlyOwner` — 예치금이
+필요 없는 평범한 EOA 트랜잭션). 방어는 두 겹이다: facilitator의
+`verifyFrameworkOperationalState`가 매 요청마다 `paused`를 확인해 정산 전에
+거절하고, 온체인에서는 `redeemDelegations`에 걸린
+`whenNotPaused`(`DelegationManager.sol:132`)가 게이트 우회조차 revert시킨다.
+fork에서 owner를 impersonate해 `pause()`를 실행하면 결제가
+`PAYMENT_REJECTED 403`으로 거절되고 `/health`가 `ok=false`와
+`DelegationManager is not operationally active` 사유를 보고하는 것까지 수트가
+확인한다.
 
 ### 재현
 
@@ -419,49 +351,49 @@ bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 
 bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO
 ```
 
-`test:negative` 를 두 줄로 적은 이유는, 한 줄이 두 타깃을 다 도는 게 아니기 때문이다.
-`SUITE_TARGET` 의 기본값은 `ephemeral` 이라 그냥 실행하면 일회용 체인만 돈다. 이 블록은
-오래도록 한 줄 옆에 "(일회용 체인 / GIWA fork)" 라고만 적어두었는데, 그러면 **더 강한
-쪽을 돌렸다고 읽으면서 실제로는 돌리지 않게 된다.** `SUITE_TARGET=fork` 는 이 저장소
-문서 전체에서 `deployed-contracts.md` 한 곳에만 있었다.
+`test:negative`의 기본 타깃은 일회용 체인이다. GIWA fork 타깃은
+`SUITE_TARGET=fork`로 별도 실행해야 하며, 한 줄이 두 타깃을 모두 돌지 않는다.
+세 수트 모두 통과 판정과 함께 케이스 수를 스스로 세어 출력한다
+(`N/N cases passed`, `PASS — N cases (ABC…)`, `GO — N개 조건 전부 충족`).
 
-케이스·조건의 **개수는 여기 적지 않는다.** 셋 다 자기가 세어 출력하고
-(`N/N cases passed`, `PASS — N cases (ABC…)`, `GO — N개 조건 전부 충족`),
-그중 preflight 의 N 은 고정이 아니다 — facilitator 나 판매자에 닿지 못하면 그 아래
-항목들이 아예 기록되지 않아 총계가 줄어든다. 숫자를 문서에 박아두면 **줄어든 총계를
-통과로 읽을 수 있다.** 이 규칙은 `docs/revocation-runbook.md` 와 `giwa-demo-runbook.md`
-가 먼저 적어둔 것인데, 정작 이 문서가 세 줄 모두에 숫자를 박고 있었다.
+실행 요건은 명령마다 다르다. `bun run check`와 `test:negative`는 키·네트워크·
+배포 아티팩트 없이 깨끗한 클론에서 돈다 — `test:negative`는 일회용 Anvil에
+38유닛 Framework를 직접 배포해 검사한다. 반면 `test:e2e:mcp`는 owner가 서명한
+root permission 아티팩트를 요구하므로, 배포된 계정을 소유한 지갑 없이 맨
+클론에서는 돌지 않는다.
 
 `test:e2e:mcp`는 자식 프로세스가 loopback RPC에 고정되지 않으면 시작하지 않고,
-종료 후 실제 GIWA relayer nonce가 그대로인지 다시 읽어 아무것도 브로드캐스트되지
-않았음을 확인한다.
+종료 후 실제 GIWA relayer nonce를 다시 읽어 아무것도 브로드캐스트되지 않았음을
+확인한다.
 
-**fork 소스의 자격증명은 argv 에 나오지 않는다.** 프라이빗 GIWA 엔드포인트는 URL
-**경로**에 API 키를 담고, argv 는 `ps` 로 누구나 읽는다. `anvil --fork-url` 에는 env
-별칭이 없고 `ETH_RPC_URL` 만으로는 fork 되지 않으므로(체인 id `0x7a69` 반환),
-`apps/delegation-lab/fork-source-proxy.ts` 가 키를 자기 메모리에 들고 anvil 에는
-키 없는 `http://127.0.0.1:<임시포트>` 를 넘긴다. fork 를 띄우는 네 곳 전부가 이 경로를
-쓴다. 양쪽 모두 같은 도구로 측정했다 — 직접 넘기면 `pgrep -f` 가 키를 찾고, 프록시를
-거치면 못 찾는다(anvil 이 떠 있는 동안 `test:e2e:mcp` 40회·`test:e2e:revoke` 8회 샘플,
-모두 0건). macOS 에서는 `ps -Eww -o command=` 를 쓰면 안 된다 — 전체 argv 를 보여주지
-않아 프록시 없는 경우에도 거짓 0 을 낸다.
+**fork 소스의 자격증명은 argv에 노출되지 않는다.** 사설 GIWA 엔드포인트는 URL
+경로에 API 키를 담으므로 URL 전체가 크리덴셜이고, argv는 `ps`로 노출된다.
+`anvil --fork-url`에는 환경변수 별칭이 없으므로
+`apps/delegation-lab/fork-source-proxy.ts`가 키를 메모리에 보관하고 anvil에는
+키 없는 `http://127.0.0.1:<임시포트>`를 전달한다. fork를 띄우는 네 곳 모두 이
+경로를 사용한다.
 
 ---
 
 ## 3. 에러 모델
 
-정산 경로의 모든 실패 모드에 태그를 부여한 판별 유니온 (`packages/shared/src/errors.ts`).
+정산 경로의 모든 실패 모드에 태그를 부여한 판별 유니온이다
+(`packages/shared/src/errors.ts`).
 
-블록체인 코드는 에러 표면이 유난히 넓다 — RPC 타임아웃, 레이트리밋, revert, nonce 경합, 서명 검증 실패, 릴레이어 가스 고갈. 이들을 하나의 `catch`로 뭉개면 **복구에 필요한 유일한 정보가 사라진다.** 각 태그는 다음을 구분한다:
+블록체인 코드는 에러 표면이 넓다 — RPC 타임아웃, 레이트리밋, revert, nonce
+경합, 서명 검증 실패, 릴레이어 가스 고갈. 이를 하나의 `catch`로 합치면 복구에
+필요한 정보가 사라진다. 각 태그는 다음을 구분한다.
 
 - **재시도 가능** (`RpcUnavailable`, `RpcRateLimited`) — 백오프 후 재시도
-- **운영 장애** (`RelayerOutOfGas` 등) — 503, 호출자 잘못이 아님. 알림 대상
-- **호출자 오류** (`InvalidSignature`, `DomainMismatch`, `MalformedPayload`) — 4xx, 원인을 그대로 반환
+- **운영 장애** (`RelayerOutOfGas` 등) — 503, 호출자 잘못이 아님, 알림 대상
+- **호출자 오류** (`InvalidSignature`, `DomainMismatch`, `MalformedPayload`) — 4xx, 원인을 반환
 
-`DomainMismatch`를 별도 태그로 둔 이유: EIP-712 도메인 불일치는 x402 통합에서 가장 흔한 실패이며, generic 500으로 나가면 데모 중에 원인을 특정할 수 없다.
+`DomainMismatch`가 별도 태그인 이유: EIP-712 도메인 불일치는 x402 통합에서 가장
+흔한 실패이며, generic 500으로 나가면 원인을 특정할 수 없다.
 
-**두 경로가 태그를 다르게 쓴다 (의도적).** 위 태그 유니온을 응답 본문에 그대로 싣는 것은
-EIP-3009 직접 결제 경로(`apps/seller`)다. ERC-7710 위임 경로는 다르게 동작한다:
+**두 경로는 응답 정책이 다르다 (의도적).** 태그 유니온을 응답 본문에 그대로
+싣는 것은 EIP-3009 직접 결제 경로(`apps/seller`)다. ERC-7710 위임 경로는 다르게
+동작한다.
 
 | | 직접 결제 (`apps/seller`) | 위임 결제 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
@@ -469,275 +401,103 @@ EIP-3009 직접 결제 경로(`apps/seller`)다. ERC-7710 위임 경로는 다�
 | 상태 코드 | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |
 | 클라이언트 분기 | 태그 | `DelegatedPaymentFailureCode` (에이전트 측 자체 분류) |
 
-위임 경로가 불투명한 이유는 태만이 아니라 위협 모델이다. 실패 사유를 상세히 돌려주면
-공격자가 caveat 경계를 응답만으로 탐색할 수 있다 — 남은 한도, 만료 여부, 재위임 구조가
-모두 오라클이 된다. **원인은 서버 로그로 간다.** `redactForLog`가 revert 사유
-(`ERC20PeriodTransferEnforcer:transfer-amount-exceeded`)는 남기고, viem이 에러에 실어
-보내는 bearer 길이의 hex(서명된 permission context)는 크기만 남기고 지운다. 운영자는
-원인을 보고, 호출자는 보지 못한다.
+위임 경로가 불투명한 것은 위협 모델 때문이다. 실패 사유를 상세히 반환하면
+공격자가 응답만으로 caveat 경계 — 남은 한도, 만료 여부, 재위임 구조 — 를 탐색할
+수 있다. 원인은 서버 로그로 간다. `redactForLog`는 revert 사유
+(`ERC20PeriodTransferEnforcer:transfer-amount-exceeded`)는 남기고, viem이 에러에
+포함시키는 bearer 길이의 hex(서명된 permission context)는 크기만 남기고
+제거한다. 운영자는 원인을 보고, 호출자는 보지 못한다.
 
-#### 낯선 사람의 상태에서 돌려봐야 보이는 것들
+### 상태 부재의 판정 규칙
 
-`bun run check` 는 이 저장소가 자기를 증명하는 방식이고, README 가 제일 먼저 시키는
-명령이다. 그런데 그 게이트를 **항상 작업 트리에서만** 돌렸다 — 게이트는 자기가 도는 트리
-밖의 버그를 잡지 못한다. 실제로 클론해서(`clone --recurse-submodules` → `bun install
---frozen-lockfile` → `bun run check`) 돌려보니 세 곳이 깨져 있었고, 셋 다 로컬에서는
-보이지 않는 종류였다.
+가드 코드 전반에 다음 규칙을 적용한다: **읽지 못했거나 존재하지 않는 값이 판정
+자리에 놓이면 충족이 아니라 거절 또는 별도 사유여야 한다.**
 
-| 결함 | 로컬에서 안 보인 이유 |
-|---|---|
-| `check-docs.ts` 가 `AGENTS.md`/`CLAUDE.md` 를 무조건 읽어 `ENOENT` | 둘 다 gitignore 인데 작업 트리에는 있다 |
-| `docs/deployed-contracts.md` 의 주소 5개의 정본이 gitignore | 로컬에만 있는 파일이 정본 노릇을 하고 있었다 |
-| Foundry 테스트가 gitignore 된 생성물을 `vm.readFile` | 이전 Forge 실행이 남긴 파일이 있었다 |
-
-세 번째가 가장 구조적이다. `make framework-test` 는 `framework-prepare` 에 의존한다고
-선언하는데, 같은 스위트를 도는 `make test` 와 `bun run test:contracts` 는 하지 않았다 —
-선언이 필요한 세 곳 중 한 곳에만 있었다.
-
-계측 오류도 하나 있었다. 클론 실행을 `| tail -25` 로 받아 종료 코드가 0 으로 보였는데,
-그건 `tail` 의 종료 코드다. 실제로는 1 이었다. CLAUDE.md 가 기록한 `ps -Eww` false zero
-와 같은 부류 — **파이프를 통과한 종료 코드는 계측이 아니다.**
-
-#### 데모의 정문에서 "이유 반환" 이 깨져 있었다
-
-같은 방법을 README 의 다음 명령에 적용했다. `bun run test:e2e:mcp` 는 준비물이 넷인데
-하나씩, 그것도 최악의 순서로 알려줬다. `RELAYER_ADDRESS` 를 채우면 anvil 이 GIWA 를 **네트워크로
-fork 한 뒤** 약 15초 지점에서 자식 프로세스가 죽으면서 `apps/facilitator-erc7710/index.ts`
-의 **소스 목록**을 찍었고, 정작 없는 것(그 앱 자신의 `.env` 안 `RELAYER_PRIVATE_KEY`)은
-그 안에 묻혀 있었다.
-
-`assertPrerequisites()` 가 넷을 한꺼번에, 어떤 spawn 보다도 먼저 검사한다. 자식 앱의
-`.env` 는 존재만 본다 — 변수를 여기서 읽으면 각 앱의 요구사항이 두 벌이 되고, 어긋나는
-사본은 한 걸음 못 미치는 검사보다 나쁘다.
-
-그리고 이 명령이 **클론에서 원리적으로 돌지 않는다**는 사실 자체가 문서화되어 있지 않았다.
-서명된 root permission 이 필요하고 그건 배포된 계정을 소유한 지갑만 만들 수 있다. README 는
-그걸 "the demo in one command" 라고만 불렀다. 이제 그 제약을 적고, 대신 **아무나 돌릴 수
-있는** 것을 앞에 놓는다 — `bun run test:negative` 는 일회용 Anvil 에 38유닛 Framework 를
-직접 배포해 23개 케이스를 돌리며, 키도 네트워크도 우리 아티팩트도 필요 없다. Bun 과
-Foundry 만 있는 깨끗한 클론에서 실측: `23/23 cases passed`, 종료 코드 0.
-
-#### 빈 체인은 "한도 없음"이 아니라 "읽은 것이 없음"이다
-
-에이전트 자동화 경로의 판정 기준은 "실패 시 조용히 죽지 말고 **이유** 반환"이고, 그 이유를 만드는 곳이
-`judgePreflight` 다. 서명 전에 체인의 회계를 읽어 판매자에게 걸어 들어가는 대신 원인을
-말하는 함수다.
-
-그 함수의 규칙이 전부 루프였다. statuses 가 비면 revoked·expired·notYetActive 검사가
-모두 그냥 지나가고, `tightest` 는 `undefined` 로 남아 한도 비교도 건너뛰고, 결과는
-`{ok: true}` 였다. **아무것도 읽지 못한 상태에서 999 mUSDC 결제를 통과시킨다** — 실측.
-
-도달 가능한 상태다. `isPermissionContext` 는 hex 의 모양과 길이를 보는 가드이고, 빈
-`Delegation[]` 의 올바른 ABI 인코딩은 그 가드를 통과하는 130자짜리 문자열이며
-`decodeDelegations` 는 그것을 `[]` 로 돌려준다.
-
-자금 경로는 아니었다 — 정산은 여전히 온체인에서 거절된다. 무너진 것은 이 함수가 존재하는
-이유 쪽이다.
-
-코드는 `PERMISSION_INACTIVE` 를 재사용하지 않고 **`PERMISSION_EMPTY`** 를 새로 만들었다.
-CLAUDE.md 의 규칙("모호한 태그를 재사용하지 말고 새 태그를 추가하라")이 여기 정확히
-들어맞는다: `PERMISSION_INACTIVE` 는 운영자를 회수·만료를 확인하러 체인으로 보내는데,
-망가진 permission 아티팩트에는 거기서 찾을 것이 없다.
-
-가드는 두 곳에 있고 서로 다른 호출자를 막는다 — `loadDelegatedAgentRuntime` 은 부팅에서
-한 번 던지고(기존의 "missing, malformed, or too large" 검증 바로 옆, 그 검증의 구멍이었다),
-`judgePreflight` 는 자기 상태 목록을 직접 만드는 호출자를 막는다.
-
-테스트 두 개 중 하나는 처음에 **공허하게** 통과했다. `not.toMatchObject({code:
-"PERMISSION_INACTIVE"})` 는 가드가 없어 `{ok: true}` 가 나와도 통과한다 — 뮤테이션이 2개
-중 1개만 깨뜨려서 드러났다. 양쪽을 다 단언하도록 고쳤고, 이제 가드를 제거하면 둘 다 깨진다.
-
-#### 없는 한도를 ✅ 로 적으면, 없다는 사실이 사라진다
-
-위 가드는 체인이 **비어 있는** 경우를 막았다. 같은 계열의 두 번째 상태는 막지 못했다 —
-체인은 멀쩡히 있는데 **어느 링크에도 주기 caveat 이 없는** 경우다. 도달 가능하다:
-`readDelegationStatus` 는 그 링크에 `ERC20PeriodTransferEnforcer` caveat 이 없으면
-enforcer 를 아예 호출하지 않고 `remaining` 을 `undefined` 로 둔다.
-
-그러면 `tightest` 가 `undefined` 로 남는데, 이 값을 두 곳이 각자 해석하고 있었고 둘 다
-통과로 읽었다. 그중 하나가 **브로드캐스트 직전 게이트**(`giwa-preflight.ts`)다:
-
-```ts
-record(tightest === undefined || amount <= tightest, "한도 대비 결제액", …);
-```
-
-`✅ 한도 대비 결제액 — 주기 caveat 없음`. 마지막 줄은 `GO — N개 조건 전부 충족` 이다.
-이 제품의 중심 주장인 온체인 한도가 **빠져 있는 상태**가, 되돌릴 수 없는 정산을 앞둔
-사람에게 "확인함"으로 보고된 것이다. 없음을 허가로 읽는 바로 그 모양이다.
-
-**두 곳을 같게 고치지 않았다.** 질문이 다르기 때문이다:
+- **`PERMISSION_EMPTY`.** 빈 `Delegation[]`의 올바른 ABI 인코딩은 hex 형태
+  가드를 통과하는 130자 문자열이고 `decodeDelegations`는 이를 `[]`로 되돌린다.
+  이 상태에서 pre-flight의 모든 검사는 비교 대상이 없어 통과하게 되므로, 별도
+  태그로 거절한다. `PERMISSION_INACTIVE`를 재사용하지 않는 이유는 두 태그의
+  지시가 다르기 때문이다 — 전자는 아티팩트 재생성, 후자는 체인에서 회수·만료
+  확인. 가드는 부팅 검증(`loadDelegatedAgentRuntime`)과 판정 함수
+  (`judgePreflight`) 양쪽에 있다.
+- **주기 caveat 부재.** 링크에 `ERC20PeriodTransferEnforcer` caveat이 없으면
+  남은 잔량이 `undefined`로 남는다. 이 상태를 두 소비자가 서로 다르게 판정하는
+  것은 질문이 다르기 때문이다.
 
 | | 질문 | `tightest === undefined` |
 |---|---|---|
-| `judgePreflight` (런타임) | 체인이 이 결제를 거절하는가 | **통과** — 한도가 없으면 거절되지 않는다 |
-| `giwa-preflight` (사람 게이트) | 내가 생각한 설정이 맞는가 | **실패** — 대조할 값이 없다 |
+| `judgePreflight` (런타임) | 체인이 이 결제를 거절하는가 | 통과 — 한도가 없으면 거절되지 않는다 |
+| `giwa-preflight` (사람 게이트) | 설정이 의도와 일치하는가 | 실패 — 대조할 값이 없다 |
 
-계산(`tightestPeriodRemaining`)만 `packages/delegation` 으로 올려 공유하고, 판단은 각자
-두되 서로를 가리키는 주석을 달았다. 애초에 이 버그가 생긴 이유가 같은 여섯 줄이 두 벌
-있었고 한 벌만 고쳐졌기 때문이다. `judgePreflight` 쪽 테스트에 "여기를 고치러 왔다면 먼저
-저 주석을 읽으라"고 적어뒀다 — 일관성을 맞추려는 다음 사람이 정확히 그 테스트를 깨뜨린다.
+  계산(`tightestPeriodRemaining`)은 `packages/delegation`에서 공유하고, 판정은
+  각자 유지하며 상호 참조 주석으로 연결되어 있다.
+- **수수료 판정의 입력 부재.** `judgeSubmissionReadiness`는 base fee를 읽지
+  못한 상태를 `base_fee_unreadable`로 거절한다. `fee_below_basefee`와 사유를
+  나누는 이유는 지시가 반대이기 때문이다 — 전자는 소유자에게 더 높은 수수료로
+  재서명하라는 뜻이고, 후자는 체인 읽기를 재시도하라는 뜻이다.
 
-현재 데모 permission 의 root 는 `ERC20PeriodTransferEnforcer` 를 갖고 있어 이 변경은
-데모 동작에 영향이 없다. 확인하고 고쳤다.
+### 상시 게이트
 
-같은 모양을 이 게이트에서 두 개 더 찾았다. 하나를 고치고 나서 **같은 관용구로 파일을
-다시 훑은 것**이 방법이었다 — 판단 자리에 놓인 `undefined`.
+`bun run check`는 코드와 함께 문서·설정의 주장을 기계적으로 검증한다. 전부 키와
+네트워크 없이 동작하며, 깨끗한 클론에서 같은 결과를 낸다.
 
-| 자리 | 예전 | 무엇이 뒤집혔나 |
-|---|---|---|
-| 주기 한도 | `tightest === undefined \|\| amount <= tightest` | 한도가 없는데 "한도 안" |
-| 유효창 | `status.validity` 없으면 상세만 `"제한 없음"`, 판정은 ✅ | **만료되지 않는 위임**이 유효창 확인됨으로 |
-| relayer 가스 | `REDEMPTION_GAS_CEILING * (fees.maxFeePerGas ?? 0n)` | 상한을 못 읽으면 최악 비용이 **0** 이 되고 `relayerEth > 0n` 은 1 wei 로도 통과 |
+| 게이트 | 검증 내용 |
+|---|---|
+| `check:docs` | 문서의 모든 `bun run`·`make` 명령이 실제로 존재하는지, 상대 링크가 열리는지, 모든 주소가 배포 아티팩트·토큰 정본과 일치하는지 |
+| `check:gitbook` | GitBook 챕터·SUMMARY·설정이 정본(`docs/tech-notes.md`)에서 유도한 것과 바이트 단위로 일치하는지 |
+| `check:logging` | `apps/`·`packages/`·`scripts/`의 `console.*` 인자에 날것의 에러가 닿지 않는지 — viem은 전송 URL을 에러 메시지에 포함시키므로, 경로에 키가 든 RPC URL이 로그로 새는 경로를 차단한다 |
+| `check:advisories` | `bun audit`의 모든 발견이 수정되었거나, 매 실행 재측정되는 `prove` 함수가 딸린 수용인지 |
+| `check:counts` | 저장소 README가 적은 테스트 수가 bun·forge가 실제로 수집하는 수와 일치하는지 — 문서의 숫자끼리의 일치가 아니라 수트와의 일치를 검사한다 |
 
-셋째가 가장 구체적으로 위험하다. 이 조건이 존재하는 이유가 "정산 가스를 낼 수 있는가"
-인데, 못 읽었을 때 그 질문의 답이 **자동으로 예**가 된다. 그리고 viem 의
-`estimateFeesPerGas` 는 `maxFeePerGas` 를 nullable 로 선언한다 — 타입으로 확인했다
-(`undefined extends Fees["maxFeePerGas"]` 가 참). 가정이 아니라 실재하는 상태다.
+### 422와 504의 의미 구분
 
-앞의 둘은 우리 빌더로는 만들 수 없는 permission 에서만 나온다 —
-`preparePeriodDelegation` 은 timestamp caveat 과 주기 scope 를 무조건 붙인다. 손으로 만든
-아티팩트에서만 나타난다는 뜻이고, **그래서 아무도 마주친 적이 없어 남아 있었다.**
+불투명 사유 중 이 둘은 구분이 필수다. `settlement_failed`(422)는 "지불자는
+청구되지 않았다"이고 `settlement_unknown`(504)은 "청구 여부를 확인하지
+못했다"이다. 전자는 재시도를 부르는 답이고, 미확인 상태의 재시도는 이중 지불이
+된다.
 
-네 번째는 다른 파일에 있었고, 이번 사냥에서 가장 값이 나갔다. 회수 제출기가
-`judgeSubmissionReadiness` 에 `block.baseFeePerGas ?? 0n` 을 넘기고 있었다. 그 판정기가
-막는 것은 이것이다 — EntryPoint 는 `min(maxFeePerGas, baseFee + priority)` 로 보전하는데
-relayer 자신의 트랜잭션은 `baseFee` 아래로는 포함되지 못하므로, 서명된 `maxFeePerGas` 가
-현재 base fee 밑이면 relayer 는 **회수할 수 없는 비용**을 낸다. 체인에서는 성공하고
-운영자만 조용히 마른다.
+이 구분의 근거는 실제 사례다. GIWA `0x533c5cb2…9964c`(block 31634935)는
+지불자에게서 1.00 mUSDC를 실제로 이체했지만 호출자는 `PAYMENT_REJECTED`를
+받았다 — 영수증 대기 타임아웃이 판매자의 HTTP 타임아웃보다 길게 설정되어
+있었기 때문이다. 이후 타임아웃 예산은 바깥 계층일수록 길어지도록 재설계되었고
+(25 → 35 → 45 → 50초), 결과 미확정 결제는 `SETTLEMENT_UNKNOWN`으로 반환된다.
 
-`?? 0n` 은 그 검사를 `maxFeePerGas < 0n` 으로 만든다 — 모든 입력에 대해 거짓이다.
-**가드가 존재하기를 멈춘다.** viem 은 블록의 base fee 를 `bigint | null` 로 선언하므로
-도달 가능한 상태다.
-
-이제 판정기가 `bigint | undefined` 를 받고 `base_fee_unreadable` 로 거절한다.
-`fee_below_basefee` 와 사유를 나눈 것은 지시가 반대이기 때문이다 — 앞은 소유자에게 더
-높은 수수료로 다시 서명하라는 뜻이고, 뒤는 우리가 체인을 못 읽었다는 뜻이다. 변이로
-확인: 가드를 빼면 정확히 두 테스트가 깨진다. 회수 e2e 8 케이스는 그대로 통과한다
-(fork 의 블록에는 base fee 가 있으므로 동작 변화가 없다).
-
-#### 기억으로 지키던 규칙을 게이트로 옮겼다
-
-`redactForLog`가 있어도 그것을 **부르는 것**은 사람이었다. 6차원 감사가 17개의 탈출
-경로를 찾아 파일 단위로 닫았는데, 그 스윕의 범위가 `apps/delegation-lab` 과
-`apps/delegated-agent` 였다. `apps/agent/index.ts` 는 금지된 표현을 글자 그대로 유지한
-채 그 스윕을 통과했다:
-
-```ts
-console.error(`\n${err instanceof Error ? err.message : String(err)}`);
-```
-
-오늘 무해한 이유는 그 파일이 `http()` 를 URL 없이 부르기 때문이다 — 다른 앱들처럼
-`throttledHttp(readRpcUrl())` 한 줄만 들어가면 "닫혔다"고 문서화된 구멍이 조용히
-열린다. 새 코드가 계속 되살리는 규칙은 게이트에 있어야 한다.
-
-`bun run check:logging` 이 `apps/` · `packages/` · `scripts/` 전체에서 `console.*` 인자
-안의 날것의 에러를 거절한다. AST 대신 어휘 검사인 이유는 실측이다 — 이 저장소의
-`typescript` 는 7.x 네이티브 포트이고, 그 npm 패키지가 JS 에 노출하는 것은 `version`
-뿐이다(`createSourceFile` 도 `SyntaxKind` 도 없다). 표현 하나를 린트하려고 파서를 하나 더
-들이는 것보다, 주석·문자열·정규식 리터럴을 먼저 지우고 텍스트를 보는 편이 싸다.
-
-지우는 쪽이 위험한 부분이라 export 해서 테스트한다(14 케이스). 그중 하나는 이 저장소의
-실제 줄이다: `redactUrls` 의 정규식 `/\bhttps?:\/\/[^\s"'<>)\]}]+/gi` 는 문자 클래스
-안에 큰따옴표와 작은따옴표를 **둘 다** 갖고 있어서, 정규식 리터럴을 모르는 스트리퍼는
-그 지점부터 파일 끝까지 어긋난다 — 이후의 모든 `console` 호출이 검사에서 사라진다.
-
-일곱 개의 진짜 누출을 일곱 개의 진짜 파일에 심어 증명했다. 그중 하나가 중요한데,
-모듈 로컬 redactor 헬퍼(`console.error(myOwnRedact(error.message))`)는 세탁하지 못한다 —
-`payment-client.ts` 가 실제로 그런 헬퍼를 갖고 있었고 그 반환값이 세 소비자에게 출력됐다.
-
-체커의 첫 초안이 놓친 것도 하나 있었고, 그건 테스트가 아니라 테스트가 덮지 않은 모양을
-찔러보다 나왔다: **`error?.message`**. `error.message` 보다 조심스러워 보이고 똑같이
-누출하며, 사람이 catch 블록을 정리하다 쓰는 바로 그 형태다.
-
-**범위는 `console.*` 뿐이다.** 응답 본문의 `detail: {message: error.message}` 도 같은
-위험이지만, 그걸 잡으려면 어떤 객체가 응답이 되는지 알아야 하고, 오탐이 있는 체커는
-꺼진다 — 경계가 명시된 체커보다 나쁘다.
-
-#### 자기 자신과만 맞춰본 숫자는 맞은 적이 없다
-
-`check-docs.ts` 가 생긴 이유 중 하나가 "수트가 자랄 때마다 적힌 테스트 수가 어긋난다"
-였는데, 정작 거기 붙은 검사는 문서를 **자기 자신과** 비교했다 — 배지 대 총계 대 내역
-합. 셋은 사람이 손으로 고칠 때 함께 움직인다. 그래서 셋이 일치한다는 사실은 셋이
-맞다는 뜻이 아니었고, 이번에 테스트 12개를 더했을 때 실제 수가 341 → 353 으로
-바뀌는 동안 게이트는 녹색으로 `test counts check out` 을 출력했다. 같은 드리프트가
-더 오래 방치된 곳도 있었다 — 저장소 지침 문서는 같은 명령을 `188 TS` 라고 적고
-있었다.
-
-세는 일은 bun 과 forge 에게 맡긴다. 소스를 정규식으로 세면 `describe.each` 와 생성된
-케이스와 skip 을 사람이 추측해야 하고, **새로운 방식으로 틀린 숫자는 그냥 낡은 숫자보다
-나쁘다.** 아무것도 매칭되지 않는 이름 필터를 주면 bun 은 파일을 전부 수집한 뒤
-`skipping 256 tests` 를 출력하고 본문은 하나도 실행하지 않는다 — 수트당 약 200ms.
-컨트랙트는 `forge test --list --json` 이 컴파일만 하고 294ms 에 14를 돌려준다.
-
-`check-docs.ts` 안에 두지 않았다. 그 파일은 정적·즉시·오프라인을 약속하고, 이 검사는
-프로세스를 네 번 띄운다. 약속이 다르면 게이트도 다른 게 맞다.
-
-읽지 못한 개수는 **0이 아니라 실패**다. 0으로 읽으면 모든 비교가 공허하게 통과하고,
-그건 이 검사가 막으려는 바로 그 상태다.
-
-#### 422 와 504 는 서로 반대되는 주장이다
-
-불투명한 사유들 중 이 둘만은 **뭉개면 안 된다.** `settlement_failed`(422)는 "지불자는
-청구되지 않았다"이고 `settlement_unknown`(504)은 "청구되었는지 우리도 모른다"이다.
-전자는 재시도를 권하는 답이고, 그 재시도가 두 번 지불한다.
-
-이건 가정이 아니라 이미 한 번 치른 값이다. GIWA `0x533c5cb2…9964c`(block 31634935)는
-지불자에게서 1.00 mUSDC 를 실제로 옮겼는데 호출자는 `PAYMENT_REJECTED` 를 받았다.
-
-그 구분은 `errorReason === "settlement_unconfirmed"` 문자열 하나에 달려 있었고, 그
-문자열은 **두 프로세스에 각각 맨 리터럴로** 적혀 있었다. 읽는 쪽(`delegated-seller`)의
-응답 타입은 필드가 전부 optional 이라, 생산자를 고쳐도 양쪽 다 타입체크를 통과하고
-동작으로만 드러난다 — 계약이되 컴파일러가 검사할 수 없는 계약이었다.
-
-지금은 요청 절반이 있던 자리(`packages/delegation/src/x402.ts`)에 응답 절반도 함께 산다:
-`SETTLEMENT_UNCONFIRMED` 상수 하나, `Erc7710VerifyResponse`/`Erc7710SettleResponse`,
-그리고 판정 자체가 `decideSettlement()` 라는 순수 함수다. facilitator 도 chain 도 key 도
-없이 테스트되므로 `bun run check` 안에 들어간다.
-
-판정 사다리 — `unknown` 쪽으로 기우는 것이 의도다:
+판정은 순수 함수 `decideSettlement()`로 분리되어 있고
+(`packages/delegation/src/x402.ts`), 판정 기준 문자열
+(`SETTLEMENT_UNCONFIRMED`)과 응답 타입은 생산자·소비자가 같은 모듈에서
+가져간다. 판정 사다리는 `unknown` 쪽으로 기운다.
 
 | 관찰 | 결과 | 이유 |
 |---|---|---|
-| 응답 못 받음 (연결 거부·non-2xx·JSON 아님·타임아웃) | `unknown` 504 | "요청이 닿지 않음"과 "브로드캐스트 후 답이 유실됨"을 구분할 수 없다 |
-| `errorReason === SETTLEMENT_UNCONFIRMED` | `unknown` 504 (+해시) | 해시가 없으면 호출자는 확인할 방법이 없다 |
-| `success !== true` | `failed` 422 | 깨끗한 거절 — 돈이 움직이지 않았다 |
-| `success === true`, payer 불일치 | `unknown` 504 | 브로드캐스트는 했다고 한다. 어긋난 건 신원뿐이고 잔액은 아무도 확인하지 않았다 |
+| 응답 못 받음 (연결 거부·non-2xx·JSON 아님·타임아웃) | `unknown` 504 | "요청이 닿지 않음"과 "브로드캐스트 후 응답 유실"을 구분할 수 없다 |
+| `errorReason === SETTLEMENT_UNCONFIRMED` | `unknown` 504 (+해시) | 해시가 없으면 호출자가 확인할 수단이 없다 |
+| `success !== true` | `failed` 422 | 명시적 거절 — 자금이 이동하지 않았다 |
+| `success === true`, payer 불일치 | `unknown` 504 | 브로드캐스트는 주장되었으나 신원이 어긋났고, 잔액은 확인되지 않았다 |
 | `success === true`, payer 일치 | `settled` 200 | |
 
-마지막에서 두 번째 줄은 이번에 바뀐 동작이다. 이전에는 422 였는데, 그건 검사한 적 없는
-잔액을 단정하는 답이었다.
-
-여섯 뮤테이션으로 증명했다 — 미확인 분기 제거, payer 교차검사 제거, 도달불가를 `failed`
-로, 해시 정규식 제거, verify 의 payer 무시, 그리고 **상수 이름 변경**. 각각 정확히 한두
-테스트만 깨진다. 마지막 것이 핵심이다: 상수를 바꾸면 두 프로세스가 조용히 어긋나던 예전
-상태에서는 아무 테스트도 깨지지 않았다.
-
-배선까지 확인하려면 fork 에서 그 경로를 강제한다 — facilitator 가 이미 브로드캐스트한
-트랜잭션의 receipt 대기를 1ms 만에 포기하게 만든다:
+이 경로는 fork에서 강제 재현할 수 있다 — facilitator의 영수증 대기를 1ms로
+줄이면 브로드캐스트 후 미확정 분기를 태운다.
 
 ```bash
 cd apps/delegation-lab && SETTLEMENT_RECEIPT_TIMEOUT_MS=1 bun run test:e2e:mcp
 ```
 
-상태 코드만 보는 검증은 약하다 — 모든 것에 504 를 돌려주는 seller 도 통과한다. 그래서
-이 실행은 enforcer 이벤트를 fork 에서 직접 읽어 **돈이 실제로 움직였는지**까지 확인한다.
-지불자는 청구되었고, 답은 모른다고 말했다 — 그게 정직한 조합이다.
-
-이 환경변수는 전부터 있었고 주석에도 "이렇게 하면 그 경로를 탈 수 있다"고 적혀 있었지만,
-켜면 `body.ok !== true` 가드에 걸려 실행이 **실패**했다. 문서화된 탈출구로 문서화된
-경로를 탈 수 없었던 것이다. CLAUDE.md 가 기록한 `verify-forge-addresses.ts` 와 같은 부류
-— "재실행하라"고 적힌 조건이 조용히 재실행되지 않게 되는 방식.
+이 실행은 상태 코드만 확인하지 않고, enforcer 이벤트를 fork에서 직접 읽어
+자금이 실제로 이동했는지까지 대조한다.
 
 ### Effect 이관 계획
 
-현재 판별 유니온으로 구현하되, `_tag` 판별자는 **의도적으로 [Effect](https://effect.website)의 `Data.TaggedError`와 동형**으로 잡았다.
+현재는 판별 유니온으로 구현하되, `_tag` 판별자는
+[Effect](https://effect.website)의 `Data.TaggedError`와 동형으로 유지한다.
 
 | 단계 | 상태 |
 |---|---|
 | 현재 | 판별 유니온 + 명시적 분기. 타입 레벨에서 실패 모드가 전부 열거됨 |
 | 다음 | 정산 경로를 `Effect<A, SettlementError, R>`로 이관 — 타입드 에러 채널, `Schedule` 기반 재시도/백오프, 리소스 안전한 RPC 커넥션 |
 
-MVP 기간에 도입하지 않은 이유는 부분 도입이 어렵기 때문이다. Effect는 호출 체인 전체를 감염시키므로, 핵심 결제 루프가 검증되기 전에 도입하면 실행 리스크가 된다. 에러 모델의 **형태**를 먼저 확정해두면 이관은 재작성이 아니라 기계적 치환이 된다.
+MVP 기간에 도입하지 않은 이유는 부분 도입이 어렵기 때문이다. Effect는 호출 체인
+전체에 전파되므로, 핵심 결제 루프 검증 전의 도입은 실행 리스크가 된다. 에러
+모델의 형태를 먼저 확정하면 이관은 재작성이 아니라 기계적 치환이 된다.
 
 ---
 
@@ -746,65 +506,64 @@ MVP 기간에 도입하지 않은 이유는 부분 도입이 어렵기 때문이
 ### facilitator 신뢰 경계
 
 facilitator는 릴레이어 키를 쥐고, 서명된 `X-PAYMENT`를 넘겨받고, leaf가 지정한
-redeemer 본인이다. 즉 **모든 신원 검사를 통과하는 위치**에 있다. 이 시스템이 답해야
-하는 질문은 "facilitator를 신뢰할 수 있는가"가 아니라 **"완전히 침해되었을 때 최대
-피해가 무엇인가"**다.
+redeemer 본인이다. 즉 모든 신원 검사를 통과하는 위치에 있다. 따라서 신뢰
+경계는 facilitator의 신뢰 여부가 아니라 **완전히 침해되었을 때의 최대 피해**를
+기준으로 정의한다.
 
 핵심은 `redeemDelegations`의 서명 범위다. permission context는 서명되지만
 **execution은 서명되지 않는다** — `_executionCallDatas`는 상환 시점에 호출자가
-calldata로 공급한다 (`DelegationManager.sol:126-133`). 침해된 facilitator는 멀쩡한
-leaf와 함께 **자기가 고른 아무 execution이나** 제출할 수 있고, 이를 막는 것은
-오직 그 leaf에 붙은 caveat 집합뿐이다.
+calldata로 공급한다(`DelegationManager.sol:126-133`). 침해된 facilitator는
+유효한 leaf와 함께 임의의 execution을 제출할 수 있고, 이를 막는 것은 그 leaf에
+붙은 caveat 집합뿐이다. `wrong-redeemer` 케이스는 이 위협을 덮지 못한다 — 그
+케이스가 증명하는 것은 제3자가 상환할 수 없다는 사실이고, facilitator는
+제3자가 아니다.
 
-`wrong-redeemer` 케이스는 이걸 덮지 못한다. 그건 *낯선 자*가 상환할 수 없음을
-증명한다. facilitator는 낯선 자가 아니다.
-
-| 침해된 facilitator가 시도할 수 있는 것 | 거절하는 enforcer | 온체인 revert |
+| 침해된 facilitator의 시도 | 거절하는 enforcer | 온체인 revert |
 |---|---|---|
 | 벤더 대신 자기 주소로 지급 | `AllowedCalldataEnforcer` | `invalid-calldata` |
-| 받은 금액을 부풀리기 (주기 상한 이내라도) | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
+| 금액 부풀리기 (주기 상한 이내라도) | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
 | 1회성 지불을 상시 allowance로 전환 (`approve` 드레인) | `ERC20TransferAmountEnforcer` | `invalid-method` |
-| 다른 컨트랙트로 호출 돌리기 | `ERC20TransferAmountEnforcer` | `invalid-contract` |
-| native 값 끼워 빼내기 | `ValueLteEnforcer` | `value-too-high` |
+| 다른 컨트랙트로 호출 변경 | `ERC20TransferAmountEnforcer` | `invalid-contract` |
+| native 값 동봉 | `ValueLteEnforcer` | `value-too-high` |
 | **payer 계정 자신을 target으로** (self 분기 진입) | `ERC20TransferAmountEnforcer` | `invalid-contract` |
 | 같은 leaf 재상환 | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
 | 만료 후 상환 | `TimestampEnforcer` | `expired-delegation` |
 | 주기 상한 초과 누적 | `ERC20PeriodTransferEnforcer` | `transfer-amount-exceeded` |
 
-self-target 케이스가 이 표에서 가장 덜 자명하다. 실행은 `IDeleGatorCore(root.delegator).executeFromExecutor`로 일어나므로(`DelegationManager.sol:252-253`), execution의 target이 payer 계정이면 계정이 **자기 자신을**
-호출하게 되고 `msg.sender == address(this)`가 성립한다 — `onlyEntryPointOrSelf`의 *self*
-분기다(`DeleGatorCore.sol:106-109`). 그 분기로 `withdrawDeposit`(:356),
-`enableDelegation`(:373 — **회수를 되돌린다**), `_authorizeUpgrade`(:526 — 구현체 교체)에
-닿는다. DeleGatorCore 안에는 self 호출을 막는 것이 없고, 거기 서 있는 것은 caveat뿐이다.
-페이로드로 `withdrawDeposit(address,uint256)`을 고른 것은 그 calldata가 정확히 68바이트라
-`ERC20TransferAmountEnforcer`의 길이 게이트(:87)를 **통과한 뒤** 컨트랙트 검사(:92)에서
-걸리기 때문이다 — 크기 때문에 우연히 막히는 게 아님을 분명히 하려고.
-뮤테이션으로 귀속을 확인했다: target만 토큰으로 되돌리면 revert가 `invalid-method`로
-바뀌어 단언이 깨진다. 다만 이 케이스가 증명하는 것은 **caveat이 거절한다**까지이고,
-caveat이 없었다면 self 호출이 성공했으리라는 것은 위 두 컨트랙트를 읽어서 아는 것이지
-이 케이스가 증명하는 바가 아니다.
+self-target 케이스가 가장 비자명하다. 실행은
+`IDeleGatorCore(root.delegator).executeFromExecutor`로 일어나므로
+(`DelegationManager.sol:252-253`), execution의 target이 payer 계정이면 계정이
+자기 자신을 호출하게 되고 `msg.sender == address(this)` — `onlyEntryPointOrSelf`의
+*self* 분기 — 가 성립한다(`DeleGatorCore.sol:106-109`). 이 분기로
+`withdrawDeposit`(:356), `enableDelegation`(:373 — 회수를 되돌린다),
+`_authorizeUpgrade`(:526 — 구현체 교체)에 닿는다. DeleGatorCore에는 self 호출을
+막는 장치가 없고, 그 자리에 서 있는 것은 caveat뿐이다. 케이스의 페이로드로
+`withdrawDeposit(address,uint256)`을 쓰는 이유는 그 calldata가 정확히
+68바이트라 `ERC20TransferAmountEnforcer`의 길이 게이트(:87)를 통과한 뒤
+컨트랙트 검사(:92)에서 걸리기 때문이다 — 크기로 우연히 막히는 것이 아님을
+분명히 한다.
 
-`approve` 케이스는 주소 검사를 **전부 통과하도록** 작성했다 — spender 슬롯에 고정된
-벤더 주소가 들어간다. 그래서 이를 거절하는 것은 셀렉터 검사뿐이고, 실제로 거절한다.
-지갑 탈취의 고전적 수법이 caveat 하나로 막히는 지점이다.
+`approve` 케이스는 주소 검사를 전부 통과하도록 구성되어 있다 — spender 슬롯에
+고정된 벤더 주소가 들어간다. 이를 거절하는 것은 셀렉터 검사뿐이고, 실제로
+거절한다.
 
-**그래서 남는 것 — 침해된 facilitator가 실제로 할 수 있는 일:**
+침해된 facilitator에게 남는 능력은 다음으로 한정된다.
 
-- **정산 거부(liveness).** 자금은 안전하지만 결제는 진행되지 않는다. seller는
-  504 `settlement_unknown`을 돌려주고, 이는 안전성이 아니라 가용성 문제다.
+- **정산 거부 (liveness).** 자금은 안전하나 결제가 진행되지 않는다. seller는
+  504 `settlement_unknown`을 반환한다 — 안전성이 아니라 가용성 문제다.
 - **순서 조작·지연.** 만료 창 안에서.
-- **지불자가 이미 승인한 그 금액을, 그 벤더에게, 실제로 집행.** seller가 리소스를
-  주지 않았더라도. 손실이 발생할 수 있지만 **수취인은 언제나 에이전트가 고정한
-  벤더**이며 facilitator 자신이 될 수 없다.
+- **지불자가 이미 승인한 금액을, 지정된 벤더에게, 실제로 집행.** seller가
+  리소스를 주지 않았더라도. 손실이 발생할 수 있으나 수취인은 언제나 에이전트가
+  고정한 벤더이며 facilitator 자신이 될 수 없다.
 
-즉 **자금 탈취·경로 변경·한도 초과는 불가능하고, 남는 것은 가용성과 순서**다.
-이것이 릴레이어에게 가스를 맡기면서도 자금을 맡기지 않는 구조의 값이다.
+**자금 탈취·경로 변경·한도 초과는 불가능하고, 남는 것은 가용성과 순서다.**
+릴레이어에게 가스를 맡기면서 자금을 맡기지 않는 구조의 근거가 이것이다.
 
-**증거.** 위 9행은 주장이 아니라 `negative-path-suite.ts`가 실행하는 케이스다.
-6개 변조 케이스에는 **대조군**이 붙어 있다 — 같은 leaf, 같은 redeemer, 변조만 뺀
-execution은 정상 정산된다. 대조군이 없으면 6개의 초록 체크가 변조와 무관한 이유
-(소진된 주기, 낡은 계정)로도 나올 수 있다. 23개 케이스 전부 일회용 체인과
-GIWA fork 양쪽에서 통과한다.
+위 표의 9행은 `negative-path-suite.ts`가 실행하는 케이스이며, 6개 변조 케이스에는
+대조군이 붙는다 — 같은 leaf, 같은 redeemer, 변조만 제거한 execution은 정상
+정산된다. 대조군이 없으면 6개의 거절이 변조와 무관한 이유(소진된 주기, 낡은
+계정)로도 나올 수 있다. 전체 케이스는 일회용 체인과 GIWA fork 양쪽에서
+통과한다.
 
 ### 공격 벡터 대응표
 
@@ -825,44 +584,35 @@ GIWA fork 양쪽에서 통과한다.
 | 중복 settle | canonical 결제 조건과 context 바이트의 `paymentIntentId`로 단일화, broadcast tx hash를 receipt보다 먼저 저장 |
 | 복잡한 delegation gas DoS | estimate 후 설정 gas cap 초과 거절 |
 | 비인가 relayer | leaf의 `RedeemerEnforcer`와 402 `facilitatorAddresses` 교집합 강제 |
-| 취약 의존성 | `bun audit`을 게이트에서 실행. 모든 발견은 고치거나, 근거와 **재측정 가능한 증명**을 붙여 수용 |
+| 취약 의존성 | `bun audit`을 게이트에서 실행. 모든 발견은 수정하거나, 재측정 가능한 증명을 붙여 수용 |
 
-### 고칠 수 없는 권고를, 기록만 하고 끝내지 않는 법
+### 의존성 권고의 수용 기준
 
-`bun audit` 이 하나를 보고한다 — `@hono/node-server <2.0.5`, moderate,
-`serve-static` 의 Windows 경로 traversal(`%5C`). 우리 MCP 서버는 stdio 트랜스포트를
-쓰고 HTTP 서버를 띄우지 않는다. 그 어댑터는 SDK 가 *streamable HTTP* 트랜스포트를
-위해 끌어오는 것이라, 우리 번들에는 들어오지 않는다 — 엔트리포인트를 번들하면 974개
-모듈에서 `hono` 참조가 **0회**다.
+`bun audit`이 보고하는 발견은 수정하거나, 근거를 붙여 명시적으로 수용한다.
+현재 수용된 것은 하나다 — `@hono/node-server <2.0.5`의 Windows 경로
+traversal(moderate). MCP 서버는 stdio 트랜스포트만 사용하고 해당 어댑터는 SDK가
+streamable HTTP 트랜스포트를 위해 끌어오는 것이라 번들에 포함되지 않는다
+(엔트리포인트 번들 974개 모듈에서 `hono` 참조 0회). 호환 업데이트로는 닫히지
+않는다 — 수정은 2.0.5에 들어갔고 SDK(`^1.19.9` 선언, 1.x 최종 1.19.15)는 이를
+포함하지 않는다.
 
-호환 업데이트로는 닫히지 않는다. `@modelcontextprotocol/sdk@1.29.0` 이 최신 릴리스이고
-`^1.19.9` 를 선언하는데, 1.x 의 마지막은 `1.19.15` 이고 수정은 `2.0.5` 에 들어갔다.
-`overrides` 로 2.x 를 밀어 넣을 수는 있지만, 그것은 SDK 가 한 번도 테스트하지 않은
-major 를 설치해서 **우리가 적재하지 않는 코드**를 고치는 일이다. 그래서 수용한다.
+수용의 근거는 산문이 아니라 코드다. `scripts/check-advisories.ts`의 수용
+항목은 매 실행 자기 주장을 재측정하는 `prove` 함수를 가지며, 실패 방향은 셋이다
+— 수용되지 않은 신규 발견, 증명이 깨진 수용, 더 이상 보고되지 않는 수용(쓰지
+않는 예외는 근거보다 오래 남는다). 항상 0을 반환하는 탐지기를 배제하기 위해,
+게이트는 해당 트랜스포트를 의도적으로 import한 대조군에서 참조를 찾아낸
+뒤에야(측정값 3 대 0) 실제 엔트리포인트의 0을 신뢰한다. 레지스트리에 닿지
+못한 실행은 발견 0건과 구분된다 — 그 경우 비교를 건너뛴 사실을 출력하고,
+`prove` 함수는 오프라인으로 그대로 실행된다.
 
-문제는 수용의 근거다. "우리는 그 코드에 닿지 않는다"는 쓰는 날에는 참이고 누군가
-import 한 줄을 더하는 순간 거짓이 되며, 산문은 그걸 알아채지 못한다. 그래서
-`scripts/check-advisories.ts` 의 수용 항목은 **`prove` 함수를 하나씩 들고 있다.**
-매 실행마다 자기 주장을 다시 잰다. 실패 방향은 셋이고 전부 의도된 것이다 — 수용되지
-않은 발견(새 권고가 옛 권고 뒤에 숨지 못한다), 증명이 깨진 수용(수용 근거가 사라졌다),
-그리고 더 이상 보고되지 않는 수용(쓰지 않는 예외는 근거보다 오래 산다).
+### 로깅과 자격증명
 
-**계측 자체도 계측한다.** 항상 0을 돌려주는 탐지기는 검사를 통과시키면서 아무것도
-증명하지 않는다 — 보안 게이트에서 가장 나쁜 모양이다. 그래서
-`apps/agent-mcp/advisory-control.ts` 가 일부러 그 트랜스포트를 import 하고, 게이트는
-컨트롤에서 참조를 **찾아낸 뒤에야** 진짜 엔트리포인트의 0을 믿는다(측정값 3 대 0).
-
-이게 이론이 아니라는 증거는 만드는 도중에 나왔다. 처음에는 in-process `Bun.build` 를
-썼는데, 같은 호출이 `bun run` 에서는 성공하고 `bun test` 에서는
-`Could not resolve: "@mapae/shared"` 로 실패했다 — 번들러가 해석 루트를 **호출자에
-따라** 잡는다. 해석 실패를 0으로 읽었다면 게이트는 "도달하지 않음"을 출력했을 것이다.
-지금은 소유 패키지 디렉터리를 cwd 로 고정해 번들하고, 못 잰 경우는 0이 아니라
-`null` 로 다룬다.
-
-`bun audit` 의 상태 구분도 실측이다. 발견이 있으면 exit 1 + JSON, 깨끗하면 exit 0 +
-`{}`, 레지스트리에 못 닿으면 exit 1 + **빈 stdout**. exit code 로는 "찾았다" 와 "묻지
-못했다" 가 구분되지 않으므로 stdout 으로 판별한다. 닿지 못하면 비교를 건너뛰되 그렇다고
-말하고, 증명은 그대로 돌린다 — 증명은 로컬이고, 썩는 쪽은 증명이다.
+viem은 전송 URL 전체를 에러 메시지에 포함시키며, 경로에 API 키가 든 RPC
+엔드포인트에서는 URL 자체가 크리덴셜이다. `packages/shared`의 `redactUrls`가
+로그에 남는 URL을 `scheme://host`로 축약하고, `check:logging` 게이트가
+`console.*` 인자에 날것의 에러가 닿는 코드를 저장소 전체에서 거절한다. 서명된
+payload와 permission context는 bearer 권한이므로 로그·오류 상세에 출력하지
+않는다.
 
 ---
 
@@ -876,51 +626,50 @@ import 한 줄을 더하는 순간 거짓이 되며, 산문은 그걸 알아채�
 | EIP-712 도메인 | name `Mock USDC` / version `2` / decimals `6` |
 | EntryPoint | canonical v0.7 `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 | Delegation Framework v1.3 | **GIWA 배포·검증 완료** — DelegationManager `0xF2F782Fa…F40C` (active, owner=admin, unpaused), 38-unit exact composition |
-| owner 스마트계정 (payer) | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` (HybridDeleGator, owner=Case1) |
+| owner 스마트계정 (payer) | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` (HybridDeleGator, owner EOA `0x011234B8…B901`) |
 | ERC20PeriodTransferEnforcer | `0x700330288f6f094780121ea54cd2eDEfe45b3625` |
 
-이 표는 **주소를 갖고 우리가 직접 읽어 확인한 것만** 담는다. Dojang은 등급2 계획에
-등장하지만 이 저장소가 주소를 확인한 적이 없어 여기 넣지 않는다 — 확인한 것과 계획한
-것을 같은 표에 두면 표 전체의 값어치가 계획 수준으로 내려간다.
+이 표는 주소를 갖고 직접 읽어 확인한 항목만 담는다. Dojang은 로드맵에
+등장하지만 이 저장소가 주소를 확인한 적이 없으므로 여기 포함하지 않는다 —
+확인된 것과 계획된 것을 같은 표에 두지 않는다.
 
 ---
 
 ## 6. 검증 상태와 로드맵
 
-무엇이 어느 수준까지 검증됐는지를 증거 수준과 함께 적는다. §2 증거표와 같은 규칙이다
-— 채굴된 것, fork에서 완주한 것, 시뮬레이션으로 확인한 것을 같은 문장에 섞지 않는다.
+무엇이 어느 수준까지 검증되었는지를 증거 수준과 함께 기록한다. §2 증거표와 같은
+규칙으로, 채굴된 것·fork에서 완주한 것·시뮬레이션으로 확인한 것을 같은 문장에
+섞지 않는다.
 
-- **위임 결제 파이프라인 — GIWA 채굴** — Framework 배포, owner account 배포, root 위임
-  서명(ERC-1271 검증), 정상 정산까지 GIWA에 채굴됨. 한도·만료 거절은 GIWA 현재 상태를
-  상대로 한 시뮬레이션이며 채굴된 트랜잭션이 아니다(§2 증거표)
+- **위임 결제 파이프라인 — GIWA 채굴** — Framework 배포, owner account 배포,
+  root 위임 서명(ERC-1271 검증), 정상 정산까지 GIWA에 채굴됨. 한도·만료 거절은
+  GIWA 현재 상태를 상대로 한 시뮬레이션이며 채굴된 트랜잭션이 아니다(§2 증거표)
 - **에이전트 자동화 — GIWA 채굴** — MCP tool 한 번으로 사람 개입 없이 정산한
   `0x533c…9964c`가 block 31634935에 채굴됐고 payer 가스 지출은 `0`이다
-- **negative-path 수트 — 일회용 체인·GIWA fork** — `negative-path-suite.ts`가 동일한
-  23개 케이스(정상·주기 cap·주기 reset·만료·wrong-redeemer·수취인 불일치·replay·
-  facilitator 변조 6종 + 대조군·payer mismatch·root 취소·회수 UserOp 4종·제출
-  엔드포인트 2종·manager 합산)를 일회용 체인과 GIWA fork 양쪽에서 체인 파라미터화로
-  돌리며, 각 케이스의 온체인 revert 사유까지 대조한다
+- **negative-path 수트 — 일회용 체인·GIWA fork** — `negative-path-suite.ts`가
+  동일한 케이스 집합(정상·주기 cap·주기 reset·만료·wrong-redeemer·수취인
+  불일치·replay·facilitator 변조 6종 + 대조군·payer mismatch·root 취소·회수
+  UserOp 4종·제출 엔드포인트 2종·manager 합산)을 일회용 체인과 GIWA fork
+  양쪽에서 체인 파라미터화로 실행하며, 각 케이스의 온체인 revert 사유까지
+  대조한다. 케이스 수는 수트가 스스로 세어 출력한다
 - **콘솔·회수 제출 엔드포인트 — GIWA fork** — 실제 GIWA 상태·배포 바이트코드를
-  고정한 fork에서 브라우저 CORS leg를 포함해 제출기 E2E 8/8과 EntryPoint 회수를
+  고정한 fork에서 브라우저 CORS leg를 포함해 제출기 E2E와 EntryPoint 회수를
   완주했다. 다만 **GIWA에서 회수는 아직 채굴된 적이 없다.** payer의 EntryPoint
-  예치금이 `0`이라 선입금이 필요하고, 실제 지갑 UI 승인 화면도 마지막 수동 검증으로 남는다
-- **상시 게이트 — 로컬 + GIWA 읽기 전용** — `bun run check` 419 TypeScript + 14 Foundry
-  (2026-07-28 재측정 — `apps/web` 28개 포함), negative-path 23/23(일회용 체인·GIWA
-  fork), Framework 실행 bytecode·결정 주소 38/38을 재검증했다. 익스플로러 소스는
-  38/39이며, 유일한 미검증 유닛은 MetaMask SDK artifact/source 리비전 차이 때문에
-  현재 소스와 안 맞고 Mapae 정책 경로에서는 사용하지 않는다(세부 근거는
-  `docs/deployed-contracts.md`)
-- **공개 웹의 수치 규율** — 공개 웹(`apps/web`)은 랜딩과 콘솔을 한 앱으로 묶고,
-  표시하는 수치의 출처는 세 가지로 제한한다 — 체인 직접 읽기, 채굴된 해시,
-  negative-path 수트가 대조한 revert 사유. 이 규칙은 산문이 아니라 실측으로 지킨다:
-  웹의 거절 행 하나가 수취인 고정을 엉뚱한 enforcer
-  (`ERC20TransferAmountEnforcer:allowance-exceeded` — 금액 초과의 revert이며 수취인을
-  읽지 않는다)로 표기한 채 들어왔고, 이 문서의 주장을 저장소와 대조하는 검증 패스가
-  그것을 잡아 수트가 고정한 값(`AllowedCalldataEnforcer:invalid-calldata`)으로
-  바로잡았다
+  예치금이 `0`이라 선입금이 필요하고, 실제 지갑 UI 승인 화면이 마지막 수동
+  검증으로 남아 있다
+- **상시 게이트 — 로컬 + GIWA 읽기 전용** — 타입·테스트·문서·의존성 게이트를
+  묶은 `bun run check` 전체 통과. Framework는 실행 bytecode·결정 주소 38/38 재검증.
+  익스플로러 소스 검증은 39개(38유닛 + MockUSDC) 중 38이며, 유일한 미검증
+  유닛은 MetaMask SDK artifact/source 리비전 차이로 현재 소스와 일치하지 않고
+  Mapae 정책 경로에서 사용되지 않는다(세부 근거는
+  [배포 컨트랙트](deployed-contracts.md))
+- **공개 웹의 수치 규율** — 공개 웹(`apps/web`)이 표시하는 수치의 출처는 세
+  가지로 제한한다: 체인 직접 읽기, 채굴된 해시, negative-path 수트가 대조한
+  revert 사유
 
 앞으로 만들 것:
 
 - **정산 두뇌** — 트리거·스케줄러, 복합 위임(수취인·주기·상한), 원장, 재시도
-- **등급2 검증 경로** — Dojang KYC 게이트 + EAS 계약/영수증 스키마 + 리졸버
-- **이행검증** — optimistic 구조(기본 통과·이의제기 창·본드). 최종 판정자가 재실행이 아닌 중재이므로 trustless가 아님을 전제로 설계
+- **KYC·증명 검증 경로** — Dojang KYC 게이트 + EAS 계약/영수증 스키마 + 리졸버
+- **이행검증** — optimistic 구조(기본 통과·이의제기 창·본드). 최종 판정자가
+  재실행이 아닌 중재이므로 trustless가 아님을 전제로 설계
