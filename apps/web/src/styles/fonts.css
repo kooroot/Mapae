@@ -1,0 +1,36 @@
+/*
+ * Faces, bundled from npm and served from this origin.
+ *
+ * The published CSP is `font-src 'self'`, so a `fonts.googleapis.com` <link> —
+ * which is what `apps/console/index.html` still does — fails silently here and
+ * drops every headline to the platform serif. Importing through the bundler is
+ * what makes the policy and the typography agree instead of the policy quietly
+ * winning.
+ *
+ * Subsets are named explicitly rather than pulling each family's `index.css`.
+ * Noto Serif KR's full set is nine weights across seven scripts; the Korean
+ * subset alone is the large one, and shipping Cyrillic and Vietnamese to every
+ * visitor to get two weights of Hangul is most of a megabyte for nothing. Each
+ * file below declares its own `unicode-range`, so the browser fetches Korean
+ * only when Korean is on screen.
+ */
+
+/* Display — one family for Hangul, Hanja (馬牌) and Latin, so a crest and a
+   headline never switch faces mid-line. */
+@import "@fontsource/noto-serif-kr/latin-600.css";
+@import "@fontsource/noto-serif-kr/latin-700.css";
+@import "@fontsource/noto-serif-kr/korean-600.css";
+@import "@fontsource/noto-serif-kr/korean-700.css";
+
+/* Body — GIWA's own stack leads with Pretendard, so the app reads native to the
+   chain it settles on at no cost. The dynamic-subset build is the variable face
+   split by unicode-range. */
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+
+/* Mono — every on-chain value. Plex ships no Hangul (that is IBM Plex Sans KR,
+   a different family), which is why the Nanum companion is here: without it a
+   Korean word inside a mono line falls through to the system gothic and the
+   typeface changes mid-sentence. */
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+@import "@fontsource/nanum-gothic-coding/korean-400.css";

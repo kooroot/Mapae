@@ -1,0 +1,54 @@
+import type {Delegation} from "@metamask/smart-accounts-kit";
+import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
+import {isHex, type Hex} from "viem";
+
+/**
+ * Pasted text to a root delegation.
+ *
+ * Kept out of the route for the same reason the console keeps
+ * `resolveRootDelegation` out of its own: every interesting case is an input,
+ * and a render test cannot type. Splitting it also keeps the route free of the
+ * one decision here that is easy to get backwards.
+ */
+export type ParsedPermission =
+    | {kind: "empty"}
+    | {kind: "invalid"; reason: string}
+    | {kind: "ok"; context: Hex; root: Delegation; links: number};
+
+/**
+ * Three things here are load-bearing.
+ *
+ * **The root is the last link, not the first.** `decodeDelegations` returns the
+ * chain leaf-first, and the leaf is the throwaway an agent mints for one
+ * payment. Taking `[0]` would put a single payment's allowance on screen labelled
+ * as the account's standing cap — a number too small, presented as the number
+ * that matters.
+ *
+ * **An absent value is `empty`, never `invalid`.** That is the literal first
+ * state of the field on every visit. "Paste a permission context" and "this
+ * could not be decoded" send a reader to two different places, and only one of
+ * them exists.
+ *
+ * **A bad paste returns a reason instead of throwing.** This runs during render
+ * with no error boundary above it, so a throw unmounts the root and leaves a
+ * blank page — no message, no hint. The console paid for that lesson twice and
+ * records it at `Revocation.tsx`.
+ */
+export function parsePermissionContext(raw: string): ParsedPermission {
+    const value = raw.trim();
+    if (!value) return {kind: "empty"};
+    if (!isHex(value)) {
+        return {kind: "invalid", reason: "0x로 시작하는 16진 문자열이 아닙니다"};
+    }
+    try {
+        const links = decodeDelegations(value);
+        const root = links.at(-1);
+        if (!root) return {kind: "invalid", reason: "위임이 하나도 들어 있지 않습니다"};
+        return {kind: "ok", context: value, root, links: links.length};
+    } catch {
+        // The likely first-run mistake is a truncated paste of a ~2 kB context,
+        // which is well-formed hex and not a delegation array. Saying so is more
+        // use than reporting the decoder's own message.
+        return {kind: "invalid", reason: "위임 구조로 해석되지 않습니다 (잘린 값일 수 있습니다)"};
+    }
+}

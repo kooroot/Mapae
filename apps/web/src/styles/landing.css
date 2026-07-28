@@ -1,0 +1,610 @@
+/* ── Nav ───────────────────────────────────────────────────────────────── */
+
+.nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--paper-1) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px);
+    border-bottom: 1px solid var(--hair);
+}
+
+.nav-inner {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    height: 64px;
+}
+
+.lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.nav-links {
+    display: flex;
+    gap: 26px;
+    margin-left: auto;
+}
+
+.nav-links a {
+    font-size: 14px;
+    color: var(--ink-2);
+    padding-bottom: 2px;
+    border-bottom: 1px solid transparent;
+    transition: color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.nav-links a:hover {
+    color: var(--ink);
+    border-bottom-color: var(--red);
+}
+
+@media (max-width: 768px) {
+    .nav-links {
+        display: none;
+    }
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────
+   Two only. The primary is the object — black, the way the pass is black. The
+   ghost is an outline that fills on hover, which is the same gesture as a mark
+   being struck into a surface. There is no third. */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 42px;
+    padding: 0 20px;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    background: var(--ink);
+    color: var(--paper-0);
+    transition: background 160ms var(--ease), transform 160ms var(--ease);
+}
+
+.btn:hover {
+    background: #000;
+    transform: translateY(-1px);
+}
+
+.btn:active {
+    transform: none;
+}
+
+.ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 38px;
+    padding: 0 18px;
+    border: 1px solid var(--hair-strong);
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--ink-2);
+    background: transparent;
+    transition: border-color 160ms var(--ease), color 160ms var(--ease),
+        background 160ms var(--ease);
+}
+
+.ghost:hover:not(:disabled) {
+    border-color: var(--red);
+    color: var(--red-ink);
+    background: var(--red-wash);
+}
+
+.ghost:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* ── Hero ──────────────────────────────────────────────────────────────── */
+
+.hero {
+    padding: 112px 0 96px;
+    text-align: center;
+}
+
+.hero-copy {
+    max-width: 760px;
+    margin: 0 auto;
+}
+
+.hero-sub {
+    max-width: 520px;
+    margin: 22px auto 0;
+}
+
+.hero-cta {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 34px;
+}
+
+@media (max-width: 768px) {
+    .hero {
+        padding: 64px 0 56px;
+    }
+}
+
+/* ── The dial ──────────────────────────────────────────────────────────── */
+
+.dial {
+    margin: 64px auto 0;
+    max-width: 460px;
+}
+
+.dial-face {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.rim {
+    fill: none;
+    stroke: var(--hair-strong);
+}
+
+.rim-inner {
+    fill: none;
+    stroke: var(--hair);
+    stroke-width: 1;
+}
+
+.tick-major {
+    stroke: var(--ink);
+    stroke-width: 1.4;
+}
+
+.tick-minor {
+    stroke: var(--ink-4);
+    stroke-width: 1;
+}
+
+/* Spent. Struck, not removed — a tally records what was used, it does not erase it. */
+.tick-struck {
+    stroke: var(--red);
+    stroke-width: 2.4;
+}
+
+.over {
+    fill: none;
+    stroke: var(--red);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-dasharray: 400;
+    stroke-dashoffset: 400;
+    animation: draw 320ms var(--ease) forwards;
+}
+
+@keyframes draw {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+.sweep {
+    fill: var(--red);
+    transition: opacity 200ms var(--ease);
+}
+
+.dial[data-refused="true"] .sweep {
+    opacity: 0.35;
+}
+
+/* The centre string: letterpressed, because it is cut into the surface rather
+   than printed on it. One white highlight under one dark glyph is the entire
+   trick and it costs nothing. */
+.engraved {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    fill: var(--ink);
+    paint-order: stroke;
+}
+
+.dial-readout {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 26px;
+    padding-top: 18px;
+    border-top: 1px solid var(--hair);
+}
+
+.dial-live strong {
+    font-weight: 600;
+}
+
+.dial-verdict {
+    margin-top: 14px;
+    min-height: 44px;
+    text-align: left;
+}
+
+.refusal-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    background: var(--red-wash);
+    border-left: 2px solid var(--red);
+    color: var(--red-ink);
+    font-size: 12.5px;
+    word-break: break-all;
+    animation: rise 240ms var(--ease) both;
+}
+
+.refusal-tag {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    background: var(--red);
+    color: var(--paper-0);
+    border-radius: var(--radius);
+    flex: none;
+}
+
+@media (max-width: 560px) {
+    .dial-readout {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+/* ── Numbers band ──────────────────────────────────────────────────────── */
+
+.numbers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-top: 1px solid var(--hair);
+    border-bottom: 1px solid var(--hair);
+}
+
+.numbers > * {
+    padding: 34px var(--gutter);
+    border-left: 1px solid var(--hair);
+}
+
+.numbers > *:first-child {
+    border-left: 0;
+}
+
+.numeral {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 40px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    display: block;
+}
+
+.numeral-unit {
+    font-size: 18px;
+    color: var(--ink-3);
+    margin-left: 4px;
+}
+
+@media (max-width: 768px) {
+    .numbers {
+        grid-template-columns: 1fr;
+    }
+    .numbers > * {
+        border-left: 0;
+        border-top: 1px solid var(--hair);
+    }
+    .numbers > *:first-child {
+        border-top: 0;
+    }
+    .numeral {
+        font-size: 32px;
+    }
+}
+
+/* ── Refusal band — the only obsidian surface on the page ──────────────── */
+
+.refusals {
+    background: var(--obsidian);
+    color: var(--on-obsidian);
+    padding: var(--band) 0;
+}
+
+.refusals .eyebrow,
+.refusals .label {
+    color: var(--on-obsidian-dim);
+}
+
+.refusals .h2 {
+    color: var(--on-obsidian);
+}
+
+.refusal-table {
+    margin-top: 40px;
+    border-top: 1px solid rgba(237, 231, 218, 0.14);
+}
+
+.refusal-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr 1fr;
+    gap: 16px;
+    align-items: baseline;
+    padding: 20px 0;
+    border-bottom: 1px solid rgba(237, 231, 218, 0.1);
+}
+
+.refusal-row .attempt {
+    color: var(--on-obsidian);
+    font-size: 15px;
+}
+
+.refusal-row .enforcer {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--on-obsidian-dim);
+    word-break: break-all;
+}
+
+.refusal-row .revert {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--red-on-dark);
+    background: var(--red-wash-dark);
+    padding: 3px 8px;
+    border-radius: var(--radius);
+    justify-self: start;
+    word-break: break-all;
+}
+
+@media (max-width: 768px) {
+    .refusal-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+}
+
+/* ── Steps ─────────────────────────────────────────────────────────────── */
+
+.steps {
+    counter-reset: step;
+    margin-top: 44px;
+    border-top: 1px solid var(--hair);
+}
+
+.step {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 20px;
+    padding: 22px 0;
+    border-bottom: 1px solid var(--hair);
+}
+
+.step::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+    padding-top: 4px;
+}
+
+.step[data-branch="refuse"] {
+    background: var(--red-wash);
+    margin: 0 calc(var(--gutter) * -1);
+    padding-left: var(--gutter);
+    padding-right: var(--gutter);
+    border-bottom-color: var(--red-hair);
+}
+
+.step[data-branch="refuse"]::before {
+    color: var(--red-ink);
+}
+
+/* ── Comparison ────────────────────────────────────────────────────────── */
+
+.compare {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 0;
+    margin-top: 44px;
+    border: 1px solid var(--hair);
+}
+
+.compare-col {
+    padding: 28px;
+}
+
+.compare-col + .compare-col {
+    border-left: 1px solid var(--hair);
+    background: var(--paper-0);
+}
+
+.compare-col ol {
+    list-style: none;
+    margin-top: 18px;
+}
+
+.compare-col li {
+    padding: 11px 0 11px 22px;
+    border-top: 1px solid var(--hair);
+    font-size: 15px;
+    color: var(--ink-2);
+    position: relative;
+}
+
+.compare-col li::before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    color: var(--ink-4);
+}
+
+.compare-col li[data-mark="chain"] {
+    color: var(--ink);
+    font-weight: 500;
+}
+
+.compare-col li[data-mark="chain"]::before {
+    content: "✕";
+    color: var(--red);
+}
+
+@media (max-width: 768px) {
+    .compare {
+        grid-template-columns: 1fr;
+    }
+    .compare-col + .compare-col {
+        border-left: 0;
+        border-top: 1px solid var(--hair);
+    }
+}
+
+/* ── Parameter table ───────────────────────────────────────────────────── */
+
+.params {
+    width: 100%;
+    margin-top: 40px;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.params th {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 0 16px 10px 0;
+    border-bottom: 1px solid var(--hair-strong);
+    white-space: nowrap;
+}
+
+.params td {
+    padding: 14px 16px 14px 0;
+    border-bottom: 1px solid var(--hair);
+    vertical-align: top;
+    font-size: 14px;
+}
+
+.params tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--paper-2) 45%, transparent);
+}
+
+.params .k {
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+}
+
+.params .v {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+
+.params .who {
+    color: var(--ink-3);
+    font-size: 13px;
+}
+
+.table-scroll {
+    overflow-x: auto;
+}
+
+/* ── Code well ─────────────────────────────────────────────────────────── */
+
+.code {
+    margin-top: 32px;
+    background: var(--paper-2);
+    border: 1px solid var(--hair);
+    border-left: 2px solid var(--ink);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    overflow-x: auto;
+}
+
+.code pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--ink);
+    white-space: pre;
+}
+
+.code .c {
+    color: var(--ink-3);
+}
+
+.code .s {
+    color: var(--red-ink);
+}
+
+/* ── Evidence list ─────────────────────────────────────────────────────── */
+
+.evidence {
+    margin-top: 32px;
+    border-top: 1px solid var(--hair);
+}
+
+.evidence-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--hair);
+}
+
+@media (max-width: 640px) {
+    .evidence-row {
+        flex-direction: column;
+        gap: 4px;
+    }
+}
+
+/* ── Notice ────────────────────────────────────────────────────────────── */
+
+.notice {
+    margin-top: 40px;
+    padding: 18px 20px;
+    border: 1px solid var(--hair-strong);
+    border-left: 2px solid var(--red);
+    border-radius: var(--radius);
+    background: var(--paper-0);
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+
+.foot {
+    padding: 56px 0 72px;
+    border-top: 1px solid var(--hair);
+}
+
+.foot-inner {
+    display: flex;
+    justify-content: space-between;
+    gap: 28px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.foot-motto {
+    max-width: 340px;
+    margin-top: 14px;
+}

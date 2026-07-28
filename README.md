@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-375%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-403%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -79,7 +79,7 @@ a strong result, but nothing was mined and there is no link to follow.
 | D3/D4 | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
 | D5 | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
 | D6 | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
-| D7 | Standing documentation, logging, advisory and test-count gates; 375 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
+| D7 | Standing documentation, logging, advisory and test-count gates; 403 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - D2 settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
@@ -98,7 +98,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical notes](docs/tech-notes.md).
-- Regression suite: **375 TypeScript tests (278 shared/delegation/scripts + 3 MCP + 94 console)
+- Regression suite: **403 TypeScript tests (278 shared/delegation/scripts + 3 MCP + 94 console + 28 web)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a

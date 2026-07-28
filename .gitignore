@@ -78,3 +78,7 @@ temp/
 /docs/security-review-2026-07-23.md
 /docs/m02-m03-remediation-plan.md
 /docs/audits/
+
+# Cloudflare Workers local state and build output (apps/web)
+.wrangler/
+.output/
