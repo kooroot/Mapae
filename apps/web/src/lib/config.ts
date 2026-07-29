@@ -32,6 +32,8 @@ export const appUrl =
     (import.meta.env.DEV ? "/app" : "https://app.mapae.io");
 export const docsUrl =
     import.meta.env["VITE_DOCS_URL"]?.trim() || "https://gitbook.mapae.io";
+export const githubUrl =
+    import.meta.env["VITE_GITHUB_URL"]?.trim() || "https://github.com/kooroot/Mapae";
 
 /**
  * The committed deployment artifact is the source of truth for enforcer and
