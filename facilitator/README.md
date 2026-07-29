@@ -22,13 +22,13 @@ facilitator API에는 애플리케이션 인증이 없으므로 Compose 포트�
 > 노출할 수 있습니다. 구성 검증은 출력 없는 `docker compose config --quiet`만
 > 사용합니다.
 
-## D1 완료 판정
+## 기동 확인
 
 ```bash
 curl -s localhost:8080/supported | jq
 ```
 
-응답에 `eip155:91342` 와 exact 스킴이 보이면 **D1 끝**.
+응답에 `eip155:91342` 와 exact 스킴이 보이면 정상입니다.
 
 ## 설정 메모
 
@@ -49,7 +49,7 @@ curl -s localhost:8080/supported | jq
 
 정산 트랜잭션 가스를 이 지갑이 냅니다. GIWA ETH 잔액을 넉넉히 유지할 것 (`https://faucet.giwa.io`).
 
-## 연결된 토큰 (D2에서 사용)
+## 연결된 토큰
 
 | 항목 | 값 |
 |---|---|
@@ -58,4 +58,4 @@ curl -s localhost:8080/supported | jq
 | EIP-712 version | `2` |
 | decimals | `6` |
 
-> 이 name/version 문자열이 클라이언트 서명과 정확히 일치해야 합니다. 불일치 시 D2에서 전부 invalid signature.
+> 이 name/version 문자열이 클라이언트 서명과 정확히 일치해야 합니다. 불일치하면 결제 서명이 전부 invalid signature로 떨어집니다.

@@ -15,7 +15,7 @@ const roles = [
 async function main(): Promise<void> {
     if ((await Bun.file(SECRET_PATH).exists()) || (await Bun.file(PUBLIC_PATH).exists())) {
         throw new Error(
-            "D3 session accounts already exist; refusing to rotate or overwrite them implicitly",
+            "session accounts already exist; refusing to rotate or overwrite them implicitly",
         );
     }
     const accounts = Object.fromEntries(
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
     await chmod(SECRET_PATH, 0o600);
     await Bun.write(PUBLIC_PATH, `${JSON.stringify(publicAddresses, null, 2)}\n`);
 
-    console.log(`generated ${roles.length} isolated D3 session accounts`);
+    console.log(`generated ${roles.length} isolated session accounts`);
     console.log(`secret keys  ${SECRET_PATH} (mode 600, gitignored)`);
     console.log(`addresses    ${PUBLIC_PATH}`);
     for (const [role, address] of Object.entries(publicAddresses)) {

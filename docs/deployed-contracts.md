@@ -97,7 +97,7 @@ Delegation Framework의 코어. `DelegationManager`가 위임 서명 검증과
 | ExactCalldataBatchEnforcer | [`0x157BC93Be05c899E44d6836a95A25385531b67c9`](https://sepolia-explorer.giwa.io/address/0x157BC93Be05c899E44d6836a95A25385531b67c9) | | 배치 calldata 정확 일치 |
 | ExactExecutionEnforcer | [`0xcF3F6cA8323C0450C2Eb913f85c2EBcd4efB2389`](https://sepolia-explorer.giwa.io/address/0xcF3F6cA8323C0450C2Eb913f85c2EBcd4efB2389) | | 실행(target·value·calldata) 정확 일치 |
 | ExactExecutionBatchEnforcer | [`0xE696A7c90a4a94FA1417CeEAbB108024884A03Bf`](https://sepolia-explorer.giwa.io/address/0xE696A7c90a4a94FA1417CeEAbB108024884A03Bf) | | 배치 실행 정확 일치 |
-| SpecificActionERC20TransferBatchEnforcer | [`0xc2dCDaaBec97C4b3118075641A852D5884Da4e74`](https://sepolia-explorer.giwa.io/address/0xc2dCDaaBec97C4b3118075641A852D5884Da4e74) | | 특정 액션 + ERC-20 전송 배치. **소스 미검증 — 38개 중 유일. 사유는 [아래](#소스-검증-상태--38-유닛-중-37).** Mapae 정책 경로에서 쓰지 않음 |
+| SpecificActionERC20TransferBatchEnforcer | [`0xc2dCDaaBec97C4b3118075641A852D5884Da4e74`](https://sepolia-explorer.giwa.io/address/0xc2dCDaaBec97C4b3118075641A852D5884Da4e74) | | 특정 액션 + ERC-20 전송 배치. **소스 미검증 — 38개 중 유일. 사유는 이 문서의 "소스 검증 상태" 절에 있다.** Mapae 정책 경로에서 쓰지 않음 |
 | DeployedEnforcer | [`0x3fc13b47b7E7D2DbF257070c89395AAc43D22115`](https://sepolia-explorer.giwa.io/address/0x3fc13b47b7E7D2DbF257070c89395AAc43D22115) | | 대상 컨트랙트 배포 여부 |
 | ApprovalRevocationEnforcer | [`0x7985846b0b9f4f1641774a9323bDc4e1dbbe29bD`](https://sepolia-explorer.giwa.io/address/0x7985846b0b9f4f1641774a9323bDc4e1dbbe29bD) | | ERC-20 approval 취소 강제 |
 | OwnershipTransferEnforcer | [`0x0f423B5DB18c66178eEd4cA4a7e3021067b4E294`](https://sepolia-explorer.giwa.io/address/0x0f423B5DB18c66178eEd4cA4a7e3021067b4E294) | | 소유권 이전 제약 |

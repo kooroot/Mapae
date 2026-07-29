@@ -172,13 +172,13 @@ The same command and the hermetic 23-case delegation suite run in GitHub Actions
 on every pull request and every push to `main`, from a recursive-submodule checkout
 with Bun and Foundry pinned to the versions used for the latest full-gate re-run.
 
-The documentation check is in the gate because the roadmap makes this README the
-submission, which turns doc rot into a correctness bug. It verifies that every
-`bun run` and `make` command written in a code block exists, that every relative
-link resolves, and that every address matches one of the two canonical sources —
-the deployment artifacts and `packages/shared/src/token.ts`. Its first run found
-that MockUSDC's address is in no artifact at all, which this repository had been
-claiming otherwise for months.
+The documentation check is in the gate because this README is the primary
+description of the system, which turns doc rot into a correctness bug. It
+verifies that every `bun run` and `make` command written in a code block exists,
+that every relative link resolves, and that every address matches one of the two
+canonical sources — the deployment artifacts and `packages/shared/src/token.ts`.
+Its first run found that MockUSDC's address is in no artifact at all, which this
+repository had been claiming otherwise.
 
 The count of tests in the badge above is checked against the tests that exist,
 not against the other numbers on this page. Badge, total and breakdown agreeing
@@ -339,8 +339,11 @@ Deployer, relayer, Framework admin, and the three demo case identities are
 independent roles. The corresponding private key must resolve to its configured
 public address or the operation fails before broadcast.
 
-`.env`, `.secrets`, generated session addresses, deployment broadcasts, and
-permission artifacts are excluded from Git. Tracked examples contain fixtures only.
+`.env`, `.secrets`, deployment broadcasts, and permission artifacts are excluded
+from Git. Session generation splits its output on purpose: private keys go to
+`.secrets/`, and the matching public addresses ship in
+`deployments/d3-session-addresses.json` so `docs/deployed-contracts.md` has a
+canonical source on every clone. Tracked examples contain fixtures only.
 
 ## Security model
 
@@ -448,8 +451,12 @@ docs/                      technical notes and the deployed-contract reference
 
 ## Deployment safety
 
-Default deployment commands are previews. GIWA writes require both `--broadcast`
-and an explicit approval phrase, and every activation step is approved separately.
+Default deployment commands are previews. Framework, owner-account and
+ownership-acceptance deployments require `--broadcast` together with an approval
+phrase pinned to the composition being deployed. MockUSDC deployment and
+`run:giwa` settlement are gated by `--broadcast` alone — deliberately, because a
+settlement is bounded by the on-chain caveat while an infrastructure deployment
+is not. Every activation step is approved separately.
 
 Everything reproducible from this repository runs against a disposable chain or a
 local fork. The end-to-end script will not start if a child process would talk to
@@ -457,3 +464,8 @@ anything other than a loopback node, because the same command pointed at the rea
 RPC would settle real transactions. Deployment tooling under `apps/delegation-lab`
 keeps a stricter HTTPS-only rule for exactly the opposite reason: those commands
 are meant to reach GIWA and must never be aimed at a fork.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The submodules under `contracts/lib/` are upstream
+projects and keep their own licenses.

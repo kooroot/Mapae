@@ -1,12 +1,12 @@
 # mapae/contracts
 
 Mapae 정산에 쓰이는 컨트랙트와 exact Delegation Framework Forge 배포 경로.
-MockUSDC는 D1 rail이고 Framework는 D3/D4의 위임 실행 계층이다.
+MockUSDC는 EIP-3009 직접 결제 rail이고, Framework는 ERC-7710 위임 실행 계층이다.
 
 ## 셋업
 
 ⚠️ **`forge init`이나 `forge install`을 다시 실행하지 말 것.**
-`foundry.toml`과 감사한 dependency pin을 바꿀 수 있다. 루트에서 고정된
+`foundry.toml`과 고정된 dependency pin을 바꿀 수 있다. 루트에서 고정된
 submodule을 그대로 초기화한다.
 
 ```bash
@@ -47,14 +47,14 @@ chmod 600 .env
 forge test -vvv
 ```
 
-D1 통과 기준 — 아래 네 축이 전부 초록:
+통과 기준 — 아래 네 축이 전부 초록:
 
 | 테스트 | 무엇을 막는가 |
 |---|---|
 | `test_rejects_signatureFromWrongSigner` / `test_rejects_tamperedAmount` | 서명 위조·필드 변조 |
 | `test_rejects_replayOfSameNonce` / `test_cancelAuthorization_*` | 리플레이 |
 | `test_rejects_beforeValidAfter` / `test_rejects_afterExpiry` | 시간 창 |
-| `test_acceptsSmartAccountSignature_eip1271` | **D3~D4 블로커** — 스마트어카운트 결제 |
+| `test_acceptsSmartAccountSignature_eip1271` | **위임 결제 블로커** — 스마트어카운트 결제 |
 
 ## 배포
 
@@ -62,6 +62,10 @@ D1 통과 기준 — 아래 네 축이 전부 초록:
 forge script script/DeployMockUSDC.s.sol \
   --rpc-url giwa_sepolia --broadcast --verify -vvvv
 ```
+
+이 명령은 GIWA에 실제로 씁니다. 게이트는 `--broadcast` 하나이고, 스크립트가
+강제하는 것은 체인 ID와 배포자·지불자 역할 분리뿐입니다. Framework 배포는
+별도로 승인 문구를 하나 더 요구합니다.
 
 배포 후 **소스 verify 확인**. 익스플로러에서 소스 코드가 보여야 합니다.
 
@@ -94,13 +98,13 @@ x402 토큰 설정과 아래가 **정확히** 일치해야 합니다. 불일치�
 
 ## 설계 메모
 
-- **EIP-1271**: 서명 검증을 OZ `SignatureChecker`로 태워서 EOA와 스마트어카운트를 모두 받습니다. `ecrecover`만 쓰면 D3에서 payer가 4337 계정이 되는 순간 조용히 깨집니다.
+- **EIP-1271**: 서명 검증을 OZ `SignatureChecker`로 태워서 EOA와 스마트어카운트를 모두 받습니다. `ecrecover`만 쓰면 payer가 4337 계정이 되는 순간 조용히 깨집니다.
 - **decimals 6**: 실제 USDC와 맞춤. 다르면 x402 금액 처리에서 10¹² 오차.
 - **`mint` 무제한**: 테스트넷 전용. 메인넷에 이 형태로 올리지 말 것.
 - **`transferWithAuthorization` 프론트런**: 관찰자가 mempool에서 authorization을 추출해 먼저 제출할 수 있음. 자금은 여전히 `to`로 가므로 절도가 아니라 순서 문제. 수취 사실에 로직을 거는 컨트랙트는 `receiveWithAuthorization`을 쓸 것.
 - **`evm_version = "cancun"`**: MCOPY 관련 리버트가 나면 `shanghai`로 내릴 것.
 
-## 다음 단계 (D1 범위 아님)
+## 로드맵 (현재 범위 아님)
 
-- 3단계: EAS 계약/영수증 스키마 + OnchainVerifiable 리졸버
+- EAS 계약/영수증 스키마 + OnchainVerifiable 리졸버
 - 위임·세션키는 MetaMask Delegation Toolkit 쪽에서 처리 (컨트랙트 직접 작성 아님)

@@ -165,7 +165,7 @@ bun run check
 GitHub Actions가 실행합니다. 재귀 submodule checkout 뒤 최근 전체 게이트 재검증에 사용한
 Bun·Foundry 버전을 고정하므로, 로컬에서만 녹색인 상태를 완료로 세지 않습니다.
 
-문서 검사를 게이트에 넣은 이유는 로드맵이 이 README를 곧 제출물로 두기 때문입니다 —
+문서 검사를 게이트에 넣은 이유는 이 README가 시스템의 1차 설명이기 때문입니다 —
 그러면 문서 부패가 정합성 버그가 됩니다. 코드 블록에 적힌 모든 `bun run`·`make`
 명령이 실제로 존재하는지, 모든 상대 링크가 열리는지, 모든 주소가 두 정본(배포
 아티팩트와 `packages/shared/src/token.ts`) 중 하나와 일치하는지 확인합니다. 첫
@@ -323,8 +323,11 @@ cp apps/delegation-lab/.env.example apps/delegation-lab/.env
 Deployer·relayer·Framework admin·세 데모 case identity는 모두 별도 역할입니다.
 개인키에서 파생된 주소가 설정한 공개주소와 다르면 broadcast 전에 중단합니다.
 
-`.env`, `.secrets`, 실제 세션 주소, 배포 broadcast, permission artifact는 모두
-Git에서 제외됩니다. 예제 파일에는 fixture 값만 들어 있습니다.
+`.env`, `.secrets`, 배포 broadcast, permission artifact는 Git에서 제외됩니다.
+세션 생성은 출력을 의도적으로 나눕니다 — 개인키는 `.secrets/`로 가고, 짝이 되는
+공개주소는 `deployments/d3-session-addresses.json`으로 들어갑니다. 그래야
+`docs/deployed-contracts.md`가 모든 클론에서 정본을 갖습니다. 예제 파일에는
+fixture 값만 들어 있습니다.
 
 ## 보안 모델
 
@@ -425,11 +428,19 @@ docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 
 ## 배포 안전장치
 
-기본 명령은 배포 preview만 수행합니다. GIWA write는 `--broadcast`와 명시적인
-승인 문구가 함께 있을 때만 활성화되며, 활성화 단계마다 별도 승인을 거칩니다.
+기본 명령은 배포 preview만 수행합니다. Framework·owner account 배포와 ownership
+수락은 `--broadcast`와 배포 대상 조합에 묶인 승인 문구를 함께 요구합니다.
+MockUSDC 배포와 `run:giwa` 정산은 `--broadcast` 하나로 게이트되는데, 정산은
+온체인 caveat이 한도를 쥐고 있고 인프라 배포는 그렇지 않기 때문입니다. 활성화
+단계마다 별도 승인을 거칩니다.
 
 이 저장소에서 재현 가능한 것은 전부 일회용 체인이나 로컬 fork에서 돌아갑니다.
 end-to-end 스크립트는 자식 프로세스가 loopback 노드가 아닌 곳과 통신하려 하면
 시작하지 않습니다 — 같은 명령을 실제 RPC로 겨누면 진짜 정산이 나가기 때문입니다.
 `apps/delegation-lab`의 배포 도구는 정반대 이유로 HTTPS 전용 규칙을 더 엄격히
 유지합니다. 그것들은 GIWA에 닿는 것이 목적이므로 fork를 겨눠서는 안 됩니다.
+
+## 라이선스
+
+MIT — [LICENSE](LICENSE) 참조. `contracts/lib/` 아래 submodule은 각 업스트림
+프로젝트의 라이선스를 따릅니다.
