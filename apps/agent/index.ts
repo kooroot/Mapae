@@ -128,10 +128,12 @@ async function main() {
     // v2 transport: the offer rides in the Payment-Required header; the JSON body is
     // the v1-transport fallback. A present-but-unusable header downgrades to the body.
     let body: PaymentRequired | undefined;
+    let offerFromHeader = false;
     const offerHeader = first.headers.get(PAYMENT_REQUIRED_HEADER);
     if (offerHeader !== null) {
         try {
             body = decodePaymentRequiredHeader(offerHeader) as PaymentRequired;
+            offerFromHeader = true;
         } catch {
             body = undefined;
         }
@@ -206,17 +208,17 @@ async function main() {
     // resolves which scheme handler to use. Omitting it reads as `unsupported_scheme`.
     const payload = buildPaymentPayload({accepted, signature, authorization: auth});
 
-    // 4. Retry with the signed payload attached — one value, two header names: a v2
-    // seller reads Payment-Signature, a v1-transport seller reads X-PAYMENT.
-    console.log("\nsigned — retrying with Payment-Signature");
-    const paymentHeader = encodePaymentHeader(payload);
+    // 4. Retry with the signed payload attached. The submission name is negotiated
+    // from the 402's own transport, like the reference client: header-borne offer →
+    // Payment-Signature, body-only offer → X-PAYMENT. Never both — duplicating the
+    // payload across two names is what pushed the ERC-7710 flow over the server's
+    // total-header limit (431).
+    const submissionHeader = offerFromHeader ? PAYMENT_SIGNATURE_HEADER : LEGACY_PAYMENT_HEADER;
+    console.log(`\nsigned — retrying with ${submissionHeader}`);
     const second = await fetch(TARGET_URL, {
         redirect: "error",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        headers: {
-            [PAYMENT_SIGNATURE_HEADER]: paymentHeader,
-            [LEGACY_PAYMENT_HEADER]: paymentHeader,
-        },
+        headers: {[submissionHeader]: encodePaymentHeader(payload)},
     });
 
     const text = await second.text();

@@ -162,6 +162,41 @@ describe("D5 payForDelegatedResource", () => {
         expect(calls).toHaveLength(2);
     });
 
+    test("a header-transported offer is paid with Payment-Signature alone", async () => {
+        // Negotiated, not dual-sent, exactly like the reference client. An ERC-7710
+        // payload carries a full permission context, and the same value under two
+        // header names crossed the HTTP server's total-header limit — the seller
+        // answered 431 before the handler's own size check ever ran (measured on the
+        // fork e2e). The 402's own transport is the negotiation signal.
+        const header = encodePaymentRequiredHeader(
+            paymentRequired() as PaymentRequired<Erc7710PaymentRequirements>,
+        );
+        const {impl, calls} = scriptedFetch(
+            jsonResponse(200, {invoice: "inv-001"}),
+            null,
+            {"Payment-Required": header},
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        const headers = calls[1]?.init?.headers as Record<string, string>;
+        expect(headers["Payment-Signature"]).toBeTypeOf("string");
+        expect(headers["X-PAYMENT"]).toBeUndefined();
+    });
+
+    test("a body-transported offer is paid with X-PAYMENT alone", async () => {
+        // The already-deployed v1-transport seller answers with a body-only 402 and
+        // reads only X-PAYMENT; sending it the v2 name would waste the same header
+        // budget the test above protects.
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        const headers = calls[1]?.init?.headers as Record<string, string>;
+        expect(headers["X-PAYMENT"]).toBeTypeOf("string");
+        expect(headers["Payment-Signature"]).toBeUndefined();
+    });
+
     test("falls back to the 402 JSON body when the Payment-Required header is malformed", async () => {
         // Mirrors the reference client: a present-but-unusable v2 header downgrades to
         // the v1-transport body instead of failing a payment the body can still carry.
@@ -174,19 +209,6 @@ describe("D5 payForDelegatedResource", () => {
 
         expect(result.ok).toBe(true);
         expect(calls).toHaveLength(2);
-    });
-
-    test("sends the payment under both Payment-Signature and X-PAYMENT", async () => {
-        // Dual-send is the migration bridge: a v2 seller reads Payment-Signature, the
-        // already-deployed v1-transport seller reads X-PAYMENT, and the value is one
-        // and the same encoded payload.
-        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}));
-        const result = await payForDelegatedResource(target, baseConfig(impl));
-
-        expect(result.ok).toBe(true);
-        const headers = calls[1]?.init?.headers as Record<string, string>;
-        expect(headers["Payment-Signature"]).toBeTypeOf("string");
-        expect(headers["Payment-Signature"]).toBe(headers["X-PAYMENT"] as string);
     });
 
     test("no retry when the seller advertises no trusted facilitator", async () => {

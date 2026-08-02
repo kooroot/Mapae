@@ -251,12 +251,14 @@ export async function payForDelegatedResource(
     // mirrors the reference client (`x402-reqwest`) rather than failing a payment the
     // body can still carry.
     let body: PaymentRequired<Erc7710PaymentRequirements> | undefined;
+    let offerFromHeader = false;
     const offerHeader = first.headers.get(PAYMENT_REQUIRED_HEADER);
     if (offerHeader !== null) {
         try {
             body = decodePaymentRequiredHeader(
                 offerHeader,
             ) as PaymentRequired<Erc7710PaymentRequirements>;
+            offerFromHeader = true;
         } catch {
             body = undefined;
         }
@@ -347,18 +349,20 @@ export async function payForDelegatedResource(
 
     const paymentHeader = encodePaymentHeader(payload);
 
+    // Negotiated from the 402's own transport, exactly like the reference client: an
+    // offer that arrived in the Payment-Required header marks a v2-transport seller
+    // (Payment-Signature), a body-only offer marks the v1 transport this repo shipped
+    // first (X-PAYMENT). Never both — an ERC-7710 payload carries a full permission
+    // context, and duplicating it across two header names crossed the HTTP server's
+    // total-header limit: the seller answered 431 before its own size check ran
+    // (measured on the fork e2e).
+    const submissionHeader = offerFromHeader ? PAYMENT_SIGNATURE_HEADER : LEGACY_PAYMENT_HEADER;
     let second: Response;
     try {
-        // One encoded payload, two header names: a v2 seller reads Payment-Signature,
-        // the already-deployed v1-transport seller reads X-PAYMENT. Dropping the alias
-        // is a coordinated cut across every running seller, not a client-side cleanup.
         second = await doFetch(target, {
             redirect: "error",
             signal: AbortSignal.timeout(timeoutMs),
-            headers: {
-                [PAYMENT_SIGNATURE_HEADER]: paymentHeader,
-                [LEGACY_PAYMENT_HEADER]: paymentHeader,
-            },
+            headers: {[submissionHeader]: paymentHeader},
         });
     } catch (error) {
         // The header is already on the wire. A connection that dies now says nothing
