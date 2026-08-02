@@ -28,15 +28,17 @@ bearer 권한이므로 tool 결과로 내보내지 않도록 설계되어 있다
 | 항목 | 비고 |
 |---|---|
 | [Bun](https://bun.sh) | 서버 런타임. 저장소 클론 후 `bun install` |
-| `apps/delegated-seller` 실행 | 기본 `127.0.0.1:3001` — 402를 발행하는 판매자 |
-| `apps/facilitator-erc7710` 실행 | 기본 `127.0.0.1:8081` — 검증·정산·가스 대납 |
+| 판매자·facilitator 엔드포인트 | 기본 경로는 Mapae가 운영하는 호스팅 엔드포인트다 — 판매자 `https://seller.mapae.io`, facilitator `https://facilitator.mapae.io`. 서비스를 직접 띄울 필요 없이 §3의 URL 변수 두 개만 지정한다. 직접 운영은 이 절 끝의 "직접 띄우기" 참조 |
 | 서명된 parent permission | 소유자 지갑이 서명한 JSON 파일 (아래 참조) |
 | 세션키 | 에이전트 전용 키. `apps/delegation-lab`에서 `bun run sessions:generate`로 생성 가능 |
 
-두 서비스는 각자의 디렉터리에서 `bun run index.ts`로 기동하며, 각자 자기
-`.env`를 읽는다 — facilitator는 `RELAYER_PRIVATE_KEY`·`RELAYER_ADDRESS`,
-판매자는 `PAY_TO`(공개 주소). 필요한 값과 기대 로그는
-[GIWA 데모 런북 §1–2](giwa-demo-runbook.md)에 있다.
+호스팅 facilitator가 살아 있는지는 등록 전에 한 줄로 확인할 수 있다:
+
+```bash
+curl -s https://facilitator.mapae.io/supported
+```
+
+`eip155:91342`와 signer 주소가 돌아오면 정상이다.
 
 parent permission은 소유자 지갑으로 서명한다. `apps/delegation-lab`의
 `bun run permission:prepare`가 지갑(예: Rabby)이 `eth_signTypedData_v4`로 서명할
@@ -49,17 +51,29 @@ typed data를 출력하고, `bun run permission:assemble`이 서명을 붙여 �
 `PARENT_PERMISSION_CONTEXT_PATH`로 읽으므로, 파일을 그 위치로 옮기거나 변수에
 실제 경로를 지정해야 한다.
 
+### 직접 띄우기 (셀프호스팅)
+
+판매자와 facilitator를 직접 운영하는 경우, 두 서비스는 각자의 디렉터리에서
+`bun run index.ts`로 기동하며 각자 자기 `.env`를 읽는다 — facilitator는
+`RELAYER_PRIVATE_KEY`·`RELAYER_ADDRESS`, 판매자는 `PAY_TO`(공개 주소). 두
+서비스 모두 loopback에만 바인딩하므로 외부 노출은 별도의 TLS 프록시나 터널이
+필요하다. 필요한 값과 기대 로그는
+[GIWA 데모 런북 §1–2](giwa-demo-runbook.md)에 있다.
+
 ## 3. 환경 변수
 
 `apps/delegated-agent/.env.example`을 같은 디렉터리의 `.env`로 복사한 뒤 값을
 채운다. 서버는 시작 디렉터리의 `.env`를 읽는다(Bun 자동 로드).
 
+호스팅 엔드포인트를 쓰는 경우 `SELLER_URL`과 `FACILITATOR_URL` 두 값을 호스팅
+URL로 지정한다. 표의 기본값은 loopback으로, 셀프호스팅(§2)에 맞춰져 있다.
+
 | 변수 | 필수 | 기본값 |
 |---|---|---|
 | `AGENT_PRIVATE_KEY` | ✓ | — 32바이트 세션키. `.env`에만 둔다 |
 | `FRAMEWORK_ADMIN_ADDRESS` | ✓ | — 배포 검증에 쓰는 Framework admin 주소. GIWA Sepolia 값은 [배포 컨트랙트](deployed-contracts.md)의 Framework Admin 항목이다 — `.env.example`의 `0x3333…`은 자리표시자다 |
-| `SELLER_URL` | | `http://127.0.0.1:3001` |
-| `FACILITATOR_URL` | | `http://127.0.0.1:8081` |
+| `SELLER_URL` | | `http://127.0.0.1:3001` — 호스팅 사용 시 `https://seller.mapae.io` |
+| `FACILITATOR_URL` | | `http://127.0.0.1:8081` — 호스팅 사용 시 `https://facilitator.mapae.io` |
 | `GIWA_SEPOLIA_RPC_URL` | | `https://sepolia-rpc.giwa.io` |
 | `DELEGATION_DEPLOYMENT_PATH` | | `../../deployments/giwa-sepolia.framework.json` |
 | `DELEGATION_MANIFEST_PATH` | | `../../deployments/giwa-sepolia.framework-manifest.json` |

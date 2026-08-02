@@ -9,7 +9,7 @@ Mapae는 AI 에이전트가 사용자의 지갑이나 개인키를 소유하지 
 GIWA-native 에이전틱 페이먼트 인프라입니다.
 
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
-![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
+![x402 v2 · v1 transport](https://img.shields.io/badge/x402-v2%20%C2%B7%20v1%20transport-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
 ![Tests](https://img.shields.io/badge/tests-427%20TS%20%2B%2014%20Foundry-16A34A)
 

@@ -9,7 +9,7 @@ autonomously within explicit amount, time, recipient, and redeemer limits—with
 owning the user's wallet or private key.
 
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
-![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
+![x402 v2 · v1 transport](https://img.shields.io/badge/x402-v2%20%C2%B7%20v1%20transport-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
 ![Tests](https://img.shields.io/badge/tests-427%20TS%20%2B%2014%20Foundry-16A34A)
 
