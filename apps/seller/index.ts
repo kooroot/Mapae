@@ -3,13 +3,18 @@ import {getAddress, isAddress, isHex, zeroAddress, type Address} from "viem";
 import {
     FACILITATOR_URL as DEFAULT_FACILITATOR_URL,
     GIWA_SEPOLIA_CAIP2,
+    LEGACY_PAYMENT_RESPONSE_HEADER,
+    PAYMENT_REQUIRED_HEADER,
+    PAYMENT_RESPONSE_HEADER,
     X402_VERSION,
     buildPaymentRequirements,
     decodePaymentHeader,
     describe,
+    encodePaymentRequiredHeader,
     explorerTxUrl,
     fromTokenAmount,
     httpStatusFor,
+    readInboundPaymentHeader,
     toTokenAmount,
     type FacilitatorRequest,
     type PaymentPayload,
@@ -158,11 +163,11 @@ app.get("/deliverable/:id", async (c) => {
         amount: toTokenAmount(item.price),
     });
 
-    const header = c.req.header("X-PAYMENT");
+    const payment = readInboundPaymentHeader((name) => c.req.header(name));
 
     // No payment attached → advertise what's required.
     // In v2 the resource metadata sits at the top level, not inside each requirement.
-    if (!header) {
+    if (!payment) {
         const body: PaymentRequired = {
             x402Version: X402_VERSION,
             resource: {
@@ -172,24 +177,27 @@ app.get("/deliverable/:id", async (c) => {
             },
             accepts: [requirements],
         };
+        // v2 transport advertises the offer in a Payment-Required header; the JSON
+        // body stays as the v1-transport form already-deployed agents read.
+        c.header(PAYMENT_REQUIRED_HEADER, encodePaymentRequiredHeader(body));
         return c.json(body, 402);
     }
 
-    if (header.length > MAX_PAYMENT_HEADER_LENGTH) {
+    if (payment.value.length > MAX_PAYMENT_HEADER_LENGTH) {
         return fail(c, {
             _tag: "MalformedPayload",
-            field: "X-PAYMENT",
+            field: payment.name,
             detail: `exceeds ${MAX_PAYMENT_HEADER_LENGTH} characters`,
         });
     }
 
     let payload: PaymentPayload;
     try {
-        payload = decodePaymentHeader(header);
+        payload = decodePaymentHeader(payment.value);
     } catch {
         return fail(c, {
             _tag: "MalformedPayload",
-            field: "X-PAYMENT",
+            field: payment.name,
             detail: "not valid base64 JSON",
         });
     }
@@ -222,7 +230,9 @@ app.get("/deliverable/:id", async (c) => {
         txHash ? explorerTxUrl(txHash) : "(no hash returned)",
     );
 
-    c.header("X-PAYMENT-RESPONSE", btoa(JSON.stringify(settled.value)));
+    const receiptHeader = btoa(JSON.stringify(settled.value));
+    c.header(PAYMENT_RESPONSE_HEADER, receiptHeader);
+    c.header(LEGACY_PAYMENT_RESPONSE_HEADER, receiptHeader);
     return c.json({
         ...item.body,
         receipt: {

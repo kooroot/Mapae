@@ -2,10 +2,14 @@ import {createPublicClient, getAddress, http, isAddress, zeroAddress, type Hex} 
 import {privateKeyToAccount} from "viem/accounts";
 import {
     EIP3009_TYPES,
+    LEGACY_PAYMENT_HEADER,
     MOCK_USDC,
     MOCK_USDC_ABI,
+    PAYMENT_REQUIRED_HEADER,
+    PAYMENT_SIGNATURE_HEADER,
     X402_VERSION,
     buildPaymentPayload,
+    decodePaymentRequiredHeader,
     encodePaymentHeader,
     explorerTxUrl,
     fromTokenAmount,
@@ -121,7 +125,18 @@ async function main() {
         return;
     }
 
-    const body = (await first.json()) as PaymentRequired;
+    // v2 transport: the offer rides in the Payment-Required header; the JSON body is
+    // the v1-transport fallback. A present-but-unusable header downgrades to the body.
+    let body: PaymentRequired | undefined;
+    const offerHeader = first.headers.get(PAYMENT_REQUIRED_HEADER);
+    if (offerHeader !== null) {
+        try {
+            body = decodePaymentRequiredHeader(offerHeader) as PaymentRequired;
+        } catch {
+            body = undefined;
+        }
+    }
+    body ??= (await first.json()) as PaymentRequired;
     if (body?.x402Version !== X402_VERSION) {
         throw new Error(`unsupported x402 version ${body?.x402Version}`);
     }
@@ -191,12 +206,17 @@ async function main() {
     // resolves which scheme handler to use. Omitting it reads as `unsupported_scheme`.
     const payload = buildPaymentPayload({accepted, signature, authorization: auth});
 
-    // 4. Retry with the signed payload attached.
-    console.log("\nsigned — retrying with X-PAYMENT");
+    // 4. Retry with the signed payload attached — one value, two header names: a v2
+    // seller reads Payment-Signature, a v1-transport seller reads X-PAYMENT.
+    console.log("\nsigned — retrying with Payment-Signature");
+    const paymentHeader = encodePaymentHeader(payload);
     const second = await fetch(TARGET_URL, {
         redirect: "error",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        headers: {"X-PAYMENT": encodePaymentHeader(payload)},
+        headers: {
+            [PAYMENT_SIGNATURE_HEADER]: paymentHeader,
+            [LEGACY_PAYMENT_HEADER]: paymentHeader,
+        },
     });
 
     const text = await second.text();

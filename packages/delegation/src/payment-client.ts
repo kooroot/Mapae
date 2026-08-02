@@ -1,8 +1,12 @@
 import {
     GIWA_SEPOLIA_CAIP2,
+    LEGACY_PAYMENT_HEADER,
     MOCK_USDC,
+    PAYMENT_REQUIRED_HEADER,
+    PAYMENT_SIGNATURE_HEADER,
     X402_VERSION,
     buildErc7710PaymentPayload,
+    decodePaymentRequiredHeader,
     encodePaymentHeader,
     isLatin1,
     redactForLog,
@@ -136,7 +140,7 @@ export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
     if (facilitators != null && !Array.isArray(facilitators)) {
         throw new Error("seller facilitatorAddresses is not a list");
     }
-    // The whole requirements object is echoed back inside the X-PAYMENT header, which is
+    // The whole requirements object is echoed back inside the payment header, which is
     // base64 via `btoa` — Latin-1 only. Any character above U+00FF anywhere in here,
     // including in a field we never read, makes that encoding throw.
     //
@@ -205,7 +209,8 @@ function extractTransaction(resource: unknown): Hex | undefined {
 
 /**
  * Autonomous ERC-7710 payment: GET → 402 → sign a payment-specific leaf → retry
- * with `X-PAYMENT` → resource. This is the reusable core shared by the CLI agent
+ * with `Payment-Signature` (+ `X-PAYMENT` alias) → resource. This is the reusable
+ * core shared by the CLI agent
  * and the D5 MCP server; the caller owns env/file loading, deployment verification,
  * and provider construction.
  *
@@ -240,11 +245,31 @@ export async function payForDelegatedResource(
         );
     }
 
-    let body: PaymentRequired<Erc7710PaymentRequirements>;
-    try {
-        body = (await first.json()) as PaymentRequired<Erc7710PaymentRequirements>;
-    } catch (error) {
-        return failure("SELLER_OFFER_INVALID", `402 body is not JSON: ${errorMessage(error)}`);
+    // v2 transport carries the offer in the Payment-Required header and may leave the
+    // body empty; the JSON body is the v1-transport form this repo shipped first. Header
+    // first, body as fallback — including when a header is present but unusable, which
+    // mirrors the reference client (`x402-reqwest`) rather than failing a payment the
+    // body can still carry.
+    let body: PaymentRequired<Erc7710PaymentRequirements> | undefined;
+    const offerHeader = first.headers.get(PAYMENT_REQUIRED_HEADER);
+    if (offerHeader !== null) {
+        try {
+            body = decodePaymentRequiredHeader(
+                offerHeader,
+            ) as PaymentRequired<Erc7710PaymentRequirements>;
+        } catch {
+            body = undefined;
+        }
+    }
+    if (body === undefined) {
+        try {
+            body = (await first.json()) as PaymentRequired<Erc7710PaymentRequirements>;
+        } catch (error) {
+            return failure(
+                "SELLER_OFFER_INVALID",
+                `402 offer is neither a Payment-Required header nor a JSON body: ${errorMessage(error)}`,
+            );
+        }
     }
     // `null` parses as valid JSON, so the try above does not catch it — and `typeof null`
     // is "object", so a plain typeof check would not either. A seller answering 402 with
@@ -324,10 +349,16 @@ export async function payForDelegatedResource(
 
     let second: Response;
     try {
+        // One encoded payload, two header names: a v2 seller reads Payment-Signature,
+        // the already-deployed v1-transport seller reads X-PAYMENT. Dropping the alias
+        // is a coordinated cut across every running seller, not a client-side cleanup.
         second = await doFetch(target, {
             redirect: "error",
             signal: AbortSignal.timeout(timeoutMs),
-            headers: {"X-PAYMENT": paymentHeader},
+            headers: {
+                [PAYMENT_SIGNATURE_HEADER]: paymentHeader,
+                [LEGACY_PAYMENT_HEADER]: paymentHeader,
+            },
         });
     } catch (error) {
         // The header is already on the wire. A connection that dies now says nothing

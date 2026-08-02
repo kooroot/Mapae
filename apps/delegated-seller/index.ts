@@ -11,12 +11,17 @@ import {
 } from "@mapae/delegation";
 import {
     GIWA_SEPOLIA_CAIP2,
+    LEGACY_PAYMENT_RESPONSE_HEADER,
+    PAYMENT_REQUIRED_HEADER,
+    PAYMENT_RESPONSE_HEADER,
     X402_VERSION,
     buildErc7710PaymentRequirements,
     decodeAnyPaymentHeader,
+    encodePaymentRequiredHeader,
     fromTokenAmount,
     giwaSepolia,
     parseNodeRpcUrl,
+    readInboundPaymentHeader,
     toTokenAmount,
     type Erc7710PaymentPayload,
     type Erc7710PaymentRequirements,
@@ -233,8 +238,8 @@ app.get("/delegated/deliverable/:id", async (c) => {
         amount: toTokenAmount(item.price),
         facilitatorAddresses: [facilitatorAddress],
     });
-    const header = c.req.header("X-PAYMENT");
-    if (!header) {
+    const payment = readInboundPaymentHeader((name) => c.req.header(name));
+    if (!payment) {
         const body: PaymentRequired<Erc7710PaymentRequirements> = {
             x402Version: X402_VERSION,
             resource: {
@@ -244,15 +249,20 @@ app.get("/delegated/deliverable/:id", async (c) => {
             },
             accepts: [requirements],
         };
+        // v2 transport puts the offer in a Payment-Required header; the reference
+        // implementation then sends an empty body. The JSON body stays anyway — it is
+        // the transport every already-deployed agent of this repo reads, and a client
+        // honours whichever of the two it understands.
+        c.header(PAYMENT_REQUIRED_HEADER, encodePaymentRequiredHeader(body));
         return c.json(body, 402);
     }
-    if (header.length > MAX_PAYMENT_HEADER_LENGTH) {
+    if (payment.value.length > MAX_PAYMENT_HEADER_LENGTH) {
         return c.json({error: "malformed_payment", detail: "header too large"}, 400);
     }
 
     let payload: Erc7710PaymentPayload;
     try {
-        const decoded = decodeAnyPaymentHeader(header);
+        const decoded = decodeAnyPaymentHeader(payment.value);
         if (
             !("assetTransferMethod" in decoded.accepted.extra) ||
             decoded.accepted.extra.assetTransferMethod !== "erc7710"
@@ -305,10 +315,11 @@ app.get("/delegated/deliverable/:id", async (c) => {
     // *after* settlement — the buyer would have paid and received a 500. Every field
     // here is ASCII by construction: a CAIP-2 constant, a checksummed address, and a
     // hex hash already matched against /^0x[0-9a-fA-F]{64}$/.
-    c.header(
-        "X-PAYMENT-RESPONSE",
-        btoa(JSON.stringify({success: true, network: requirements.network, payer, transaction})),
+    const receiptHeader = btoa(
+        JSON.stringify({success: true, network: requirements.network, payer, transaction}),
     );
+    c.header(PAYMENT_RESPONSE_HEADER, receiptHeader);
+    c.header(LEGACY_PAYMENT_RESPONSE_HEADER, receiptHeader);
     return c.json({
         ...item.body,
         receipt: {

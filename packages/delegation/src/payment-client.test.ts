@@ -4,6 +4,9 @@ import {
     GIWA_SEPOLIA_CAIP2,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
+    encodePaymentRequiredHeader,
+    type Erc7710PaymentRequirements,
+    type PaymentRequired,
 } from "@mapae/shared";
 import {payForDelegatedResource, type DelegatedLeafProvider} from "./payment-client.js";
 
@@ -38,10 +41,15 @@ const okProvider: DelegatedLeafProvider = async () => ({
     delegator: DELEGATOR,
 });
 
-function jsonResponse(status: number, body: unknown): Response {
+function jsonResponse(
+    status: number,
+    body: unknown,
+    headers: Record<string, string> = {},
+): Response {
     return {
         status,
         ok: status >= 200 && status < 300,
+        headers: new Headers(headers),
         json: async () => body,
     } as unknown as Response;
 }
@@ -63,11 +71,15 @@ interface FetchCall {
 }
 
 /** First call returns the 402 offer; the second (retry) returns `second`. */
-function scriptedFetch(second: Response | (() => Response), firstBody: unknown = paymentRequired()) {
+function scriptedFetch(
+    second: Response | (() => Response),
+    firstBody: unknown = paymentRequired(),
+    firstHeaders: Record<string, string> = {},
+) {
     const calls: FetchCall[] = [];
     const impl = (async (url: URL, init?: RequestInit) => {
         calls.push({url, init});
-        if (calls.length === 1) return jsonResponse(402, firstBody);
+        if (calls.length === 1) return jsonResponse(402, firstBody, firstHeaders);
         return typeof second === "function" ? second() : second;
     }) as unknown as typeof fetch;
     return {impl, calls};
@@ -130,6 +142,51 @@ describe("D5 payForDelegatedResource", () => {
 
         expect(result.ok).toBe(true);
         expect(calls).toHaveLength(2); // trusted → signed → retried
+    });
+
+    test("reads the offer from the Payment-Required header when the 402 body is unusable", async () => {
+        // v2 transport: the offer rides in a base64 header and the body may be empty.
+        // The body here is `null` — if the client were still reading the body, this
+        // would fail as SELLER_OFFER_INVALID ("402 body is not an object").
+        const header = encodePaymentRequiredHeader(
+            paymentRequired() as PaymentRequired<Erc7710PaymentRequirements>,
+        );
+        const {impl, calls} = scriptedFetch(
+            jsonResponse(200, {invoice: "inv-001"}),
+            null,
+            {"Payment-Required": header},
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        expect(calls).toHaveLength(2);
+    });
+
+    test("falls back to the 402 JSON body when the Payment-Required header is malformed", async () => {
+        // Mirrors the reference client: a present-but-unusable v2 header downgrades to
+        // the v1-transport body instead of failing a payment the body can still carry.
+        const {impl, calls} = scriptedFetch(
+            jsonResponse(200, {invoice: "inv-001"}),
+            paymentRequired(),
+            {"Payment-Required": "!!!not-base64!!!"},
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        expect(calls).toHaveLength(2);
+    });
+
+    test("sends the payment under both Payment-Signature and X-PAYMENT", async () => {
+        // Dual-send is the migration bridge: a v2 seller reads Payment-Signature, the
+        // already-deployed v1-transport seller reads X-PAYMENT, and the value is one
+        // and the same encoded payload.
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        const headers = calls[1]?.init?.headers as Record<string, string>;
+        expect(headers["Payment-Signature"]).toBeTypeOf("string");
+        expect(headers["Payment-Signature"]).toBe(headers["X-PAYMENT"] as string);
     });
 
     test("no retry when the seller advertises no trusted facilitator", async () => {

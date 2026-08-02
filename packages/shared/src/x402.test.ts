@@ -6,8 +6,13 @@ import {
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
     decodeAnyPaymentHeader,
+    decodePaymentRequiredHeader,
     encodePaymentHeader,
+    encodePaymentRequiredHeader,
     isLatin1,
+    readInboundPaymentHeader,
+    type PaymentRequired,
+    type Erc7710PaymentRequirements,
 } from "./x402.js";
 import {GIWA_SEPOLIA_CAIP2} from "./chain.js";
 
@@ -116,5 +121,59 @@ describe("ERC-7710 /supported payload", () => {
         expect(kind?.extra.facilitatorAddresses).toEqual([FACILITATOR]);
         expect(payload.signers[GIWA_SEPOLIA_CAIP2]).toEqual([FACILITATOR]);
         expect(payload.extensions).toEqual([]);
+    });
+});
+
+describe("x402 v2 transport headers", () => {
+    const offerBody = (): PaymentRequired<Erc7710PaymentRequirements> => ({
+        x402Version: X402_VERSION,
+        resource: {
+            // Deliberately not Latin-1: the 402 body carries human-facing text, and a
+            // Korean description must survive the header codec. This is exactly where
+            // the btoa-based payload codec would throw — the reference implementation
+            // base64-encodes UTF-8 bytes, and this codec must match it byte for byte.
+            description: "결제가 필요합니다 — 로고 시안",
+            mimeType: "application/json",
+        },
+        accepts: [buildErc7710PaymentRequirements({payTo: PAYEE, amount: 1_000_000n})],
+    });
+
+    test("Payment-Required codec round-trips a non-Latin-1 offer body", () => {
+        const header = encodePaymentRequiredHeader(offerBody());
+        // The value travels as an HTTP header, so it must itself be plain base64 ASCII.
+        expect(/^[A-Za-z0-9+/]+=*$/.test(header)).toBe(true);
+        expect(decodePaymentRequiredHeader(header)).toEqual(offerBody());
+    });
+
+    test("decode rejects garbage and non-UTF-8 bytes instead of returning mojibake", () => {
+        expect(() => decodePaymentRequiredHeader("!!!not-base64!!!")).toThrow();
+        // 0xFF is not a valid UTF-8 start byte; a non-fatal decoder would silently
+        // hand back U+FFFD replacement characters inside a "successfully" parsed offer.
+        expect(() => decodePaymentRequiredHeader(btoa("ÿþ"))).toThrow();
+    });
+
+    test("readInboundPaymentHeader prefers Payment-Signature over X-PAYMENT", () => {
+        // Wire names are written as literals on purpose: a typo in the exported
+        // constants must fail here, not in an interop session with a v2 client.
+        const headers: Record<string, string> = {
+            "payment-signature": "v2-payload",
+            "x-payment": "v1-payload",
+        };
+        expect(readInboundPaymentHeader((name) => headers[name.toLowerCase()])).toEqual({
+            name: "Payment-Signature",
+            value: "v2-payload",
+        });
+    });
+
+    test("readInboundPaymentHeader falls back to the X-PAYMENT alias", () => {
+        const headers: Record<string, string> = {"x-payment": "v1-payload"};
+        expect(readInboundPaymentHeader((name) => headers[name.toLowerCase()])).toEqual({
+            name: "X-PAYMENT",
+            value: "v1-payload",
+        });
+    });
+
+    test("readInboundPaymentHeader returns undefined when no payment header is present", () => {
+        expect(readInboundPaymentHeader(() => undefined)).toBeUndefined();
     });
 });

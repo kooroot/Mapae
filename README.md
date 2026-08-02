@@ -9,9 +9,9 @@ autonomously within explicit amount, time, recipient, and redeemer limits—with
 owning the user's wallet or private key.
 
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
-![x402 v2 · v1 transport](https://img.shields.io/badge/x402-v2%20%C2%B7%20v1%20transport-635BFF)
+![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-429%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-437%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -52,7 +52,7 @@ flowchart LR
     Session -->|"payment-specific ERC-7710 leaf"| Agent["AI agent"]
     Agent -->|"GET resource"| Seller["x402 seller"]
     Seller -->|"402 Payment Required"| Agent
-    Agent -->|"X-PAYMENT"| Seller
+    Agent -->|"Payment-Signature"| Seller
     Seller -->|"verify / settle"| Facilitator["ERC-7710 facilitator"]
     Facilitator -->|"redeemDelegations"| Manager["DelegationManager"]
     Manager -->|"mUSDC.transfer"| Seller
@@ -79,7 +79,7 @@ a strong result, but nothing was mined and there is no link to follow.
 | Delegated payment | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
 | Agent automation | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
 | Console | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
-| Standing gates | Documentation, logging, advisory and test-count gates; 429 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
+| Standing gates | Documentation, logging, advisory and test-count gates; 437 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
@@ -98,7 +98,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://gitbook.mapae.io).
-- Regression suite: **429 TypeScript tests (296 shared/delegation/scripts + 3 MCP + 94 console + 36 web)
+- Regression suite: **437 TypeScript tests (304 shared/delegation/scripts + 3 MCP + 94 console + 36 web)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
@@ -349,7 +349,7 @@ canonical source on every clone. Tracked examples contain fixtures only.
 
 ### What a compromised facilitator can do
 
-The facilitator holds the relayer key, receives the signed `X-PAYMENT`, and *is* the
+The facilitator holds the relayer key, receives the signed `Payment-Signature`, and *is* the
 redeemer the leaf pins — every identity check passes for it. So the question is not
 whether to trust it, but what the worst case is when it is fully compromised.
 

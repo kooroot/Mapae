@@ -60,7 +60,7 @@ sequenceDiagram
     Agent->>Seller: GET /delegated/deliverable/inv-002
     Seller-->>Agent: 402 (amount 2.5, erc7710)
     Agent->>Agent: 결제별 leaf 서명 (세션키)
-    Agent->>Seller: X-PAYMENT (leaf context)
+    Agent->>Seller: Payment-Signature (leaf context)
     Seller->>Fac: /verify → simulate redeemDelegations
     Fac-->>Seller: isValid
     Seller->>Fac: /settle
