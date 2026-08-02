@@ -4,10 +4,12 @@ import {
     X402_VERSION,
     buildErc7710PaymentPayload,
     buildErc7710PaymentRequirements,
+    buildErc7710SupportedPayload,
     decodeAnyPaymentHeader,
     encodePaymentHeader,
     isLatin1,
 } from "./x402.js";
+import {GIWA_SEPOLIA_CAIP2} from "./chain.js";
 
 const PAYEE = getAddress("0x2000000000000000000000000000000000000001");
 const FACILITATOR = getAddress("0x3000000000000000000000000000000000000001");
@@ -94,5 +96,25 @@ describe("encodePaymentHeader Latin-1 guard", () => {
         // validating only the fields the agent uses does not make the encode safe.
         (poisoned.accepted.extra as Record<string, unknown>).note = "한글";
         expect(() => encodePaymentHeader(poisoned)).toThrow("Latin-1");
+    });
+});
+
+describe("ERC-7710 /supported payload", () => {
+    test("advertises the facilitator identically in kinds[].extra and signers", () => {
+        const payload = buildErc7710SupportedPayload({facilitatorAddresses: [FACILITATOR]});
+
+        expect(payload.kinds).toHaveLength(1);
+        const kind = payload.kinds[0];
+        expect(kind?.x402Version).toBe(X402_VERSION);
+        expect(kind?.scheme).toBe("exact");
+        expect(kind?.network).toBe(GIWA_SEPOLIA_CAIP2);
+        expect(kind?.extra.assetTransferMethod).toBe("erc7710");
+        // A third-party resource server copies kinds[].extra verbatim into its
+        // offers (the supportedKind flow), while this repo's own seller and agent
+        // read `signers`. The two channels must never drift, or an offer built
+        // from one is refused by a component reading the other.
+        expect(kind?.extra.facilitatorAddresses).toEqual([FACILITATOR]);
+        expect(payload.signers[GIWA_SEPOLIA_CAIP2]).toEqual([FACILITATOR]);
+        expect(payload.extensions).toEqual([]);
     });
 });

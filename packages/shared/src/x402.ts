@@ -206,6 +206,46 @@ export function buildErc7710PaymentRequirements(params: {
     };
 }
 
+export interface Erc7710SupportedPayload {
+    kinds: Array<{
+        x402Version: number;
+        scheme: "exact";
+        network: typeof GIWA_SEPOLIA_CAIP2;
+        extra: {assetTransferMethod: "erc7710"; facilitatorAddresses: Address[]};
+    }>;
+    extensions: never[];
+    signers: Record<string, Address[]>;
+}
+
+/**
+ * The `/supported` document an ERC-7710 facilitator serves. The facilitator
+ * identity is deliberately advertised twice: this repo's own seller and agent read
+ * `signers`, while a third-party resource server copies `kinds[].extra` verbatim
+ * into its offers (the supportedKind flow) — and the agent then refuses any offer
+ * whose `facilitatorAddresses` does not overlap its trusted list. Building both
+ * channels from one argument is what keeps them from drifting; an offer built from
+ * either channel must pass the check that reads the other.
+ */
+export function buildErc7710SupportedPayload(params: {
+    facilitatorAddresses: Address[];
+}): Erc7710SupportedPayload {
+    return {
+        kinds: [
+            {
+                x402Version: X402_VERSION,
+                scheme: "exact",
+                network: GIWA_SEPOLIA_CAIP2,
+                extra: {
+                    assetTransferMethod: "erc7710",
+                    facilitatorAddresses: params.facilitatorAddresses,
+                },
+            },
+        ],
+        extensions: [],
+        signers: {[GIWA_SEPOLIA_CAIP2]: params.facilitatorAddresses},
+    };
+}
+
 export function buildPaymentPayload(params: {
     accepted: PaymentRequirements;
     signature: Hex;

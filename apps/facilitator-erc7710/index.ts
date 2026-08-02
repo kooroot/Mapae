@@ -17,7 +17,7 @@ import {
 } from "@mapae/delegation";
 import {
     GIWA_SEPOLIA_CAIP2,
-    X402_VERSION,
+    buildErc7710SupportedPayload,
     giwaSepolia,
     parseNodeRpcUrl,
     redactForLog,
@@ -348,18 +348,7 @@ app.get("/health", async (c) => {
 });
 
 app.get("/supported", (c) =>
-    c.json({
-        kinds: [
-            {
-                x402Version: X402_VERSION,
-                scheme: "exact",
-                network: GIWA_SEPOLIA_CAIP2,
-                extra: {assetTransferMethod: "erc7710"},
-            },
-        ],
-        extensions: [],
-        signers: {[GIWA_SEPOLIA_CAIP2]: [relayer.address]},
-    }),
+    c.json(buildErc7710SupportedPayload({facilitatorAddresses: [relayer.address]})),
 );
 
 app.post("/verify", async (c) => {

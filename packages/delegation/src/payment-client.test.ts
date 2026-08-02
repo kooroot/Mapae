@@ -1,6 +1,10 @@
 import {describe, expect, test} from "bun:test";
 import {getAddress, type Address, type Hex} from "viem";
-import {buildErc7710PaymentRequirements} from "@mapae/shared";
+import {
+    GIWA_SEPOLIA_CAIP2,
+    buildErc7710PaymentRequirements,
+    buildErc7710SupportedPayload,
+} from "@mapae/shared";
 import {payForDelegatedResource, type DelegatedLeafProvider} from "./payment-client.js";
 
 const MANAGER = getAddress("0x4000000000000000000000000000000000000001");
@@ -100,6 +104,32 @@ describe("D5 payForDelegatedResource", () => {
         expect(calls).toHaveLength(2);
         expect((calls[0]?.init?.headers as Record<string, string> | undefined)?.["X-PAYMENT"]).toBeUndefined();
         expect((calls[1]?.init?.headers as Record<string, string>)["X-PAYMENT"]).toBeTypeOf("string");
+    });
+
+    test("accepts an offer whose extra is copied verbatim from /supported kinds[].extra", async () => {
+        // A third-party resource server does not invent `facilitatorAddresses` — it
+        // copies the facilitator's advertised kinds[].extra into its offer (the
+        // supportedKind flow in @x402/core and @metamask/x402). While /supported
+        // advertised only assetTransferMethod there, every such offer died here as
+        // FACILITATOR_UNTRUSTED even though the facilitator was fully trusted.
+        const supported = buildErc7710SupportedPayload({facilitatorAddresses: [FACILITATOR]});
+        const offer = {
+            ...buildErc7710PaymentRequirements({payTo: PAYEE, amount: 1_000_000n}),
+            extra: supported.kinds[0]!.extra,
+        };
+        const body = {
+            x402Version: 2,
+            resource: {url: target.toString(), description: "test", mimeType: "application/json"},
+            accepts: [offer],
+        };
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}), body);
+        const result = await payForDelegatedResource(target, {
+            ...baseConfig(impl),
+            trustedFacilitators: supported.signers[GIWA_SEPOLIA_CAIP2] ?? [],
+        });
+
+        expect(result.ok).toBe(true);
+        expect(calls).toHaveLength(2); // trusted → signed → retried
     });
 
     test("no retry when the seller advertises no trusted facilitator", async () => {
