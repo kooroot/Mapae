@@ -8,6 +8,7 @@ import {
     judgeCorsRequest,
     parseActiveDeploymentArtifactJson,
     parseBootstrapOrigins,
+    readReceiptFeeField,
     throttledHttp,
     validateAccountBootstrap,
     type AccountBootstrapPolicy,
@@ -36,6 +37,7 @@ import {privateKeyToAccount, nonceManager} from "viem/accounts";
 
 const MAX_BODY_CHARACTERS = 150_000;
 const MINT_ABI = parseAbi(["function mint(address to, uint256 value)"]);
+const BALANCE_ABI = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
 
 /**
  * Every refusal this service can emit, as a closed set.
@@ -271,7 +273,12 @@ class Refused extends Error {
 async function bootstrap(validated: ValidatedAccountBootstrap): Promise<BootstrapResponse> {
     const existing = await publicClient.getCode({address: validated.account});
     if (existing && existing !== "0x") {
-        return {status: "already_deployed", account: validated.account, network: GIWA_SEPOLIA_CAIP2};
+        return {
+            status: "already_deployed",
+            account: validated.account,
+            fundingTransaction: await topUp(validated.account),
+            network: GIWA_SEPOLIA_CAIP2,
+        };
     }
 
     const [balance, block] = await Promise.all([
@@ -299,8 +306,15 @@ async function bootstrap(validated: ValidatedAccountBootstrap): Promise<Bootstra
     }
     if (deployGas > MAX_DEPLOY_GAS) throw new Refused("gas_estimate_rejected", 400);
 
-    const mintGas = FAUCET_ENABLED ? MAX_MINT_GAS : 0n;
-    const reservation = (deployGas + mintGas) * MAX_FEE_PER_GAS;
+    const mintReservation = FAUCET_ENABLED ? MAX_MINT_GAS * MAX_FEE_PER_GAS : 0n;
+    const deployReservation = deployGas * MAX_FEE_PER_GAS;
+    const reservation = deployReservation + mintReservation;
+
+    // The node's own upfront rule is `balance >= gasLimit * maxFeePerGas`, which is exactly
+    // the reservation. Checking only MIN_SPONSOR_BALANCE (a floor, not a cost) left a band
+    // where the gate passed and then every broadcast was refused by the node — the caller
+    // got an opaque 502 instead of the `sponsor_unfunded` that tells the operator to top up.
+    if (balance < MIN_SPONSOR_BALANCE + reservation) throw new Refused("sponsor_unfunded", 503);
     if (!budget.reserve(reservation, Date.now())) throw new Refused("budget_exhausted", 503);
 
     let charged = 0n;
@@ -313,23 +327,26 @@ async function bootstrap(validated: ValidatedAccountBootstrap): Promise<Bootstra
             maxFeePerGas: MAX_FEE_PER_GAS,
             maxPriorityFeePerGas: PRIORITY_FEE_PER_GAS,
         });
+        // The sponsor's gas is committed the moment the node accepts this. Anything that
+        // throws from here — a receipt timeout, a transient RPC error — leaves a
+        // transaction that still mines, so the pessimistic charge goes in *now* and the
+        // measured one replaces it. Settling 0 for a broadcast we merely failed to observe
+        // is how a daily cap quietly stops bounding anything.
+        charged = deployReservation;
         const receipt = await publicClient.waitForTransactionReceipt({
             hash,
             confirmations: 1,
             timeout: RECEIPT_TIMEOUT_MS,
         });
-        // `l1Fee` is the OP-Stack data cost and is absent from the EVM's own accounting;
-        // omitting it understates what the sponsor actually paid by roughly 15%.
-        const l1Fee = (receipt as {l1Fee?: bigint}).l1Fee ?? 0n;
-        charged = receipt.gasUsed * receipt.effectiveGasPrice + l1Fee;
+        charged = costOf(receipt, deployReservation);
         if (receipt.status !== "success") throw new Refused("bootstrap_unavailable", 502);
 
-        const fundingTransaction = FAUCET_ENABLED
-            ? await fund(validated.account).then((result) => {
-                  charged += result.charged;
-                  return result.hash;
-              })
-            : undefined;
+        let fundingTransaction: Hex | undefined;
+        if (FAUCET_ENABLED) {
+            const funded = await fund(validated.account, mintReservation);
+            charged += funded.charged;
+            fundingTransaction = funded.hash;
+        }
 
         return {
             status: "deployed",
@@ -343,22 +360,111 @@ async function bootstrap(validated: ValidatedAccountBootstrap): Promise<Bootstra
     }
 }
 
-async function fund(account: Address): Promise<{hash: Hex; charged: bigint}> {
-    const hash = await sponsorClient.sendTransaction({
-        to: MOCK_USDC.address,
-        data: encodeFunctionData({abi: MINT_ABI, functionName: "mint", args: [account, FAUCET_AMOUNT]}),
-        value: 0n,
-        gas: MAX_MINT_GAS,
-        maxFeePerGas: MAX_FEE_PER_GAS,
-        maxPriorityFeePerGas: PRIORITY_FEE_PER_GAS,
-    });
-    const receipt = await publicClient.waitForTransactionReceipt({
-        hash,
-        confirmations: 1,
-        timeout: RECEIPT_TIMEOUT_MS,
-    });
-    const l1Fee = (receipt as {l1Fee?: bigint}).l1Fee ?? 0n;
-    return {hash, charged: receipt.gasUsed * receipt.effectiveGasPrice + l1Fee};
+/**
+ * Recover an account that was deployed but never funded.
+ *
+ * Without this the faucet is one-shot: a mint that failed after a successful deploy could
+ * never be retried, because every later request takes the `already_deployed` branch — and
+ * the payer holds no ETH by design, so it has no way to fund itself. `MockUSDC.mint` is
+ * permissionless, so this grants no authority the caller lacks; it spends our gas, bounded
+ * by the same rate limit and daily budget as everything else, and the mint costs a quarter
+ * of the deploy the caller could already ask for.
+ *
+ * Only at a balance of exactly zero. A partial balance is the user's business.
+ */
+async function topUp(account: Address): Promise<Hex | undefined> {
+    if (!FAUCET_ENABLED) return undefined;
+    let balance: bigint;
+    try {
+        balance = await publicClient.readContract({
+            address: MOCK_USDC.address,
+            abi: BALANCE_ABI,
+            functionName: "balanceOf",
+            args: [account],
+        });
+    } catch (error) {
+        console.warn(`[bootstrap] balance read failed, skipping top-up — ${redactForLog(error)}`);
+        return undefined;
+    }
+    if (balance > 0n) return undefined;
+
+    const reservation = MAX_MINT_GAS * MAX_FEE_PER_GAS;
+    const sponsorBalance = await publicClient.getBalance({address: sponsor.address});
+    if (sponsorBalance < MIN_SPONSOR_BALANCE + reservation) return undefined;
+    if (!budget.reserve(reservation, Date.now())) return undefined;
+    let charged = 0n;
+    try {
+        const funded = await fund(account, reservation);
+        charged = funded.charged;
+        return funded.hash;
+    } finally {
+        budget.settle(reservation, charged, Date.now());
+    }
+}
+
+/**
+ * What a mined transaction cost, including the OP-Stack L1 data fee.
+ *
+ * `l1Fee` is absent from the EVM's own accounting and omitting it understates the sponsor's
+ * real spend by roughly 15%. It arrives as a hex string on GIWA — see `readReceiptFeeField`
+ * — and as nothing at all under anvil. When it cannot be read, fall back to the reservation
+ * rather than to zero: we know this transaction mined, and the one answer that is certainly
+ * wrong is "free".
+ *
+ * Stated rather than claimed: **no test exercises this function's live-chain branch.** Anvil
+ * is not an OP-Stack chain and emits no `l1Fee`, so every fork case takes the `undefined`
+ * path. `readReceiptFeeField` is unit-tested against the literal GIWA sends, and
+ * `SpendBudget.settle` refuses a non-bigint charge, which is what makes a regression here
+ * loud in production rather than silent. That pair is the coverage; the composition is not.
+ */
+function costOf(receipt: {gasUsed: bigint; effectiveGasPrice: bigint}, fallback: bigint): bigint {
+    try {
+        return (
+            receipt.gasUsed * receipt.effectiveGasPrice +
+            readReceiptFeeField((receipt as {l1Fee?: unknown}).l1Fee)
+        );
+    } catch {
+        return fallback;
+    }
+}
+
+/**
+ * Mint the testnet float, and never let its failure discard a successful deploy.
+ *
+ * The deploy is the expensive, irreversible half. Throwing from here used to turn a mined
+ * account into a 502, and the retry then took the `already_deployed` path — which is why
+ * the top-up branch above exists as the recovery.
+ */
+async function fund(account: Address, reservation: bigint): Promise<{hash?: Hex; charged: bigint}> {
+    let charged = 0n;
+    try {
+        const hash = await sponsorClient.sendTransaction({
+            to: MOCK_USDC.address,
+            data: encodeFunctionData({
+                abi: MINT_ABI,
+                functionName: "mint",
+                args: [account, FAUCET_AMOUNT],
+            }),
+            value: 0n,
+            gas: MAX_MINT_GAS,
+            maxFeePerGas: MAX_FEE_PER_GAS,
+            maxPriorityFeePerGas: PRIORITY_FEE_PER_GAS,
+        });
+        charged = reservation;
+        const receipt = await publicClient.waitForTransactionReceipt({
+            hash,
+            confirmations: 1,
+            timeout: RECEIPT_TIMEOUT_MS,
+        });
+        charged = costOf(receipt, reservation);
+        // A reverted mint is not a funding. Reporting its hash as `fundingTransaction`
+        // would tell the user their account is funded while the balance is zero.
+        if (receipt.status !== "success") return {charged};
+        return {hash, charged};
+    } catch (error) {
+        console.warn(`[bootstrap] faucet leg failed, account is deployed — ${redactForLog(error)}`);
+        return {charged};
+    }
 }
 
 const app = new Hono();

@@ -321,14 +321,7 @@ async function main(): Promise<void> {
     assertEnumOnly("disabled", off.raw, off.body);
     passed("B", "kill switch    503 bootstrap_disabled, default off");
     disabled.kill();
-    await waitFor("port release", async () => {
-        try {
-            await fetch(`${BOOTSTRAP_URL}/health`, {signal: AbortSignal.timeout(300)});
-            return false;
-        } catch {
-            return true;
-        }
-    }, 20_000);
+    await waitForPortRelease();
 
     // A wrong approval phrase must stop the process, not degrade it to a warning.
     const badApproval = Bun.spawn([process.execPath, "run", "index.ts"], {
@@ -540,6 +533,139 @@ async function main(): Promise<void> {
         );
     }
     passed("L", `concurrency    5 requests → 1 tx, sponsor nonce +${spentNonces}`);
+
+    /** A root signed by a fresh owner against the account that owner would get. */
+    async function signedRootFor(key: Hex): Promise<{context: Hex; account: Address}> {
+        const signer = privateKeyToAccount(key);
+        const derived = await getCounterfactualAccountData({
+            factory: getAddress(deployment.environment.SimpleFactory),
+            implementations: deployment.environment.implementations,
+            implementation: Implementation.Hybrid,
+            deployParams: [signer.address, [], [], []],
+            deploySalt: OWNER_ACCOUNT_SALT,
+        });
+        const account = getAddress(derived.address);
+        const unsigned = preparePeriodDelegation({
+            environment: deployment.environment,
+            delegator: account,
+            delegate: agent.address,
+            policy: buildD3Policies(MOCK_USDC)["open-agent"],
+            startDate: now - 1,
+        });
+        const context = encodeDelegations([
+            withDelegationSignature(
+                unsigned,
+                await signer.signTypedData(
+                    buildRootDelegationTypedData(
+                        getAddress(deployment.environment.DelegationManager),
+                        unsigned,
+                    ),
+                ),
+            ),
+        ]);
+        return {context, account};
+    }
+
+    async function waitForPortRelease(): Promise<void> {
+        await waitFor(
+            "port release",
+            async () => {
+                try {
+                    await fetch(`${BOOTSTRAP_URL}/health`, {signal: AbortSignal.timeout(300)});
+                    return false;
+                } catch {
+                    return true;
+                }
+            },
+            20_000,
+        );
+    }
+
+    /** The same service, restarted with one bound turned down far enough to hit. */
+    async function restart(overrides: Record<string, string>) {
+        const proc = Bun.spawn([process.execPath, "run", "index.ts"], {
+            cwd: `${REPO}/apps/account-bootstrap`,
+            env: childEnv({
+                BOOTSTRAP_ENABLED: "true",
+                BOOTSTRAP_APPROVAL: approval,
+                BOOTSTRAP_FAUCET_ENABLED: "true",
+                ...overrides,
+            }),
+            stdout: "pipe",
+            stderr: "pipe",
+        });
+        children.push({name: "bootstrap-variant", proc});
+        void forward("bootstrap", proc.stderr);
+        await waitFor("bootstrap (variant)", async () => (await fetch(`${BOOTSTRAP_URL}/health`)).ok);
+        return proc;
+    }
+
+    service.kill();
+    await waitForPortRelease();
+
+    /**
+     * M and N exist because deleting either bound left every other test green.
+     *
+     * The daily budget and the rate limiter were only ever exercised as classes. The service
+     * ran nine requests against a limit of twenty and two deploys against a budget that
+     * allows thousands, so `if (!budget.reserve(...)) throw` could become a bare
+     * `budget.reserve(...)` and nothing would notice — while the live griefing ceiling
+     * silently became the sponsor's whole balance. Both cases below drive the service past
+     * a deliberately tiny limit, which is the only way the wiring is asserted at all.
+     */
+    const third = await signedRootFor(signerKey("owner-3"));
+
+    const rateLimited = await restart({BOOTSTRAP_RATE_PER_HOUR: "1"});
+    await postBootstrap({permissionContext: third.context});
+    const overRate = await postBootstrap({permissionContext: third.context});
+    if (overRate.status !== 429 || overRate.body.reason !== "rate_limited") {
+        throw new Error(`rate limit is not wired: ${overRate.status} ${overRate.raw}`);
+    }
+    assertEnumOnly("rate limited", overRate.raw, overRate.body);
+    passed("M", "rate limit     second request in the window → 429 rate_limited");
+    rateLimited.kill();
+    await waitForPortRelease();
+
+    const fourth = await signedRootFor(signerKey("owner-4"));
+    // One wei of daily budget: enough to construct, never enough to reserve a deploy.
+    const broke = await restart({BOOTSTRAP_DAILY_WEI: "1"});
+    const overBudget = await postBootstrap({permissionContext: fourth.context});
+    if (overBudget.status !== 503 || overBudget.body.reason !== "budget_exhausted") {
+        throw new Error(`daily budget is not wired: ${overBudget.status} ${overBudget.raw}`);
+    }
+    assertEnumOnly("budget exhausted", overBudget.raw, overBudget.body);
+    if ((await publicClient.getCode({address: fourth.account})) !== undefined) {
+        throw new Error("a budget-exhausted request still deployed");
+    }
+    passed("N", "budget         one-wei cap → 503 budget_exhausted, nothing deployed");
+    broke.kill();
+    await waitForPortRelease();
+
+    /**
+     * O. The leak guard, pointed at a path that can actually carry a viem error.
+     *
+     * B, E and F all refuse after pure-offline validation, so their bodies are enum-only by
+     * construction and `assertEnumOnly` proves nothing about them. The branch that matters
+     * is the catch-all 502, which is where a caught chain error would surface — and viem
+     * embeds the whole transport URL, path key included, in every one of those. Here the
+     * service is pointed at a dead endpoint whose path is a recognisable secret, so if any
+     * part of that error reaches the body the assertion below sees it.
+     */
+    const SECRET_PATH_KEY = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
+    const deadRpc = await restart({
+        GIWA_SEPOLIA_RPC_URL: `http://127.0.0.1:${BOOTSTRAP_PORT + 7}/${SECRET_PATH_KEY}`,
+    });
+    const unreachable = await postBootstrap({permissionContext: third.context});
+    if (unreachable.status !== 502 || unreachable.body.reason !== "bootstrap_unavailable") {
+        throw new Error(`expected 502 bootstrap_unavailable, got ${unreachable.status} ${unreachable.raw}`);
+    }
+    if (unreachable.raw.includes(SECRET_PATH_KEY)) {
+        throw new Error("the response body echoed the RPC URL's path key");
+    }
+    assertEnumOnly("unreachable node", unreachable.raw, unreachable.body);
+    passed("O", "leak guard     chain failure → enum-only 502, no RPC path key");
+    deadRpc.kill();
+    await waitForPortRelease();
 
     // ── no-broadcast evidence ─────────────────────────────────────────────────────────
     const nonceAfter = BigInt(

@@ -205,6 +205,36 @@ export class FixedWindowLimiter {
 }
 
 /**
+ * Read an OP-Stack receipt fee field that viem hands us untyped.
+ *
+ * `giwaSepolia` is a plain `defineChain` with no `viem/op-stack` formatter, and viem's
+ * default `formatTransactionReceipt` BigInt-converts only the fields it knows about
+ * (blockNumber, gasUsed, effectiveGasPrice, …) and spreads everything else through raw.
+ * GIWA sends `l1Fee` on every receipt — measured `'0xe0e42b2c9'` on this repo's own D5
+ * settlement — so the value arrives as a hex *string* on the live chain and is absent
+ * entirely under anvil. That difference is why no fork test could have caught the cast
+ * this replaces.
+ *
+ * Absent means zero. Unreadable does not: charging zero for a transaction that mined is
+ * precisely how a spend cap stops binding, so the caller is made to decide.
+ */
+export function readReceiptFeeField(value: unknown): bigint {
+    if (value === undefined || value === null) return 0n;
+    if (typeof value === "bigint") {
+        if (value < 0n) throw new Error(`unreadable l1Fee: ${value}`);
+        return value;
+    }
+    if (typeof value === "number") {
+        if (!Number.isSafeInteger(value) || value < 0) throw new Error(`unreadable l1Fee: ${value}`);
+        return BigInt(value);
+    }
+    if (typeof value === "string" && /^(0x[0-9a-fA-F]+|[0-9]+)$/.test(value.trim())) {
+        return BigInt(value.trim());
+    }
+    throw new Error(`unreadable l1Fee: ${typeof value}`);
+}
+
+/**
  * The only bound that is a real guarantee rather than a speed bump.
  *
  * Per-account idempotency is not a budget: a counterfactual address is `CREATE2(owner)`
@@ -250,6 +280,25 @@ export class SpendBudget {
      * revert pays nothing and spends everything.
      */
     settle(reserved: bigint, actual: bigint, now: number): void {
+        // Validate, never cast — and here the cast was two files away. `charged` was built
+        // from a receipt field typed as bigint that arrives as a hex string, and
+        // `bigint + string` concatenates, so one settle turned `#spent` into a string.
+        // After that `#spent + #reserved + amount > dailyLimitWei` compares a String
+        // against a BigInt, StringToBigInt fails on the garbage, the comparison is always
+        // false, and `reserve` accepts everything. The cap did not error; it just stopped
+        // being a cap. This guard makes that failure loud at the one place the invariant
+        // actually lives.
+        if (typeof actual !== "bigint") {
+            // Charge the reservation rather than nothing, release the hold so it is not
+            // stranded for the rest of the window (`#roll` clears `#spent`, never
+            // `#reserved`), and then be loud. A charge we cannot read is a charge we must
+            // over-estimate, and a caller that produced one is a bug, not a request.
+            this.#roll(now);
+            this.#reserved -= reserved;
+            if (this.#reserved < 0n) this.#reserved = 0n;
+            this.#spent += reserved;
+            throw new Error("settle requires a bigint charge");
+        }
         this.#roll(now);
         this.#reserved -= reserved;
         if (this.#reserved < 0n) this.#reserved = 0n;

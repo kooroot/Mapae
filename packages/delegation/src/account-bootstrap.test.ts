@@ -31,6 +31,7 @@ import {
     buildSponsoredBootstrapApproval,
     isCanonicalSignature,
     parseBootstrapOrigins,
+    readReceiptFeeField,
     validateAccountBootstrap,
     type AccountBootstrapPolicy,
 } from "./account-bootstrap.js";
@@ -486,6 +487,57 @@ describe("SpendBudget", () => {
 
     test("refuses a non-positive limit", () => {
         expect(() => new SpendBudget(0n, 0)).toThrow("dailyLimitWei");
+    });
+
+    /**
+     * This is the shape the l1Fee bug took, and the reason the guard is here rather than
+     * only at the parse site. `bigint + string` concatenates instead of adding, so one
+     * settle turned the running total into a string, and from then on
+     * `string + bigint > bigint` compared as StringToBigInt(garbage) — always false — so
+     * `reserve` accepted everything and `remaining` threw. A budget that silently stops
+     * being a budget is worse than one that crashes.
+     */
+    test("refuses a non-bigint charge instead of poisoning the running total", () => {
+        const budget = new SpendBudget(100n, 0);
+        budget.reserve(60n, 0);
+        expect(() => budget.settle(60n, "0x1f" as unknown as bigint, 0)).toThrow("bigint");
+        // Fails closed on the money: an unreadable charge is billed at the reservation,
+        // never at zero. The hold is still released, so the window is not stranded.
+        expect(budget.spentToday(0)).toBe(60n);
+        expect(budget.remaining(0)).toBe(40n);
+        expect(budget.remaining(86_400_000)).toBe(100n);
+    });
+});
+
+describe("readReceiptFeeField", () => {
+    test("reads the hex string GIWA actually sends", () => {
+        // Measured on the live RPC: eth_getTransactionReceipt for the D5 settlement
+        // returns l1Fee: '0xe0e42b2c9'. giwaSepolia is a plain defineChain, so viem's
+        // default formatter spreads it through as a string rather than a bigint.
+        expect(readReceiptFeeField("0xe0e42b2c9")).toBe(0xe0e42b2c9n);
+    });
+
+    test("passes a bigint through, for a chain whose formatter already converted it", () => {
+        expect(readReceiptFeeField(12_345n)).toBe(12_345n);
+    });
+
+    test("treats an absent field as zero — not every chain charges an L1 fee", () => {
+        expect(readReceiptFeeField(undefined)).toBe(0n);
+        expect(readReceiptFeeField(null)).toBe(0n);
+    });
+
+    test("reads a decimal string and an integer number", () => {
+        expect(readReceiptFeeField("12345")).toBe(12_345n);
+        expect(readReceiptFeeField(12_345)).toBe(12_345n);
+    });
+
+    test("refuses anything it cannot read rather than silently charging zero", () => {
+        // Charging zero for a transaction that mined is exactly how the daily cap stops
+        // binding, so an unreadable value has to be loud.
+        expect(() => readReceiptFeeField("not a number")).toThrow("l1Fee");
+        expect(() => readReceiptFeeField({})).toThrow("l1Fee");
+        expect(() => readReceiptFeeField(1.5)).toThrow("l1Fee");
+        expect(() => readReceiptFeeField(-1n)).toThrow("l1Fee");
     });
 });
 
