@@ -215,7 +215,11 @@ app.get("/deliverable/:id", async (c) => {
     }
 
     const settled = await callFacilitator("/settle", payload, requirements);
-    if (!settled.ok) return fail(c, settled.error);
+    // At /settle the facilitator may have broadcast before its answer was lost, so any
+    // failure to obtain a trustworthy verdict is `unknown`, not a definite non-payment —
+    // the same three-outcome reasoning the delegated seller encodes in decideSettlement.
+    // Only an affirmative `success: false` from a reachable, parsed body is a real revert.
+    if (!settled.ok) return fail(c, {_tag: "SettlementUnknown"});
     if (!settled.value.success) {
         return fail(c, {_tag: "TxReverted", reason: settled.value.errorReason});
     }
@@ -230,7 +234,20 @@ app.get("/deliverable/:id", async (c) => {
         txHash ? explorerTxUrl(txHash) : "(no hash returned)",
     );
 
-    const receiptHeader = btoa(JSON.stringify(settled.value));
+    // Build the receipt from fields validated here, never by echoing the facilitator's
+    // body through btoa. btoa is Latin-1-only and throws past U+00FF, and that throw
+    // would land *after* settlement — the buyer would have paid and received a 500. Every
+    // field here is ASCII by construction: a CAIP-2 constant, a checksummed address, and a
+    // hash already matched against /^0x[0-9a-fA-F]{64}$/. This mirrors the delegated
+    // seller, which was rewritten for exactly this reason.
+    const receiptHeader = btoa(
+        JSON.stringify({
+            success: true,
+            network: requirements.network,
+            payer: payload.payload.authorization.from,
+            transaction: txHash,
+        }),
+    );
     c.header(PAYMENT_RESPONSE_HEADER, receiptHeader);
     c.header(LEGACY_PAYMENT_RESPONSE_HEADER, receiptHeader);
     return c.json({
@@ -419,6 +436,22 @@ async function callFacilitator(
 
     if (res.status === 429) {
         return {ok: false, error: {_tag: "RpcRateLimited", url: FACILITATOR_URL + path}};
+    }
+    if (res.status >= 500) {
+        // A 5xx is the facilitator failing, not the caller's payload — the relayer out of
+        // gas, its RPC down, an unhandled throw. Collapsing it into MalformedPayload (400)
+        // blames the client and violates the tag discipline; RpcUnavailable is operational
+        // (503) and retryable. The /settle call site upgrades any of its failures to
+        // SettlementUnknown, so this classification only surfaces on /verify, where nothing
+        // has been charged.
+        return {
+            ok: false,
+            error: {
+                _tag: "RpcUnavailable",
+                url: FACILITATOR_URL + path,
+                cause: new Error(`facilitator returned ${res.status}`),
+            },
+        };
     }
     if (!res.ok) {
         // Never log the signature: until expiry it is a bearer authorization that can be

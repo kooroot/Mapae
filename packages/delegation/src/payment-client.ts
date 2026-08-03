@@ -66,7 +66,16 @@ export type DelegatedPaymentFailureCode =
  * non-2xx collapsed into one code. `408` and `425` are included because a gateway in front
  * of a seller produces them for the same reason.
  */
-const SETTLEMENT_UNKNOWN_STATUSES = new Set([408, 425, 504]);
+const SETTLEMENT_UNKNOWN_STATUSES = new Set([
+    408, 425, 504,
+    // Reverse-proxy origin-death codes. seller.mapae.io sits behind a Cloudflare Tunnel,
+    // which answers 502 (upstream died mid-exchange) and 520-524 (origin error / origin
+    // timeout / connection failures) when the seller or the connector drops after the
+    // request was forwarded. This set is only consulted on the retry, once the payment
+    // header is already on the wire, so under this ambiguity the safe reading is "may be
+    // charged" — the cheap mistake is a manual check, the expensive one a double payment.
+    502, 520, 521, 522, 523, 524,
+]);
 
 /** Signs a payment-specific leaf delegation for a seller's ERC-7710 offer. */
 export type DelegatedLeafProvider = (

@@ -95,6 +95,16 @@ describe("settlement error model", () => {
         expect(httpStatusFor({_tag: "TxReverted"})).toBe(422);
     });
 
+    test("SettlementUnknown is 504 and — unlike RpcUnavailable — is not retryable", () => {
+        // A settle call whose answer was lost may have moved money. Reporting it as
+        // retryable (503) or as a definite non-payment (422) both invite a re-sign that
+        // can double-charge. It is its own terminal, non-operational tag mapped to 504.
+        const unknown: SettlementError = {_tag: "SettlementUnknown", transaction: TX_HASH};
+        expect(httpStatusFor(unknown)).toBe(504);
+        expect(isRetryable(unknown)).toBe(false);
+        expect(describeError(unknown)).toContain("may have settled");
+    });
+
     test("DomainMismatch stays separate from InvalidSignature", () => {
         // Collapsing these sends whoever reads the log looking in the wrong place.
         const domain = describeError({

@@ -19,6 +19,7 @@ import {
     SETTLEMENT_UNCONFIRMED,
     buildDelegatedTransfer,
     decideSettlement,
+    decideVerification,
     isVerificationAccepted,
     validateDelegatedPayment,
 } from "./x402.js";
@@ -306,6 +307,31 @@ describe("D5 settlement outcome ladder", () => {
         });
     });
 
+    test("verify: unreachable is 'unavailable', never a rejection of the delegation", () => {
+        // Task #37: an outage on the /verify hop must not be reported as the caller's
+        // delegation being refused. Nothing is charged at /verify, so it is safe to
+        // separate the operational cause from a real verdict.
+        expect(decideVerification({reachable: false}, PAYER)).toEqual({kind: "unavailable"});
+        for (const body of [undefined, null, "nope", 3]) {
+            expect(decideVerification({reachable: true, body}, PAYER).kind).toBe("unavailable");
+        }
+    });
+
+    test("verify: a reachable body that fails the payer cross-check is 'rejected'", () => {
+        expect(
+            decideVerification({reachable: true, body: {isValid: false}}, PAYER).kind,
+        ).toBe("rejected");
+        expect(
+            decideVerification({reachable: true, body: {isValid: true, payer: IMPOSTOR}}, PAYER).kind,
+        ).toBe("rejected");
+    });
+
+    test("verify: a valid body naming the derived payer is 'accepted'", () => {
+        expect(
+            decideVerification({reachable: true, body: {isValid: true, payer: PAYER}}, PAYER),
+        ).toEqual({kind: "accepted", payer: PAYER});
+    });
+
     test("an unreachable facilitator is unknown, never failed", () => {
         // Connection refused, non-2xx, timeout — the seller cannot tell them apart, and
         // none of them distinguishes "never landed" from "broadcast, answer lost".
@@ -335,6 +361,25 @@ describe("D5 settlement outcome ladder", () => {
                 PAYER,
             ),
         ).toEqual({kind: "unknown", transaction: TX});
+    });
+
+    test("the unconfirmed sentinel with no hash is still unknown, never failed", () => {
+        // A throw from the broadcast call itself yields no hash (the response was lost
+        // before writeContract returned one), but the outcome is the same unknown — a
+        // 504 with an undefined transaction, never a 422 that asserts non-payment.
+        expect(
+            decideSettlement(
+                {
+                    reachable: true,
+                    body: {
+                        success: false,
+                        network: GIWA_SEPOLIA_CAIP2,
+                        errorReason: SETTLEMENT_UNCONFIRMED,
+                    },
+                },
+                PAYER,
+            ),
+        ).toEqual({kind: "unknown", transaction: undefined});
     });
 
     test("the sentinel is one shared constant, not a literal per process", () => {

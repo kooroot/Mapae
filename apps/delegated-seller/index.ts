@@ -1,7 +1,7 @@
 import {Hono} from "hono";
 import {
     decideSettlement,
-    isVerificationAccepted,
+    decideVerification,
     parseActiveDeploymentArtifactJson,
     parseFrameworkDeploymentManifestJson,
     throttledHttp,
@@ -294,9 +294,17 @@ app.get("/delegated/deliverable/:id", async (c) => {
         return c.json({error: "malformed_payment", detail: "payment offer mismatch"}, 400);
     }
 
-    const verified = await callFacilitator("/verify", request);
-    if (!verified.reachable || !isVerificationAccepted(verified.body, payer)) {
-        return c.json({error: "delegation_rejected"}, 403);
+    // Split "the facilitator could not be reached" from "the facilitator refused this
+    // delegation" (task #37). Nothing is charged at /verify, so 503 is a safe, honest
+    // "retry later"; blaming the caller's delegation with 403 for our own outage is not.
+    const verification = decideVerification(await callFacilitator("/verify", request), payer);
+    switch (verification.kind) {
+        case "unavailable":
+            return c.json({error: "verifier_unavailable"}, 503);
+        case "rejected":
+            return c.json({error: "delegation_rejected"}, 403);
+        case "accepted":
+            break;
     }
 
     // "Did not succeed" and "is not known to have succeeded" are different claims.

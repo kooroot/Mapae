@@ -129,6 +129,36 @@ export function isVerificationAccepted(body: unknown, expectedPayer: Address): b
 }
 
 /**
+ * The verification counterpart of {@link SettlementOutcome}, and the reason it is not a
+ * boolean: an outage on the `/verify` hop and a facilitator that examined the delegation
+ * and refused it are different claims, and collapsing them blames the caller's delegation
+ * for the seller's dependency being down (task #37). Nothing is charged at `/verify` — it
+ * is a simulation — so `unavailable` is safe to retry, unlike a settlement `unknown`.
+ */
+export type VerificationOutcome =
+    | {kind: "unavailable"}
+    | {kind: "rejected"}
+    | {kind: "accepted"; payer: Address};
+
+/**
+ * Map a `/verify` call onto the three outcomes. `reachable: false` — connection refused,
+ * non-2xx, unparseable JSON, timeout — is `unavailable`, never `rejected`: the seller
+ * could not obtain a verdict, which is not the same as obtaining a "no".
+ */
+export function decideVerification(
+    response: {reachable: boolean; body?: unknown},
+    expectedPayer: Address,
+): VerificationOutcome {
+    if (!response.reachable || !response.body || typeof response.body !== "object") {
+        return {kind: "unavailable"};
+    }
+    if (!isVerificationAccepted(response.body, expectedPayer)) {
+        return {kind: "rejected"};
+    }
+    return {kind: "accepted", payer: expectedPayer};
+}
+
+/**
  * Map a `/settle` call onto the four outcomes.
  *
  * `reachable: false` covers every way the call did not produce a body we can read —

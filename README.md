@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-460%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-465%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -79,15 +79,15 @@ a strong result, but nothing was mined and there is no link to follow.
 | Delegated payment | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
 | Agent automation | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
 | Console | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
-| Standing gates | Documentation, logging, advisory and test-count gates; 460 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
+| Standing gates | Documentation, logging, advisory and test-count gates; 465 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
-- Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c460d2675c60cbdd6ffaa3b7a9)
+- Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c465d2675c60cbdd6ffaa3b7a9)
 - Delegated settlement, 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - Delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - **Agent-driven settlement**, one MCP call, no human step:
   [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
-  — block 32734935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer gas spend 0**.
+  — block 33234935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer gas spend 0**.
   This run also surfaced a real defect and its fix is in the same tree: the answer the
   agent received said the payment had been rejected while it had in fact been mined. See
   "settlement-unknown" below.
@@ -98,7 +98,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://gitbook.mapae.io).
-- Regression suite: **460 TypeScript tests (327 shared/delegation/scripts + 3 MCP + 94 console + 36 web)
+- Regression suite: **465 TypeScript tests (332 shared/delegation/scripts + 3 MCP + 94 console + 36 web)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a

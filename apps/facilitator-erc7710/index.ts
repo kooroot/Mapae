@@ -225,8 +225,16 @@ const INTENT_MEMORY_MS = 60 * 60 * 1_000;
  * was rejected.
  */
 class SettlementUnconfirmed extends Error {
-    constructor(readonly transaction: Hex) {
-        super("redemption broadcast but not confirmed in time");
+    /**
+     * `transaction` is optional because the ambiguity has two shapes. A receipt-wait
+     * timeout knows the hash (the broadcast returned it); a throw from the broadcast
+     * call itself does not — `writeContract` prepares, signs, and sends in one step, so
+     * a lost response after the node accepted the transaction rejects without ever
+     * handing back a hash. Both are "unknown, may be charged", and both must reach the
+     * seller as SETTLEMENT_UNCONFIRMED so the client is told not to re-sign.
+     */
+    constructor(readonly transaction?: Hex) {
+        super("redemption broadcast but not confirmed");
         this.name = "SettlementUnconfirmed";
     }
 }
@@ -296,7 +304,22 @@ class SettlementCoordinator {
             if (gas > MAX_REDEMPTION_GAS) {
                 throw new Error(`redemption gas ${gas} exceeds configured cap`);
             }
-            hash = await facilitatorClient.writeContract({...simulation.request, gas});
+            // Everything above this line provably did not broadcast — a simulation
+            // revert or a gas-cap refusal charges nobody, so those throws are genuine
+            // rejections. `writeContract` is the one ambiguous step: it prepares, signs,
+            // and sends in a single call, so a lost response after the node accepted the
+            // transaction rejects here while the transfer will still mine. Reporting that
+            // as `delegation_rejected` would tell the payer they were not charged and
+            // invite a retry that signs a fresh leaf and pays twice — the exact
+            // unknown-vs-failed collapse SETTLEMENT_UNCONFIRMED exists to prevent, which
+            // was being enforced only one step later at the receipt wait. A same-intent
+            // retry is safe regardless: the leaf's one-shot ERC20TransferAmountEnforcer
+            // reverts a second redemption of the identical context.
+            try {
+                hash = await facilitatorClient.writeContract({...simulation.request, gas});
+            } catch {
+                throw new SettlementUnconfirmed();
+            }
             // Save before waiting. A receipt timeout must never trigger a duplicate broadcast.
             this.#rememberBroadcast(payment.paymentIntentId, hash);
         }

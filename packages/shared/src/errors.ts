@@ -25,6 +25,13 @@ export type SettlementError =
     | {_tag: "RpcUnavailable"; url: string; cause: unknown}
     | {_tag: "RpcRateLimited"; url: string; retryAfterMs?: number}
     | {_tag: "TxReverted"; hash?: Hex; reason?: string}
+    /**
+     * The settle call did not return a verdict we can trust — a transport failure, a
+     * non-2xx, or a lost response after the facilitator may have broadcast. Distinct
+     * from TxReverted (an observed non-payment) and from RpcUnavailable (retryable):
+     * the money may have moved, so re-signing can pay twice. Maps to 504.
+     */
+    | {_tag: "SettlementUnknown"; transaction?: Hex}
     | {_tag: "DomainMismatch"; expected: string; received: string}
     | {_tag: "MalformedPayload"; field: string; detail?: string};
 
@@ -67,6 +74,10 @@ export function httpStatusFor(error: SettlementError): number {
             return 403;
         case "NonceAlreadyUsed":
             return 409;
+        // The client's SETTLEMENT_UNKNOWN_STATUSES treats 504 as "may be charged, do not
+        // re-sign"; the delegated seller already answers 504 for the same condition.
+        case "SettlementUnknown":
+            return 504;
         default:
             return 422;
     }
@@ -142,6 +153,11 @@ export function describe(error: SettlementError): string {
             return `RPC ${redactUrls(error.url)} rate limited`;
         case "TxReverted":
             return `tx reverted${error.reason ? `: ${error.reason}` : ""}`;
+        case "SettlementUnknown":
+            return (
+                "settlement outcome unknown — the payment may have settled; do not re-sign" +
+                (error.transaction ? ` (tx ${error.transaction})` : "")
+            );
         case "DomainMismatch":
             return `EIP-712 domain mismatch: expected ${error.expected}, got ${error.received}`;
         case "MalformedPayload":

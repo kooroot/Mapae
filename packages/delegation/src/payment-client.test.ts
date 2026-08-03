@@ -557,8 +557,12 @@ describe("D5 settlement-unknown is not a rejection", () => {
         expect(result.detail).toContain("may already be charged");
     });
 
-    test("gateway timeouts are treated the same way", async () => {
-        for (const status of [408, 425]) {
+    test("gateway timeouts and origin-death codes are treated the same way", async () => {
+        // 502/520/521/522/523/524 are what a reverse proxy (the deployed seller sits
+        // behind a Cloudflare Tunnel) answers when the origin dies mid-exchange. This
+        // status is only reached on the retry — the payment header is already on the
+        // wire — so the money may have moved and a retry could pay twice.
+        for (const status of [408, 425, 502, 520, 521, 522, 523, 524]) {
             const result = await resultFor(poisonedResponse(status));
             expect(result.ok === false && result.code).toBe("SETTLEMENT_UNKNOWN");
         }
@@ -567,8 +571,10 @@ describe("D5 settlement-unknown is not a rejection", () => {
     test("a genuine refusal is still PAYMENT_REJECTED", async () => {
         // 403 delegation_rejected and 422 settlement_failed both mean the payment did not
         // go through. Widening the unknown set to cover these would make every refusal
-        // look like a possible charge, which is its own way of being useless.
-        for (const status of [402, 403, 422, 400, 500]) {
+        // look like a possible charge, which is its own way of being useless. 503 is the
+        // seller's verify-unavailable rung: nothing is charged at /verify, so a retry is
+        // safe and this stays a rejection, not an unknown.
+        for (const status of [402, 403, 422, 400, 500, 503]) {
             const result = await resultFor(poisonedResponse(status));
             expect(result.ok === false && result.code).toBe("PAYMENT_REJECTED");
         }
