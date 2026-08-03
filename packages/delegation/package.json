@@ -20,5 +20,10 @@
     "@metamask/delegation-abis": "1.1.0",
     "@metamask/smart-accounts-kit": "1.7.0",
     "viem": "^2.55.8"
+  },
+  "devDependencies": {
+    "@metamask/x402": "0.2.0",
+    "@x402/core": "2.20.0",
+    "@x402/evm": "2.20.0"
   }
 }
