@@ -7,6 +7,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./account-bootstrap": "./src/account-bootstrap.ts",
     "./config": "./src/config.ts",
     "./policy": "./src/policy.ts",
     "./x402": "./src/x402.ts",

@@ -5,6 +5,14 @@ import {defineConfig, loadEnv, searchForWorkspaceRoot} from "vite";
 import type {Plugin} from "vite";
 
 const PUBLIC_GIWA_HOST = "sepolia-rpc.giwa.io";
+/**
+ * The sponsor shares the facilitator's hostname and is routed by path.
+ *
+ * A separate subdomain would have meant a new DNS record, a new tunnel entry and a second
+ * public name to keep track of; a path rule on the existing hostname adds none of those
+ * while keeping the sponsor a separate process with its own key and its own nonce space.
+ */
+const PUBLIC_BOOTSTRAP_HOST = "facilitator.mapae.io";
 const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1", "[::1]"];
 const SITE_SURFACES = new Set(["combined", "landing", "app"]);
 
@@ -109,6 +117,36 @@ function assertLoopbackSubmitter(raw: string | undefined): void {
     );
 }
 
+/**
+ * Refuse to build when the bootstrap endpoint is not one we chose.
+ *
+ * This one differs from the two above: the value is *meant* to be public, so the guard is
+ * not protecting a secret. It exists because these guards are keyed by variable name, and
+ * a new `VITE_` name inherits no protection at all — a typo pointing this at the keyed
+ * private RPC host would inline that credential into the shipped bundle exactly as
+ * `VITE_RPC_URL` would have. Same reason, different variable.
+ *
+ * The message names the host and never the path, for the same reason as
+ * `assertPublishableRpc`: the path is the credential in the case this is guarding against.
+ */
+function assertBootstrapEndpoint(raw: string | undefined): void {
+    const value = raw?.trim();
+    if (!value) return;
+    let url: URL;
+    try {
+        url = new URL(value);
+    } catch {
+        throw new Error("VITE_BOOTSTRAP_URL is not a valid URL");
+    }
+    if (LOOPBACK_HOSTS.includes(url.hostname)) return;
+    if (url.protocol === "https:" && url.hostname === PUBLIC_BOOTSTRAP_HOST) return;
+    throw new Error(
+        `VITE_BOOTSTRAP_URL must be https://${PUBLIC_BOOTSTRAP_HOST} or loopback, got "${url.hostname}". ` +
+            "Vite inlines this value into the shipped bundle; an unintended host here is published " +
+            "to every visitor.",
+    );
+}
+
 export default defineConfig(({mode}) => {
     // `loadEnv` sees .env files too, not just the process environment — a credential pasted
     // into apps/web/.env must fail the same way one passed inline does.
@@ -118,6 +156,7 @@ export default defineConfig(({mode}) => {
     assertLoopbackSubmitter(
         env["VITE_REVOCATION_SUBMITTER_URL"] ?? process.env["VITE_REVOCATION_SUBMITTER_URL"],
     );
+    assertBootstrapEndpoint(env["VITE_BOOTSTRAP_URL"] ?? process.env["VITE_BOOTSTRAP_URL"]);
     return {
         plugins: [
             cloudflare({viteEnvironment: {name: "ssr"}}),

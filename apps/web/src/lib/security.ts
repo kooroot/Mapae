@@ -29,6 +29,12 @@ export function createContentSecurityPolicy(nonce: string): string {
             "connect-src 'self'",
             "https://sepolia-rpc.giwa.io",
             "https://sepolia-explorer.giwa.io",
+            // The sponsored bootstrap endpoint, routed by path on the facilitator host.
+            // Without this entry the browser never sends the request at all, so this line
+            // is a precondition of the onboarding flow rather than a loosening of it. What
+            // travels to it is a signed permission context, which the same page already
+            // holds; the origin is ours and `vite.config.ts` pins the host at build time.
+            "https://facilitator.mapae.io",
             "https://cloudflareinsights.com",
         ].join(" "),
         "frame-ancestors 'none'",

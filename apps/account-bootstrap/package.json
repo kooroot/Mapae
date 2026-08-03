@@ -1,0 +1,14 @@
+{
+  "name": "@mapae/account-bootstrap",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot index.ts"
+  },
+  "dependencies": {
+    "@mapae/delegation": "workspace:*",
+    "@mapae/shared": "workspace:*",
+    "hono": "^4",
+    "viem": "^2.55.8"
+  }
+}

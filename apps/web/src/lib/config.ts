@@ -152,6 +152,40 @@ export function submitterAvailability():
     return {kind: "configured", url: url.toString().replace(/\/$/, "")};
 }
 
+/**
+ * Whether a sponsored bootstrap endpoint is reachable, and whether it is safe to name.
+ *
+ * Unlike {@link submitterAvailability} this one accepts a public HTTPS host — the sponsor
+ * exists precisely so a visitor's browser can reach it. The build-time guard in
+ * `vite.config.ts` is what keeps that from becoming a hole: without it a typo pointing
+ * `VITE_BOOTSTRAP_URL` at the keyed private RPC host would be inlined into the public
+ * bundle. This copy runs under `bun run dev`, where Vite executes `src/` rather than
+ * bundling it; both are needed, and neither error message ever echoes the path.
+ */
+export function bootstrapAvailability():
+    | {kind: "absent"}
+    | {kind: "configured"; url: string}
+    | {kind: "refused"; reason: string} {
+    const raw = import.meta.env["VITE_BOOTSTRAP_URL"]?.trim();
+    if (!raw) return {kind: "absent"};
+    let url: URL;
+    try {
+        url = new URL(raw);
+    } catch {
+        return {kind: "refused", reason: "주소를 해석할 수 없습니다"};
+    }
+    const loopback = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
+    if (url.protocol !== "https:" && !loopback) {
+        return {kind: "refused", reason: `HTTPS가 아닙니다 (${url.hostname})`};
+    }
+    if (!loopback && url.hostname !== "facilitator.mapae.io") {
+        // Names the host, never the whole URL — a keyed RPC URL carries its secret in the
+        // path, so echoing the value here would defeat the guard that rejected it.
+        return {kind: "refused", reason: `허용되지 않은 호스트입니다 (${url.hostname})`};
+    }
+    return {kind: "configured", url: url.toString().replace(/\/$/, "")};
+}
+
 /** Guard for anything an operator may paste in. Validate, never cast. */
 export function parseAddress(value: string): Address | undefined {
     const trimmed = value.trim();

@@ -1,5 +1,5 @@
 import {signRootPeriodPermission, toMapaeOwnerSmartAccount} from "@mapae/delegation/signing";
-import {MOCK_USDC} from "@mapae/shared";
+import {MOCK_USDC, redactUrls} from "@mapae/shared";
 import {
     ArrowRight,
     BadgeCheck,
@@ -23,8 +23,9 @@ import {
     useSwitchChain,
     useWalletClient,
 } from "wagmi";
-import {chain, deployment, publicClient} from "../lib/config";
+import {bootstrapAvailability, chain, deployment, publicClient} from "../lib/config";
 import {
+    requestSponsoredBootstrap,
     signedSessionGrant,
     tokenLabel,
     validateGrantDraft,
@@ -45,6 +46,7 @@ type AccountReadiness =
 type SigningProgress =
     | {kind: "idle"}
     | {kind: "signing"}
+    | {kind: "bootstrapping"}
     | {kind: "verifying"}
     | {kind: "error"; reason: string};
 
@@ -77,6 +79,9 @@ export function GrantOnboarding({
         kind: "idle",
     });
     const validation = useMemo(() => validateGrantDraft(draft), [draft]);
+    // Read once: it comes from a build-time constant, and re-deriving it per render would
+    // suggest it can change while the page is open.
+    const sponsor = useMemo(() => bootstrapAvailability(), []);
     const wrongChain = isConnected && chainId !== chain.id;
 
     useEffect(() => {
@@ -125,11 +130,18 @@ export function GrantOnboarding({
     async function signGrant(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         setAttempted(true);
+        // Readiness no longer gates signing. The signature is what proves ownership to
+        // the sponsor, so it must come first; `DelegationManager` still requires the
+        // account to exist before any payment, which is why the sponsor runs immediately
+        // after. Only an unreadable account state blocks — signing against an address we
+        // could not derive would produce a grant nobody can place.
         if (
             validation.kind !== "ok" ||
             !address ||
             !walletClient ||
-            accountReadiness.kind !== "ready"
+            accountReadiness.kind === "loading" ||
+            accountReadiness.kind === "error" ||
+            (accountReadiness.kind === "missing" && sponsor.kind !== "configured")
         ) {
             return;
         }
@@ -156,6 +168,11 @@ export function GrantOnboarding({
                 },
                 startDate,
             });
+            if (accountReadiness.kind === "missing" && sponsor.kind === "configured") {
+                setProgress({kind: "bootstrapping"});
+                await requestSponsoredBootstrap(sponsor.url, artifact);
+                setAccountReadiness({kind: "ready", smartAccount: artifact.delegator});
+            }
             setProgress({kind: "verifying"});
             await verifyPermissionArtifact(artifact);
             setDraft(INITIAL_DRAFT);
@@ -170,8 +187,10 @@ export function GrantOnboarding({
     const connector = connectors[0];
     const formReady =
         validation.kind === "ok" &&
-        accountReadiness.kind === "ready" &&
+        (accountReadiness.kind === "ready" ||
+            (accountReadiness.kind === "missing" && sponsor.kind === "configured")) &&
         progress.kind !== "signing" &&
+        progress.kind !== "bootstrapping" &&
         progress.kind !== "verifying";
 
     return (
@@ -374,7 +393,7 @@ export function GrantOnboarding({
                         </div>
                     </div>
 
-                    <AccountGate state={accountReadiness} />
+                    <AccountGate state={accountReadiness} sponsor={sponsor} />
 
                     {progress.kind === "error" ? (
                         <div className="studio-sign-error" role="alert">
@@ -386,13 +405,15 @@ export function GrantOnboarding({
                     <button type="submit" className="studio-primary-button" disabled={!formReady}>
                         {progress.kind === "signing"
                             ? "지갑에서 서명해 주세요…"
-                            : progress.kind === "verifying"
-                              ? "온체인 서명 확인 중…"
-                              : !isConnected
-                                ? "먼저 지갑을 연결하세요"
-                                : wrongChain
-                                  ? "GIWA Sepolia로 전환하세요"
-                                  : "범위 확인하고 권한 만들기"}
+                            : progress.kind === "bootstrapping"
+                              ? "지불 계정을 준비하는 중…"
+                              : progress.kind === "verifying"
+                                ? "온체인 서명 확인 중…"
+                                : !isConnected
+                                  ? "먼저 지갑을 연결하세요"
+                                  : wrongChain
+                                    ? "GIWA Sepolia로 전환하세요"
+                                    : "범위 확인하고 권한 만들기"}
                         {progress.kind === "idle" ? <ArrowRight size={17} /> : null}
                     </button>
                     <p className="studio-privacy">
@@ -521,7 +542,13 @@ function Field({
     );
 }
 
-function AccountGate({state}: {state: AccountReadiness}) {
+function AccountGate({
+    state,
+    sponsor,
+}: {
+    state: AccountReadiness;
+    sponsor: ReturnType<typeof bootstrapAvailability>;
+}) {
     if (state.kind === "idle") {
         return (
             <div className="studio-account-gate">
@@ -545,6 +572,24 @@ function AccountGate({state}: {state: AccountReadiness}) {
         );
     }
     if (state.kind === "missing") {
+        // Two different situations wear the same chain state. With a sponsor configured
+        // this is a normal first visit and costs the user nothing; without one there is
+        // no path forward from the browser, and saying so is more useful than a spinner.
+        if (sponsor.kind === "configured") {
+            return (
+                <div className="studio-account-gate" data-tone="ready">
+                    <BadgeCheck size={18} />
+                    <div>
+                        <strong>첫 권한과 함께 지불 계정이 준비됩니다.</strong>
+                        <p>
+                            지불 계정 {short(state.smartAccount)}은 아직 만들어지지
+                            않았습니다. 권한에 서명하면 계정 생성 수수료는 Mapae가
+                            대신 냅니다. 지갑에서 승인할 것은 서명 한 번뿐입니다.
+                        </p>
+                    </div>
+                </div>
+            );
+        }
         return (
             <div className="studio-account-gate" data-tone="warning">
                 <CircleAlert size={18} />
@@ -552,8 +597,8 @@ function AccountGate({state}: {state: AccountReadiness}) {
                     <strong>지불 계정 준비가 필요합니다.</strong>
                     <p>
                         예상 계정 {short(state.smartAccount)}이 아직 배포되지 않았습니다.
-                        공개 Studio는 배포 트랜잭션이나 운영 릴레이어를 임의로 실행하지
-                        않으므로 현재는 권한 서명을 중단합니다.
+                        이 환경에는 계정 준비 서버가 설정되어 있지 않아 권한 서명을
+                        진행할 수 없습니다.
                     </p>
                 </div>
             </div>
@@ -722,7 +767,16 @@ function durationLabel(seconds: number): string {
     return `${seconds}초`;
 }
 
+/**
+ * The one message an error is allowed to become on screen.
+ *
+ * `redactUrls` is not optional here. viem embeds the whole transport URL in every error it
+ * raises, a private GIWA endpoint carries its API key in the URL *path*, and this string is
+ * rendered straight into the DOM. `bun run check:logging` only inspects `console.*`, so a
+ * response body or a JSX expression is a sink no gate would catch — which is exactly the
+ * edge CLAUDE.md flags as "still on you".
+ */
 function faultLine(error: unknown): string {
-    if (error instanceof Error && error.message) return error.message;
+    if (error instanceof Error && error.message) return redactUrls(error.message);
     return "요청을 완료하지 못했습니다. 지갑과 네트워크 상태를 확인해 주세요.";
 }

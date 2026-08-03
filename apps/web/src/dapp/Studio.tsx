@@ -42,6 +42,8 @@ import {
 import {short, struckPercent} from "../lib/dial";
 import {
     importedSessionGrant,
+    judgeSpendable,
+    readPayerBalance,
     type SessionGrant,
     verifyPermissionArtifact,
 } from "../lib/grant";
@@ -305,6 +307,31 @@ function StudioSidebar({
     );
 }
 
+/**
+ * The payer's token balance, refreshed alongside the delegation status.
+ *
+ * Deliberately separate from `readDelegationStatus`: that function reads the enforcers,
+ * which know the cap and nothing about the balance. Folding a token read into it would put
+ * an ERC-20 dependency inside the delegation package for the benefit of one screen.
+ */
+function usePayerBalance(payer: `0x${string}` | undefined): bigint | undefined {
+    const [balance, setBalance] = useState<bigint | undefined>(undefined);
+    useEffect(() => {
+        if (!payer) {
+            setBalance(undefined);
+            return;
+        }
+        let current = true;
+        void readPayerBalance(payer).then((value) => {
+            if (current) setBalance(value);
+        });
+        return () => {
+            current = false;
+        };
+    }, [payer]);
+    return balance;
+}
+
 function Overview({
     permission,
     status,
@@ -312,6 +339,7 @@ function Overview({
     permission: LoadedPermission;
     status: DelegationStatus;
 }) {
+    const balance = usePayerBalance(permission.root.delegator as `0x${string}`);
     const live = !status.revoked && !status.expired && !status.notYetActive;
     const started = (status.currentPeriod ?? 0n) > 0n;
     const cap = status.limit?.periodAmount;
@@ -335,9 +363,23 @@ function Overview({
                         <>
                             <p className="studio-amount-label">현재 사용 가능</p>
                             <div className="studio-amount">
-                                <strong>{fromTokenAmount(available)}</strong>
+                                <strong>
+                                    {fromTokenAmount(
+                                        judgeSpendable({available, balance}).spendable,
+                                    )}
+                                </strong>
                                 <span>mUSDC</span>
                             </div>
+                            {judgeSpendable({available, balance}).limitedBy === "balance" ? (
+                                // The cap is not the binding constraint right now. Saying
+                                // so here is the difference between a user who funds the
+                                // account and one who reads an unexplained payment failure.
+                                <p className="studio-amount-note">
+                                    한도는 {fromTokenAmount(available)} mUSDC이지만 지불 계정
+                                    잔액이 {fromTokenAmount(balance ?? 0n)} mUSDC입니다. 결제하려면
+                                    지불 계정에 mUSDC를 채워 주세요.
+                                </p>
+                            ) : null}
                             <div
                                 className="studio-cap-track"
                                 role="progressbar"
