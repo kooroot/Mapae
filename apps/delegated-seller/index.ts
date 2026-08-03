@@ -20,8 +20,10 @@ import {
     encodePaymentRequiredHeader,
     fromTokenAmount,
     giwaSepolia,
+    isLoopbackHost,
     parseNodeRpcUrl,
     readInboundPaymentHeader,
+    redactForLog,
     toTokenAmount,
     type Erc7710PaymentPayload,
     type Erc7710PaymentRequirements,
@@ -76,7 +78,7 @@ function readUrl(name: string, fallback: string): string {
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
         throw new Error(`${name} must be an absolute HTTP(S) URL without credentials`);
     }
-    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    const loopback = isLoopbackHost(url.hostname);
     if (url.protocol !== "https:" && !loopback) {
         throw new Error(`${name} must use HTTPS unless it is loopback`);
     }
@@ -290,7 +292,13 @@ app.get("/delegated/deliverable/:id", async (c) => {
             delegationManager: getAddress(deployment.environment.DelegationManager),
             facilitator: facilitatorAddress,
         }).payer;
-    } catch {
+    } catch (error) {
+        // validateDelegatedPayment throws ~20 distinct reasons (wrong manager, oversized
+        // context, delegator/root mismatch, non-integer amount, facilitator not
+        // advertised…). The client response stays a single opaque tag — the caller must
+        // not learn which invariant it tripped — but an operator debugging a rejected
+        // payment needs the cause. Log it redacted; the bearer context never reaches here.
+        console.error(`[validate] rejected — ${redactForLog(error)}`);
         return c.json({error: "malformed_payment", detail: "payment offer mismatch"}, 400);
     }
 

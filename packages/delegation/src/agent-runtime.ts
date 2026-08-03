@@ -1,7 +1,7 @@
 import {createPublicClient, getAddress, isAddress, zeroAddress} from "viem";
 import type {Account, Address, Hex} from "viem";
 import {privateKeyToAccount} from "viem/accounts";
-import {GIWA_SEPOLIA_CAIP2, giwaSepolia, parseNodeRpcUrl} from "@mapae/shared";
+import {GIWA_SEPOLIA_CAIP2, giwaSepolia, isLoopbackHost, parseNodeRpcUrl} from "@mapae/shared";
 import {isPermissionContext, parseActiveDeploymentArtifactJson} from "./config.js";
 import {parseFrameworkDeploymentManifestJson} from "./deployment-record.js";
 import {verifyActiveFrameworkDeployment} from "./live-verifier.js";
@@ -51,7 +51,7 @@ function readHttpUrl(
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
         throw new Error(`${name} must be an absolute HTTP(S) URL without credentials`);
     }
-    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    const loopback = isLoopbackHost(url.hostname);
     if (url.protocol !== "https:" && !loopback) {
         throw new Error(`${name} must use HTTPS unless it is loopback`);
     }

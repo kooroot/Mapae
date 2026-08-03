@@ -35,6 +35,7 @@ import {
     type Hex,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
+import {nonceManager} from "viem";
 
 const MAX_BODY_CHARACTERS = 150_000;
 
@@ -145,7 +146,12 @@ const MAX_REDEMPTION_GAS = readPositiveInteger("MAX_REDEMPTION_GAS", 1_500_000);
 // 31634888→31634935), and settlement waits for a single confirmation, so the real cost is
 // the throttled RPC round trips rather than the chain.
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOUT_MS", 25_000));
-const relayer = privateKeyToAccount(readRelayerKey());
+// The nonce manager serializes nonce assignment per address. Without it, two concurrent
+// /settle calls for different payment intents each read eth_getTransactionCount(pending)
+// independently and can pick the same nonce — one broadcast then replaces the other in the
+// mempool, dropping a settlement the seller already told the buyer succeeded. PaymentIntent
+// single-flight only coalesces same-intent calls; distinct intents race here.
+const relayer = privateKeyToAccount(readRelayerKey(), {nonceManager});
 const expectedRelayer = readRelayerAddress();
 if (relayer.address !== expectedRelayer) {
     throw new Error(
@@ -210,9 +216,10 @@ type SettleResponse = Erc7710SettleResponse;
  * How long a broadcast transaction stays remembered for its payment intent.
  *
  * The map exists so a receipt timeout never triggers a second broadcast, which
- * only matters while a client could still be retrying — the agent's own request
- * timeout is 15s. Keeping entries forever would grow the process without bound;
- * evicting them earlier than any live retry could arrive is what makes dropping
+ * only matters while a client could still be retrying — bounded by the agent's own
+ * request timeout (AGENT_REQUEST_TIMEOUT_MS in @mapae/delegation, the outermost layer
+ * of the settlement budget). Keeping entries forever would grow the process without
+ * bound; evicting them earlier than any live retry could arrive is what makes dropping
  * them safe.
  */
 const INTENT_MEMORY_MS = 60 * 60 * 1_000;

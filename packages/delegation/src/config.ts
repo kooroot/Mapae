@@ -288,11 +288,19 @@ export function parseActiveDeploymentArtifactJson(
     return parseActiveDeploymentArtifact(value);
 }
 
+/**
+ * Maximum permission-context length as a hex string: `0x` + 65_536 bytes = 64 KiB, a DoS
+ * ceiling on decode work. One exported constant so the agent-side bound (parent context)
+ * and the facilitator-side bound (parent + one leaf, in x402.ts) can never drift into
+ * accepting a context one side would refuse.
+ */
+export const MAX_PERMISSION_CONTEXT_HEX_LENGTH = 131_074;
+
 export function isPermissionContext(value: unknown): value is Hex {
     return (
         typeof value === "string" &&
         isHex(value) &&
         value.length > 2 &&
-        value.length <= 131_074
+        value.length <= MAX_PERMISSION_CONTEXT_HEX_LENGTH
     );
 }

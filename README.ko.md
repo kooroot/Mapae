@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-465%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-468%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -78,15 +78,15 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 | 위임 결제 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
 | 에이전트 자동화 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
 | 콘솔 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
-| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 465 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
+| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 468 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
-- 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c465d2675c60cbdd6ffaa3b7a9)
+- 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c468d2675c60cbdd6ffaa3b7a9)
 - 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - **에이전트 자율 정산**, MCP 1회 호출, 사람 개입 0:
   [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
-  — block 33234935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
+  — block 33534935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
   이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
   에이전트는 거절됐다는 답을 받았다. 아래 "settlement-unknown" 참조.
 - 한도 초과와 만료는 백엔드 검사가 아니라 **배포된 enforcer가 거절**한다.
@@ -95,7 +95,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 문서](https://gitbook.mapae.io)에 있다.
-- 회귀 검증: **465 TypeScript tests (shared/delegation/scripts 332 + MCP 3 + 콘솔 94 + 웹 36)
+- 회귀 검증: **468 TypeScript tests (shared/delegation/scripts 335 + MCP 3 + 콘솔 94 + 웹 36)
   + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이

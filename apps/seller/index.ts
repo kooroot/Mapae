@@ -14,6 +14,7 @@ import {
     explorerTxUrl,
     fromTokenAmount,
     httpStatusFor,
+    isLoopbackHost,
     readInboundPaymentHeader,
     toTokenAmount,
     type FacilitatorRequest,
@@ -78,7 +79,7 @@ function readHttpUrl(name: string, fallback: string): string {
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
         throw new Error(`${name} must use http(s) and must not contain credentials`);
     }
-    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    const loopback = isLoopbackHost(url.hostname);
     if (url.protocol !== "https:" && !loopback) {
         throw new Error(`${name} must use HTTPS unless it points to loopback`);
     }

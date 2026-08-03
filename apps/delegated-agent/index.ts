@@ -1,11 +1,13 @@
 import {
+    AGENT_REQUEST_TIMEOUT_MS,
     loadDelegatedAgentRuntime,
     payForDelegatedResource,
     resolveResourceTarget,
 } from "@mapae/delegation";
 import {fromTokenAmount, redactForLog} from "@mapae/shared";
 
-const REQUEST_TIMEOUT_MS = 15_000;
+// The shared outermost budget — 15s here previously inverted the four-layer stack.
+const REQUEST_TIMEOUT_MS = AGENT_REQUEST_TIMEOUT_MS;
 
 async function main(): Promise<void> {
     const runtime = await loadDelegatedAgentRuntime();

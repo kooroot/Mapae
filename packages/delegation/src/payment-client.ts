@@ -13,9 +13,23 @@ import {
     type Erc7710PaymentRequirements,
     type PaymentRequired,
 } from "@mapae/shared";
-import {getAddress, isAddress, type Address, type Hex} from "viem";
+import {getAddress, isAddress, zeroAddress, type Address, type Hex} from "viem";
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+/**
+ * The outermost layer of the four-stack settlement budget, and the single source for it.
+ *
+ * The stack must grow outward so the innermost hop is not the first to give up:
+ *   facilitator receipt wait  <  seller→facilitator settle  <  seller idle timeout  <
+ *   this client request timeout
+ *
+ * It was 15_000 here — shorter than the seller's own 45 s idle timeout — so any caller
+ * omitting `timeoutMs` (the CLI delegated agent did) inverted the stack: the client hung
+ * up while the facilitator was still waiting for a receipt, turning a settled payment into
+ * a reported failure. The MCP server already used 50_000; this makes that the default so a
+ * caller cannot silently inherit the inversion again.
+ */
+export const AGENT_REQUEST_TIMEOUT_MS = 50_000;
+const DEFAULT_TIMEOUT_MS = AGENT_REQUEST_TIMEOUT_MS;
 
 /**
  * Reason an autonomous delegated payment did not complete. Returned instead of
@@ -131,9 +145,19 @@ export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
         throw new Error("seller did not offer exact ERC-7710 on GIWA");
     }
     if (!isAddress(req.asset) || getAddress(req.asset) !== MOCK_USDC.address) {
-        throw new Error(`unexpected asset ${req.asset}`);
+        // Never interpolate the raw attacker-controlled value: this message becomes the
+        // MCP tool `detail` returned to the driving agent, the one failure channel the
+        // design otherwise keeps free of seller-supplied strings. A checksummed address
+        // is the only safe form; a non-address is named without echoing it.
+        throw new Error(
+            isAddress(req.asset) ? `unexpected asset ${getAddress(req.asset)}` : "seller asset is not an address",
+        );
     }
     if (!isAddress(req.payTo)) throw new Error("seller payTo is malformed");
+    // The v1 EIP-3009 agent rejects the zero address explicitly; the ERC-7710 path must
+    // too, or a leaf is signed for transfer(0x0, amount) that no enforcer refuses and
+    // that OZ ERC20 would burn — an unsettleable bearer authorization minted for nothing.
+    if (getAddress(req.payTo) === zeroAddress) throw new Error("seller payTo is the zero address");
     if (!/^[1-9]\d*$/.test(req.amount)) throw new Error("seller amount is malformed");
     if (
         !Number.isInteger(req.maxTimeoutSeconds) ||
@@ -203,13 +227,32 @@ export const BEARER_REDACTION = "[redacted: bearer payment authorization]";
  * Serialising and splitting on the literal reaches any nesting depth, which a
  * hand-written walker would not, and both secrets are long opaque hex/base64
  * strings so a substring match cannot collide with real content.
+ *
+ * Hex secrets (the permission context) are matched case-insensitively and with the `0x`
+ * prefix optional: EVM hex has no canonical case, so a seller echoing the same bytes
+ * uppercased or `0x`-stripped is the same authorization and an exact split would miss it.
+ * The base64 payment header is matched exactly — base64 is case-significant, so a
+ * case-flip is a different string, not the same secret.
  */
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function redactBearerSecrets(resource: unknown, secrets: string[]): unknown {
     const serialized = JSON.stringify(resource);
     if (serialized === undefined) return resource;
     let cleaned = serialized;
     for (const secret of secrets) {
-        if (secret.length >= 32) cleaned = cleaned.split(secret).join(BEARER_REDACTION);
+        if (secret.length < 32) continue;
+        const hexBody = /^0x[0-9a-fA-F]+$/.test(secret) ? secret.slice(2) : undefined;
+        if (hexBody && hexBody.length >= 32) {
+            cleaned = cleaned.replace(
+                new RegExp(`(?:0x)?${escapeRegExp(hexBody)}`, "gi"),
+                BEARER_REDACTION,
+            );
+        } else {
+            cleaned = cleaned.split(secret).join(BEARER_REDACTION);
+        }
     }
     return cleaned === serialized ? resource : JSON.parse(cleaned);
 }

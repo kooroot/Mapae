@@ -31,9 +31,13 @@ export const FACILITATOR_URL = "http://localhost:8080";
 /**
  * Does this hostname reach a node on this machine?
  *
- * The single classifier behind every loopback decision in the repo. It used to be a
- * three-entry list (`localhost`, `127.0.0.1`, `[::1]`) copied into five files, and the
- * list was under-inclusive in a way that mattered in exactly one direction.
+ * The single classifier behind every *destination* loopback decision in the repo — the
+ * e2e RPC-target guards and the four HTTPS-unless-loopback URL readers (seller, agent,
+ * delegated-seller, agent-runtime). It used to be a three-entry list (`localhost`,
+ * `127.0.0.1`, `[::1]`) copied into those readers, under-inclusive in a way that mattered
+ * in exactly one direction. The two *bind* checks (`readHost` in seller, `HOST` in
+ * delegated-seller) deliberately keep a literal list instead: this helper returns true for
+ * `0.0.0.0`, which is right for a destination but is the one value a bind must refuse.
  *
  * The two directions are not symmetric. A guard that demands loopback (the e2e runners,
  * which must never broadcast) fails *safe* when the list is short: an unlisted local

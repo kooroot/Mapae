@@ -117,6 +117,18 @@ const policy: RevocationSubmissionPolicy = {
 };
 
 const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
+
+// The relayer is named as the handleOps beneficiary, so the EntryPoint pays it. If the
+// relayer address carries code — an EIP-7702 designator most of all — `_compensate`
+// pays into a contract that can do more than receive gas. This exact drain was measured
+// on a GIWA fork and the e2e asserts against it; the production service must enforce it
+// too, not just the test harness. A clean EOA returns undefined from getCode.
+if ((await publicClient.getCode({address: relayer.address})) !== undefined) {
+    throw new Error(
+        "relayer address carries code (EIP-7702 designator?) — handleOps would compensate into it; use a clean EOA",
+    );
+}
+
 const relayerClient = createWalletClient({
     account: relayer,
     chain: giwaSepolia,

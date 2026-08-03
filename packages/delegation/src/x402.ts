@@ -24,6 +24,7 @@ import {
     type Erc7710PaymentRequirements,
     type FacilitatorRequest,
 } from "@mapae/shared";
+import {MAX_PERMISSION_CONTEXT_HEX_LENGTH} from "./config.js";
 
 export interface MapaeDelegationProviderConfig {
     account: Pick<Account, "address" | "signTypedData">;
@@ -202,7 +203,6 @@ export interface ValidatedDelegatedPayment {
 }
 
 const UINT_STRING = /^(0|[1-9]\d*)$/;
-const MAX_PERMISSION_CONTEXT_HEX_LENGTH = 131_074;
 const PAYMENT_INTENT_DOMAIN = keccak256(toBytes("mapae.erc7710.payment-intent.v1"));
 
 /** Coalesces concurrent requests for one payment intent into one operation. */

@@ -236,6 +236,22 @@ describe("D5 payForDelegatedResource", () => {
         expect(serialized).not.toContain(PERMISSION_CONTEXT);
     });
 
+    test("a case-flipped or 0x-stripped echo of the permission context is still redacted", async () => {
+        // EVM hex has no canonical case, so a seller re-emitting the same bytes uppercased
+        // or without the 0x prefix is echoing the identical bearer authorization. An exact
+        // substring match would miss it; the redaction must be case-insensitive.
+        const upper = `0x${"AB".repeat(64)}`;
+        const stripped = "ab".repeat(64);
+        const {impl} = scriptedFetch(
+            jsonResponse(200, {invoice: "inv-001", a: upper, b: stripped}),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        const serialized = JSON.stringify(result.resource).toLowerCase();
+        expect(serialized).not.toContain("ab".repeat(64));
+    });
+
     test("a malformed facilitator list is a reason, not a thrown TypeError", async () => {
         const body = paymentRequired();
         // A hostile seller sends a bare string where the list belongs. Before this
@@ -412,6 +428,34 @@ describe("D5 every failure returns a reason, never a throw", () => {
         // plain typeof guard would pass it through to `body.x402Version` — which threw
         // TypeError out of a function whose entire contract is to return a reason.
         expect(await codeFor(null)).toBe("SELLER_OFFER_INVALID");
+    });
+
+    test("an offer paying the zero address is refused before signing", async () => {
+        // A leaf for transfer(0x0, amount) is an unsettleable bearer authorization no
+        // enforcer refuses; the ERC-7710 path must reject it like the v1 agent does.
+        let signed = 0;
+        const counting: DelegatedLeafProvider = async () => {
+            signed += 1;
+            return {delegationManager: MANAGER, permissionContext: PERMISSION_CONTEXT, delegator: DELEGATOR};
+        };
+        const offer = paymentRequired();
+        (offer.accepts[0] as {payTo: string}).payTo =
+            "0x0000000000000000000000000000000000000000";
+        expect(await codeFor(offer, counting)).toBe("SELLER_OFFER_INVALID");
+        expect(signed).toBe(0);
+    });
+
+    test("a bad-asset refusal does not echo the raw seller value into the reason", async () => {
+        const {impl} = scriptedFetch(jsonResponse(200, {ok: true}), (() => {
+            const offer = paymentRequired();
+            (offer.accepts[0] as {asset: string}).asset = "0xdeadBEEFdeadbeefdeadbeefdeadbeefdeadbeef";
+            return offer;
+        })());
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        // Either a checksummed form or a generic phrase — never the raw lowercase input.
+        expect(result.detail).not.toContain("0xdeadBEEFdeadbeef");
     });
 
     test("a non-object 402 body is answered", async () => {

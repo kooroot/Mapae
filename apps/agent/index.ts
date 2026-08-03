@@ -14,6 +14,7 @@ import {
     explorerTxUrl,
     fromTokenAmount,
     giwaSepolia,
+    isLoopbackHost,
     redactForLog,
     toTokenAmount,
     type PaymentRequired,
@@ -71,7 +72,7 @@ function readSellerUrl(): URL {
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
         throw new Error("SELLER_URL must use http(s) and must not contain credentials");
     }
-    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    const loopback = isLoopbackHost(url.hostname);
     if (url.protocol !== "https:" && !loopback) {
         throw new Error("SELLER_URL must use HTTPS unless it points to loopback");
     }
@@ -214,19 +215,30 @@ async function main() {
     // payload across two names is what pushed the ERC-7710 flow over the server's
     // total-header limit (431).
     const submissionHeader = offerFromHeader ? PAYMENT_SIGNATURE_HEADER : LEGACY_PAYMENT_HEADER;
+    const encodedPayment = encodePaymentHeader(payload);
     console.log(`\nsigned — retrying with ${submissionHeader}`);
     const second = await fetch(TARGET_URL, {
         redirect: "error",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        headers: {[submissionHeader]: encodePaymentHeader(payload)},
+        headers: {[submissionHeader]: encodedPayment},
     });
 
-    const text = await second.text();
     if (!second.ok) {
+        // Never read or print the body on a rejected retry: the signed EIP-3009
+        // authorization is a bearer credential, and a hostile seller can reflect the
+        // submitted header straight back. Report the status class only.
         console.error(`\nFAILED ${second.status}`);
-        console.error(text);
         process.exit(1);
     }
+
+    // The resource was paid for and comes back, but it is seller-controlled text that a
+    // seller could stuff with the reflected bearer values. Strip the ones we know before
+    // printing — the encoded header and the raw signature.
+    const text = (await second.text())
+        .split(encodedPayment)
+        .join("[redacted: payment header]")
+        .split(signature)
+        .join("[redacted: signature]");
 
     console.log(`\nOK ${second.status}`);
     console.log(text);
