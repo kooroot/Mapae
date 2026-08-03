@@ -241,6 +241,31 @@ describe("reconcileSettlementReceipt — per-transaction vendor credit evidence"
         ).toEqual([]);
     });
 
+    test("an ERC-721-style 4-topic Transfer is not a credit and does not throw", () => {
+        // ERC-20 Transfer indexes from/to and carries amount in data; ERC-721 indexes
+        // the tokenId as a third topic and leaves data "0x". A filter that ignores the
+        // topic count matches the 721 log, then BigInt("0x") throws a SyntaxError —
+        // which in the facilitator escapes reconcile entirely and mislabels a mined
+        // settlement as delegation_rejected instead of vendor_not_credited.
+        const erc721Like = {
+            address: ASSET,
+            topics: [TRANSFER_EVENT_TOPIC, pad(PAYER), pad(VENDOR), value(1n)],
+            data: "0x",
+        };
+        expect(() => receiptCodes([erc721Like])).not.toThrow();
+        expect(receiptCodes([erc721Like])).toEqual(["VENDOR_CREDIT"]);
+    });
+
+    test("a matching topic set with non-numeric data is not a credit and does not throw", () => {
+        const garbageData = {
+            address: ASSET,
+            topics: [TRANSFER_EVENT_TOPIC, pad(PAYER), pad(VENDOR)],
+            data: "0xnothex",
+        };
+        expect(() => receiptCodes([garbageData])).not.toThrow();
+        expect(receiptCodes([garbageData])).toEqual(["VENDOR_CREDIT"]);
+    });
+
     test("address comparison is case-insensitive", () => {
         const log = transferLog();
         expect(

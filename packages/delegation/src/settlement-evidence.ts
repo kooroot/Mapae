@@ -159,9 +159,20 @@ export function reconcileSettlementReceipt(params: {
     const matches = params.logs.filter(
         (log) =>
             log.address.toLowerCase() === asset &&
+            // Exactly three topics: an ERC-20 Transfer indexes (topic0, from, to) and
+            // carries the amount in `data`. An ERC-721 Transfer indexes the tokenId as a
+            // fourth topic and leaves `data` as "0x"; without this length check that log
+            // matches, and `BigInt("0x")` below throws — a throw that, uncaught in the
+            // facilitator, mislabels a mined settlement as a rejection instead of a
+            // vendor-not-credited. The asset here is a known ERC-20, so anything with a
+            // different topic arity is not the transfer we settled.
+            log.topics.length === 3 &&
             log.topics[0]?.toLowerCase() === TRANSFER_EVENT_TOPIC &&
             log.topics[1]?.toLowerCase() === expectedFrom &&
-            log.topics[2]?.toLowerCase() === expectedTo,
+            log.topics[2]?.toLowerCase() === expectedTo &&
+            // 32-byte word. A malformed `data` is not a credit we can attest to, and it
+            // must fail as a discrepancy, never as a thrown SyntaxError from BigInt.
+            /^0x[0-9a-fA-F]{64}$/.test(log.data),
     );
 
     if (matches.length !== 1) {

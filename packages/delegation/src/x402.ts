@@ -210,9 +210,26 @@ function sameRequirement(
         getAddress(a.payTo) === getAddress(b.payTo) &&
         getAddress(a.asset) === getAddress(b.asset) &&
         a.extra.assetTransferMethod === b.extra.assetTransferMethod &&
+        sameOptionalManager(a.extra.delegationManager, b.extra.delegationManager) &&
         aFacilitators.length === bFacilitators.length &&
         aFacilitators.every((address, index) => address === bFacilitators[index])
     );
+}
+
+/**
+ * Compare the advisory in-band DelegationManager on both offers. `a` is the client's
+ * echoed `accepted`, i.e. attacker-controlled JSON, so `getAddress` is only reached
+ * after `isAddress` — a bare `getAddress` throws on garbage out of a function whose
+ * whole job is to return true/false. Both-absent is a match; present-vs-absent or a
+ * value mismatch is not, because this function's contract is exact equality and its
+ * failure message tells the caller the offer did not match.
+ */
+function sameOptionalManager(a: unknown, b: unknown): boolean {
+    if (a === undefined && b === undefined) return true;
+    if (typeof a !== "string" || typeof b !== "string" || !isAddress(a) || !isAddress(b)) {
+        return false;
+    }
+    return getAddress(a) === getAddress(b);
 }
 
 /**

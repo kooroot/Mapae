@@ -377,7 +377,11 @@ export function decodeAnyPaymentHeader(header: string): AnyPaymentPayload {
  * (`x402-axum`/`x402-reqwest`), not from the spec prose, because the reference is what
  * third-party counterparties actually run. `X-PAYMENT`/`X-PAYMENT-RESPONSE` are the v1
  * transport this repo shipped first and stay alive as aliases: sellers keep reading and
- * emitting them, and the client sends both submission headers with the identical value.
+ * emitting them. The client does NOT send both submission headers at once — an ERC-7710
+ * payload carries a full permission context, and duplicating it across two header names
+ * crossed the server's total-header limit (a 431 measured on the fork e2e). It negotiates
+ * exactly one from the 402's own transport instead: a header-borne offer is answered with
+ * `Payment-Signature`, a body-only offer with `X-PAYMENT`.
  */
 export const PAYMENT_REQUIRED_HEADER = "Payment-Required";
 export const PAYMENT_SIGNATURE_HEADER = "Payment-Signature";

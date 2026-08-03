@@ -136,6 +136,35 @@ describe("D4 ERC-7710 facilitator boundary", () => {
         expect(decoded.args).toEqual([PAYEE, 1_000_000n]);
     });
 
+    test("rejects a payload whose accepted advertises a different in-band manager", () => {
+        // The 402 offer carries an advisory extra.delegationManager; sameRequirement
+        // claims exact match, so an echoed `accepted` that swaps it must not pass as
+        // identical to the seller's requirements.
+        const permissionContext = rootPermissionContext();
+        const requirements = buildErc7710PaymentRequirements({
+            payTo: PAYEE,
+            amount: 1_000_000n,
+            facilitatorAddresses: [FACILITATOR],
+            delegationManager: MANAGER,
+        });
+        const tampered = {
+            x402Version: 2 as const,
+            paymentRequirements: requirements,
+            paymentPayload: buildErc7710PaymentPayload({
+                accepted: {
+                    ...requirements,
+                    extra: {...requirements.extra, delegationManager: OTHER_PAYEE},
+                },
+                delegationManager: MANAGER,
+                permissionContext,
+                delegator: DELEGATOR,
+            }),
+        };
+        expect(() =>
+            validateDelegatedPayment(tampered, {delegationManager: MANAGER, facilitator: FACILITATOR}),
+        ).toThrow("do not exactly match");
+    });
+
     test("derives the canonical payer from the last/root delegation", () => {
         const payment = validateDelegatedPayment(request(nestedPermissionContext()), {
             delegationManager: MANAGER,
