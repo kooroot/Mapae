@@ -292,7 +292,7 @@ export function GrantOnboarding({
                                         value={draft.delegate}
                                         spellCheck={false}
                                         autoComplete="off"
-                                        placeholder="0x… 또는 오른쪽 버튼으로 새로 생성"
+                                        placeholder="0x…"
                                         onChange={(event) =>
                                             update("delegate", event.target.value)
                                         }

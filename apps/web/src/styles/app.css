@@ -2753,39 +2753,48 @@ a.studio-metric:hover {
     }
 }
 
-/* Delegate field: manual address entry beside in-tab session-key generation. */
+/* Delegate field: the generate action is inlaid in the input, mirroring the
+   mUSDC suffix pattern — one control, not a detached box beside the grid. */
 .studio-delegate-row {
-    display: flex;
-    gap: 8px;
+    position: relative;
 }
 
 .studio-delegate-row input {
-    flex: 1 1 auto;
-    min-width: 0;
+    width: 100%;
+    padding-right: 122px;
+    overflow: hidden;
     font-family: var(--mono);
+    text-overflow: ellipsis;
 }
 
 .studio-keygen-button {
+    position: absolute;
+    top: 50%;
+    right: 6px;
     display: inline-flex;
-    flex: 0 0 auto;
     align-items: center;
     gap: 6px;
-    padding: 0 12px;
+    height: 33px;
+    padding: 0 11px;
     border: 1px solid var(--studio-line);
-    border-radius: 8px;
+    border-radius: 6px;
     color: var(--studio-text-2);
-    background: transparent;
+    background: rgba(255, 255, 255, 0.035);
     font-size: 9px;
+    font-weight: 550;
     white-space: nowrap;
     cursor: pointer;
+    transform: translateY(-50%);
     transition:
         border-color 160ms ease,
-        color 160ms ease;
+        color 160ms ease,
+        background 160ms ease;
 }
 
 .studio-keygen-button:hover {
-    border-color: var(--studio-text-3);
+    border-color: rgba(232, 184, 143, 0.5);
     color: var(--studio-text-1);
+    background: rgba(232, 184, 143, 0.07);
 }
 
 .studio-keygen-button:disabled {
@@ -2793,11 +2802,10 @@ a.studio-metric:hover {
     cursor: not-allowed;
 }
 
-.studio-keygen-note {
-    display: block;
-    margin-top: 6px;
-    color: var(--studio-text-3);
-    font-size: 9px;
+/* Status, not an error — must outrank `.studio-field > small`'s red. */
+.studio-field > .studio-keygen-note {
+    color: var(--studio-metal);
+    font-weight: 450;
     line-height: 1.55;
 }
 
