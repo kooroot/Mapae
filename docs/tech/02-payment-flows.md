@@ -22,6 +22,7 @@ facilitator → 서명 검증 → GIWA에 정산 트랜잭션 브로드캐스트
 
 ```text
 account owner wallet → HybridDeleGator owner account
+            (계정이 아직 없으면: 배포 전 서명 → account-bootstrap이 대납 배포)
             → erc20PeriodTransfer parent delegation
 agent       → 402 수신
             → amount/payTo/facilitator가 고정된 결제별 leaf 서명
@@ -51,7 +52,7 @@ sequenceDiagram
     participant DM as DelegationManager<br/>+ caveat enforcers
     participant USDC as MockUSDC
 
-    Note over Owner,SA: 사전 1회 — 루트 위임 오프라인 서명
+    Note over Owner,SA: 사전 1회 — 루트 위임 오프라인 서명<br/>계정 배포 전 서명도 유효 (아래 '스폰서드 온보딩')
     Owner->>SA: eth_signTypedData_v4 → ERC-1271 0x1626ba7e
     Note right of SA: 3 mUSDC / 60s cap · 만료창 · permission.json
 
@@ -89,7 +90,7 @@ sequenceDiagram
     end
 ```
 
-### 정산 증거 — GIWA Sepolia (2026-07-24)
+### 정산 증거 — GIWA Sepolia (2026-07-24 ~ 2026-08-04)
 
 증거 수준을 구분해 표기한다. **채굴됨**은 GIWA에 블록으로 들어가 익스플로러에서
 열리는 트랜잭션이고, **시뮬레이션**은 GIWA의 현재 상태를 상대로 한 `eth_call`이다
@@ -103,12 +104,46 @@ sequenceDiagram
 | 정상 정산 (inv-002, 2.5 mUSDC) | 성공 | **채굴됨** | tx `0x71d71442…6ce4`, block 31558282 |
 | **주기 한도 초과** (누적 5.0 > 3.0) | **거절, 자금 불변** | 시뮬레이션 | revert `ERC20PeriodTransferEnforcer:transfer-amount-exceeded` |
 | **만료** (유효창 경과) | **거절** | 시뮬레이션 | revert `TimestampEnforcer:expired-delegation` |
+| 스폰서드 온보딩 — 계정 배포 | 배포 전 서명에서 복원한 owner로 CREATE2 배포, 새 사용자 가스 0 | **채굴됨** | account `0x15286FE9…3301`, tx `0xed21ac71…9902` |
+| 스폰서드 온보딩 — mUSDC 플로트 | 3 mUSDC 민팅 | **채굴됨** | tx `0x9d14588b…baa0` |
+| 배포 전 서명의 사후 수락 (late binding) | 라이브 `isValidSignature` = `0x1626ba7e` | 시뮬레이션 | account `0x15286FE9…3301` |
 
 거절 두 건에 트랜잭션 해시가 없는 것은 설계의 결과다. facilitator의 `/verify`가
 `simulate.redeemDelegations`로 먼저 걸러내므로, revert가 예정된 트랜잭션에는
 가스를 쓰지 않는다. 동일한 2.5 mUSDC 결제가 잔량이 있을 때는 정산되고 누적이
 cap을 넘으면 거절된다 — 한도는 애플리케이션 코드의 약속이 아니라 배포된
 enforcer가 강제하는 상태다.
+
+## 스폰서드 온보딩 (계정 부트스트랩)
+
+새 사용자는 **아직 존재하지 않는** payer 스마트계정에 대해 root 위임을 서명하고,
+`apps/account-bootstrap`이 그 계정을 스폰서 가스로 배포한다. 위임을 만들기 위해
+GIWA ETH를 들 필요가 있는 사람은 아무도 없다.
+
+설계를 결정한 실측 두 가지. 첫째, **정산 시점 배포는 불가능하다** —
+`DelegationManager`는 어떤 실행보다 먼저 서명 루프를 돌고, 코드 없는 delegator는
+EOA 분기로 빠져 `ECDSA.recover`가 계정이 아닌 owner를 돌려주므로
+`InvalidEOASignature`로 끝난다. Framework 어디에도 ERC-6492는 없다. 둘째,
+**late binding은 성립한다** — 코드 없는 계정을 상대로 만든 서명이 배포 뒤
+ERC-1271을 통과한다. `HybridDeleGator`가 `owner()`와 비교하고 owner는 CREATE2
+initcode에 박혀 있기 때문이다. 위 표의 `0x1626ba7e`가 라이브 체인에서 그 사실을
+답한 값이다.
+
+요청 본문은 `{permissionContext}` 하나다. owner는 서명에서 복원하고, 계정은
+`CREATE2(복원된 owner)`이며 permission이 지목한 delegator와 일치해야 한다.
+호출자에게 owner나 salt를 받으면 누구든 우리가 돈 내고 배포할 주소를 지명할 수
+있게 된다 — 이 구조에서는 키 없이 풀 수 없는 고정점을 호출자가 풀어야 한다.
+서명은 오프라인에서 canonical 형식(low-s, `v ∈ {27,28}`)까지 검사한다. viem은
+OZ `ECDSA`가 revert하는 서명도 수락하므로, 이 검사가 없으면 모든 grant가 영원히
+revert하는 계정을 돈 내고 배포하게 된다.
+
+계정 단위 중복방지는 예산이 아니라 신원이다 — 키페어는 오프라인에서 공짜이므로,
+그리핑의 실제 상한은 IP당 rate limit, 일일 가스 예산(`BOOTSTRAP_DAILY_WEI`),
+그리고 일부러 작게 유지하는 스폰서 잔액이다. 스폰서에는 위임 권한이 없어
+payer 자금·한도·정산에는 닿지 못한다. 검증은 `bun run test:e2e:bootstrap` —
+GIWA fork에서 15케이스(킬 스위치·승인 불일치·relayer 공유 거부·타인 서명·high-s·
+배포·late binding·가스 회계·faucet·중복·동시성·rate limit·예산 소진·체인 실패
+누출 가드) 15/15.
 
 ## 에이전트 자동화 (MCP)
 
@@ -313,19 +348,22 @@ bun run test:negative              # caveat 케이스 — 기본 타깃은 일�
 SUITE_TARGET=fork bun run test:negative   # 같은 케이스를 GIWA fork 위에서
 bun run test:e2e:mcp               # 결제 완주 → 한도 초과 pre-flight 거절 → pause → 회수
 bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 왕복
+SUITE_FORK_BLOCK=<최근 블록> bun run test:e2e:bootstrap   # 온보딩 서비스 15케이스
 bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO
 ```
 
 `test:negative`의 기본 타깃은 일회용 체인이다. GIWA fork 타깃은
 `SUITE_TARGET=fork`로 별도 실행해야 하며, 한 줄이 두 타깃을 모두 돌지 않는다.
-세 수트 모두 통과 판정과 함께 케이스 수를 스스로 세어 출력한다
+네 수트 모두 통과 판정과 함께 케이스 수를 스스로 세어 출력한다
 (`N/N cases passed`, `PASS — N cases (ABC…)`, `GO — N개 조건 전부 충족`).
 
 실행 요건은 명령마다 다르다. `bun run check`와 `test:negative`는 키·네트워크·
 배포 아티팩트 없이 깨끗한 클론에서 돈다 — `test:negative`는 일회용 Anvil에
 38유닛 Framework를 직접 배포해 검사한다. 반면 `test:e2e:mcp`는 owner가 서명한
 root permission 아티팩트를 요구하므로, 배포된 계정을 소유한 지갑 없이 맨
-클론에서는 돌지 않는다.
+클론에서는 돌지 않는다. `test:e2e:bootstrap`은 GIWA fork에 계정을 새로 배포하므로
+어떤 캐시에도 없는 상태를 읽는다 — 최근 블록을 `SUITE_FORK_BLOCK`으로 넘겨야
+한다(GIWA는 오래된 상태를 prune한다).
 
 `test:e2e:mcp`는 자식 프로세스가 loopback RPC에 고정되지 않으면 시작하지 않고,
 종료 후 실제 GIWA relayer nonce를 다시 읽어 아무것도 브로드캐스트되지 않았음을

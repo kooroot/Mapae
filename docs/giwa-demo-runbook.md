@@ -19,6 +19,7 @@
 | `make owner-account-verify` | ✅ | owner 스마트계정이 실제로 배포돼 있고 owner가 맞음 |
 | `bun run preflight:giwa` | ✅ | 결제 한 건이 성공할 조건 전부 (개수는 스크립트가 센다 — 3절) |
 | `bun run run:giwa -- --broadcast` | ✅ **쓰기** | 에이전트가 GIWA에서 실제로 결제함 |
+| `bun run test:e2e:bootstrap` | fork | 온보딩 서비스 15케이스 — 배포·late binding·그리핑 방어. 최근 블록을 `SUITE_FORK_BLOCK`으로 요구 |
 
 `forge test --fork-url`의 함정은 조용하다는 것이다. 통과하고, 주소를 출력하고, 그 주소는
 실제 GIWA 주소가 아니다 — fork 안에서 방금 만들어진 것이다. 라이브 배포를 검사하는 것은
@@ -41,7 +42,9 @@ DeleGator 구현들이 같은 manager와 canonical EntryPoint를 물고 있는�
 - `apps/delegated-seller/.env` — `PAY_TO` (공개 주소)
 - `apps/delegated-agent/.env` — `AGENT_PRIVATE_KEY` (세션키), `PARENT_PERMISSION_CONTEXT_PATH`
 - 서명된 root permission이 유효창 안에 있을 것
-- payer 스마트계정에 mUSDC, relayer에 GIWA ETH
+- payer 스마트계정에 mUSDC, relayer에 GIWA ETH — 이 런북은 이미 배포된 데모
+  payer를 전제한다. 새 payer 계정이 필요하면 스폰서드 온보딩(app.mapae.io)이
+  배포와 mUSDC 플로트를 대신한다
 
 **payer는 ETH를 0으로 유지한다.** 가스리스가 데모의 중심 주장이고, 실행 스크립트가 그것을
 사후에 대조한다.

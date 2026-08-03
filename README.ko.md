@@ -31,6 +31,7 @@ Mapae는 실행 주체와 자금 소유자를 분리합니다.
 | 에이전트 권한 | 지갑 전체 | 세션키에 위임된 범위만 |
 | 한도 강제 | 애플리케이션 코드 | 온체인 caveat |
 | 결제 가스 | 지불자 | facilitator relayer |
+| 계정 생성 가스 | 사용자 | 온보딩 스폰서 |
 | 회수 | 키 교체 | 위임 취소 |
 
 현재 정책 모델은 다음을 지원합니다.
@@ -46,7 +47,9 @@ Mapae는 실행 주체와 자금 소유자를 분리합니다.
 
 ```mermaid
 flowchart LR
-    Owner["Account owner<br/>wallet"] -->|"root delegation"| Account["HybridDeleGator<br/>smart account"]
+    Owner["Account owner<br/>wallet"] -->|"pre-deployment<br/>signature"| Bootstrap["account-bootstrap<br/>sponsor gas"]
+    Bootstrap -->|"CREATE2 deploy<br/>+ mUSDC float"| Account["HybridDeleGator<br/>smart account"]
+    Owner -->|"root delegation"| Account
     Account -->|"period / expiry / vendor caveats"| Session["Agent session key"]
     Session -->|"payment-specific ERC-7710 leaf"| Agent["AI agent"]
     Agent -->|"GET resource"| Seller["x402 seller"]
@@ -77,8 +80,9 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 | 직접 결제 | `402 → sign → verify → settle → resource` 완주 | **GIWA** |
 | 위임 결제 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
 | 에이전트 자동화 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
+| 스폰서드 온보딩 | **아직 존재하지 않는 계정**에 서명한 root 위임으로 스폰서가 payer 스마트계정을 배포 — 새 사용자는 어느 단계에서도 ETH를 들지 않음 | **GIWA** |
 | 콘솔 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
-| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 524 + Foundry 14, 두 체인 타깃 negative path 23/23 | 로컬 + GIWA 읽기 전용 검증 |
+| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 524 + Foundry 14, 두 체인 타깃 negative path 23/23, GIWA fork 온보딩 15/15 | 로컬 + GIWA 읽기 전용 검증 |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681852449cb4d79ad5c468d2675c60cbdd6ffaa3b7a9)
@@ -89,6 +93,12 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   — block 33534935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
   이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
   에이전트는 거절됐다는 답을 받았다. 아래 "settlement-unknown" 참조.
+- **스폰서드 온보딩**, 계정보다 먼저 만들어진 서명으로 계정 배포:
+  배포 [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902),
+  mUSDC 민팅 [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
+  — 계정 [`0x1528…3301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301),
+  배포 뒤 라이브 ERC-1271이 그 사전 서명에 `0x1626ba7e`를 답했다. 새 사용자의 가스
+  지출은 0이고 ETH를 든 적도 없다.
 - 한도 초과와 만료는 백엔드 검사가 아니라 **배포된 enforcer가 거절**한다.
   **이 둘에는 걸 tx 해시가 없고**, 그것은 빈틈이 아니라 설계가 작동한 결과다:
   facilitator가 브로드캐스트 전에 `redeemDelegations`를 GIWA 현재 상태에 시뮬레이션하므로
@@ -109,6 +119,8 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   것이다 — 실제 배포 바이트코드, 실제 계정, 실제 EntryPoint를 쓰지만 채굴된 트랜잭션도
   익스플로러 링크도 없다. GIWA에서 payer 계정의 EntryPoint 예치금이 `0`이라, 라이브
   체인을 상대로는 콘솔의 회수 버튼이 누군가 예치하기 전까지 비활성으로 렌더된다.
+  스폰서드 온보딩으로 만들어진 계정도 전부 예치금 `0`에서 시작하므로, 이 경계는 데모
+  계정 하나가 아니라 계정 전체 부류의 것이다.
   `DeleGatorCore.disableDelegation`은 `onlyEntryPointOrSelf`라 owner는 EntryPoint
   UserOperation으로 회수한다. 두 분기 모두 양쪽 수트 타깃에서 돈다 — *self*
   분기, 그리고 실제 owner 서명 UserOperation을 `handleOps`로 태우는 *EntryPoint*
@@ -134,6 +146,11 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   아니라 `SETTLEMENT_UNKNOWN`을 돌려준다 — 둘은 정반대 대응을 부르고, 앞의 것을
   재시도하면 두 번 낼 수 있기 때문이다. fork는 즉시 채굴이라 로컬 테스트로는 절대
   나오지 않는다.
+- **온보딩 스폰서는 인증 없는 인터넷 요청에 응답하는, 자금이 든 키다.** 키페어는
+  오프라인에서 공짜로 만들 수 있으므로 계정 단위 중복방지는 예산이 아니라 신원일
+  뿐이다. 그리핑을 실제로 막는 것은 IP당 rate limit, 일일 가스 예산, 그리고 일부러
+  작게 유지하는 스폰서 지갑 잔액이다. 이걸 소진시키면 그날의 온보딩이 멈출 뿐 —
+  스폰서는 위임 권한이 없으므로 payer 자금·한도·정산에는 닿지 못한다.
 - **중복방지는 프로세스 내부에서만 보장된다.** 단일 replica에서는 올바르지만
   다중 replica 전에 영속 저장소로 옮겨야 한다.
 - **실제 스테이블코인은 별도의 토큰 동작 검토가 필요하다.** MockUSDC는 테스트넷 rail이다.
@@ -251,7 +268,10 @@ permission이 필요하고, 그 permission은 배포된 계정을 소유한 지�
 `RELAYER_ADDRESS must be set (apps/delegation-lab/.env)`에서 멈춥니다. 준비 절차는
 [`docs/giwa-demo-runbook.md`](docs/giwa-demo-runbook.md)에 있고, 직접 끝까지 몰아볼
 결제 루프가 필요하면 위의 `test:negative`를 쓰세요 — 누구의 서명도 없이 같은 강제를
-증명합니다.
+증명합니다. 우리 배포의 재생이 아니라 **자기 계정**을 원한다면
+[app.mapae.io](https://app.mapae.io)가 라이브 GIWA에서 온보딩합니다 — 아직 존재하지
+않는 계정에 root 위임을 서명하면 스폰서드 부트스트랩 서비스가 그 계정을 배포하고,
+가스도 ETH도 필요 없습니다.
 
 중간에 한도로 감당할 수 없는 결제도 한 번 요청하는데, 에이전트는 서명하기 전에
 enforcer 자신의 회계를 읽어 거절합니다 —
@@ -322,6 +342,10 @@ cp apps/delegation-lab/.env.example apps/delegation-lab/.env
 
 Deployer·relayer·Framework admin·세 데모 case identity는 모두 별도 역할입니다.
 개인키에서 파생된 주소가 설정한 공개주소와 다르면 broadcast 전에 중단합니다.
+온보딩 스폰서(`apps/account-bootstrap/.env`)는 여기에 더해지는 별도의 자금 든
+역할입니다 — 스폰서가 relayer나 deployer와 같으면 서비스가 기동을 거부합니다.
+그 키는 인증 없는 인터넷 요청에 응답하고, 그 잔액이 그리핑 비용의 상한이기
+때문입니다.
 
 `.env`, `.secrets`, 배포 broadcast, permission artifact는 Git에서 제외됩니다.
 세션 생성은 출력을 의도적으로 나눕니다 — 개인키는 `.secrets/`로 가고, 짝이 되는
@@ -362,6 +386,11 @@ facilitator는 릴레이어 키를 쥐고, 서명된 `Payment-Signature`를 받�
 붙어 있습니다 — 같은 leaf·같은 redeemer로 변조만 뺀 execution은 정상 정산됩니다.
 소진된 주기나 낡은 계정 때문이 아니라 변조 때문에 거절되었음을 이 대조군이 보장합니다.
 
+같은 공개 호스트는 `/bootstrap` 경로를 온보딩 스폰서로도 라우팅합니다 — 별도
+서비스, 별도 키입니다. 이걸 침해해서 얻을 수 있는 최대치는 스폰서 지갑 잔액만큼의
+가스 낭비입니다. 스폰서는 위임 권한이 없으므로 payer 자금·한도·정산은 구조적으로
+그 손이 닿지 않는 곳에 있습니다.
+
 ### 결제 바인딩
 
 - facilitator는 서명된 `permissionContext`의 마지막/root delegator를
@@ -372,8 +401,10 @@ facilitator는 릴레이어 키를 쥐고, 서명된 `Payment-Signature`를 받�
 - 동일 intent의 동시 정산 요청은 single-flight로 한 번만 실행합니다.
 - permission context와 결제 서명은 bearer authorization으로 취급해 로그에
   남기지 않습니다.
-- facilitator는 loopback 또는 사설망에서만 운영하고 요청 크기·gas·금액
-  상한을 적용합니다.
+- facilitator 프로세스는 loopback에만 바인딩하고 요청 크기·gas·금액 상한을
+  적용합니다. 공개 호스트네임은 그 loopback 앞의 터널이지, 공개 인터페이스
+  바인딩이 아닙니다. 애플리케이션 API 자체에는 인증이 없으므로 터널과 상한이
+  하중을 받칩니다.
 
 현재 프로세스 내 중복방지는 안전하지만, 재시작과 다중 replica를 넘는
 idempotency는 제품화 전에 Redis/Postgres 같은 영속 저장소로 이전해야 합니다.
@@ -412,6 +443,7 @@ apps/delegated-seller/     ERC-7710 resource seller
 apps/facilitator-erc7710/  delegated settlement adapter
 apps/agent-mcp/            요청 시 리소스를 결제하는 MCP 서버
 apps/revocation-submitter/ 서명된 회수를 실어 나르는 loopback 엔드포인트
+apps/account-bootstrap/    배포 전 서명으로 payer 계정을 대납 배포
 apps/console/              위임·영수증 화면, 지갑 모듈 크기
 apps/web/                  공개 랜딩(mapae.io)과 Studio(app.mapae.io)
 docs/                      기술 노트와 배포 컨트랙트 레퍼런스
@@ -420,7 +452,7 @@ docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 ## 문서
 
 - [mapae.io](https://mapae.io) — 온체인 증거를 담은 라이브 랜딩
-- [app.mapae.io](https://app.mapae.io) — Studio: 위임 발급·조회·회수
+- [app.mapae.io](https://app.mapae.io) — Studio: 스폰서드 온보딩과 위임 발급·조회·회수
 - [기술 문서](https://gitbook.mapae.io)
 - [MCP 가이드](docs/mcp-guide.md) — 결제 서버를 MCP 클라이언트에 등록하는 절차
 - [회수 런북](docs/revocation-runbook.md) — 킬 스위치와 그 검증 방법
@@ -433,6 +465,11 @@ docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 MockUSDC 배포와 `run:giwa` 정산은 `--broadcast` 하나로 게이트되는데, 정산은
 온체인 caveat이 한도를 쥐고 있고 인프라 배포는 그렇지 않기 때문입니다. 활성화
 단계마다 별도 승인을 거칩니다.
+
+트리 안에서 자금이 든 키로 GIWA에 브로드캐스트하는 유일한 서비스인
+`apps/account-bootstrap`은 자체 이중 게이트를 갖습니다 — `BOOTSTRAP_ENABLED`와
+배포 조합에 정확히 묶인 승인 문구, 그리고 스폰서 키가 relayer나 deployer와
+겹치면 기동 거부.
 
 이 저장소에서 재현 가능한 것은 전부 일회용 체인이나 로컬 fork에서 돌아갑니다.
 end-to-end 스크립트는 자식 프로세스가 loopback 노드가 아닌 곳과 통신하려 하면

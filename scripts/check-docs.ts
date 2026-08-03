@@ -178,6 +178,10 @@ const FOREIGN_ADDRESSES = new Map<string, string>([
     // Placeholders in `.env.example`-style snippets.
     ["0x1111111111111111111111111111111111111111", "placeholder"],
     ["0x6666666666666666666666666666666666666666", "placeholder"],
+    // Deployed at runtime by the bootstrap service, not by a Forge script, so no
+    // deployment artifact will ever carry it. Verified live: code present, 3 mUSDC,
+    // ERC-1271 answered 0x1626ba7e for the pre-deployment signature (2026-08-04).
+    ["0x15286fe9a48d52504607beaaa021b29194353301", "first sponsored-onboarding account"],
 ]);
 
 // Test counts used to be checked here, against the document's own other numbers — badge

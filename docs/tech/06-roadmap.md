@@ -11,6 +11,11 @@
   GIWA 현재 상태를 상대로 한 시뮬레이션이며 채굴된 트랜잭션이 아니다(§2 증거표)
 - **에이전트 자동화 — GIWA 채굴** — MCP tool 한 번으로 사람 개입 없이 정산한
   `0x533c…9964c`가 block 31634935에 채굴됐고 payer 가스 지출은 `0`이다
+- **스폰서드 온보딩 — GIWA 채굴** — 배포 전 서명에서 복원한 owner로 계정
+  `0x15286FE9…3301`이 대납 배포되고(`0xed21ac71…9902`), 3 mUSDC가
+  민팅됐으며(`0x9d14588b…baa0`), 라이브 ERC-1271이 그 사전 서명에 `0x1626ba7e`를
+  답했다. 새 사용자의 가스 지출은 `0`. 서비스 자체의 검증은 GIWA fork
+  15케이스(`test:e2e:bootstrap`)
 - **negative-path 수트 — 일회용 체인·GIWA fork** — `negative-path-suite.ts`가
   동일한 케이스 집합(정상·주기 cap·주기 reset·만료·wrong-redeemer·수취인
   불일치·replay·facilitator 변조 6종 + 대조군·payer mismatch·root 취소·회수

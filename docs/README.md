@@ -7,7 +7,9 @@
 에이전트가 위임받은 한도 안에서만 스스로 결제하게 하는 에이전틱 페이먼트
 인프라다. 소유자는 자금을 스마트계정에 두고 금액·주기·수취인·만료가 새겨진
 권한 하나를 서명해 넘긴다. 에이전트의 세션키가 할 수 있는 일은 정확히 그
-권한이 끝나는 지점까지다.
+권한이 끝나는 지점까지다. 계정이 아직 없어도 시작할 수 있다 — 서명을 먼저
+하면 스폰서가 그 계정을 대신 배포하고, 사용자는 어느 단계에서도 ETH를 들지
+않는다.
 
 ## 세 가지 주장
 
@@ -35,6 +37,8 @@ GIWA의 현재 상태를 상대로 한 `eth_call`이다. 거절에 해시가 없
 | MCP tool 1회 — 사람 개입 없음 | 정산, 지불자 가스 0 | 채굴됨 | [`0x533c5cb2…964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c) |
 | 주기 한도 초과 결제 | 거절, 자금 불변 | 시뮬레이션 | `ERC20PeriodTransferEnforcer:transfer-amount-exceeded` |
 | 만료된 권한으로 결제 | 거절 | 시뮬레이션 | `TimestampEnforcer:expired-delegation` |
+| 스폰서드 온보딩 — 배포 전 서명으로 계정 배포 | 배포, 새 사용자 가스 0 | 채굴됨 | [`0xed21ac71…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902) |
+| 스폰서드 온보딩 — mUSDC 플로트 | 3 mUSDC 민팅 | 채굴됨 | [`0x9d14588b…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0) |
 
 전체 증거표와 시퀀스는 [2. 결제 흐름](tech/02-payment-flows.md), 배포·검증된
 컨트랙트 목록은 [배포 컨트랙트](deployed-contracts.md)에 있다.
@@ -53,6 +57,8 @@ bun run test:negative        # 일회용 체인에 프레임워크를 직접 배
 클론에서 Bun과 Foundry만으로 돈다. 케이스 개수는 수트가 스스로 세어 출력한다.
 
 에이전트에 직접 물려 보려면 [MCP 연결 가이드](mcp-guide.md)를 따른다.
+자기 계정을 직접 만들어 보려면 [app.mapae.io](https://app.mapae.io)가 가장
+짧은 경로다 — 서명 한 번이면 스폰서가 계정을 배포한다.
 
 ## 읽는 순서
 

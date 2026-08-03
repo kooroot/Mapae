@@ -32,6 +32,7 @@ Mapae separates the actor executing a payment from the user who owns the funds.
 | Agent authority | Entire wallet | Delegated session scope only |
 | Spending limits | Application code | Onchain caveats |
 | Settlement gas | Payer | Facilitator relayer |
+| Account creation gas | User | Onboarding sponsor |
 | Revocation | Rotate the wallet key | Disable the delegation |
 
 The current policy model supports:
@@ -47,7 +48,9 @@ The current policy model supports:
 
 ```mermaid
 flowchart LR
-    Owner["Account owner<br/>wallet"] -->|"root delegation"| Account["HybridDeleGator<br/>smart account"]
+    Owner["Account owner<br/>wallet"] -->|"pre-deployment<br/>signature"| Bootstrap["account-bootstrap<br/>sponsor gas"]
+    Bootstrap -->|"CREATE2 deploy<br/>+ mUSDC float"| Account["HybridDeleGator<br/>smart account"]
+    Owner -->|"root delegation"| Account
     Account -->|"period / expiry / vendor caveats"| Session["Agent session key"]
     Session -->|"payment-specific ERC-7710 leaf"| Agent["AI agent"]
     Agent -->|"GET resource"| Seller["x402 seller"]
@@ -78,8 +81,9 @@ a strong result, but nothing was mined and there is no link to follow.
 | Direct payment | `402 → sign → verify → settle → resource` completed | **GIWA** |
 | Delegated payment | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
 | Agent automation | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
+| Sponsored onboarding | A payer smart account deployed by a sponsor from a root permission signed **before the account existed**; the new user holds zero ETH at every step | **GIWA** |
 | Console | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
-| Standing gates | Documentation, logging, advisory and test-count gates; 524 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets | Local + read-only GIWA verification |
+| Standing gates | Documentation, logging, advisory and test-count gates; 524 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets; 15/15 onboarding cases on a GIWA fork | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681852449cb4d79ad5c468d2675c60cbdd6ffaa3b7a9)
@@ -91,6 +95,12 @@ a strong result, but nothing was mined and there is no link to follow.
   This run also surfaced a real defect and its fix is in the same tree: the answer the
   agent received said the payment had been rejected while it had in fact been mined. See
   "settlement-unknown" below.
+- **Sponsored onboarding**, account deployed from a signature that predates the account:
+  deploy [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902),
+  mUSDC float mint [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
+  — account [`0x1528…3301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301),
+  whose live ERC-1271 then answered `0x1626ba7e` for that pre-deployment signature.
+  The new user paid no gas and never held ETH.
 - Over-cap and expired payments are refused by the enforcers, not by a backend check.
   **There is no transaction to link for these two**, and that is the mechanism working
   rather than a gap: the facilitator simulates `redeemDelegations` against live GIWA state
@@ -112,6 +122,8 @@ Being explicit about the edges matters more than a longer list of green checks.
   fork — real deployed bytecode, real account, real EntryPoint, but no mined transaction
   and no explorer link. The payer account's EntryPoint deposit on GIWA is `0`, so the
   console's revoke button renders disabled against the live chain until someone funds it.
+  Every sponsored-onboarded account starts at deposit `0` too, so this boundary belongs
+  to the whole class of accounts, not to one demo account.
   `DeleGatorCore.disableDelegation` is `onlyEntryPointOrSelf`, so an owner revokes by
   submitting an EntryPoint UserOperation. Both branches run on both suite targets:
   the *self* branch, and the *EntryPoint* branch driven by a real owner-signed
@@ -140,6 +152,12 @@ Being explicit about the edges matters more than a longer list of green checks.
   `PAYMENT_REJECTED`, because the two invite opposite responses and retrying the first
   can pay twice. A fork mines instantly, so no amount of local testing would have shown
   this.
+- **The onboarding sponsor is a funded key answering unauthenticated internet
+  requests.** Keypairs are free offline, so per-account idempotency is identity, not a
+  budget; the real bounds on a griefing run are the per-IP rate limit, the daily gas
+  budget, and the sponsor wallet's own deliberately small balance. Exhausting them
+  stops onboarding for the day — it cannot reach payer funds, caps, or settlement,
+  because the sponsor holds no delegation authority.
 - **Idempotency is in-process.** It is correct for a single replica and must move
   to a durable store before running more than one.
 - **A production stablecoin needs its own token-behaviour review.** MockUSDC is a
@@ -264,7 +282,10 @@ by the wallet that owns the deployed account. Both are gitignored, so a fresh cl
 stops at `RELAYER_ADDRESS must be set (apps/delegation-lab/.env)`. Setup is in
 [`docs/giwa-demo-runbook.md`](docs/giwa-demo-runbook.md); if you want a payment loop
 you can drive end to end yourself, use `test:negative` above — it proves the same
-enforcement without needing anyone's signature.
+enforcement without needing anyone's signature. And if you want an account of your
+own rather than a replay of ours, [app.mapae.io](https://app.mapae.io) onboards you
+on live GIWA: sign a root permission against an account that does not exist yet and
+the sponsored bootstrap service deploys it — you pay no gas and hold no ETH.
 
 Along the way it also asks for a payment the cap cannot cover, and the agent
 refuses it from the enforcer's own accounting before signing anything:
@@ -337,7 +358,11 @@ cp apps/delegation-lab/.env.example apps/delegation-lab/.env
 
 Deployer, relayer, Framework admin, and the three demo case identities are
 independent roles. The corresponding private key must resolve to its configured
-public address or the operation fails before broadcast.
+public address or the operation fails before broadcast. The onboarding sponsor
+(`apps/account-bootstrap/.env`) is a further independent funded role: the service
+refuses to boot if the sponsor equals the relayer or the deployer, because that key
+answers unauthenticated internet requests and its balance is the ceiling on what
+griefing can cost.
 
 `.env`, `.secrets`, deployment broadcasts, and permission artifacts are excluded
 from Git. Session generation splits its output on purpose: private keys go to
@@ -383,6 +408,11 @@ Each row is a case in `negative-path-suite.ts`, and the six tampering cases carr
 control — same leaf, same redeemer, untampered execution settles — so the refusals are
 attributable to the tampering rather than to an exhausted period or a stale account.
 
+The same public host also routes `/bootstrap` to the onboarding sponsor — a separate
+service with a separate key. Compromising it is worth at most the sponsor wallet's
+balance in wasted gas: the sponsor holds no delegation authority, so payer funds,
+caps, and settlement are out of its reach by construction.
+
 ### Payment binding
 
 - The facilitator derives the canonical payer from the last/root delegation in the
@@ -395,8 +425,10 @@ attributable to the tampering rather than to an exhausted period or a stale acco
   operation.
 - Permission contexts and payment signatures are treated as bearer authorizations
   and never written to logs.
-- Facilitators stay on loopback or a private network and enforce request, amount,
-  gas, and timeout limits.
+- Facilitator processes bind loopback only and enforce request, amount, gas, and
+  timeout limits; the public hostname is a tunnel in front of that loopback, never a
+  public interface binding. The application API carries no authentication of its own,
+  which is why the tunnel and those limits are load-bearing.
 
 In-process idempotency is covered. Before multi-replica production deployment,
 `paymentIntentId → transaction hash` state must move to a durable store such as
@@ -435,6 +467,7 @@ apps/delegated-seller/     ERC-7710 resource seller
 apps/facilitator-erc7710/  delegated settlement adapter
 apps/agent-mcp/            MCP server that pays for a resource on request
 apps/revocation-submitter/ loopback endpoint that carries a signed revocation
+apps/account-bootstrap/    sponsored payer-account deploy from a pre-deployment signature
 apps/console/              delegation and receipt screens, wallet-module sized
 apps/web/                  public landing (mapae.io) and Studio (app.mapae.io)
 docs/                      technical notes and the deployed-contract reference
@@ -443,7 +476,7 @@ docs/                      technical notes and the deployed-contract reference
 ## Documentation
 
 - [mapae.io](https://mapae.io) — live landing with onchain evidence
-- [app.mapae.io](https://app.mapae.io) — Studio: grant, inspect and revoke a delegation
+- [app.mapae.io](https://app.mapae.io) — Studio: sponsored onboarding, then grant, inspect and revoke a delegation
 - [Technical documentation](https://gitbook.mapae.io)
 - [MCP guide](docs/mcp-guide.md) — register the payment server in an MCP client
 - [Revocation runbook](docs/revocation-runbook.md) — the kill switch, and how to verify it
@@ -457,6 +490,11 @@ phrase pinned to the composition being deployed. MockUSDC deployment and
 `run:giwa` settlement are gated by `--broadcast` alone — deliberately, because a
 settlement is bounded by the on-chain caveat while an infrastructure deployment
 is not. Every activation step is approved separately.
+
+The one in-tree service that broadcasts to GIWA from a funded key —
+`apps/account-bootstrap` — carries its own two-part gate: `BOOTSTRAP_ENABLED` plus an
+approval phrase pinned to the exact deployment composition, and it refuses to boot if
+its sponsor key coincides with the relayer or the deployer.
 
 Everything reproducible from this repository runs against a disposable chain or a
 local fork. The end-to-end script will not start if a child process would talk to

@@ -27,8 +27,9 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 | `apps/delegated-seller` | ERC-7710 402 발행·리소스 게이트 | Bun + Hono |
 | `apps/agent-mcp` | 결제 루프를 MCP tool로 노출 | Bun + MCP SDK (stdio) |
 | `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` (loopback 전용) | Bun + Hono |
+| `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 + mUSDC 민팅 | Bun + Hono |
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
-| `apps/web` | 공개 랜딩 + 콘솔 (SSR, 체인 직접 읽기) | TanStack Start + Cloudflare |
+| `apps/web` | 공개 랜딩 + Studio (스폰서드 온보딩·위임 발급·조회·회수) | TanStack Start + Cloudflare |
 
 **언어 선택 근거** — 위임 레이어가 ERC-7710/7715 TS SDK인 MetaMask Smart
 Accounts Kit(구 Delegation Toolkit)에 의존하고 이는 TypeScript 전용이므로
@@ -60,6 +61,7 @@ facilitator → 서명 검증 → GIWA에 정산 트랜잭션 브로드캐스트
 
 ```text
 account owner wallet → HybridDeleGator owner account
+            (계정이 아직 없으면: 배포 전 서명 → account-bootstrap이 대납 배포)
             → erc20PeriodTransfer parent delegation
 agent       → 402 수신
             → amount/payTo/facilitator가 고정된 결제별 leaf 서명
@@ -89,7 +91,7 @@ sequenceDiagram
     participant DM as DelegationManager<br/>+ caveat enforcers
     participant USDC as MockUSDC
 
-    Note over Owner,SA: 사전 1회 — 루트 위임 오프라인 서명
+    Note over Owner,SA: 사전 1회 — 루트 위임 오프라인 서명<br/>계정 배포 전 서명도 유효 (아래 '스폰서드 온보딩')
     Owner->>SA: eth_signTypedData_v4 → ERC-1271 0x1626ba7e
     Note right of SA: 3 mUSDC / 60s cap · 만료창 · permission.json
 
@@ -127,7 +129,7 @@ sequenceDiagram
     end
 ```
 
-#### 정산 증거 — GIWA Sepolia (2026-07-24)
+#### 정산 증거 — GIWA Sepolia (2026-07-24 ~ 2026-08-04)
 
 증거 수준을 구분해 표기한다. **채굴됨**은 GIWA에 블록으로 들어가 익스플로러에서
 열리는 트랜잭션이고, **시뮬레이션**은 GIWA의 현재 상태를 상대로 한 `eth_call`이다
@@ -141,12 +143,46 @@ sequenceDiagram
 | 정상 정산 (inv-002, 2.5 mUSDC) | 성공 | **채굴됨** | tx `0x71d71442…6ce4`, block 31558282 |
 | **주기 한도 초과** (누적 5.0 > 3.0) | **거절, 자금 불변** | 시뮬레이션 | revert `ERC20PeriodTransferEnforcer:transfer-amount-exceeded` |
 | **만료** (유효창 경과) | **거절** | 시뮬레이션 | revert `TimestampEnforcer:expired-delegation` |
+| 스폰서드 온보딩 — 계정 배포 | 배포 전 서명에서 복원한 owner로 CREATE2 배포, 새 사용자 가스 0 | **채굴됨** | account `0x15286FE9…3301`, tx `0xed21ac71…9902` |
+| 스폰서드 온보딩 — mUSDC 플로트 | 3 mUSDC 민팅 | **채굴됨** | tx `0x9d14588b…baa0` |
+| 배포 전 서명의 사후 수락 (late binding) | 라이브 `isValidSignature` = `0x1626ba7e` | 시뮬레이션 | account `0x15286FE9…3301` |
 
 거절 두 건에 트랜잭션 해시가 없는 것은 설계의 결과다. facilitator의 `/verify`가
 `simulate.redeemDelegations`로 먼저 걸러내므로, revert가 예정된 트랜잭션에는
 가스를 쓰지 않는다. 동일한 2.5 mUSDC 결제가 잔량이 있을 때는 정산되고 누적이
 cap을 넘으면 거절된다 — 한도는 애플리케이션 코드의 약속이 아니라 배포된
 enforcer가 강제하는 상태다.
+
+### 스폰서드 온보딩 (계정 부트스트랩)
+
+새 사용자는 **아직 존재하지 않는** payer 스마트계정에 대해 root 위임을 서명하고,
+`apps/account-bootstrap`이 그 계정을 스폰서 가스로 배포한다. 위임을 만들기 위해
+GIWA ETH를 들 필요가 있는 사람은 아무도 없다.
+
+설계를 결정한 실측 두 가지. 첫째, **정산 시점 배포는 불가능하다** —
+`DelegationManager`는 어떤 실행보다 먼저 서명 루프를 돌고, 코드 없는 delegator는
+EOA 분기로 빠져 `ECDSA.recover`가 계정이 아닌 owner를 돌려주므로
+`InvalidEOASignature`로 끝난다. Framework 어디에도 ERC-6492는 없다. 둘째,
+**late binding은 성립한다** — 코드 없는 계정을 상대로 만든 서명이 배포 뒤
+ERC-1271을 통과한다. `HybridDeleGator`가 `owner()`와 비교하고 owner는 CREATE2
+initcode에 박혀 있기 때문이다. 위 표의 `0x1626ba7e`가 라이브 체인에서 그 사실을
+답한 값이다.
+
+요청 본문은 `{permissionContext}` 하나다. owner는 서명에서 복원하고, 계정은
+`CREATE2(복원된 owner)`이며 permission이 지목한 delegator와 일치해야 한다.
+호출자에게 owner나 salt를 받으면 누구든 우리가 돈 내고 배포할 주소를 지명할 수
+있게 된다 — 이 구조에서는 키 없이 풀 수 없는 고정점을 호출자가 풀어야 한다.
+서명은 오프라인에서 canonical 형식(low-s, `v ∈ {27,28}`)까지 검사한다. viem은
+OZ `ECDSA`가 revert하는 서명도 수락하므로, 이 검사가 없으면 모든 grant가 영원히
+revert하는 계정을 돈 내고 배포하게 된다.
+
+계정 단위 중복방지는 예산이 아니라 신원이다 — 키페어는 오프라인에서 공짜이므로,
+그리핑의 실제 상한은 IP당 rate limit, 일일 가스 예산(`BOOTSTRAP_DAILY_WEI`),
+그리고 일부러 작게 유지하는 스폰서 잔액이다. 스폰서에는 위임 권한이 없어
+payer 자금·한도·정산에는 닿지 못한다. 검증은 `bun run test:e2e:bootstrap` —
+GIWA fork에서 15케이스(킬 스위치·승인 불일치·relayer 공유 거부·타인 서명·high-s·
+배포·late binding·가스 회계·faucet·중복·동시성·rate limit·예산 소진·체인 실패
+누출 가드) 15/15.
 
 ### 에이전트 자동화 (MCP)
 
@@ -351,19 +387,22 @@ bun run test:negative              # caveat 케이스 — 기본 타깃은 일�
 SUITE_TARGET=fork bun run test:negative   # 같은 케이스를 GIWA fork 위에서
 bun run test:e2e:mcp               # 결제 완주 → 한도 초과 pre-flight 거절 → pause → 회수
 bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 왕복
+SUITE_FORK_BLOCK=<최근 블록> bun run test:e2e:bootstrap   # 온보딩 서비스 15케이스
 bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO
 ```
 
 `test:negative`의 기본 타깃은 일회용 체인이다. GIWA fork 타깃은
 `SUITE_TARGET=fork`로 별도 실행해야 하며, 한 줄이 두 타깃을 모두 돌지 않는다.
-세 수트 모두 통과 판정과 함께 케이스 수를 스스로 세어 출력한다
+네 수트 모두 통과 판정과 함께 케이스 수를 스스로 세어 출력한다
 (`N/N cases passed`, `PASS — N cases (ABC…)`, `GO — N개 조건 전부 충족`).
 
 실행 요건은 명령마다 다르다. `bun run check`와 `test:negative`는 키·네트워크·
 배포 아티팩트 없이 깨끗한 클론에서 돈다 — `test:negative`는 일회용 Anvil에
 38유닛 Framework를 직접 배포해 검사한다. 반면 `test:e2e:mcp`는 owner가 서명한
 root permission 아티팩트를 요구하므로, 배포된 계정을 소유한 지갑 없이 맨
-클론에서는 돌지 않는다.
+클론에서는 돌지 않는다. `test:e2e:bootstrap`은 GIWA fork에 계정을 새로 배포하므로
+어떤 캐시에도 없는 상태를 읽는다 — 최근 블록을 `SUITE_FORK_BLOCK`으로 넘겨야
+한다(GIWA는 오래된 상태를 prune한다).
 
 `test:e2e:mcp`는 자식 프로세스가 loopback RPC에 고정되지 않으면 시작하지 않고,
 종료 후 실제 GIWA relayer nonce를 다시 읽어 아무것도 브로드캐스트되지 않았음을
@@ -568,6 +607,15 @@ self-target 케이스가 가장 비자명하다. 실행은
 계정)로도 나올 수 있다. 전체 케이스는 일회용 체인과 GIWA fork 양쪽에서
 통과한다.
 
+facilitator와 같은 공개 호스트는 `/bootstrap` 경로로 온보딩 스폰서도 라우팅한다
+— 별도 프로세스, 별도 키다. 요청 본문은 `{permissionContext}` 하나이고 owner는
+서명에서 복원하며 `CREATE2(owner)`가 permission의 delegator와 일치해야 하므로,
+호출자는 우리가 배포비를 낼 주소를 지명할 수 없다. 응답은 닫힌 거절 enum만
+내보낸다. 스폰서 키가 침해되어도 얻는 것은 잔액만큼의 가스 낭비다 — 위임 권한이
+없으므로 payer 자금·한도·정산에는 닿지 못한다. 스폰서가 relayer·deployer와
+겹치면 서비스가 기동을 거부한다: 인증 없는 요청에 응답하는 키를 정산 키와
+공유하면, 그리핑이 정산 중단으로 번지기 때문이다.
+
 ### 공격 벡터 대응표
 
 | 벡터 | 대응 |
@@ -587,6 +635,9 @@ self-target 케이스가 가장 비자명하다. 실행은
 | 중복 settle | canonical 결제 조건과 context 바이트의 `paymentIntentId`로 단일화, broadcast tx hash를 receipt보다 먼저 저장 |
 | 복잡한 delegation gas DoS | estimate 후 설정 gas cap 초과 거절 |
 | 비인가 relayer | leaf의 `RedeemerEnforcer`와 402 `facilitatorAddresses` 교집합 강제 |
+| 온보딩 그리핑 (배포 요청 반복) | IP당 rate limit + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
+| 배포 대상 주소 지명 | 요청 본문은 `{permissionContext}`뿐 — owner는 서명에서 복원, 계정은 `CREATE2(owner)`이며 delegator와 일치해야 함 |
+| 비-canonical 서명 (high-s, `v ∉ {27,28}`) | 오프라인 canonical 검사 후에만 배포 — viem은 수락하지만 OZ `ECDSA`는 revert하므로, 검사 없이는 모든 grant가 revert하는 계정을 돈 내고 배포하게 된다 |
 | 취약 의존성 | `bun audit`을 게이트에서 실행. 모든 발견은 수정하거나, 재측정 가능한 증명을 붙여 수용 |
 
 ### 의존성 권고의 수용 기준
@@ -631,6 +682,7 @@ payload와 permission context는 bearer 권한이므로 로그·오류 상세에
 | Delegation Framework v1.3 | **GIWA 배포·검증 완료** — DelegationManager `0xF2F782Fa…F40C` (active, owner=admin, unpaused), 38-unit exact composition |
 | owner 스마트계정 (payer) | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` (HybridDeleGator, owner EOA `0x011234B8…B901`) |
 | ERC20PeriodTransferEnforcer | `0x700330288f6f094780121ea54cd2eDEfe45b3625` |
+| 첫 스폰서드 온보딩 계정 | `0x15286FE9A48d52504607bEaaa021B29194353301` (배포 전 서명이 라이브 ERC-1271에서 `0x1626ba7e`, mUSDC 잔액 3.0) |
 
 이 표는 주소를 갖고 직접 읽어 확인한 항목만 담는다. Dojang은 로드맵에
 등장하지만 이 저장소가 주소를 확인한 적이 없으므로 여기 포함하지 않는다 —
@@ -649,6 +701,11 @@ payload와 permission context는 bearer 권한이므로 로그·오류 상세에
   GIWA 현재 상태를 상대로 한 시뮬레이션이며 채굴된 트랜잭션이 아니다(§2 증거표)
 - **에이전트 자동화 — GIWA 채굴** — MCP tool 한 번으로 사람 개입 없이 정산한
   `0x533c…9964c`가 block 31634935에 채굴됐고 payer 가스 지출은 `0`이다
+- **스폰서드 온보딩 — GIWA 채굴** — 배포 전 서명에서 복원한 owner로 계정
+  `0x15286FE9…3301`이 대납 배포되고(`0xed21ac71…9902`), 3 mUSDC가
+  민팅됐으며(`0x9d14588b…baa0`), 라이브 ERC-1271이 그 사전 서명에 `0x1626ba7e`를
+  답했다. 새 사용자의 가스 지출은 `0`. 서비스 자체의 검증은 GIWA fork
+  15케이스(`test:e2e:bootstrap`)
 - **negative-path 수트 — 일회용 체인·GIWA fork** — `negative-path-suite.ts`가
   동일한 케이스 집합(정상·주기 cap·주기 reset·만료·wrong-redeemer·수취인
   불일치·replay·facilitator 변조 6종 + 대조군·payer mismatch·root 취소·회수

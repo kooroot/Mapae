@@ -29,6 +29,7 @@ bearer 권한이므로 tool 결과로 내보내지 않도록 설계되어 있다
 |---|---|
 | [Bun](https://bun.sh) | 서버 런타임. 저장소 클론 후 `bun install` |
 | 판매자·facilitator 엔드포인트 | 기본 경로는 Mapae가 운영하는 호스팅 엔드포인트다 — 판매자 `https://seller.mapae.io`, facilitator `https://facilitator.mapae.io`. 서비스를 직접 띄울 필요 없이 §3의 URL 변수 두 개만 지정한다. 직접 운영은 이 절 끝의 "직접 띄우기" 참조 |
+| payer 스마트계정 | 이미 있으면 그대로 쓴다. 없으면 [app.mapae.io](https://app.mapae.io)에서 서명 한 번으로 만들 수 있다 — 아직 존재하지 않는 계정에 root 위임을 서명하면 같은 호스트의 `/bootstrap` 스폰서가 그 계정을 대납 배포한다. ETH가 필요한 단계는 없다 |
 | 서명된 parent permission | 소유자 지갑이 서명한 JSON 파일 (아래 참조) |
 | 세션키 | 에이전트 전용 키. `apps/delegation-lab`에서 `bun run sessions:generate`로 생성 가능 |
 
@@ -45,6 +46,9 @@ parent permission은 소유자 지갑으로 서명한다. `apps/delegation-lab`�
 typed data를 출력하고, `bun run permission:assemble`이 서명을 붙여 배포된 owner
 계정의 ERC-1271 `isValidSignature`가 수락하는 경우에만 파일로 기록한다. 소유자
 키는 이 과정 어디에도 닿지 않으며, 두 단계 모두 브로드캐스트하지 않는다.
+배포된 계정을 요구하는 것은 이 CLI 도구의 확정 검사 방식이지 프로토콜의
+제약이 아니다 — 배포 전에 만든 서명도 배포 뒤에는 같은 ERC-1271이 수락하며,
+스폰서드 온보딩이 그 성질 위에 서 있다.
 
 `permission:assemble`은 파일을 자기 실행 디렉터리(`apps/delegation-lab`)에
 기록한다. MCP 서버는 이 파일을 `apps/delegated-agent` 기준의

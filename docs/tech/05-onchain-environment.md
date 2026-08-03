@@ -12,6 +12,7 @@
 | Delegation Framework v1.3 | **GIWA 배포·검증 완료** — DelegationManager `0xF2F782Fa…F40C` (active, owner=admin, unpaused), 38-unit exact composition |
 | owner 스마트계정 (payer) | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` (HybridDeleGator, owner EOA `0x011234B8…B901`) |
 | ERC20PeriodTransferEnforcer | `0x700330288f6f094780121ea54cd2eDEfe45b3625` |
+| 첫 스폰서드 온보딩 계정 | `0x15286FE9A48d52504607bEaaa021B29194353301` (배포 전 서명이 라이브 ERC-1271에서 `0x1626ba7e`, mUSDC 잔액 3.0) |
 
 이 표는 주소를 갖고 직접 읽어 확인한 항목만 담는다. Dojang은 로드맵에
 등장하지만 이 저장소가 주소를 확인한 적이 없으므로 여기 포함하지 않는다 —

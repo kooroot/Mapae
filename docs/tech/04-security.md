@@ -64,6 +64,15 @@ self-target 케이스가 가장 비자명하다. 실행은
 계정)로도 나올 수 있다. 전체 케이스는 일회용 체인과 GIWA fork 양쪽에서
 통과한다.
 
+facilitator와 같은 공개 호스트는 `/bootstrap` 경로로 온보딩 스폰서도 라우팅한다
+— 별도 프로세스, 별도 키다. 요청 본문은 `{permissionContext}` 하나이고 owner는
+서명에서 복원하며 `CREATE2(owner)`가 permission의 delegator와 일치해야 하므로,
+호출자는 우리가 배포비를 낼 주소를 지명할 수 없다. 응답은 닫힌 거절 enum만
+내보낸다. 스폰서 키가 침해되어도 얻는 것은 잔액만큼의 가스 낭비다 — 위임 권한이
+없으므로 payer 자금·한도·정산에는 닿지 못한다. 스폰서가 relayer·deployer와
+겹치면 서비스가 기동을 거부한다: 인증 없는 요청에 응답하는 키를 정산 키와
+공유하면, 그리핑이 정산 중단으로 번지기 때문이다.
+
 ## 공격 벡터 대응표
 
 | 벡터 | 대응 |
@@ -83,6 +92,9 @@ self-target 케이스가 가장 비자명하다. 실행은
 | 중복 settle | canonical 결제 조건과 context 바이트의 `paymentIntentId`로 단일화, broadcast tx hash를 receipt보다 먼저 저장 |
 | 복잡한 delegation gas DoS | estimate 후 설정 gas cap 초과 거절 |
 | 비인가 relayer | leaf의 `RedeemerEnforcer`와 402 `facilitatorAddresses` 교집합 강제 |
+| 온보딩 그리핑 (배포 요청 반복) | IP당 rate limit + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
+| 배포 대상 주소 지명 | 요청 본문은 `{permissionContext}`뿐 — owner는 서명에서 복원, 계정은 `CREATE2(owner)`이며 delegator와 일치해야 함 |
+| 비-canonical 서명 (high-s, `v ∉ {27,28}`) | 오프라인 canonical 검사 후에만 배포 — viem은 수락하지만 OZ `ECDSA`는 revert하므로, 검사 없이는 모든 grant가 revert하는 계정을 돈 내고 배포하게 된다 |
 | 취약 의존성 | `bun audit`을 게이트에서 실행. 모든 발견은 수정하거나, 재측정 가능한 증명을 붙여 수용 |
 
 ## 의존성 권고의 수용 기준

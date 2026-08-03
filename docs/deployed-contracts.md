@@ -134,6 +134,7 @@ Delegation Framework의 코어. `DelegationManager`가 위임 서명 검증과
 | Framework Admin | [`0x00A7b901abb908ecafEC72973906424c4fDdc100`](https://sepolia-explorer.giwa.io/address/0x00A7b901abb908ecafEC72973906424c4fDdc100) | 2단계 ownership 이전으로 `DelegationManager` 소유권 인수 |
 | Payer 스마트계정 | [`0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382`](https://sepolia-explorer.giwa.io/address/0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382) | 지출 주체. HybridDeleGator 프록시, 가스 0 by design |
 | Payer 소유 EOA | [`0x011234B8959c1e5Ae9eB833764FaA861C24dB901`](https://sepolia-explorer.giwa.io/address/0x011234B8959c1e5Ae9eB833764FaA861C24dB901) | 위 스마트계정의 owner. root 위임에 ERC-1271로 서명 |
+| 첫 스폰서드 온보딩 계정 | [`0x15286FE9A48d52504607bEaaa021B29194353301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301) | 배포 전 서명에서 복원한 owner로 `SimpleFactory` CREATE2 대납 배포 (2026-08-04). 배포 [`0xed21ac71…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902), 민팅 [`0x9d14588b…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0) |
 
 ### 세션 키 (delegate 주소)
 
@@ -147,10 +148,10 @@ owner가 각 역할에 위임한 세션 키. 개별 지출 한도의 수신자�
 | child-a | [`0x953Cfd1cB09daD4db489316C99E5E289471D68bb`](https://sepolia-explorer.giwa.io/address/0x953Cfd1cB09daD4db489316C99E5E289471D68bb) | 4 mUSDC / 60s (manager 버킷 소비) |
 | child-b | [`0x0267944a1B4F6c7A6ee26d8cBcD028F02f2EE239`](https://sepolia-explorer.giwa.io/address/0x0267944a1B4F6c7A6ee26d8cBcD028F02f2EE239) | 4 mUSDC / 60s (manager 버킷 소비) |
 
-> **relayer(facilitator 서명자)와 `payTo`(수취인)는 운영 시점에 `.env`로 주입되는
-> 값이라 이 표에 고정하지 않는다.** relayer는 정산 트랜잭션의 `msg.sender`이자 가스
-> 대납자이고, `payTo`는 판매자의 수취 주소다. 둘 다 공개 주소지만 배포 산출물이 아니라
-> 배포/운영 환경 설정에 속한다.
+> **relayer(facilitator 서명자)·`payTo`(수취인)·온보딩 스폰서는 운영 시점에 `.env`로
+> 주입되는 값이라 이 표에 고정하지 않는다.** relayer는 정산 트랜잭션의 `msg.sender`이자
+> 가스 대납자이고, `payTo`는 판매자의 수취 주소이며, 스폰서는 온보딩 배포의 가스
+> 대납자다. 셋 다 공개 주소지만 배포 산출물이 아니라 배포/운영 환경 설정에 속한다.
 
 ---
 
