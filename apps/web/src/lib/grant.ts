@@ -15,6 +15,7 @@ import {
     type Address,
 } from "viem";
 import {deployment, publicClient} from "./config";
+import type {AgentSessionKey} from "./agent-key";
 
 export interface GrantDraft {
     agentName: string;
@@ -48,6 +49,11 @@ export interface SessionGrant {
     periodSeconds?: number;
     expirySeconds?: number;
     recipient?: Address;
+    /**
+     * Present only when this tab generated the agent's session key. Tab memory
+     * only, like the permission context — the MCP bundle export is the one exit.
+     */
+    agentKey?: AgentSessionKey;
 }
 
 /**
@@ -386,6 +392,7 @@ function bootstrapRefusalMessage(reason: string | undefined): string {
 export function signedSessionGrant(
     artifact: PermissionArtifact,
     value: ValidGrantDraft,
+    agentKey?: AgentSessionKey,
 ): SessionGrant {
     return {
         id: `${artifact.createdAt}:${artifact.delegate}:${artifact.permissionContext.slice(-18)}`,
@@ -396,6 +403,7 @@ export function signedSessionGrant(
         periodSeconds: value.periodDurationSeconds,
         expirySeconds: value.expiresAfterSeconds,
         recipient: value.recipient,
+        agentKey,
     };
 }
 

@@ -2752,3 +2752,58 @@ a.studio-metric:hover {
         justify-content: center;
     }
 }
+
+/* Delegate field: manual address entry beside in-tab session-key generation. */
+.studio-delegate-row {
+    display: flex;
+    gap: 8px;
+}
+
+.studio-delegate-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--mono);
+}
+
+.studio-keygen-button {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    border: 1px solid var(--studio-line);
+    border-radius: 8px;
+    color: var(--studio-text-2);
+    background: transparent;
+    font-size: 9px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        border-color 160ms ease,
+        color 160ms ease;
+}
+
+.studio-keygen-button:hover {
+    border-color: var(--studio-text-3);
+    color: var(--studio-text-1);
+}
+
+.studio-keygen-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.studio-keygen-note {
+    display: block;
+    margin-top: 6px;
+    color: var(--studio-text-3);
+    font-size: 9px;
+    line-height: 1.55;
+}
+
+.studio-bundle-note {
+    margin-top: 10px;
+    color: var(--studio-text-3);
+    font-size: 9px;
+    line-height: 1.55;
+}

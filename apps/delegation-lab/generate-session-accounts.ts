@@ -1,5 +1,5 @@
 import {redactForLog} from "@mapae/shared";
-import {chmod, mkdir} from "node:fs/promises";
+import {mkdir, writeFile} from "node:fs/promises";
 import {generatePrivateKey, privateKeyToAccount} from "viem/accounts";
 
 const SECRET_PATH = "../../.secrets/d3-session-accounts.json";
@@ -14,8 +14,13 @@ const roles = [
 
 async function main(): Promise<void> {
     if ((await Bun.file(SECRET_PATH).exists()) || (await Bun.file(PUBLIC_PATH).exists())) {
+        // On a fresh clone this fires every time: the address file is committed as the
+        // demo deployment's canonical record, and rotating it would desync the docs
+        // that cite those addresses. A new user wanting their own key never needed
+        // this five-role set — point them at the single-key command instead.
         throw new Error(
-            "session accounts already exist; refusing to rotate or overwrite them implicitly",
+            "the demo session set already exists (its address file is committed); " +
+                "refusing to rotate it. For a personal agent key run `bun run agent-key:new`",
         );
     }
     const accounts = Object.fromEntries(
@@ -29,8 +34,9 @@ async function main(): Promise<void> {
     );
 
     await mkdir("../../.secrets", {recursive: true, mode: 0o700});
-    await Bun.write(SECRET_PATH, `${JSON.stringify(accounts, null, 2)}\n`);
-    await chmod(SECRET_PATH, 0o600);
+    // Mode set at open time — a write-then-chmod leaves the key world-readable
+    // for a window, and forever if the process dies between the two calls.
+    await writeFile(SECRET_PATH, `${JSON.stringify(accounts, null, 2)}\n`, {mode: 0o600});
     await Bun.write(PUBLIC_PATH, `${JSON.stringify(publicAddresses, null, 2)}\n`);
 
     console.log(`generated ${roles.length} isolated session accounts`);

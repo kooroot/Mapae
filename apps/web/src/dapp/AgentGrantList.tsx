@@ -6,11 +6,14 @@ import {
     Clipboard,
     Clock3,
     Info,
+    KeyRound,
     Plus,
     ShieldCheck,
     UserRoundCheck,
 } from "lucide-react";
 import {useEffect, useState} from "react";
+import {buildMcpBundle} from "../lib/agent-key";
+import {deployment} from "../lib/config";
 import {short} from "../lib/dial";
 import type {SessionGrant} from "../lib/grant";
 
@@ -39,6 +42,22 @@ export function AgentGrantList({
             await navigator.clipboard.writeText(grant.artifact.permissionContext);
             setCopyFault(undefined);
             setCopied(grant.id);
+        } catch {
+            setCopyFault("브라우저가 클립보드 접근을 허용하지 않았습니다.");
+        }
+    }
+
+    async function copyBundle(grant: SessionGrant) {
+        if (!grant.agentKey) return;
+        const bundle = buildMcpBundle({
+            permissionContext: grant.artifact.permissionContext,
+            agentKey: grant.agentKey,
+            frameworkAdmin: deployment.admin.owner,
+        });
+        try {
+            await navigator.clipboard.writeText(bundle.bundleText);
+            setCopyFault(undefined);
+            setCopied(`bundle:${grant.id}`);
         } catch {
             setCopyFault("브라우저가 클립보드 접근을 허용하지 않았습니다.");
         }
@@ -146,6 +165,22 @@ export function AgentGrantList({
                                     </div>
                                 </dl>
                                 <footer>
+                                    {grant.agentKey ? (
+                                        <button
+                                            type="button"
+                                            className="studio-secondary-button"
+                                            onClick={() => void copyBundle(grant)}
+                                        >
+                                            {copied === `bundle:${grant.id}` ? (
+                                                <Check size={15} />
+                                            ) : (
+                                                <KeyRound size={15} />
+                                            )}
+                                            {copied === `bundle:${grant.id}`
+                                                ? "복사됨"
+                                                : "MCP 연결 번들 복사"}
+                                        </button>
+                                    ) : null}
                                     <button
                                         type="button"
                                         className="studio-secondary-button"
@@ -167,6 +202,15 @@ export function AgentGrantList({
                                         <ArrowRight size={15} />
                                     </button>
                                 </footer>
+                                {grant.agentKey ? (
+                                    <p className="studio-bundle-note">
+                                        번들에는 이 탭에서 만든 에이전트 세션키가
+                                        들어갑니다. 파일로 옮긴 뒤 붙여넣은 텍스트는
+                                        폐기하고, 클립보드 기록·기기 간 동기화를 쓴다면
+                                        그 기록도 지우세요 — 탭을 닫으면 다시 받을 수
+                                        없습니다.
+                                    </p>
+                                ) : null}
                             </article>
                         );
                     })}

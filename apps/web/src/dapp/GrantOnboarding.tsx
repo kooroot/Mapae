@@ -1,5 +1,6 @@
 import {signRootPeriodPermission, toMapaeOwnerSmartAccount} from "@mapae/delegation/signing";
 import {MOCK_USDC, redactUrls} from "@mapae/shared";
+import {getAddress, isAddress} from "viem";
 import {
     ArrowRight,
     BadgeCheck,
@@ -9,6 +10,7 @@ import {
     CircleAlert,
     Coins,
     FileKey2,
+    KeyRound,
     Link2,
     LockKeyhole,
     ShieldCheck,
@@ -34,6 +36,7 @@ import {
     type SessionGrant,
 } from "../lib/grant";
 import {parsePermissionContext, type ParsedPermission} from "../lib/permission";
+import {generateAgentSessionKey, type AgentSessionKey} from "../lib/agent-key";
 import {short} from "../lib/dial";
 
 type AccountReadiness =
@@ -50,13 +53,18 @@ type SigningProgress =
     | {kind: "verifying"}
     | {kind: "error"; reason: string};
 
+// `recipientMode: "any"` is the default on purpose. The natural first payment is
+// to the hosted demo seller, whose address a new user has no way to know; a
+// fixed-recipient default with an empty field steers them into pinning a wrong
+// address, and every payment then dies at the enforcer. Narrowing to one
+// recipient stays one click away and the form warns about the open scope.
 const INITIAL_DRAFT: GrantDraft = {
     agentName: "",
     delegate: "",
     amount: "",
     periodSeconds: "86400",
     expirySeconds: "2592000",
-    recipientMode: "fixed",
+    recipientMode: "any",
     recipient: "",
 };
 
@@ -70,6 +78,7 @@ export function GrantOnboarding({
     const [draft, setDraft] = useState<GrantDraft>(INITIAL_DRAFT);
     const [attempted, setAttempted] = useState(false);
     const [progress, setProgress] = useState<SigningProgress>({kind: "idle"});
+    const [generatedKey, setGeneratedKey] = useState<AgentSessionKey>();
     const {address, chainId, isConnected} = useAccount();
     const {connect, connectors, isPending: connecting, error: connectError} = useConnect();
     const {disconnect} = useDisconnect();
@@ -125,6 +134,23 @@ export function GrantOnboarding({
     function update<K extends keyof GrantDraft>(key: K, value: GrantDraft[K]) {
         setDraft((current) => ({...current, [key]: value}));
         setProgress({kind: "idle"});
+        // A hand-edited delegate is no longer the key this tab generated; keeping the
+        // key around would export a bundle whose address and grant disagree. Compare
+        // the normalized address, not the raw string — validation accepts any casing
+        // of the same address, and an edit-then-undo or lowercase re-paste of the
+        // generated address must not destroy the only copy of the key.
+        if (key === "delegate" && generatedKey) {
+            const raw = typeof value === "string" ? value.trim() : "";
+            const sameAddress = isAddress(raw) && getAddress(raw) === generatedKey.address;
+            if (!sameAddress) setGeneratedKey(undefined);
+        }
+    }
+
+    function createAgentKey() {
+        const key = generateAgentSessionKey();
+        setGeneratedKey(key);
+        setDraft((current) => ({...current, delegate: key.address}));
+        setProgress({kind: "idle"});
     }
 
     async function signGrant(event: FormEvent<HTMLFormElement>) {
@@ -175,23 +201,32 @@ export function GrantOnboarding({
             }
             setProgress({kind: "verifying"});
             await verifyPermissionArtifact(artifact);
+            const agentKey =
+                generatedKey && generatedKey.address === validation.value.delegate
+                    ? generatedKey
+                    : undefined;
             setDraft(INITIAL_DRAFT);
             setAttempted(false);
+            // Clear only the key this submission consumed — a key generated while the
+            // wallet prompt was open belongs to the next grant, not to the void.
+            setGeneratedKey((current) => (current === agentKey ? undefined : current));
             setProgress({kind: "idle"});
-            onGranted(signedSessionGrant(artifact, validation.value));
+            onGranted(signedSessionGrant(artifact, validation.value, agentKey));
         } catch (error) {
             setProgress({kind: "error", reason: faultLine(error)});
         }
     }
 
     const connector = connectors[0];
+    const busy =
+        progress.kind === "signing" ||
+        progress.kind === "bootstrapping" ||
+        progress.kind === "verifying";
     const formReady =
         validation.kind === "ok" &&
         (accountReadiness.kind === "ready" ||
             (accountReadiness.kind === "missing" && sponsor.kind === "configured")) &&
-        progress.kind !== "signing" &&
-        progress.kind !== "bootstrapping" &&
-        progress.kind !== "verifying";
+        !busy;
 
     return (
         <div className="studio-create-page">
@@ -251,14 +286,34 @@ export function GrantOnboarding({
                                 htmlFor="grant-delegate"
                                 error={fieldError(validation, attempted, "delegate")}
                             >
-                                <input
-                                    id="grant-delegate"
-                                    value={draft.delegate}
-                                    spellCheck={false}
-                                    autoComplete="off"
-                                    placeholder="0x…"
-                                    onChange={(event) => update("delegate", event.target.value)}
-                                />
+                                <div className="studio-delegate-row">
+                                    <input
+                                        id="grant-delegate"
+                                        value={draft.delegate}
+                                        spellCheck={false}
+                                        autoComplete="off"
+                                        placeholder="0x… 또는 오른쪽 버튼으로 새로 생성"
+                                        onChange={(event) =>
+                                            update("delegate", event.target.value)
+                                        }
+                                    />
+                                    <button
+                                        type="button"
+                                        className="studio-keygen-button"
+                                        disabled={busy}
+                                        onClick={createAgentKey}
+                                    >
+                                        <KeyRound size={14} />
+                                        새 에이전트 키
+                                    </button>
+                                </div>
+                                {generatedKey ? (
+                                    <small className="studio-keygen-note">
+                                        이 브라우저에서 방금 만든 키입니다. 서버로 전송되지
+                                        않으며, 서명 후 &lsquo;내 에이전트&rsquo;의 MCP 연결
+                                        번들로만 받을 수 있습니다.
+                                    </small>
+                                ) : null}
                             </Field>
                         </div>
                     </div>

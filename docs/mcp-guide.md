@@ -28,10 +28,10 @@ bearer 권한이므로 tool 결과로 내보내지 않도록 설계되어 있다
 | 항목 | 비고 |
 |---|---|
 | [Bun](https://bun.sh) | 서버 런타임. 저장소 클론 후 `bun install` |
-| 판매자·facilitator 엔드포인트 | 기본 경로는 Mapae가 운영하는 호스팅 엔드포인트다 — 판매자 `https://seller.mapae.io`, facilitator `https://facilitator.mapae.io`. 서비스를 직접 띄울 필요 없이 §3의 URL 변수 두 개만 지정한다. 직접 운영은 이 절 끝의 "직접 띄우기" 참조 |
+| 판매자·facilitator 엔드포인트 | 기본 경로는 Mapae가 운영하는 호스팅 엔드포인트다 — 판매자 `https://seller.mapae.io`, facilitator `https://facilitator.mapae.io`. 서비스를 직접 띄울 필요 없이 §3의 URL 변수 두 개만 지정한다. 직접 운영은 §2.3 참조 |
 | payer 스마트계정 | 이미 있으면 그대로 쓴다. 없으면 [app.mapae.io](https://app.mapae.io)에서 서명 한 번으로 만들 수 있다 — 아직 존재하지 않는 계정에 root 위임을 서명하면 같은 호스트의 `/bootstrap` 스폰서가 그 계정을 대납 배포한다. ETH가 필요한 단계는 없다 |
-| 서명된 parent permission | 소유자 지갑이 서명한 JSON 파일 (아래 참조) |
-| 세션키 | 에이전트 전용 키. `apps/delegation-lab`에서 `bun run sessions:generate`로 생성 가능 |
+| 서명된 parent permission | 소유자 지갑이 서명한 JSON 파일. **가장 짧은 경로는 Studio 번들이다(§2.1)** — CLI 조립은 그 아래 |
+| 세션키 | 에이전트 전용 키. Studio의 "새 에이전트 키" 버튼이 브라우저에서 생성해 주고(§2.1), CLI에서는 `apps/delegation-lab`의 `bun run agent-key:new`가 하나를 만들어 `.secrets/`에 둔다 |
 
 호스팅 facilitator가 살아 있는지는 등록 전에 한 줄로 확인할 수 있다:
 
@@ -40,6 +40,26 @@ curl -s https://facilitator.mapae.io/supported
 ```
 
 `eip155:91342`와 signer 주소가 돌아오면 정상이다.
+
+### 2.1 Studio 번들 — 권장 경로
+
+[app.mapae.io](https://app.mapae.io)에서 처음부터 끝까지 만들 수 있다.
+
+1. 지갑을 연결하고 권한 폼에서 **"새 에이전트 키"**를 누른다 — 세션키가
+   브라우저 안에서 생성되어 주소가 폼에 채워진다. 키는 서버로 전송되지 않고
+   어디에도 저장되지 않는다.
+2. 범위를 정하고 서명한다. 계정이 없으면 스폰서가 대납 배포한다.
+3. **내 에이전트 → "MCP 연결 번들 복사"**. 번들에는 이 절 이후의 수동 단계가
+   완성본으로 들어 있다 — `open-agent.permission.json` 내용, 실제 Framework
+   admin 주소가 채워진 `.env` 내용, 클라이언트 등록 명령까지. 안내대로 두
+   파일을 저장하고 명령을 실행한 뒤, §4 끝의 기동 확인(`mapae_status` 호출과
+   stderr 한 줄)만 거치면 바로 결제(§5)로 넘어갈 수 있다. `bun`이 PATH에 없어
+   등록이 실패하는 경우의 처방도 §4에 있다.
+
+번들에는 세션키가 들어 있으므로 파일로 옮긴 뒤 붙여넣은 텍스트는 폐기한다.
+탭을 닫으면 번들은 다시 받을 수 없다 — 권한과 키 모두 탭 메모리에만 있다.
+
+### 2.2 CLI 조립 — 직접 만드는 경우
 
 parent permission은 소유자 지갑으로 서명한다. `apps/delegation-lab`의
 `bun run permission:prepare`가 지갑(예: Rabby)이 `eth_signTypedData_v4`로 서명할
@@ -50,12 +70,17 @@ typed data를 출력하고, `bun run permission:assemble`이 서명을 붙여 �
 제약이 아니다 — 배포 전에 만든 서명도 배포 뒤에는 같은 ERC-1271이 수락하며,
 스폰서드 온보딩이 그 성질 위에 서 있다.
 
+Studio에서 번들 없이 **권한 코드(hex)만** 복사한 경우에는 그 값을
+`{"permissionContext": "0x…"}` 형태의 JSON으로 감싸
+`apps/delegated-agent/open-agent.permission.json`으로 저장하면 같은 파일이
+된다 — 서버가 읽는 키는 `permissionContext` 하나다.
+
 `permission:assemble`은 파일을 자기 실행 디렉터리(`apps/delegation-lab`)에
 기록한다. MCP 서버는 이 파일을 `apps/delegated-agent` 기준의
 `PARENT_PERMISSION_CONTEXT_PATH`로 읽으므로, 파일을 그 위치로 옮기거나 변수에
 실제 경로를 지정해야 한다.
 
-### 직접 띄우기 (셀프호스팅)
+### 2.3 직접 띄우기 (셀프호스팅)
 
 판매자와 facilitator를 직접 운영하는 경우, 두 서비스는 각자의 디렉터리에서
 `bun run index.ts`로 기동하며 각자 자기 `.env`를 읽는다 — facilitator는

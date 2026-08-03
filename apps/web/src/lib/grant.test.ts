@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {judgeSpendable, validateGrantDraft, type GrantDraft} from "./grant";
+import {judgeSpendable, signedSessionGrant, validateGrantDraft, type GrantDraft} from "./grant";
 
 /**
  * `DelegationManager.ANY_DELEGATE` — the framework sentinel that makes a delegation
@@ -123,5 +123,38 @@ describe("judgeSpendable", () => {
         // A read we could not make is a question we cannot answer, not an answer of zero.
         const result = judgeSpendable({available: 3_000_000n, balance: undefined});
         expect(result).toEqual({spendable: 3_000_000n, limitedBy: "unknown"});
+    });
+});
+
+describe("signedSessionGrant", () => {
+    const artifact = {
+        frameworkVersion: "1.3.0",
+        chainId: 91342,
+        role: "open-agent",
+        delegator: "0x15286FE9A48d52504607bEaaa021B29194353301",
+        delegate: "0xA350522aE469DFA53a117aFD268a60C0e322a321",
+        permissionContext: ("0x" + "cd".repeat(80)) as `0x${string}`,
+        createdAt: 1_700_000_000,
+    } as Parameters<typeof signedSessionGrant>[0];
+    const value = {
+        agentName: "invoice agent",
+        delegate: "0xA350522aE469DFA53a117aFD268a60C0e322a321",
+        periodAmount: 3_000_000n,
+        periodDurationSeconds: 86_400,
+        expiresAfterSeconds: 2_592_000,
+    } as Parameters<typeof signedSessionGrant>[1];
+
+    test("carries a browser-generated agent key through to the session grant", () => {
+        const agentKey = {
+            address: "0xA350522aE469DFA53a117aFD268a60C0e322a321",
+            privateKey: ("0x" + "11".repeat(32)) as `0x${string}`,
+        } as const;
+        const grant = signedSessionGrant(artifact, value, agentKey);
+        expect(grant.agentKey).toEqual(agentKey);
+    });
+
+    test("a grant for a user-supplied address has no agent key", () => {
+        const grant = signedSessionGrant(artifact, value);
+        expect(grant.agentKey).toBeUndefined();
     });
 });
