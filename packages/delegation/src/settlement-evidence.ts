@@ -12,6 +12,8 @@
  * 않는다.
  */
 
+import {keccak256, toBytes} from "viem";
+
 /** 정산 전후 각각 한 번씩 읽는, 서로 독립된 네 관측값. */
 export interface SettlementSnapshot {
     /** 위임으로 대금을 낸 계정의 토큰 잔고. */
@@ -112,4 +114,81 @@ export function reconcileSettlement(params: {
     }
 
     return problems;
+}
+
+/** `Transfer(address,address,uint256)`의 topic0. 상수 리터럴 대신 계산해 오타 여지를 없앤다. */
+export const TRANSFER_EVENT_TOPIC = keccak256(toBytes("Transfer(address,address,uint256)"));
+
+/** 영수증 로그의 필요한 면만 본다 — viem `Log`와 구조적으로 호환. */
+export interface ReceiptLog {
+    address: string;
+    topics: readonly string[];
+    data: string;
+}
+
+/**
+ * 위의 스냅샷 대조(reconcileSettlement)의 프로덕션 등가물. 스냅샷 대조는 전후 두 번의 읽기
+ * 사이에 다른 이체가 끼어들 수 없는 실험실 창을 전제하지만, facilitator의 정산 경로에는 그런
+ * 창이 없다. 트랜잭션 **자기 영수증의 로그**는 그 창 문제가 없다 — 이 트랜잭션이 낸 사건만
+ * 담기므로, 동시성이 있어도 귀속이 흔들리지 않는다.
+ *
+ * 존재 이유는 감사 지적 그대로다: enforcer는 calldata를 제약하고 allowance를 소모하지만
+ * **수취인 잔액이 늘었다는 것은 증명하지 않는다.** revert 없이 `false`를 반환하는 토큰이면
+ * redeemDelegations는 호출로서 성공하고 영수증 status도 "success"인데 자금은 움직이지 않는다.
+ * 그 경우 유일한 흔적은 Transfer 이벤트의 **부재**이고, 이 판정이 그것을 잡는다.
+ *
+ * 정확히 1건을 요구한다. 0건이면 위의 케이스이고, 2건 이상이면 이 결제 하나로 귀속할 수 없는
+ * 실행이다(청구액의 배수가 움직였다는 뜻이므로 통과가 아니라 실패다). 금액도 정확히 일치해야
+ * 한다 — 스냅샷 대조와 같은 이유로, 한도는 상한일 뿐 청구액이 아니다.
+ *
+ * 한계도 명시한다: 이벤트는 토큰 컨트랙트의 주장이다. 이벤트에 적힌 금액과 다르게 잔고를
+ * 움직이는 병적인 토큰(fee-on-transfer 등)은 이 판정 밖이며, 그런 토큰을 자산으로 받을지는
+ * 별도의 토큰 거동 리뷰가 정한다. MockUSDC(OZ ERC20)는 이벤트와 잔고가 일치한다.
+ */
+export function reconcileSettlementReceipt(params: {
+    logs: readonly ReceiptLog[];
+    asset: string;
+    payer: string;
+    payTo: string;
+    amount: bigint;
+}): SettlementDiscrepancy[] {
+    const asset = params.asset.toLowerCase();
+    const expectedFrom = padTopicAddress(params.payer);
+    const expectedTo = padTopicAddress(params.payTo);
+
+    const matches = params.logs.filter(
+        (log) =>
+            log.address.toLowerCase() === asset &&
+            log.topics[0]?.toLowerCase() === TRANSFER_EVENT_TOPIC &&
+            log.topics[1]?.toLowerCase() === expectedFrom &&
+            log.topics[2]?.toLowerCase() === expectedTo,
+    );
+
+    if (matches.length !== 1) {
+        return [
+            {
+                code: "VENDOR_CREDIT",
+                detail:
+                    `receipt carries ${matches.length} Transfer(payer → payTo) events on the asset, expected exactly 1` +
+                    (matches.length === 0
+                        ? " — a token returning false instead of reverting leaves exactly this trace"
+                        : ""),
+            },
+        ];
+    }
+
+    const moved = BigInt(matches[0]!.data);
+    if (moved !== params.amount) {
+        return [
+            {
+                code: "VENDOR_CREDIT",
+                detail: `receipt Transfer moved ${moved}, the 402 charged ${params.amount}`,
+            },
+        ];
+    }
+    return [];
+}
+
+function padTopicAddress(address: string): string {
+    return `0x000000000000000000000000${address.slice(2).toLowerCase()}`;
 }

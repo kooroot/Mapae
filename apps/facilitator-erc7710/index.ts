@@ -5,6 +5,7 @@ import {
     buildDelegatedTransfer,
     parseActiveDeploymentArtifactJson,
     parseFrameworkDeploymentManifestJson,
+    reconcileSettlementReceipt,
     validateDelegatedPayment,
     verifyActiveFrameworkDeployment,
     verifyFrameworkOperationalState,
@@ -230,6 +231,23 @@ class SettlementUnconfirmed extends Error {
     }
 }
 
+/**
+ * Raised when the redemption mined with status "success" but its own receipt carries
+ * no `Transfer(payer → payTo, amount)` on the asset — the false-return-token shape.
+ * Distinct from a rejection on both sides of the ledger: the vendor was NOT paid, so
+ * the resource must not be served, and yet the payer's period allowance WAS consumed,
+ * so the transaction hash has to reach the operator instead of being swallowed.
+ */
+class SettlementNotCredited extends Error {
+    constructor(
+        readonly transaction: Hex,
+        detail: string,
+    ) {
+        super(`settlement mined without crediting the vendor: ${detail}`);
+        this.name = "SettlementNotCredited";
+    }
+}
+
 class SettlementCoordinator {
     readonly #singleFlight = new PaymentIntentSingleFlight<SettleResponse>();
     readonly #broadcastTransactions = new Map<Hex, {hash: Hex; at: number}>();
@@ -297,6 +315,24 @@ class SettlementCoordinator {
             throw new SettlementUnconfirmed(hash);
         }
         if (receipt.status !== "success") throw new Error("redemption transaction reverted");
+        // Status "success" only says the call did not revert. The enforcers constrain
+        // calldata and consume allowance but never prove the recipient was credited —
+        // a token returning false instead of reverting passes everything above while
+        // moving nothing. The receipt's own Transfer log is the precondition for
+        // reporting success, and through the seller's settle ladder, for the resource.
+        const discrepancies = reconcileSettlementReceipt({
+            logs: receipt.logs,
+            asset: payment.paymentRequirements.asset,
+            payer: payment.payer,
+            payTo: payment.paymentRequirements.payTo,
+            amount: payment.amount,
+        });
+        if (discrepancies.length > 0) {
+            throw new SettlementNotCredited(
+                hash,
+                discrepancies.map((problem) => problem.detail).join("; "),
+            );
+        }
         return {
             success: true,
             transaction: hash,
@@ -400,6 +436,18 @@ app.post("/settle", async (c) => {
                 errorReason: SETTLEMENT_UNCONFIRMED,
             };
             return c.json(pending);
+        }
+        if (error instanceof SettlementNotCredited) {
+            // `success: false` sends the seller's ladder to "failed" — the resource is
+            // withheld. The hash still travels: allowance was consumed by a transaction
+            // that paid nobody, and an operator has to be able to find it.
+            const notCredited: SettleResponse = {
+                success: false,
+                network: GIWA_SEPOLIA_CAIP2,
+                transaction: error.transaction,
+                errorReason: "vendor_not_credited",
+            };
+            return c.json(notCredited);
         }
         const response: SettleResponse = {
             success: false,

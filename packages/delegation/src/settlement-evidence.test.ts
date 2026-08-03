@@ -1,6 +1,11 @@
 import {describe, expect, test} from "bun:test";
 import {toTokenAmount} from "@mapae/shared";
-import {reconcileSettlement, type SettlementSnapshot} from "./settlement-evidence.js";
+import {
+    TRANSFER_EVENT_TOPIC,
+    reconcileSettlement,
+    reconcileSettlementReceipt,
+    type SettlementSnapshot,
+} from "./settlement-evidence.js";
 
 const PAYER = "0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382";
 const VENDOR = "0x0229346e91a07EA24A54704F094D293E43E9d302";
@@ -157,5 +162,95 @@ describe("reconcileSettlement", () => {
                 vendor: PAYER.toUpperCase(),
             }),
         ).toThrow("cannot be reconciled");
+    });
+});
+
+describe("reconcileSettlementReceipt — per-transaction vendor credit evidence", () => {
+    const ASSET = "0xcfeb694719A09caeb80798e2011298F29CDa4e92";
+    const OTHER_CONTRACT = "0x00000000000000000000000000000000000000AA";
+    const OTHER_RECIPIENT = "0x2000000000000000000000000000000000000009";
+
+    const pad = (address: string) =>
+        `0x000000000000000000000000${address.slice(2).toLowerCase()}`;
+    const value = (amount: bigint) => `0x${amount.toString(16).padStart(64, "0")}`;
+
+    function transferLog(overrides: {
+        address?: string;
+        from?: string;
+        to?: string;
+        amount?: bigint;
+    } = {}) {
+        return {
+            address: overrides.address ?? ASSET,
+            topics: [
+                TRANSFER_EVENT_TOPIC,
+                pad(overrides.from ?? PAYER),
+                pad(overrides.to ?? VENDOR),
+            ],
+            data: value(overrides.amount ?? AMOUNT),
+        };
+    }
+
+    function receiptCodes(logs: Array<ReturnType<typeof transferLog>>): string[] {
+        return reconcileSettlementReceipt({
+            logs,
+            asset: ASSET,
+            payer: PAYER,
+            payTo: VENDOR,
+            amount: AMOUNT,
+        }).map((problem) => problem.code);
+    }
+
+    test("a receipt with the exact Transfer(payer → vendor, amount) is evidence", () => {
+        expect(receiptCodes([transferLog()])).toEqual([]);
+    });
+
+    test("a mined receipt with no Transfer at all is the false-return token case", () => {
+        // The audited hazard: a token that returns `false` instead of reverting makes
+        // the redemption succeed as a call — status "success", allowance consumed —
+        // while moving nothing. The absence of the Transfer event is the one trace
+        // that distinguishes it inside the transaction's own receipt.
+        expect(receiptCodes([])).toEqual(["VENDOR_CREDIT"]);
+    });
+
+    test("a Transfer of the wrong amount is not evidence", () => {
+        expect(receiptCodes([transferLog({amount: AMOUNT - 1n})])).toEqual(["VENDOR_CREDIT"]);
+    });
+
+    test("a Transfer to someone else is not evidence", () => {
+        expect(receiptCodes([transferLog({to: OTHER_RECIPIENT})])).toEqual(["VENDOR_CREDIT"]);
+    });
+
+    test("a matching event emitted by a different contract is not evidence", () => {
+        // Any contract can emit a log with the ERC-20 Transfer topic and arbitrary
+        // topics; only the asset's own logs speak for the asset.
+        expect(receiptCodes([transferLog({address: OTHER_CONTRACT})])).toEqual(["VENDOR_CREDIT"]);
+    });
+
+    test("two matching transfers cannot be attributed to one payment", () => {
+        expect(receiptCodes([transferLog(), transferLog()])).toEqual(["VENDOR_CREDIT"]);
+    });
+
+    test("unrelated logs around the matching one do not disturb the verdict", () => {
+        expect(
+            receiptCodes([
+                transferLog({address: OTHER_CONTRACT}),
+                transferLog(),
+                transferLog({to: OTHER_RECIPIENT, amount: 5n}),
+            ]),
+        ).toEqual([]);
+    });
+
+    test("address comparison is case-insensitive", () => {
+        const log = transferLog();
+        expect(
+            reconcileSettlementReceipt({
+                logs: [log],
+                asset: ASSET.toLowerCase(),
+                payer: PAYER.toUpperCase().replace("0X", "0x"),
+                payTo: VENDOR.toLowerCase(),
+                amount: AMOUNT,
+            }).map((p) => p.code),
+        ).toEqual([]);
     });
 });
