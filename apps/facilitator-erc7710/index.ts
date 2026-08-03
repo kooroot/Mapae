@@ -348,7 +348,12 @@ app.get("/health", async (c) => {
 });
 
 app.get("/supported", (c) =>
-    c.json(buildErc7710SupportedPayload({facilitatorAddresses: [relayer.address]})),
+    c.json(
+        buildErc7710SupportedPayload({
+            facilitatorAddresses: [relayer.address],
+            delegationManager: manager,
+        }),
+    ),
 );
 
 app.post("/verify", async (c) => {

@@ -237,6 +237,11 @@ app.get("/delegated/deliverable/:id", async (c) => {
         payTo: PAY_TO,
         amount: toTokenAmount(item.price),
         facilitatorAddresses: [facilitatorAddress],
+        // In-band manager discovery for third-party agents: their delegationProvider
+        // receives this requirements object verbatim, and GIWA's manager is in no
+        // public registry. Advisory — the facilitator allowlists the payload's manager
+        // independently, and this seller validates against the same deployment below.
+        delegationManager: getAddress(deployment.environment.DelegationManager),
     });
     const payment = readInboundPaymentHeader((name) => c.req.header(name));
     if (!payment) {

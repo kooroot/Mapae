@@ -177,3 +177,35 @@ describe("x402 v2 transport headers", () => {
         expect(readInboundPaymentHeader(() => undefined)).toBeUndefined();
     });
 });
+
+describe("in-band DelegationManager advertisement", () => {
+    test("the offer carries extra.delegationManager when the seller provides one", () => {
+        // GIWA's manager is not in @metamask/delegation-deployments, and the merged
+        // ERC-7710 scheme is registry-free — the offer itself is the only in-band place
+        // a third-party agent's delegationProvider can learn which manager to build its
+        // leaf against (it receives these requirements verbatim, extra included).
+        const withManager = buildErc7710PaymentRequirements({
+            payTo: PAYEE,
+            amount: 1_000_000n,
+            delegationManager: MANAGER,
+        });
+        expect(withManager.extra.delegationManager).toBe(MANAGER);
+
+        // Omission stays omission — existing offers and fixtures must not change shape.
+        const without = buildErc7710PaymentRequirements({payTo: PAYEE, amount: 1_000_000n});
+        expect("delegationManager" in without.extra).toBe(false);
+    });
+
+    test("/supported kinds[].extra can carry the manager as a discovery document", () => {
+        // Measured against @metamask/x402 0.2.0: its supportedKind flow copies only
+        // facilitatorAddresses into offers, so this field does NOT propagate through a
+        // third-party seller automatically. It is still the one queryable place an
+        // integrator can read the rail's manager from, which is why it rides here too.
+        const payload = buildErc7710SupportedPayload({
+            facilitatorAddresses: [FACILITATOR],
+            delegationManager: MANAGER,
+        });
+        expect(payload.kinds[0]?.extra.delegationManager).toBe(MANAGER);
+        expect(payload.signers[GIWA_SEPOLIA_CAIP2]).toEqual([FACILITATOR]);
+    });
+});

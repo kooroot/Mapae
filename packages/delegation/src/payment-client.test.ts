@@ -610,3 +610,56 @@ describe("D5 settlement-unknown is not a rejection", () => {
         expect(result.ok === false && result.code).toBe("TRANSPORT_ERROR");
     });
 });
+
+describe("offer-advertised DelegationManager", () => {
+    const offerWith = (manager: string) => ({
+        x402Version: 2,
+        resource: {url: target.toString(), description: "test", mimeType: "application/json"},
+        accepts: [
+            {
+                ...buildErc7710PaymentRequirements({
+                    payTo: PAYEE,
+                    amount: 1_000_000n,
+                    facilitatorAddresses: [FACILITATOR],
+                }),
+                extra: {
+                    assetTransferMethod: "erc7710",
+                    facilitatorAddresses: [FACILITATOR],
+                    delegationManager: manager,
+                },
+            },
+        ],
+    });
+
+    test("an offer advertising the verified manager is paid", async () => {
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}), offerWith(MANAGER));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        expect(calls).toHaveLength(2);
+    });
+
+    test("an offer advertising a different manager is refused before signing", async () => {
+        // The advertised manager is advisory for third parties, but when it is present
+        // and disagrees with the deployment this agent verified, signing a leaf would
+        // mint a bearer authorization the facilitator must reject anyway. Refuse first,
+        // and with the code that names the actual fault line.
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {}), offerWith(OTHER_MANAGER));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("MANAGER_MISMATCH");
+        expect(calls).toHaveLength(1); // never signed, never retried
+    });
+
+    test("a malformed advertised manager is a seller offer fault", async () => {
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {}), offerWith("not-an-address"));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("SELLER_OFFER_INVALID");
+        expect(calls).toHaveLength(1);
+    });
+});

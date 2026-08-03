@@ -44,6 +44,16 @@ export interface Erc7710Extra {
      * list with its own allowlist before signing a payment-specific leaf delegation.
      */
     facilitatorAddresses?: Address[];
+    /**
+     * Optional in-band advertisement of the DelegationManager this rail settles
+     * through. The merged ERC-7710 scheme is registry-free and GIWA's manager is not
+     * in `@metamask/delegation-deployments`, so the offer is the only place a
+     * third-party agent's delegationProvider — which receives these requirements
+     * verbatim — can learn which manager to build its leaf against. Advisory:
+     * settlement authority stays with the manager named in the signed payload, which
+     * the facilitator allowlists independently.
+     */
+    delegationManager?: Address;
 }
 
 interface ExactPaymentRequirements<TExtra> {
@@ -188,6 +198,7 @@ export function buildErc7710PaymentRequirements(params: {
     payTo: Address;
     amount: bigint;
     facilitatorAddresses?: Address[];
+    delegationManager?: Address;
     maxTimeoutSeconds?: number;
 }): Erc7710PaymentRequirements {
     return {
@@ -202,6 +213,9 @@ export function buildErc7710PaymentRequirements(params: {
             ...(params.facilitatorAddresses
                 ? {facilitatorAddresses: params.facilitatorAddresses}
                 : {}),
+            ...(params.delegationManager
+                ? {delegationManager: params.delegationManager}
+                : {}),
         },
     };
 }
@@ -211,7 +225,11 @@ export interface Erc7710SupportedPayload {
         x402Version: number;
         scheme: "exact";
         network: typeof GIWA_SEPOLIA_CAIP2;
-        extra: {assetTransferMethod: "erc7710"; facilitatorAddresses: Address[]};
+        extra: {
+            assetTransferMethod: "erc7710";
+            facilitatorAddresses: Address[];
+            delegationManager?: Address;
+        };
     }>;
     extensions: never[];
     signers: Record<string, Address[]>;
@@ -228,6 +246,14 @@ export interface Erc7710SupportedPayload {
  */
 export function buildErc7710SupportedPayload(params: {
     facilitatorAddresses: Address[];
+    /**
+     * Discovery only. Measured against `@metamask/x402` 0.2.0: the supportedKind flow
+     * copies just `facilitatorAddresses` into offers, so this does not propagate
+     * through a third-party seller — but /supported stays the one queryable document
+     * where an integrator can read which DelegationManager the rail settles through.
+     * The load-bearing in-band channel is the seller's own offer extra.
+     */
+    delegationManager?: Address;
 }): Erc7710SupportedPayload {
     return {
         kinds: [
@@ -238,6 +264,9 @@ export function buildErc7710SupportedPayload(params: {
                 extra: {
                     assetTransferMethod: "erc7710",
                     facilitatorAddresses: params.facilitatorAddresses,
+                    ...(params.delegationManager
+                        ? {delegationManager: params.delegationManager}
+                        : {}),
                 },
             },
         ],

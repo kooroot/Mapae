@@ -140,6 +140,12 @@ export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
     if (facilitators != null && !Array.isArray(facilitators)) {
         throw new Error("seller facilitatorAddresses is not a list");
     }
+    // Same reasoning: attacker-controlled JSON, and the comparison downstream calls
+    // `getAddress`, which throws on garbage out of a function contracted to refuse.
+    const advertisedManager = req.extra.delegationManager;
+    if (advertisedManager != null && !isAddress(advertisedManager)) {
+        throw new Error("seller delegationManager is malformed");
+    }
     // The whole requirements object is echoed back inside the payment header, which is
     // base64 via `btoa` — Latin-1 only. Any character above U+00FF anywhere in here,
     // including in a field we never read, makes that encoding throw.
@@ -304,6 +310,22 @@ export async function payForDelegatedResource(
         return failure(
             "FACILITATOR_UNTRUSTED",
             "seller and trusted facilitator signer lists do not overlap",
+        );
+    }
+
+    // The in-band manager advertisement is advisory — settlement authority stays with
+    // the manager in the signed payload — but when it is present and disagrees with the
+    // deployment this agent verified, every leaf we could sign is one the facilitator
+    // must reject. Refuse before signing: a leaf that cannot settle is still a bearer
+    // authorization, and the code should name the fault line, not a downstream symptom.
+    const advertisedManager = accepted.extra.delegationManager;
+    if (
+        advertisedManager !== undefined &&
+        getAddress(advertisedManager) !== getAddress(config.delegationManager)
+    ) {
+        return failure(
+            "MANAGER_MISMATCH",
+            "seller advertises a different DelegationManager than the verified deployment",
         );
     }
 
