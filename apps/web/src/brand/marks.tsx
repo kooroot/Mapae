@@ -39,28 +39,6 @@ import {
  * being scaled to 38×38 and squashed on top of being cut.
  */
 
-const ICONS = [
-    "pass-emblem",
-    "gate-402",
-    "pass-badge",
-    "auto-approval",
-    "agent-link",
-    "credential-token",
-    "agent-route",
-    "checkout-flow",
-    "shielded-pass",
-    "autonomous-settlement",
-    "monogram",
-    "agent-relay",
-    "paid-access-stamp",
-    "authorization-coin",
-    "verified-credential",
-    "payment-stream",
-    "m2m-settlement",
-    "request-pay-proceed",
-] as const;
-
-export type IconName = (typeof ICONS)[number];
 
 const INTERFACE_ICONS = {
     "asset-recipient": HandCoins,
@@ -111,35 +89,6 @@ export function Wordmark({height = 24, className}: {height?: number; className?:
     );
 }
 
-/**
- * One of the eighteen marks from the sheet.
- *
- * `alt=""` and `aria-hidden` because every use on this site sits beside the
- * words it illustrates. An icon that repeats its own caption to a screen reader
- * is noise; the caption is already the label.
- */
-export function BrandIcon({
-    name,
-    size = 40,
-    className,
-}: {
-    name: IconName;
-    size?: number;
-    className?: string;
-}) {
-    return (
-        <img
-            src={`/brand/icons/${name}.png`}
-            alt=""
-            aria-hidden="true"
-            width={size}
-            height={size}
-            className={className}
-            loading="lazy"
-            decoding="async"
-        />
-    );
-}
 
 /**
  * Product UI icons use one vector system rather than the supplied concept
@@ -196,11 +145,3 @@ export function Tagline({className}: {className?: string}) {
     );
 }
 
-/** The chevron that cuts the A's, kept as geometry because the dial rotates it. */
-export function Chevron({size = 14, fill = "var(--red)"}: {size?: number; fill?: string}) {
-    return (
-        <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true" focusable="false">
-            <path d="M14 4 L26 24 H20 L14 13 L8 24 H2 Z" fill={fill} />
-        </svg>
-    );
-}

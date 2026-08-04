@@ -180,31 +180,6 @@ button {
     color: var(--paper-0);
 }
 
-/* ── Type scale ────────────────────────────────────────────────────────────
-   The page's entire structure is eyebrow → statement: a mono uppercase label
-   over a serif sentence. That device is why a page of this kind reads
-   institutional rather than startup-y, and it is also the ONLY place an
-   acronym is allowed to appear. ERC-7710, ERC-4337 and x402 live in eyebrows
-   and body copy; never in a headline. */
-
-.display-1 {
-    font-family: var(--display);
-    font-weight: 700;
-    font-size: 88px;
-    line-height: 1.14;
-    letter-spacing: -0.022em;
-    word-break: keep-all;
-}
-
-.display-2 {
-    font-family: var(--display);
-    font-weight: 700;
-    font-size: 56px;
-    line-height: 1.2;
-    letter-spacing: -0.018em;
-    word-break: keep-all;
-}
-
 .h2 {
     font-family: var(--display);
     font-weight: 600;
@@ -220,13 +195,6 @@ button {
     font-size: 20px;
     line-height: 1.5;
     letter-spacing: -0.006em;
-    word-break: keep-all;
-}
-
-.body-lg {
-    font-size: 18px;
-    line-height: 1.7;
-    color: var(--ink-2);
     word-break: keep-all;
 }
 
@@ -283,30 +251,14 @@ button {
 }
 
 @media (max-width: 1024px) {
-    .display-1 {
-        font-size: 64px;
-    }
-    .display-2 {
-        font-size: 40px;
-    }
     .h2 {
         font-size: 28px;
     }
 }
 
 @media (max-width: 768px) {
-    .display-1 {
-        font-size: 44px;
-        letter-spacing: -0.018em;
-    }
-    .display-2 {
-        font-size: 32px;
-    }
     .h2 {
         font-size: 24px;
-    }
-    .body-lg {
-        font-size: 17px;
     }
 }
 
@@ -315,13 +267,6 @@ button {
 .wrap {
     width: 100%;
     max-width: 1120px;
-    margin: 0 auto;
-    padding: 0 var(--gutter);
-}
-
-.wrap-narrow {
-    width: 100%;
-    max-width: 780px;
     margin: 0 auto;
     padding: 0 var(--gutter);
 }
@@ -345,40 +290,3 @@ button {
     border: 0;
 }
 
-/* A struck rule: the mark on a tally, not a divider. */
-.rule-struck {
-    height: 1px;
-    background: var(--red);
-    border: 0;
-    opacity: 0.65;
-}
-
-.mono-link {
-    font-family: var(--mono);
-    font-size: 13px;
-    letter-spacing: 0.01em;
-    color: var(--ink-2);
-    border-bottom: 1px solid var(--hair-strong);
-    transition: color 140ms var(--ease), border-color 140ms var(--ease);
-    word-break: break-all;
-}
-
-.mono-link:hover {
-    color: var(--ink);
-    border-bottom-color: var(--red);
-}
-
-.rise {
-    animation: rise 620ms var(--ease) both;
-}
-
-@keyframes rise {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: none;
-    }
-}

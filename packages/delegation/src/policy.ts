@@ -139,10 +139,3 @@ export function withDelegationSignature(
     return {...delegation, signature};
 }
 
-export function toPermissionContext(chain: Delegation[]): Hex {
-    if (chain.length === 0) throw new Error("delegation chain must not be empty");
-    if (chain.some((delegation) => delegation.signature === "0x")) {
-        throw new Error("every delegation in a permission context must be signed");
-    }
-    return encodeDelegations(chain);
-}

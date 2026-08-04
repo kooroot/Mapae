@@ -43,10 +43,6 @@ const RETRYABLE: ReadonlySet<SettlementErrorTag> = new Set([
     "RpcRateLimited",
 ]);
 
-export function isRetryable(error: SettlementError): boolean {
-    return RETRYABLE.has(error._tag);
-}
-
 /**
  * Operator-facing errors. These mean the service is misconfigured or starved,
  * not that the caller did something wrong — they should page, not 400.
@@ -57,7 +53,7 @@ const OPERATIONAL: ReadonlySet<SettlementErrorTag> = new Set([
     "RpcRateLimited",
 ]);
 
-export function isOperational(error: SettlementError): boolean {
+function isOperational(error: SettlementError): boolean {
     return OPERATIONAL.has(error._tag);
 }
 

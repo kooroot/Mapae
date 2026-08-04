@@ -36,8 +36,6 @@
    a surface and type struck into it. Applied only to display sizes: at body size
    the highlight muddies the stroke instead of defining it. */
 
-.display-1,
-.display-2,
 .h2 {
     text-shadow: 0 1px 0 rgba(255, 253, 248, 0.9);
 }
@@ -202,35 +200,6 @@
     transform: translateY(0);
 }
 
-.ghost {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 40px;
-    padding: 0 18px;
-    border: 1px solid var(--hair-strong);
-    border-radius: var(--radius);
-    font-family: var(--mono);
-    font-size: 13px;
-    letter-spacing: 0.02em;
-    color: var(--ink-2);
-    background: transparent;
-    transition: border-color 200ms var(--ease), color 200ms var(--ease),
-        background 200ms var(--ease), box-shadow 200ms var(--ease);
-}
-
-.ghost:hover:not(:disabled) {
-    border-color: var(--red);
-    color: var(--red-ink);
-    background: var(--red-wash);
-    box-shadow: inset 0 0 0 1px var(--red-wash);
-}
-
-.ghost:disabled {
-    opacity: 0.4;
-    cursor: default;
-}
-
 /* ── Hero: off-axis, with the object crossing the fold ─────────────────── */
 
 /* `clip`, not `hidden`, and the distinction is the whole reason the dial's
@@ -247,155 +216,17 @@
     isolation: isolate;
 }
 
-/* The underprint. Masked radially so it never reaches an edge and turns into a
-   texture swatch — a security print fades into the paper, it does not tile. */
-.hero-field {
-    position: absolute;
-    top: -14%;
-    right: -24%;
-    width: min(1180px, 118vw);
-    height: auto;
-    color: var(--ink);
-    opacity: 0.09;
-    z-index: -1;
-    pointer-events: none;
-    mask-image: radial-gradient(closest-side, #000 42%, rgba(0, 0, 0, 0.45) 68%, transparent 100%);
-    animation: turn 240s linear infinite;
-}
-
-@keyframes turn {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .hero-field {
-        animation: none;
-    }
-}
-
-.hero-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-    gap: 56px;
-    align-items: center;
-}
-
 .hero-copy {
     max-width: 620px;
 }
 
-.hero-sub {
-    max-width: 480px;
-    margin-top: 24px;
-}
-
-.hero-cta {
-    display: flex;
-    gap: 12px;
-    margin-top: 36px;
-    flex-wrap: wrap;
-}
-
-/* The medallion is pulled out of its column so it overlaps the ledger strip
-   below. The object rises into the page instead of sitting in a box on it. */
-.hero-object {
-    position: relative;
-    margin-bottom: -72px;
-    z-index: 2;
-}
-
 @media (max-width: 1024px) {
-    .hero-grid {
-        grid-template-columns: 1fr;
-        gap: 8px;
-    }
     .hero-copy {
         max-width: 100%;
-    }
-    .hero-object {
-        margin: 24px auto -56px;
-        max-width: 440px;
     }
     .hero {
         padding-top: 64px;
     }
-}
-
-/* ── Ledger strip: full-bleed, double-ruled, the way a register is ─────── */
-
-.ledger {
-    position: relative;
-    border-top: 1px solid var(--hair-strong);
-    border-bottom: 1px solid var(--hair-strong);
-    background: linear-gradient(var(--paper-2), var(--paper-2)) padding-box;
-    box-shadow: inset 0 1px 0 rgba(255, 253, 248, 0.7), inset 0 -1px 0 rgba(255, 253, 248, 0.7);
-}
-
-.ledger-inner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    height: 62px;
-    flex-wrap: wrap;
-}
-
-.ticker {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
-}
-
-.ticker-track {
-    display: inline-flex;
-    gap: 40px;
-    white-space: nowrap;
-    animation: slide 68s linear infinite;
-}
-
-.ticker:hover .ticker-track {
-    animation-play-state: paused;
-}
-
-@keyframes slide {
-    to {
-        transform: translateX(-50%);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .ticker-track {
-        animation: none;
-    }
-}
-
-.ticker-item {
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.02em;
-    color: var(--ink-3);
-}
-
-.ticker-item b {
-    color: var(--ink);
-    font-weight: 500;
-}
-
-/* ── Engraved plate: the primitive the numbers and tables sit in ────────────
-   Impression, not elevation. The plate is pressed INTO the sheet: a dark
-   hairline at the top edge where the die bit, a light one at the bottom where
-   the paper lifted back. Reverse those two and it inflates into a button. */
-
-.plate {
-    position: relative;
-    background: linear-gradient(180deg, var(--paper-0), var(--paper-1));
-    border: 1px solid var(--hair);
-    border-radius: var(--radius);
-    box-shadow: inset 0 1px 2px rgba(20, 17, 13, 0.055), inset 0 -1px 0 rgba(255, 253, 248, 0.9),
-        0 1px 0 rgba(255, 253, 248, 0.8);
 }
 
 /* ── Numbers: an off-grid trio, not three equal cards ──────────────────── */
@@ -425,26 +256,6 @@
     padding: 26px 24px 24px;
 }
 
-.numeral {
-    display: block;
-    font-family: var(--mono);
-    font-weight: 500;
-    font-size: 52px;
-    line-height: 1;
-    letter-spacing: -0.02em;
-    font-variant-numeric: tabular-nums;
-    color: var(--ink);
-    text-shadow: 0 1px 0 rgba(255, 253, 248, 0.95);
-}
-
-.numeral-unit {
-    font-size: 17px;
-    letter-spacing: 0;
-    color: var(--ink-3);
-    margin-left: 6px;
-    text-shadow: none;
-}
-
 @media (max-width: 900px) {
     .numbers {
         grid-template-columns: 1fr;
@@ -456,9 +267,6 @@
     .numbers > *:nth-child(3) {
         grid-column: 1 / -1;
         margin-top: 0;
-    }
-    .numeral {
-        font-size: 40px;
     }
 }
 
@@ -480,101 +288,6 @@
     width: 34px;
     height: 2px;
     background: var(--red);
-}
-
-.band-ruled {
-    border-top: 1px solid var(--hair);
-}
-
-/* ── Refusal: full-bleed obsidian, with its own underprint ─────────────── */
-
-.refusals {
-    position: relative;
-    background: var(--obsidian);
-    color: var(--on-obsidian);
-    padding: calc(var(--band) + 16px) 0;
-    overflow: hidden;
-    isolation: isolate;
-}
-
-.refusals-field {
-    position: absolute;
-    bottom: -46%;
-    left: -18%;
-    width: min(920px, 96vw);
-    color: var(--red-on-dark);
-    opacity: 0.13;
-    z-index: -1;
-    pointer-events: none;
-    mask-image: radial-gradient(closest-side, #000 40%, transparent 100%);
-}
-
-.refusals .eyebrow,
-.refusals .label {
-    color: var(--on-obsidian-dim);
-}
-
-.refusals .h2 {
-    color: var(--on-obsidian);
-    text-shadow: none;
-}
-
-.refusal-table {
-    margin-top: 44px;
-    border-top: 1px solid rgba(237, 231, 218, 0.16);
-}
-
-.refusal-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 18px;
-    align-items: baseline;
-    padding: 22px 0;
-    border-bottom: 1px solid rgba(237, 231, 218, 0.09);
-    transition: background 260ms var(--ease);
-}
-
-.refusal-row:hover {
-    background: rgba(237, 231, 218, 0.03);
-}
-
-.refusal-row .attempt {
-    color: var(--on-obsidian);
-    font-size: 15.5px;
-}
-
-.refusal-row .enforcer {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--on-obsidian-dim);
-    word-break: break-all;
-}
-
-.refusal-row .revert {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--red-on-dark);
-    background: var(--red-wash-dark);
-    border: 1px solid rgba(232, 99, 94, 0.28);
-    padding: 4px 10px;
-    border-radius: var(--radius);
-    justify-self: start;
-    word-break: break-all;
-}
-
-@media (max-width: 860px) {
-    .refusal-row {
-        grid-template-columns: 1fr;
-        gap: 9px;
-    }
-}
-
-/* ── Steps: a rail with the branch stepping out of it ──────────────────── */
-
-.steps {
-    counter-reset: step;
-    margin-top: 48px;
-    position: relative;
 }
 
 .step {
@@ -630,58 +343,9 @@
     overflow: hidden;
 }
 
-.compare-col {
-    padding: 30px 28px;
-}
-
-.compare-col:first-child {
-    background: color-mix(in srgb, var(--paper-2) 55%, transparent);
-}
-
-.compare-col + .compare-col {
-    border-left: 1px solid var(--hair);
-    background: var(--paper-0);
-    box-shadow: inset 0 1px 0 rgba(255, 253, 248, 0.9);
-}
-
-.compare-col ol {
-    list-style: none;
-    margin-top: 20px;
-}
-
-.compare-col li {
-    padding: 12px 0 12px 26px;
-    border-top: 1px solid var(--hair);
-    font-size: 15px;
-    color: var(--ink-2);
-    position: relative;
-}
-
-.compare-col li::before {
-    content: "→";
-    position: absolute;
-    left: 0;
-    color: var(--ink-4);
-}
-
-.compare-col li[data-mark="chain"] {
-    color: var(--ink);
-    font-weight: 500;
-}
-
-.compare-col li[data-mark="chain"]::before {
-    content: "✕";
-    color: var(--red);
-    font-weight: 600;
-}
-
 @media (max-width: 860px) {
     .compare {
         grid-template-columns: 1fr;
-    }
-    .compare-col + .compare-col {
-        border-left: 0;
-        border-top: 1px solid var(--hair);
     }
 }
 
@@ -743,11 +407,6 @@
     font-size: 12.5px;
 }
 
-.table-scroll {
-    overflow-x: auto;
-    margin-top: 44px;
-}
-
 /* ── Code well: a plate with a struck edge ─────────────────────────────── */
 
 .code {
@@ -807,15 +466,6 @@
     }
 }
 
-/* ── Notice ────────────────────────────────────────────────────────────── */
-
-.notice {
-    margin-top: 44px;
-    padding: 20px 22px;
-    border-left: 2px solid var(--red);
-    border-radius: var(--radius);
-}
-
 /* ── Footer ────────────────────────────────────────────────────────────── */
 
 .foot {
@@ -838,59 +488,6 @@
     margin-top: 16px;
 }
 
-/* ── Pieces the composition added ──────────────────────────────────────── */
-
-/* The seal sits behind the dial as a security print's underprint: it says the
-   surface is engraved, so the number on it reads as struck into the object
-   rather than typeset over a picture of one.
-
-   The width is tuned, not chosen: it puts the band in the gap between the amount
-   track's outer edge and the base of the second ring. Widen it and it collides
-   with the ticks; narrow it and it crosses the sectors. */
-.dial {
-    position: relative;
-    margin: 0 auto;
-    max-width: 470px;
-}
-
-.dial-seal {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 84%;
-    height: auto;
-    transform: translate(-50%, -50%);
-    color: var(--ink);
-    opacity: 0.34;
-    pointer-events: none;
-    z-index: 0;
-}
-
-.dial-face {
-    position: relative;
-    z-index: 1;
-    width: 100%;
-    height: auto;
-    overflow: visible;
-}
-
-/* Every rule below draws the instrument itself. They are load-bearing in a way
-   that is easy to miss: an SVG `<circle>` whose class sets only `stroke` still
-   fills — with black, by specification. Dropping this block does not soften the
-   dial, it replaces it with a solid black disc, which is precisely how it was
-   lost once. The `fill: none` pairs below are the rules doing that work. */
-.bezel {
-    fill: none;
-    stroke: var(--hair-strong);
-    stroke-width: 1.5;
-}
-
-.bezel-inner {
-    fill: none;
-    stroke: var(--hair);
-    stroke-width: 1;
-}
-
 /* The period ring. Non-text weight, so --ink-4 is allowed here and nowhere
    a sentence goes. */
 .second {
@@ -899,41 +496,12 @@
     opacity: 0.55;
 }
 
-.second-major {
-    stroke: var(--ink-3);
-    stroke-width: 1.3;
-}
-
 .elapsed {
     fill: none;
     stroke: var(--ink-4);
     stroke-width: 2;
     stroke-linecap: round;
     opacity: 0.85;
-}
-
-/* The cap. Butt caps, not round: a sector that ends in a dome reads as a
-   progress pill, and the one thing this must not read as is progress. */
-.sector,
-.sector-struck {
-    fill: none;
-    stroke-linecap: butt;
-}
-
-/* An empty slot has to be as legible as a full one — the reading is "one of
-   three", and a track you cannot see turns that into "some red". */
-.sector {
-    stroke: var(--hair-strong);
-}
-
-/* Spent. Struck, not removed — a tally records what was used, it does not erase it. */
-.sector-struck {
-    stroke: var(--red);
-}
-
-.dial[data-refused="true"] .sector {
-    stroke: var(--red-hair);
-    transition: stroke 240ms var(--ease);
 }
 
 .over {
@@ -946,11 +514,6 @@
     animation: draw 460ms var(--ease) forwards;
 }
 
-.over-barb {
-    fill: var(--red);
-    animation: rise 200ms 380ms var(--ease) both;
-}
-
 .boundary {
     stroke: var(--red);
     stroke-width: 2;
@@ -959,94 +522,6 @@
 @keyframes draw {
     to {
         stroke-dashoffset: 0;
-    }
-}
-
-.sweep {
-    fill: var(--red);
-    transition: opacity 200ms var(--ease);
-}
-
-.dial[data-refused="true"] .sweep {
-    opacity: 0.3;
-}
-
-/* The centre string, letterpressed: cut into the surface rather than printed on
-   it. One light highlight under one dark glyph is the whole trick. */
-.engraved {
-    font-family: var(--mono);
-    font-size: 19px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    fill: var(--ink);
-    paint-order: stroke;
-}
-
-/* It says on its face that it is a preview. The dial is the most persuasive
-   thing on the page and it is not reading a live delegation; leaving that to be
-   inferred would be the one dishonest pixel here. */
-.engraved-sub {
-    font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 500;
-    letter-spacing: 0.22em;
-    fill: var(--ink-3);
-}
-
-.dial-readout {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    margin-top: 22px;
-    padding-top: 16px;
-    border-top: 1px solid var(--hair);
-}
-
-.dial-live strong {
-    font-weight: 600;
-}
-
-.dial-verdict {
-    position: relative;
-    z-index: 1;
-    margin-top: 12px;
-    min-height: 44px;
-    text-align: left;
-}
-
-.refusal-line {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding: 10px 12px;
-    background: var(--red-wash);
-    border-left: 2px solid var(--red);
-    color: var(--red-ink);
-    font-size: 12.5px;
-    word-break: break-all;
-    animation: rise 240ms var(--ease) both;
-}
-
-.refusal-tag {
-    font-family: var(--sans);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    padding: 2px 7px;
-    background: var(--red);
-    color: var(--paper-0);
-    border-radius: var(--radius);
-    flex: none;
-}
-
-@media (max-width: 560px) {
-    .dial-readout {
-        flex-direction: column;
-        align-items: stretch;
     }
 }
 
@@ -1061,43 +536,11 @@
     gap: 18px;
 }
 
-/* 56px, not 38px. These are engraved line marks with a horse, a shield and set
-   type inside them — below about 48px the strokes merge and every one of the six
-   collapses into the same grey blob, which is worse than no mark at all. */
-.step-icon {
-    width: 56px;
-    height: 56px;
-    opacity: 0.92;
-    transition: transform 300ms var(--ease);
-}
-
-.step:hover .step-icon {
-    transform: translateY(-2px);
-}
-
 @media (max-width: 640px) {
     .step {
         grid-template-columns: 26px 40px 1fr;
         gap: 12px;
     }
-    .step-icon {
-        width: 40px;
-        height: 40px;
-    }
-}
-
-.notice {
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
-    background: var(--paper-0);
-    border: 1px solid var(--hair);
-    border-left: 2px solid var(--red);
-}
-
-.notice img {
-    flex: none;
-    margin-top: 2px;
 }
 
 /* The tagline, rebuilt from the sheet: the words spaced wide, a red rule either
@@ -1125,133 +568,6 @@
 
 .foot-meta p + p {
     margin-top: 4px;
-}
-
-.stat .mono-link {
-    display: inline-block;
-    margin-top: 10px;
-}
-
-
-/* ── Technical detail, folded away ─────────────────────────────────────────
-   Every exact contract name and protocol noun lives behind one of these. The
-   page reads in ordinary Korean and stays honest at the same time: nothing is
-   softened or omitted, it is one click down instead of in the way. Native
-   <details>, so it works with no JavaScript and the browser handles the
-   keyboard and the screen-reader announcement for free. */
-
-.tech {
-    margin-top: 22px;
-    border-top: 1px solid var(--hair);
-}
-
-.tech > summary {
-    list-style: none;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    padding: 14px 0;
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.04em;
-    color: var(--ink-3);
-    transition: color 180ms var(--ease);
-}
-
-.tech > summary::-webkit-details-marker {
-    display: none;
-}
-
-/* A rule that lengthens, not a rotating triangle: the mark this system uses for
-   "there is more here" is a struck line. */
-.tech > summary::before {
-    content: "";
-    width: 16px;
-    height: 1px;
-    background: var(--red);
-    transition: width 240ms var(--ease);
-}
-
-.tech[open] > summary::before {
-    width: 30px;
-}
-
-.tech > summary:hover {
-    color: var(--ink);
-}
-
-.tech-body {
-    padding-bottom: 20px;
-    animation: rise 260ms var(--ease) both;
-}
-
-.tech-map > div {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
-    gap: 16px;
-    padding: 9px 0;
-    border-bottom: 1px solid var(--hair);
-}
-
-.tech-map dt {
-    font-size: 13.5px;
-    color: var(--ink-2);
-}
-
-.tech-map dd {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--ink-3);
-    word-break: break-all;
-}
-
-.tech-body .mono-link {
-    display: inline-block;
-    margin-top: 16px;
-}
-
-/* On obsidian the same component has to invert, and the border colours are not
-   derivable from the light ones — the paper hairlines vanish on a dark ground. */
-.refusals .tech {
-    border-top-color: rgba(237, 231, 218, 0.12);
-}
-
-.refusals .tech > summary {
-    color: var(--on-obsidian-dim);
-}
-
-.refusals .tech > summary:hover {
-    color: var(--on-obsidian);
-}
-
-.refusals .tech-map > div {
-    border-bottom-color: rgba(237, 231, 218, 0.09);
-}
-
-.refusals .tech-map dt {
-    color: var(--on-obsidian);
-}
-
-.refusals .tech-map dd {
-    color: var(--on-obsidian-dim);
-}
-
-/* The exact revert string, kept but demoted: it sits under the sentence that
-   says what happened, on its own line, at the size of a footnote. */
-.refusal-raw {
-    flex-basis: 100%;
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--ink-3);
-    word-break: break-all;
-}
-
-@media (max-width: 640px) {
-    .tech-map > div {
-        grid-template-columns: 1fr;
-        gap: 4px;
-    }
 }
 
 /* ── Hero ritual: one object, one gesture ──────────────────────────────── */
@@ -1298,112 +614,10 @@
     pointer-events: none;
 }
 
-.hero-action .hero-field {
-    z-index: 0;
-    top: 50%;
-    right: auto;
-    left: 58%;
-    width: min(920px, 82vw);
-    color: #c8995f;
-    opacity: 0.055;
-    mask-image: radial-gradient(closest-side, #000 36%, rgba(0, 0, 0, 0.5) 66%, transparent 100%);
-    transform: translate(-50%, -50%);
-    animation: none;
-}
-
-.hero-action-copy {
-    position: absolute;
-    z-index: 5;
-    top: clamp(42px, 6vh, 76px);
-    left: max(var(--gutter), calc((100vw - 1200px) / 2));
-    max-width: 570px;
-    pointer-events: none;
-}
-
-.hero-action-copy .eyebrow {
-    color: var(--on-obsidian-dim);
-}
-
-.hero-action-copy h1 {
-    margin-top: 22px;
-    color: var(--on-obsidian);
-    font-family: var(--display);
-    font-size: clamp(48px, 5vw, 76px);
-    font-weight: 650;
-    letter-spacing: -0.035em;
-    line-height: 1.12;
-    word-break: keep-all;
-}
-
-.hero-action-copy h1 em {
-    color: var(--red-on-dark);
-    font-style: normal;
-}
-
-.hero-action-meta {
-    position: absolute;
-    z-index: 5;
-    top: clamp(50px, 6.5vh, 82px);
-    right: max(var(--gutter), calc((100vw - 1200px) / 2));
-    display: flex;
-    gap: 24px;
-    color: var(--on-obsidian-dim);
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.11em;
-}
-
-.hero-action-meta span:last-child {
-    color: #d5ae79;
-}
-
-.hero-scroll {
-    position: absolute;
-    z-index: 6;
-    bottom: 26px;
-    left: max(var(--gutter), calc((100vw - 1200px) / 2));
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: var(--on-obsidian-dim);
-    font-family: var(--mono);
-    font-size: 8px;
-    letter-spacing: 0.15em;
-}
-
-.hero-scroll i {
-    width: 42px;
-    height: 1px;
-    background: linear-gradient(90deg, var(--red-on-dark), transparent);
-    transition: width 240ms var(--ease);
-}
-
-.hero-scroll:hover {
-    color: var(--on-obsidian);
-}
-
-.hero-scroll:hover i {
-    width: 64px;
-}
-
 .ritual {
     position: absolute;
     z-index: 2;
     inset: 0;
-}
-
-.ritual-guilloche {
-    position: absolute;
-    z-index: 0;
-    top: 50%;
-    left: 58%;
-    width: min(760px, 68vw);
-    height: auto;
-    color: #c8995f;
-    opacity: 0.11;
-    transform: translate(-50%, -50%) rotate(-7deg);
-    mask-image: radial-gradient(circle, #000 18%, rgba(0, 0, 0, 0.72) 58%, transparent 74%);
-    pointer-events: none;
 }
 
 .ritual-object {
@@ -1431,13 +645,6 @@
 
 .ritual-object:focus-visible {
     outline: 0;
-}
-
-.ritual-object:focus-visible .ritual-hit-ring {
-    border-color: var(--red-on-dark);
-    box-shadow:
-        0 0 0 5px rgba(232, 99, 94, 0.09),
-        0 0 72px rgba(192, 39, 45, 0.16);
 }
 
 .ritual-canvas-host {
@@ -1478,57 +685,6 @@
     transform: translate(-50%, -50%);
 }
 
-.ritual-fallback {
-    position: absolute;
-    z-index: -1;
-    top: 50%;
-    left: 50%;
-    width: min(45%, 290px);
-    padding: 5%;
-    border: 8px solid #9d6736;
-    border-radius: 50%;
-    background: var(--paper-1);
-    box-shadow: 20px 28px 80px rgba(0, 0, 0, 0.48);
-    transform: translate(-50%, -50%) rotate(-4deg);
-    transition: opacity 420ms var(--ease);
-}
-
-.ritual[data-render="ready"] .ritual-fallback {
-    opacity: 0;
-}
-
-.ritual-hit-ring {
-    position: absolute;
-    z-index: 3;
-    top: 50%;
-    left: 50%;
-    width: 62%;
-    aspect-ratio: 1;
-    border: 1px solid rgba(237, 231, 218, 0.08);
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    transition:
-        border-color 260ms var(--ease),
-        box-shadow 260ms var(--ease),
-        transform 520ms var(--ease);
-}
-
-.ritual[data-stage="1"] .ritual-hit-ring,
-.ritual[data-stage="2"] .ritual-hit-ring,
-.ritual[data-stage="3"] .ritual-hit-ring {
-    border-color: rgba(232, 99, 94, 0.38);
-    box-shadow: 0 0 80px rgba(192, 39, 45, 0.12);
-}
-
-.ritual[data-stage="3"] .ritual-hit-ring {
-    border-color: rgba(213, 174, 121, 0.58);
-    box-shadow:
-        0 0 0 12px rgba(213, 174, 121, 0.025),
-        0 0 110px rgba(192, 39, 45, 0.2);
-    transform: translate(-50%, -50%) scale(1.04);
-}
-
 .ritual-readout {
     position: absolute;
     z-index: 5;
@@ -1541,19 +697,7 @@
     pointer-events: none;
 }
 
-.ritual-readout-enter {
-    animation: ritual-readout-in 420ms var(--ease) both;
-}
-
-@keyframes ritual-readout-in {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-}
-
-.ritual-readout span,
-.ritual-complete > span {
+.ritual-readout span {
     color: var(--red-on-dark);
     font-family: var(--mono);
     font-size: 8px;
@@ -1578,194 +722,12 @@
     word-break: keep-all;
 }
 
-.ritual-steps {
-    position: absolute;
-    z-index: 5;
-    top: 50%;
-    right: max(var(--gutter), calc((100vw - 1200px) / 2));
-    width: 145px;
-    list-style: none;
-    transform: translateY(-50%);
-}
-
-.ritual-steps li {
-    min-height: 70px;
-    display: grid;
-    grid-template-columns: 22px 1fr 9px;
-    align-items: center;
-    gap: 8px;
-    border-bottom: 1px solid rgba(237, 231, 218, 0.1);
-    color: rgba(237, 231, 218, 0.28);
-    font-family: var(--mono);
-    transition: color 260ms var(--ease);
-}
-
-.ritual-steps li > span,
-.ritual-steps li > b {
-    font-size: 8px;
-    font-weight: 500;
-    letter-spacing: 0.09em;
-}
-
-.ritual-steps li > i {
-    width: 7px;
-    height: 7px;
-    border: 1px solid currentColor;
-    border-radius: 50%;
-    transition:
-        background 260ms var(--ease),
-        box-shadow 260ms var(--ease);
-}
-
-.ritual-steps li[data-state="active"] {
-    color: var(--on-obsidian);
-}
-
-.ritual-steps li[data-state="active"] > span {
-    color: var(--red-on-dark);
-}
-
-.ritual-steps li[data-state="complete"] {
-    color: rgba(237, 231, 218, 0.62);
-}
-
-.ritual-steps li[data-state="complete"] > i {
-    border-color: var(--red-on-dark);
-    background: var(--red-on-dark);
-    box-shadow: 0 0 16px rgba(232, 99, 94, 0.68);
-}
-
-.ritual[data-stage="3"] .ritual-steps li[data-state="complete"]:last-child > i {
-    border-color: #d5ae79;
-    background: #d5ae79;
-    box-shadow: 0 0 18px rgba(213, 174, 121, 0.7);
-}
-
-.ritual-action {
-    position: absolute;
-    z-index: 7;
-    right: max(var(--gutter), calc((100vw - 1200px) / 2));
-    bottom: 72px;
-}
-
-.ritual-action > p {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: var(--on-obsidian-dim);
-    font-family: var(--mono);
-    font-size: 8px;
-    letter-spacing: 0.13em;
-}
-
-.ritual-action > p i {
-    position: relative;
-    width: 54px;
-    height: 1px;
-    overflow: hidden;
-    background: rgba(237, 231, 218, 0.16);
-}
-
-.ritual-action > p i::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, transparent, var(--red-on-dark), transparent);
-    animation: ritual-pull 1.8s ease-in-out infinite;
-}
-
-@keyframes ritual-pull {
-    from {
-        transform: translateX(-100%);
-    }
-    to {
-        transform: translateX(100%);
-    }
-}
-
-.ritual-action > p b {
-    color: var(--on-obsidian);
-    font-size: 9px;
-    font-weight: 500;
-}
-
-.ritual-complete {
-    display: grid;
-    justify-items: end;
-    gap: 10px;
-    animation: ritual-complete-in 560ms var(--ease) both;
-}
-
-@keyframes ritual-complete-in {
-    from {
-        opacity: 0;
-        transform: translateY(12px);
-    }
-}
-
-.ritual-enter {
-    min-width: 260px;
-    min-height: 54px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 28px;
-    padding: 0 20px;
-    border: 1px solid var(--red-on-dark);
-    color: var(--on-obsidian);
-    background: rgba(192, 39, 45, 0.13);
-    font-size: 14px;
-    font-weight: 600;
-    transition:
-        color 220ms var(--ease),
-        background 220ms var(--ease),
-        transform 220ms var(--ease);
-}
-
-.ritual-enter:hover {
-    color: #fff;
-    background: var(--red);
-    transform: translateY(-2px);
-}
-
-.ritual-enter b {
-    font-family: var(--mono);
-    font-size: 18px;
-    font-weight: 400;
-}
-
-.ritual-reset {
-    color: var(--on-obsidian-dim);
-    font-family: var(--mono);
-    font-size: 8px;
-    letter-spacing: 0.08em;
-}
-
-.ritual-reset:hover {
-    color: var(--on-obsidian);
-}
-
 @media (max-width: 980px) {
     .hero-action {
         min-height: 860px;
     }
 
-    .hero-action-copy {
-        top: 44px;
-        left: var(--gutter);
-    }
-
-    .hero-action-copy h1 {
-        font-size: 52px;
-    }
-
-    .hero-action-meta {
-        top: 50px;
-        right: var(--gutter);
-    }
-
-    .ritual-object,
-    .ritual-guilloche {
+    .ritual-object {
         top: 50%;
         left: 55%;
     }
@@ -1778,15 +740,6 @@
     .ritual-readout {
         left: var(--gutter);
         width: 280px;
-    }
-
-    .ritual-steps,
-    .ritual-action {
-        right: var(--gutter);
-    }
-
-    .hero-scroll {
-        left: var(--gutter);
     }
 }
 
@@ -1801,39 +754,7 @@
         font-size: 92vw;
     }
 
-    .hero-action .hero-field {
-        top: 46%;
-        left: 50%;
-        width: 120vw;
-    }
-
-    .hero-action-copy {
-        top: 28px;
-        right: var(--gutter);
-        max-width: none;
-    }
-
-    .hero-action-copy .eyebrow {
-        font-size: 10px;
-    }
-
-    .hero-action-copy h1 {
-        margin-top: 14px;
-        font-size: 40px;
-        line-height: 1.18;
-    }
-
-    .hero-action-meta {
-        top: 150px;
-        right: var(--gutter);
-        left: var(--gutter);
-        justify-content: space-between;
-        gap: 10px;
-        font-size: 7px;
-    }
-
-    .ritual-object,
-    .ritual-guilloche {
+    .ritual-object {
         top: 43%;
         left: 50%;
     }
@@ -1842,14 +763,6 @@
         width: 112vw;
         max-width: 620px;
         height: 520px;
-    }
-
-    .ritual-guilloche {
-        width: 108vw;
-    }
-
-    .ritual-hit-ring {
-        width: 58%;
     }
 
     .ritual-readout {
@@ -1863,73 +776,11 @@
     .ritual-readout strong {
         font-size: 28px;
     }
-
-    .ritual-steps {
-        top: auto;
-        right: var(--gutter);
-        bottom: 96px;
-        left: var(--gutter);
-        width: auto;
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        transform: none;
-    }
-
-    .ritual-steps li {
-        min-height: 50px;
-        grid-template-columns: 18px 1fr 7px;
-        padding: 0 8px;
-        border-right: 1px solid rgba(237, 231, 218, 0.1);
-    }
-
-    .ritual-steps li:first-child {
-        padding-left: 0;
-    }
-
-    .ritual-steps li:last-child {
-        padding-right: 0;
-        border-right: 0;
-    }
-
-    .ritual-action {
-        right: var(--gutter);
-        bottom: 28px;
-        left: var(--gutter);
-    }
-
-    .ritual-action > p {
-        justify-content: center;
-    }
-
-    .ritual-complete {
-        justify-items: stretch;
-    }
-
-    .ritual-complete > span {
-        text-align: center;
-    }
-
-    .ritual-enter {
-        width: 100%;
-        min-width: 0;
-    }
-
-    .ritual-reset {
-        justify-self: center;
-    }
-
-    .hero-scroll {
-        display: none;
-    }
 }
 
 @media (max-width: 440px) {
     .hero-action {
         min-height: 820px;
-    }
-
-    .hero-action-copy h1 {
-        font-size: 35px;
     }
 
     .ritual-object {
@@ -1941,17 +792,9 @@
     .ritual-readout {
         bottom: 150px;
     }
-
-    .ritual-steps li > b {
-        font-size: 7px;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .ritual-action > p i::after {
-        animation: none;
-        transform: none;
-    }
 
     .ritual-canvas {
         opacity: 1;
@@ -2033,79 +876,8 @@
     }
 }
 
-.hero-action .hero-field,
-.ritual-guilloche,
-.hero-scroll {
-    display: none;
-}
-
-.hero-action-copy {
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-}
-
-.hero-action-meta {
-    top: 26px;
-    right: max(28px, calc((100vw - 1200px) / 2));
-    gap: 18px;
-    color: rgba(237, 231, 218, 0.42);
-    font-size: 8px;
-}
-
 .ritual {
     z-index: 3;
-}
-
-.ritual-art {
-    position: absolute;
-    z-index: 1;
-    top: 50%;
-    left: 50%;
-    width: min(1200px, calc(100vw - 64px), calc((100svh - 132px) * 1.9048));
-    aspect-ratio: 1200 / 630;
-    transform: translate(-50%, -50%);
-}
-
-.ritual-art::before,
-.ritual-art::after {
-    content: "";
-    position: absolute;
-    pointer-events: none;
-}
-
-.ritual-art::before {
-    z-index: -1;
-    inset: 5% -6%;
-    background:
-        radial-gradient(circle at 68% 50%, rgba(224, 75, 49, 0.3), rgba(160, 40, 32, 0.11) 25%, transparent 56%);
-    filter: blur(44px);
-    opacity: 0.8;
-}
-
-.ritual-art::after {
-    z-index: 2;
-    inset: 0;
-    background:
-        radial-gradient(circle at 68% 50%, rgba(255, 186, 127, 0.08), transparent 22%),
-        radial-gradient(circle at 68% 50%, transparent 28%, rgba(235, 72, 49, 0.08) 37%, transparent 54%);
-    mix-blend-mode: screen;
-}
-
-.ritual-art > img {
-    position: absolute;
-    z-index: 1;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    filter: saturate(1.04) contrast(1.03);
-    pointer-events: none;
-    user-select: none;
 }
 
 .ritual-object {
@@ -2149,8 +921,7 @@
     transform: translate(-50%, -50%) scale(1);
 }
 
-.ritual-canvas-host::before,
-.ritual-fallback {
+.ritual-canvas-host::before {
     display: none;
 }
 
@@ -2161,30 +932,6 @@
         drop-shadow(0 0 16px rgba(230, 82, 55, 0.34))
         drop-shadow(0 0 42px rgba(176, 48, 38, 0.18));
     animation: ritual-canvas-in 900ms 160ms var(--ease) forwards;
-}
-
-.ritual-hit-ring {
-    width: 58%;
-    border-color: transparent;
-}
-
-.ritual-object:focus-visible .ritual-hit-ring {
-    border-color: rgba(232, 99, 94, 0.48);
-    box-shadow:
-        0 0 0 5px rgba(232, 99, 94, 0.07),
-        0 0 96px rgba(192, 39, 45, 0.18);
-}
-
-.ritual[data-stage="1"] .ritual-hit-ring,
-.ritual[data-stage="2"] .ritual-hit-ring,
-.ritual[data-stage="3"] .ritual-hit-ring {
-    border-color: transparent;
-    box-shadow: 0 0 120px rgba(192, 39, 45, 0.12);
-}
-
-.ritual[data-stage="3"] .ritual-hit-ring {
-    border-color: transparent;
-    box-shadow: 0 0 150px rgba(213, 174, 121, 0.16);
 }
 
 .ritual-readout {
@@ -2206,54 +953,6 @@
     font-size: clamp(24px, 2.1vw, 34px);
     font-weight: 650;
     letter-spacing: -0.025em;
-}
-
-.ritual-steps {
-    top: 26px;
-    right: auto;
-    left: max(28px, calc((100vw - 1200px) / 2));
-    width: min(330px, 32vw);
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    transform: none;
-}
-
-.ritual-steps li {
-    min-height: 38px;
-    grid-template-columns: 18px 1fr 7px;
-    padding: 0 10px;
-    border-right: 1px solid rgba(237, 231, 218, 0.1);
-    border-bottom: 0;
-}
-
-.ritual-steps li:first-child {
-    padding-left: 0;
-}
-
-.ritual-steps li:last-child {
-    padding-right: 0;
-    border-right: 0;
-}
-
-.ritual-action {
-    right: auto;
-    bottom: 31px;
-    left: max(28px, calc((100vw - 1200px) / 2));
-}
-
-.ritual-complete {
-    justify-items: start;
-}
-
-.ritual-enter {
-    min-width: 280px;
-    border-color: rgba(232, 99, 94, 0.72);
-    background: rgba(192, 39, 45, 0.2);
-    backdrop-filter: blur(10px);
-}
-
-.ritual-reset {
-    justify-self: start;
 }
 
 @media (max-width: 720px) {
@@ -2298,60 +997,6 @@
         filter: blur(30px);
     }
 
-    .hero-action-copy {
-        top: 28px;
-        right: auto;
-        left: 24px;
-        width: auto;
-        height: auto;
-        max-width: calc(100vw - 48px);
-        padding: 0;
-        margin: 0;
-        overflow: visible;
-        clip: auto;
-        white-space: normal;
-    }
-
-    .hero-action-copy h1 {
-        margin: 0;
-        color: var(--on-obsidian);
-        font-family: var(--sans);
-        font-size: clamp(38px, 13vw, 54px);
-        font-weight: 750;
-        letter-spacing: 0.075em;
-        line-height: 1;
-        text-shadow: none;
-    }
-
-    .hero-action-copy p {
-        margin-top: 10px;
-        color: rgba(237, 231, 218, 0.76);
-        font-family: var(--mono);
-        font-size: 7px;
-        letter-spacing: 0.055em;
-    }
-
-    .hero-action-meta {
-        top: 116px;
-        right: 24px;
-        left: 24px;
-        justify-content: space-between;
-        gap: 10px;
-        font-size: 6px;
-    }
-
-    .ritual-art {
-        top: 45%;
-        left: 35%;
-        width: min(820px, 170vw);
-        max-width: none;
-    }
-
-    .ritual-art::before {
-        inset: -3% -9%;
-        filter: blur(34px);
-    }
-
     .ritual-object {
         top: 50%;
         left: 68%;
@@ -2363,10 +1008,6 @@
     .ritual-object::after {
         width: 50px;
         height: 50px;
-    }
-
-    .ritual-hit-ring {
-        width: 58%;
     }
 
     .ritual-readout {
@@ -2385,45 +1026,6 @@
     .ritual-readout p {
         max-width: 34ch;
     }
-
-    .ritual-steps {
-        top: auto;
-        right: 24px;
-        bottom: 84px;
-        left: 24px;
-        width: auto;
-    }
-
-    .ritual-steps li {
-        min-height: 42px;
-    }
-
-    .ritual-action {
-        right: 24px;
-        bottom: 24px;
-        left: 24px;
-    }
-
-    .ritual-action > p {
-        justify-content: flex-start;
-    }
-
-    .ritual-complete {
-        justify-items: stretch;
-    }
-
-    .ritual-complete > span {
-        text-align: left;
-    }
-
-    .ritual-enter {
-        width: 100%;
-        min-width: 0;
-    }
-
-    .ritual-reset {
-        justify-self: center;
-    }
 }
 
 @media (max-width: 440px) {
@@ -2431,21 +1033,11 @@
         min-height: calc(100svh - 60px);
     }
 
-    .hero-action-copy h1 {
-        font-size: 42px;
-    }
-
     .ritual-object {
         top: 50%;
         left: 68%;
         width: 52%;
         height: auto;
-    }
-
-    .ritual-art {
-        top: 44%;
-        left: 27%;
-        width: 170vw;
     }
 
     .ritual-readout {

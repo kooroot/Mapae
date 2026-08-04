@@ -19,16 +19,6 @@ export const MOCK_USDC = {
     },
 } as const;
 
-/** Full EIP-712 domain for MockUSDC authorizations. */
-export function mockUsdcDomain(chainId: number = giwaSepolia.id): TypedDataDomain {
-    return {
-        name: MOCK_USDC.eip712.name,
-        version: MOCK_USDC.eip712.version,
-        chainId,
-        verifyingContract: MOCK_USDC.address,
-    };
-}
-
 /** EIP-3009 typed-data definitions. Field order is part of the type hash — do not reorder. */
 export const EIP3009_TYPES = {
     TransferWithAuthorization: [
