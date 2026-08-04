@@ -47,6 +47,7 @@ const DOCS = [
     "docs/mcp-guide.md",
     "docs/revocation-runbook.md",
     "docs/giwa-demo-runbook.md",
+    "docs/infra-map.md",
     "docs/README.md",
     "docs/SUMMARY.md",
     ...listGeneratedChapters(),
@@ -182,6 +183,12 @@ const FOREIGN_ADDRESSES = new Map<string, string>([
     // deployment artifact will ever carry it. Verified live: code present, 3 mUSDC,
     // ERC-1271 answered 0x1626ba7e for the pre-deployment signature (2026-08-04).
     ["0x15286fe9a48d52504607beaaa021b29194353301", "first sponsored-onboarding account"],
+    // Operational EOAs, not contracts — no deployment artifact will ever carry them.
+    // Both verified against the live services on 2026-08-04: the signer is what
+    // facilitator.mapae.io/health reports, the sponsor is what funded the first
+    // sponsored onboarding above.
+    ["0x5ea109edc7e89b6a752032aa2b6f1092e081e7ec", "facilitator settlement signer (EOA)"],
+    ["0x11e188f7e5beea0bde3016d0dccb2b91226c3211", "bootstrap sponsor (EOA)"],
 ]);
 
 // Test counts used to be checked here, against the document's own other numbers — badge
