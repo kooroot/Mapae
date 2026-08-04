@@ -4,6 +4,7 @@ import {
     FixedWindowLimiter,
     PaymentIntentSingleFlight,
     SpendBudget,
+    assertFundedKeySeparation,
     buildSponsoredBootstrapApproval,
     costOfReceipt,
     judgeCorsRequest,
@@ -169,15 +170,17 @@ if (sponsor.address !== expectedSponsor) {
  * drops in-flight settlements. A sponsor driven at internet request rate would be a third
  * consumer, and the failure would not be an ETH loss but a settlement outage. The deployer
  * is worse still: five call sites, none of them using `nonceManager`.
+ *
+ * `RELAYER_ADDRESS` names the *facilitator's* signer here. The revocation submitter uses
+ * that same variable for its own `handleOps` sender, so the two services read opposite
+ * meanings from one name — do not copy a `.env` between them.
  */
-for (const name of ["RELAYER_ADDRESS", "DEPLOYER_ADDRESS"] as const) {
-    const other = readOptionalAddressEnv(name);
-    if (other && other === sponsor.address) {
-        throw new Error(
-            `BOOTSTRAP_ADDRESS must differ from ${name}; a shared nonce space would stall settlement`,
-        );
-    }
-}
+assertFundedKeySeparation({
+    BOOTSTRAP_ADDRESS: sponsor.address,
+    RELAYER_ADDRESS: readOptionalAddressEnv("RELAYER_ADDRESS"),
+    DEPLOYER_ADDRESS: readOptionalAddressEnv("DEPLOYER_ADDRESS"),
+    REVOCATION_SPONSOR_ADDRESS: readOptionalAddressEnv("REVOCATION_SPONSOR_ADDRESS"),
+});
 
 const deployment = await readDeployment();
 

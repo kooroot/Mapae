@@ -884,6 +884,28 @@ async function main(): Promise<void> {
     }
     passed("O", "rate 1/hour    429 rate_limited on the second request");
 
+    // ── Q. sharing the facilitator's settlement signer must not boot ──────────────────
+    //
+    // The collision this catches costs settlement, not revocation: the facilitator is a
+    // separate process filling its nonces from the chain, so nothing in here can serialise
+    // against it. Asserted on the *service* rather than on assertFundedKeySeparation alone,
+    // because the unit test cannot tell whether the call site was ever wired up.
+    const collided = Bun.spawn([process.execPath, "run", "index.ts"], {
+        cwd: `${REPO}/apps/revocation-submitter`,
+        env: {
+            ...sponsoredEnv,
+            PORT: String(SUBMITTER_PORT + 1),
+            FACILITATOR_SIGNER_ADDRESS: relayer.address,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+    });
+    children.push({name: "submitter-collide", proc: collided});
+    if ((await collided.exited) === 0) {
+        throw new Error("the submitter started while sharing the facilitator's nonce space");
+    }
+    passed("Q", "shared signer  facilitator collision refuses to boot");
+
     // ── no-broadcast evidence ─────────────────────────────────────────────────────────
     const nonceAfter = BigInt(
         (await rpc(upstream, "eth_getTransactionCount", [relayer.address, "latest"])) as string,

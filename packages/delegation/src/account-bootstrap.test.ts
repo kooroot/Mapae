@@ -28,6 +28,7 @@ import {
     FixedWindowLimiter,
     SPONSORED_BOOTSTRAP_APPROVAL_PREFIX,
     SpendBudget,
+    assertFundedKeySeparation,
     buildSponsoredBootstrapApproval,
     costOfReceipt,
     isCanonicalSignature,
@@ -604,6 +605,57 @@ function create2Address(deployer: Address, salt: Hex, bytecode: Hex): Address {
         ).slice(-40)}`,
     );
 }
+
+describe("assertFundedKeySeparation", () => {
+    const A = "0x1111111111111111111111111111111111111111" as Address;
+    const B = "0x2222222222222222222222222222222222222222" as Address;
+
+    test("distinct roles pass", () => {
+        expect(() =>
+            assertFundedKeySeparation({RELAYER_ADDRESS: A, SPONSOR_ADDRESS: B}),
+        ).not.toThrow();
+    });
+
+    test("a role with no configured address is skipped", () => {
+        expect(() =>
+            assertFundedKeySeparation({RELAYER_ADDRESS: A, SPONSOR_ADDRESS: undefined}),
+        ).not.toThrow();
+    });
+
+    test("two roles sharing an address are refused, and the error names both", () => {
+        expect(() =>
+            assertFundedKeySeparation({RELAYER_ADDRESS: A, SPONSOR_ADDRESS: A}),
+        ).toThrow(/RELAYER_ADDRESS.*SPONSOR_ADDRESS/);
+    });
+
+    test("a collision between later roles is still caught", () => {
+        expect(() =>
+            assertFundedKeySeparation({
+                RELAYER_ADDRESS: A,
+                SPONSOR_ADDRESS: B,
+                DEPLOYER_ADDRESS: B,
+            }),
+        ).toThrow(/SPONSOR_ADDRESS.*DEPLOYER_ADDRESS/);
+    });
+
+    // The addresses reaching this check come from different readers — one is derived from a
+    // private key (checksummed by viem), the others are read from env. Comparing the raw
+    // strings would wave through the exact deployment the check exists to refuse.
+    test("comparison ignores address casing", () => {
+        expect(() =>
+            assertFundedKeySeparation({
+                RELAYER_ADDRESS: getAddress("0xcfeb694719a09caeb80798e2011298f29cda4e92"),
+                SPONSOR_ADDRESS: "0xcfeb694719a09caeb80798e2011298f29cda4e92" as Address,
+            }),
+        ).toThrow(/RELAYER_ADDRESS.*SPONSOR_ADDRESS/);
+    });
+
+    test("the refused address appears in the message so the operator can find it", () => {
+        expect(() => assertFundedKeySeparation({RELAYER_ADDRESS: A, SPONSOR_ADDRESS: A})).toThrow(
+            new RegExp(A, "i"),
+        );
+    });
+});
 
 // Keep the unused-import checker honest about the ABI helper we intentionally do not use.
 void encodeAbiParameters;

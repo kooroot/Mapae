@@ -113,6 +113,50 @@ function readPermissionContext(value: unknown): Hex {
 }
 
 /**
+ * Refuse to boot when two funded roles resolve to the same account.
+ *
+ * Every service in this repo that broadcasts holds its own key, and until now each one
+ * re-implemented that rule as an ad-hoc loop over the two or three siblings whose names its
+ * author happened to remember. That is how the gap this function closes appeared: the
+ * revocation submitter checked its sponsor against the deployer and the bootstrap sponsor,
+ * and never against the facilitator's settlement signer — the one collision that would take
+ * payments down.
+ *
+ * Two distinct hazards share this check, and separating them matters when deciding whether a
+ * given pair may be merged:
+ *
+ * - **Across processes it is a nonce space.** viem's `nonceManager` serialises concurrent
+ *   sends *within one process* — measured, including two `privateKeyToAccount` objects built
+ *   from the same key, which land 8/8 where the unmanaged control lands 1/8. That is exactly
+ *   why sharing a key with a *different* process is fatal: the facilitator is a separate Rust
+ *   binary with no visibility into our counter, so both fill from
+ *   `eth_getTransactionCount(pending)` and one of them loses.
+ * - **Within one process it is a balance.** Merging two roles merges their funding, so
+ *   exhausting one budget disarms the other. The revocation submitter keeps its sponsor and
+ *   its relayer apart for this reason alone: an account that armed its own EntryPoint deposit
+ *   needs no sponsor, and that path must keep working after a griefing run has spent the
+ *   sponsored budget to zero.
+ *
+ * Roles with no configured address are skipped, so a caller can pass the whole cast and let
+ * the operator's env decide which comparisons are live.
+ */
+export function assertFundedKeySeparation(roles: Record<string, Address | undefined>): void {
+    const seen = new Map<string, string>();
+    for (const [name, address] of Object.entries(roles)) {
+        if (address === undefined) continue;
+        const key = address.toLowerCase();
+        const earlier = seen.get(key);
+        if (earlier !== undefined) {
+            throw new Error(
+                `${earlier} and ${name} are the same account (${address}); ` +
+                    "each funded role needs its own key",
+            );
+        }
+        seen.set(key, name);
+    }
+}
+
+/**
  * Which browser origins may drive the sponsor.
  *
  * Unlike {@link parseCorsAllowlist}, this one must accept a public HTTPS origin: the whole

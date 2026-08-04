@@ -4,6 +4,7 @@ import {
     FixedWindowLimiter,
     PaymentIntentSingleFlight,
     SpendBudget,
+    assertFundedKeySeparation,
     buildPrefundDepositCall,
     buildSponsoredRevocationApproval,
     costOfReceipt,
@@ -158,6 +159,18 @@ if (relayer.address !== expectedRelayer) {
     throw new Error(`RELAYER_PRIVATE_KEY resolves to ${relayer.address}, expected ${expectedRelayer}`);
 }
 
+// Checked in *both* modes, because the relayer broadcasts `handleOps` in both. The
+// facilitator entry is the one that matters on the mini: it is a separate Rust process
+// settling payments from its own signer, so sharing that key here does not stall a
+// revocation — it stalls settlement, which is the outage nobody would attribute to this
+// service. The variables are optional so a host that runs only this service needs none.
+assertFundedKeySeparation({
+    RELAYER_ADDRESS: relayer.address,
+    FACILITATOR_SIGNER_ADDRESS: readOptionalAddressEnv("FACILITATOR_SIGNER_ADDRESS"),
+    DEPLOYER_ADDRESS: readOptionalAddressEnv("DEPLOYER_ADDRESS"),
+    BOOTSTRAP_ADDRESS: readOptionalAddressEnv("BOOTSTRAP_ADDRESS"),
+});
+
 const deployment = await readDeployment();
 const entryPoint = getAddress(deployment.environment.EntryPoint);
 const delegationManager = getAddress(deployment.environment.DelegationManager);
@@ -252,21 +265,22 @@ function readSponsorConfig() {
             `REVOCATION_SPONSOR_PRIVATE_KEY resolves to ${account.address}, expected ${expected}`,
         );
     }
-    // Key separation, enforced rather than remembered. The relayer already fronts
-    // handleOps gas in this very process; sharing it would interleave two nonce streams
-    // in one service. The facilitator relayer, deployer and bootstrap sponsor are the
-    // other funded keys in this repo, each with its own consumer.
-    if (account.address === relayer.address) {
-        throw new Error("REVOCATION_SPONSOR_ADDRESS must differ from the relayer key");
-    }
-    for (const name of ["DEPLOYER_ADDRESS", "BOOTSTRAP_ADDRESS"] as const) {
-        const other = readOptionalAddressEnv(name);
-        if (other && other === account.address) {
-            throw new Error(
-                `REVOCATION_SPONSOR_ADDRESS must differ from ${name}; a shared nonce space would stall it`,
-            );
-        }
-    }
+    // Key separation, enforced rather than remembered.
+    //
+    // The sponsor and the relayer stay apart for a *funding* reason, not the nonce reason
+    // this comment used to give: viem's shared nonceManager does serialise two accounts
+    // built from one key inside one process (measured 8/8 against a 1/8 unmanaged control),
+    // so nonces alone would not have justified it. What does: merging them merges their
+    // balances, and an account that armed its own EntryPoint deposit needs no sponsor at
+    // all. That self-funded path is the censorship-resistant one, and a griefing run that
+    // drains the sponsored budget must not take it down with it.
+    assertFundedKeySeparation({
+        REVOCATION_SPONSOR_ADDRESS: account.address,
+        RELAYER_ADDRESS: relayer.address,
+        FACILITATOR_SIGNER_ADDRESS: readOptionalAddressEnv("FACILITATOR_SIGNER_ADDRESS"),
+        DEPLOYER_ADDRESS: readOptionalAddressEnv("DEPLOYER_ADDRESS"),
+        BOOTSTRAP_ADDRESS: readOptionalAddressEnv("BOOTSTRAP_ADDRESS"),
+    });
 
     return {
         account,
