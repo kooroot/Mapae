@@ -189,6 +189,8 @@ const FOREIGN_ADDRESSES = new Map<string, string>([
     // sponsored onboarding above.
     ["0x5ea109edc7e89b6a752032aa2b6f1092e081e7ec", "facilitator settlement signer (EOA)"],
     ["0x11e188f7e5beea0bde3016d0dccb2b91226c3211", "bootstrap sponsor (EOA)"],
+    ["0x226b24364e573162fa68fb0752748b5ee6312822", "revocation submitter relayer (EOA)"],
+    ["0x3306ec395aefa0c0d78d10fcfb45c4390a8edb33", "revocation sponsor (EOA)"],
 ]);
 
 // Test counts used to be checked here, against the document's own other numbers — badge

@@ -41,6 +41,7 @@ import {
     submitterAvailability,
 } from "../lib/config";
 import {RevokeButton} from "./RevokeButton";
+import {awaitRevocationVisible} from "../lib/revoke";
 import {short, struckPercent} from "../lib/dial";
 import {
     importedSessionGrant,
@@ -230,7 +231,27 @@ function StudioBody() {
                             <SecurityView
                                 permission={permission}
                                 status={status.value}
-                                onRevoked={() => setRefreshKey((value) => value + 1)}
+                                onRevoked={() => {
+                                    // The submitter confirmed the receipt on its own node,
+                                    // but this client re-reads through the public RPC's
+                                    // load balancer — a single immediate re-read can hit a
+                                    // replica still a block or two behind and render the
+                                    // grant as active (measured on the first live
+                                    // revocation). Poll until the flip is visible, then
+                                    // run the ordinary refresh once, authoritatively; on
+                                    // timeout the refresh still runs, which is exactly the
+                                    // old behavior.
+                                    void awaitRevocationVisible({
+                                        read: async () =>
+                                            (
+                                                await readDelegationStatus({
+                                                    publicClient,
+                                                    environment: deployment.environment,
+                                                    delegation: permission.root,
+                                                })
+                                            ).revoked,
+                                    }).finally(() => setRefreshKey((value) => value + 1));
+                                }}
                             />
                         )}
                     </div>

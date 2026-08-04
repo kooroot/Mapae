@@ -160,3 +160,37 @@ export async function requestSponsoredRevocation(params: {
     }
     return {transaction: body.transaction};
 }
+
+/**
+ * Wait until a revocation the submitter already confirmed becomes visible to *this*
+ * client's RPC.
+ *
+ * The submitter answers only after the receipt lands on its own node, but the Studio
+ * re-reads through the public endpoint's load balancer — on the first live revocation
+ * (2026-08-04) a single immediate re-read hit a replica still one or two seconds behind
+ * and rendered the grant as active until the user reloaded by hand. GIWA produces a
+ * block per second, so the lag is short but real; a bounded poll outlasts it. A read
+ * that throws counts as not-yet-visible for the same reason it exists at all — the
+ * flaky replica IS the scenario. Returns false when the budget runs out; the caller
+ * falls back to its ordinary single refresh, which is exactly the pre-poll behavior.
+ */
+export async function awaitRevocationVisible(params: {
+    read: () => Promise<boolean>;
+    attempts?: number;
+    intervalMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+}): Promise<boolean> {
+    const attempts = params.attempts ?? 8;
+    const intervalMs = params.intervalMs ?? 1_500;
+    const sleep =
+        params.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        if (attempt > 0) await sleep(intervalMs);
+        try {
+            if (await params.read()) return true;
+        } catch {
+            // not yet visible on this replica — keep waiting
+        }
+    }
+    return false;
+}

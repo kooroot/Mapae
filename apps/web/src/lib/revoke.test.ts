@@ -1,6 +1,11 @@
 import {describe, expect, test} from "bun:test";
 import {getAddress, type Address} from "viem";
-import {judgeStudioRevokeGate, revokeRefusalMessage, studioRevokeButtonLabel} from "./revoke";
+import {
+    awaitRevocationVisible,
+    judgeStudioRevokeGate,
+    revokeRefusalMessage,
+    studioRevokeButtonLabel,
+} from "./revoke";
 
 const address = (suffix: number): Address =>
     getAddress(`0x${suffix.toString(16).padStart(40, "0")}`);
@@ -112,5 +117,57 @@ describe("revokeRefusalMessage", () => {
         // new server-side reason can never become UI text nobody wrote.
         expect(revokeRefusalMessage("brand_new_reason")).toBe("회수를 완료하지 못했습니다.");
         expect(revokeRefusalMessage(undefined)).toBe("회수를 완료하지 못했습니다.");
+    });
+});
+
+describe("awaitRevocationVisible", () => {
+    test("a flip on the first read returns immediately, without sleeping", async () => {
+        const sleeps: number[] = [];
+        const result = await awaitRevocationVisible({
+            read: async () => true,
+            sleep: async (ms) => void sleeps.push(ms),
+        });
+        expect(result).toBe(true);
+        expect(sleeps).toEqual([]);
+    });
+
+    test("polls until the chain shows the flip, sleeping the interval between reads", async () => {
+        const sleeps: number[] = [];
+        let reads = 0;
+        const result = await awaitRevocationVisible({
+            read: async () => ++reads >= 3,
+            intervalMs: 250,
+            sleep: async (ms) => void sleeps.push(ms),
+        });
+        expect(result).toBe(true);
+        expect(reads).toBe(3);
+        expect(sleeps).toEqual([250, 250]);
+    });
+
+    test("gives up after the attempt budget and says so", async () => {
+        let reads = 0;
+        const result = await awaitRevocationVisible({
+            read: async () => (reads++, false),
+            attempts: 4,
+            sleep: async () => {},
+        });
+        expect(result).toBe(false);
+        expect(reads).toBe(4);
+    });
+
+    test("a read that throws counts as not-yet-visible instead of ending the wait", async () => {
+        // The whole point is to outlast a lagging or flaky replica — a transient RPC
+        // error is exactly the situation the poll exists for.
+        let reads = 0;
+        const result = await awaitRevocationVisible({
+            read: async () => {
+                reads += 1;
+                if (reads < 3) throw new Error("replica not caught up");
+                return true;
+            },
+            sleep: async () => {},
+        });
+        expect(result).toBe(true);
+        expect(reads).toBe(3);
     });
 });

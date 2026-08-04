@@ -46,7 +46,7 @@ flowchart TB
         FAC["apps/facilitator-erc7710 :8081<br/>x402 검증·정산"]
         SELLER["apps/delegated-seller :3001<br/>402 발행, 데모 벤더"]
         BOOT["apps/account-bootstrap :8083<br/>계정 배포 대납"]
-        REVO["apps/revocation-submitter :8082<br/>회수 대납 — 배선 중"]
+        REVO["apps/revocation-submitter :8082<br/>회수 대납 — 라이브"]
     end
 
     subgraph CHAIN["GIWA Sepolia — eip155:91342"]
@@ -86,7 +86,7 @@ D1–D2 EOA 흐름 개발용), 콘솔(:5173, loopback 전용 핀 모드 UI), del
 | `apps/facilitator-erc7710` | 미니 | 8081 | `facilitator.mapae.io` | **정산 서명자** | ERC-7710 결제를 검증하고 `redeemDelegations`로 정산. 가스를 대신 낸다 |
 | `apps/delegated-seller` | 미니 | 3001 | `seller.mapae.io` | 없음 (`PAY_TO` 주소만) | 402를 발행하고 리소스를 게이트. 받기만 하므로 키가 없다 |
 | `apps/account-bootstrap` | 미니 | 8083 | `facilitator.mapae.io/bootstrap` | **부트스트랩 스폰서** | 서명만 있고 배포 안 된 payer 계정을 스폰서 가스로 배포 |
-| `apps/revocation-submitter` | 미니 | 8082 | `facilitator.mapae.io/revoke` (배선 중) | **서브미터 릴레이어 + 회수 스폰서** | 오너가 서명한 회수 UserOp을 EntryPoint에 실어 보낸다 |
+| `apps/revocation-submitter` | 미니 | 8082 | `facilitator.mapae.io/revoke` (라이브, 2026-08-04) | **서브미터 릴레이어 + 회수 스폰서** | 오너가 서명한 회수 UserOp을 EntryPoint에 실어 보낸다 |
 | Worker `mapae` / `mapae-app` | Cloudflare | — | `mapae.io` / `app.mapae.io` | 없음 | 랜딩 / Studio. 브라우저 코드만 서빙, 키 없음 |
 
 같은 도메인(`facilitator.mapae.io`) 아래 세 서비스가 사는 이유: cloudflared가
@@ -135,8 +135,8 @@ flowchart LR
 | ① | Deployer | `0x5Ea1FB5f222572c03220356cb2914Da2b5acc0DE` | `contracts/.env` `PRIVATE_KEY` | 냈음 (배포 완료) | 정산 (nonce 충돌) |
 | ② | 정산 서명자 | `0x5eA109EDC7E89b6A752032Aa2B6F1092e081E7eC` | `apps/facilitator-erc7710/.env` — 맥북·미니 같은 값이라 **동시 1인스턴스만** | **낸다** | 모든 결제 |
 | ③ | 부트스트랩 스폰서 | `0x11E188f7E5beea0BdE3016D0dcCB2b91226c3211` | `apps/account-bootstrap/.env` `BOOTSTRAP_PRIVATE_KEY` | **낸다** | 온보딩 + 잔고 합쳐짐 |
-| ④ | 서브미터 릴레이어 | 신규 — 배선 시 생성 | `apps/revocation-submitter/.env` `REVOCATION_RELAYER_PRIVATE_KEY` | **낸다** | ②와 겹치면 정산이 죽는다 |
-| ⑤ | 회수 스폰서 | 신규 — 배선 시 생성 | `apps/revocation-submitter/.env` `REVOCATION_SPONSOR_PRIVATE_KEY` | **낸다** | ④와 겹치면 자력 회수까지 죽는다 |
+| ④ | 서브미터 릴레이어 | `0x226B24364e573162Fa68fB0752748B5eE6312822` | `apps/revocation-submitter/.env` `REVOCATION_RELAYER_PRIVATE_KEY` | **낸다** | ②와 겹치면 정산이 죽는다 |
+| ⑤ | 회수 스폰서 | `0x3306EC395Aefa0c0d78d10fCFB45c4390a8eDB33` | `apps/revocation-submitter/.env` `REVOCATION_SPONSOR_PRIVATE_KEY` | **낸다** | ④와 겹치면 자력 회수까지 죽는다 |
 | ⑥ | Payer 스마트계정 | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` 등 | **키 없음** — 오너가 지갑에서 서명 | **0** | — |
 | ⑦ | 수취 (`PAY_TO`) | 벤더별 | **키 없음** — 주소만 | — | — |
 
