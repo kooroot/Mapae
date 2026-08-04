@@ -84,7 +84,7 @@ Studio에서 번들 없이 **권한 코드(hex)만** 복사한 경우에는 그 
 
 판매자와 facilitator를 직접 운영하는 경우, 두 서비스는 각자의 디렉터리에서
 `bun run index.ts`로 기동하며 각자 자기 `.env`를 읽는다 — facilitator는
-`RELAYER_PRIVATE_KEY`·`RELAYER_ADDRESS`, 판매자는 `PAY_TO`(공개 주소). 두
+`FACILITATOR_SIGNER_PRIVATE_KEY`·`FACILITATOR_SIGNER_ADDRESS`, 판매자는 `PAY_TO`(공개 주소). 두
 서비스 모두 loopback에만 바인딩하므로 외부 노출은 별도의 TLS 프록시나 터널이
 필요하다. 필요한 값과 기대 로그는
 [GIWA 데모 런북 §1–2](giwa-demo-runbook.md)에 있다.
@@ -197,7 +197,7 @@ GIWA fork 위에 판매자·facilitator를 실제로 띄우고 MCP 클라이언�
 다시 읽어 확인한다.
 
 필요한 것: `anvil`(Foundry), fork를 뜨기 위한 아웃바운드 RPC 접근, 서명된
-permission 파일, `apps/delegation-lab/.env`의 `RELAYER_ADDRESS`, 그리고
+permission 파일, `apps/delegation-lab/.env`의 `FACILITATOR_SIGNER_ADDRESS`, 그리고
 facilitator·판매자 각각의 `.env`. 빠진 항목은 수트가 시작 시점에 이름을 지목해
 거절한다.
 

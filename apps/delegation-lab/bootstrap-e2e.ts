@@ -292,6 +292,11 @@ async function main(): Promise<void> {
     passed("A", `signed root    against a codeless account (sig ${signature.length} chars)`);
 
     // ── the service, for real ─────────────────────────────────────────────────────────
+    // Every spawn below passes --env-file=/dev/null: bun auto-loads the app's own .env
+    // from the spawn cwd, and those values fill any name this curated env does not set.
+    // A developer's real RELAYER_ADDRESS sitting next to the harness's
+    // FACILITATOR_SIGNER_ADDRESS tripped the disagree-refusal here once — the suite's
+    // result must not depend on what the operator keeps in that gitignored file.
     const childEnv = (overrides: Record<string, string>) => ({
         PATH: process.env["PATH"] ?? "",
         HOME: process.env["HOME"] ?? "",
@@ -306,7 +311,7 @@ async function main(): Promise<void> {
     });
 
     // ── B. the kill switch, and the approval phrase ───────────────────────────────────
-    const disabled = Bun.spawn([process.execPath, "run", "index.ts"], {
+    const disabled = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
         cwd: `${REPO}/apps/account-bootstrap`,
         env: childEnv({BOOTSTRAP_ENABLED: "false"}),
         stdout: "pipe",
@@ -324,7 +329,7 @@ async function main(): Promise<void> {
     await waitForPortRelease();
 
     // A wrong approval phrase must stop the process, not degrade it to a warning.
-    const badApproval = Bun.spawn([process.execPath, "run", "index.ts"], {
+    const badApproval = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
         cwd: `${REPO}/apps/account-bootstrap`,
         env: childEnv({BOOTSTRAP_ENABLED: "true", BOOTSTRAP_APPROVAL: "sponsored-bootstrap-wrong"}),
         stdout: "pipe",
@@ -338,13 +343,13 @@ async function main(): Promise<void> {
 
     // The real one.
     const approval = buildSponsoredBootstrapApproval(FRAMEWORK_COMPOSITION_ID);
-    const service = Bun.spawn([process.execPath, "run", "index.ts"], {
+    const service = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
         cwd: `${REPO}/apps/account-bootstrap`,
         env: childEnv({
             BOOTSTRAP_ENABLED: "true",
             BOOTSTRAP_APPROVAL: approval,
             BOOTSTRAP_FAUCET_ENABLED: "true",
-            RELAYER_ADDRESS: privateKeyToAccount(signerKey("someone-else")).address,
+            FACILITATOR_SIGNER_ADDRESS: privateKeyToAccount(signerKey("someone-else")).address,
         }),
         stdout: "pipe",
         stderr: "pipe",
@@ -354,14 +359,14 @@ async function main(): Promise<void> {
     await waitFor("bootstrap", async () => (await fetch(`${BOOTSTRAP_URL}/health`)).ok);
 
     // ── D. a key that collides with the settlement relayer must not boot ──────────────
-    const collided = Bun.spawn([process.execPath, "run", "index.ts"], {
+    const collided = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
         cwd: `${REPO}/apps/account-bootstrap`,
         env: childEnv({
             BOOTSTRAP_ENABLED: "true",
             BOOTSTRAP_APPROVAL: approval,
             PORT: String(BOOTSTRAP_PORT + 1),
             // The sponsor and the facilitator relayer are the same address here.
-            RELAYER_ADDRESS: sponsor.address,
+            FACILITATOR_SIGNER_ADDRESS: sponsor.address,
         }),
         stdout: "pipe",
         stderr: "pipe",
@@ -583,7 +588,7 @@ async function main(): Promise<void> {
 
     /** The same service, restarted with one bound turned down far enough to hit. */
     async function restart(overrides: Record<string, string>) {
-        const proc = Bun.spawn([process.execPath, "run", "index.ts"], {
+        const proc = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
             cwd: `${REPO}/apps/account-bootstrap`,
             env: childEnv({
                 BOOTSTRAP_ENABLED: "true",

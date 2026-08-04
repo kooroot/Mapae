@@ -146,26 +146,54 @@ const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("REVOCATION_RECEIPT_TIMEOU
  * viem's default is 1 gwei, which exceeds the sponsored fee ceiling outright and makes the
  * node refuse every broadcast with an error that reads like a node problem.
  */
-const RELAYER_PRIORITY_FEE_WEI = readPositiveInteger("RELAYER_PRIORITY_FEE_WEI", 1_000_000n);
+const REVOCATION_RELAYER_PRIORITY_FEE_WEI = readPositiveInteger(
+    "REVOCATION_RELAYER_PRIORITY_FEE_WEI",
+    1_000_000n,
+);
+
+// This wallet's global name is REVOCATION_RELAYER_*. The legacy RELAYER_* spelling is
+// refused outright rather than accepted, because in *this* service that spelling was the
+// trap the rename exists to kill: `RELAYER_ADDRESS` in a bootstrap or facilitator `.env`
+// names the settlement signer, so a copied file would configure the one wallet this
+// service must never broadcast from. Refusal is safe here where it is not in the two live
+// services — this one has never been deployed, so there is no `.env` to keep booting.
+for (const legacy of [
+    "RELAYER_ADDRESS",
+    "RELAYER_PRIVATE_KEY",
+    "RELAYER_PRIORITY_FEE_WEI",
+] as const) {
+    if (process.env[legacy]?.trim()) {
+        throw new Error(
+            `${legacy} is not a variable of this service — its own sender is ` +
+                `REVOCATION_${legacy}. In the bootstrap and facilitator .env files the ` +
+                "RELAYER_* spelling names the settlement signer, which this service must " +
+                "never broadcast from; a copied .env would assert exactly that. Rename or " +
+                "remove the variable.",
+        );
+    }
+}
 
 // `nonceManager` because this service is now multi-tenant: `inFlightSenders` serialises
 // one account against itself and `singleFlight` coalesces identical operations, but two
 // different owners revoking at the same moment both reach `handleOps`. Without it viem
 // fills both nonces from `eth_getTransactionCount(pending)`, the node refuses the second,
 // and that owner gets a 502 *after* the sponsor already paid their deposit.
-const relayer = privateKeyToAccount(readKeyEnv("RELAYER_PRIVATE_KEY"), {nonceManager});
-const expectedRelayer = readAddressEnv("RELAYER_ADDRESS");
+const relayer = privateKeyToAccount(readKeyEnv("REVOCATION_RELAYER_PRIVATE_KEY"), {nonceManager});
+const expectedRelayer = readAddressEnv("REVOCATION_RELAYER_ADDRESS");
 if (relayer.address !== expectedRelayer) {
-    throw new Error(`RELAYER_PRIVATE_KEY resolves to ${relayer.address}, expected ${expectedRelayer}`);
+    throw new Error(
+        `REVOCATION_RELAYER_PRIVATE_KEY resolves to ${relayer.address}, expected ${expectedRelayer}`,
+    );
 }
 
 // Checked in *both* modes, because the relayer broadcasts `handleOps` in both. The
-// facilitator entry is the one that matters on the mini: it is a separate Rust process
-// settling payments from its own signer, so sharing that key here does not stall a
-// revocation — it stalls settlement, which is the outage nobody would attribute to this
-// service. The variables are optional so a host that runs only this service needs none.
+// facilitator entry is the one that matters on the mini: the facilitator is a separate
+// OS process settling payments from its own signer, so sharing that key here does not
+// stall a revocation — it stalls settlement, which is the outage nobody would attribute
+// to this service. The variables are optional so a host that runs only this service
+// needs none.
 assertFundedKeySeparation({
-    RELAYER_ADDRESS: relayer.address,
+    REVOCATION_RELAYER_ADDRESS: relayer.address,
     FACILITATOR_SIGNER_ADDRESS: readOptionalAddressEnv("FACILITATOR_SIGNER_ADDRESS"),
     DEPLOYER_ADDRESS: readOptionalAddressEnv("DEPLOYER_ADDRESS"),
     BOOTSTRAP_ADDRESS: readOptionalAddressEnv("BOOTSTRAP_ADDRESS"),
@@ -276,7 +304,7 @@ function readSponsorConfig() {
     // drains the sponsored budget must not take it down with it.
     assertFundedKeySeparation({
         REVOCATION_SPONSOR_ADDRESS: account.address,
-        RELAYER_ADDRESS: relayer.address,
+        REVOCATION_RELAYER_ADDRESS: relayer.address,
         FACILITATOR_SIGNER_ADDRESS: readOptionalAddressEnv("FACILITATOR_SIGNER_ADDRESS"),
         DEPLOYER_ADDRESS: readOptionalAddressEnv("DEPLOYER_ADDRESS"),
         BOOTSTRAP_ADDRESS: readOptionalAddressEnv("BOOTSTRAP_ADDRESS"),
@@ -624,8 +652,8 @@ async function carry(submission: ValidatedRevocationSubmission): Promise<RevokeR
      * signed below the current base fee, so this cap is never under it.
      */
     const relayerPriority =
-        RELAYER_PRIORITY_FEE_WEI < submission.gas.maxFeePerGas
-            ? RELAYER_PRIORITY_FEE_WEI
+        REVOCATION_RELAYER_PRIORITY_FEE_WEI < submission.gas.maxFeePerGas
+            ? REVOCATION_RELAYER_PRIORITY_FEE_WEI
             : submission.gas.maxFeePerGas;
     // The call is re-stated rather than spread from `simulation.request`: that object
     // carries viem's own fee shape (a legacy `gasPrice` and a `type` discriminant), which

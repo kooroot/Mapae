@@ -14,7 +14,7 @@ import {readD3IdentityConfig, readExpectedSignerAddress} from "./runtime-config.
 async function printPlan(): Promise<void> {
     const identities = readD3IdentityConfig();
     const deployer = readExpectedSignerAddress("DEPLOYER_ADDRESS");
-    const relayer = readExpectedSignerAddress("RELAYER_ADDRESS");
+    const relayer = readExpectedSignerAddress("FACILITATOR_SIGNER_ADDRESS");
     const policies = buildD3Policies(identities.case2Vendor);
     const sessionFile = Bun.file("../../deployments/d3-session-addresses.json");
     const sessionAddresses = (await sessionFile.exists())

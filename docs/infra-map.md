@@ -1,8 +1,8 @@
 # 마패 인프라 지도 — 머신 · 서비스 · 지갑 · 흐름
 
 이 문서는 한 가지 질문에 답한다: **어떤 지갑이 어디에 있고, 어떤 서비스가 무엇을
-하며, 누가 가스를 내는가.** 특히 같은 변수명(`RELAYER_ADDRESS`)이 서비스마다 다른
-지갑을 가리키는 지점을 그림으로 푼다.
+하며, 누가 가스를 내는가.** 지갑 변수명은 전역 규약을 따른다 — 지갑 하나에 이름
+하나, 어느 파일에서든 같은 이름은 같은 지갑이다.
 
 주소·포트·경로는 전부 이 저장소와 GIWA 체인에 이미 공개된 값이다. 상태 표기는
 2026-08-04 기준이다.
@@ -15,8 +15,9 @@
    겹치는 순간 한쪽 장애가 다른 쪽 장애가 된다 — 그래서 코드가 부팅 시점에 거부한다.
 2. **사용자 쪽 세 identity(오너 지갑, payer 스마트계정, 에이전트 세션키)는 가스를
    한 푼도 내지 않는다.** 그게 제품이다. payer 계정의 ETH 잔액은 설계상 정확히 0이다.
-3. **`RELAYER_ADDRESS`라는 변수명은 서비스마다 다른 지갑을 가리킨다.**
-   `.env`를 서비스 간에 복사하면 겉보기와 정반대를 선언하게 된다.
+3. **지갑 하나 = 변수명 하나, 어느 파일에서든 동일.** `FACILITATOR_SIGNER_ADDRESS`는
+   어디에 적혀 있든 정산 서명자이고, `REVOCATION_RELAYER_ADDRESS`는 어디서든 서브미터의
+   발신 지갑이다. 서비스마다 뜻이 바뀌는 상대적 이름은 쓰지 않는다.
 
 ---
 
@@ -134,7 +135,7 @@ flowchart LR
 | ① | Deployer | `0x5Ea1FB5f222572c03220356cb2914Da2b5acc0DE` | `contracts/.env` `PRIVATE_KEY` | 냈음 (배포 완료) | 정산 (nonce 충돌) |
 | ② | 정산 서명자 | `0x5eA109EDC7E89b6A752032Aa2B6F1092e081E7eC` | `apps/facilitator-erc7710/.env` — 맥북·미니 같은 값이라 **동시 1인스턴스만** | **낸다** | 모든 결제 |
 | ③ | 부트스트랩 스폰서 | `0x11E188f7E5beea0BdE3016D0dcCB2b91226c3211` | `apps/account-bootstrap/.env` `BOOTSTRAP_PRIVATE_KEY` | **낸다** | 온보딩 + 잔고 합쳐짐 |
-| ④ | 서브미터 릴레이어 | 신규 — 배선 시 생성 | `apps/revocation-submitter/.env` `RELAYER_PRIVATE_KEY` | **낸다** | ②와 겹치면 정산이 죽는다 |
+| ④ | 서브미터 릴레이어 | 신규 — 배선 시 생성 | `apps/revocation-submitter/.env` `REVOCATION_RELAYER_PRIVATE_KEY` | **낸다** | ②와 겹치면 정산이 죽는다 |
 | ⑤ | 회수 스폰서 | 신규 — 배선 시 생성 | `apps/revocation-submitter/.env` `REVOCATION_SPONSOR_PRIVATE_KEY` | **낸다** | ④와 겹치면 자력 회수까지 죽는다 |
 | ⑥ | Payer 스마트계정 | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` 등 | **키 없음** — 오너가 지갑에서 서명 | **0** | — |
 | ⑦ | 수취 (`PAY_TO`) | 벤더별 | **키 없음** — 주소만 | — | — |
@@ -143,18 +144,21 @@ flowchart LR
 전송되지 않으며, 온체인 caveat(기간 한도·만료) 안에서만 유효하다. 유출돼도
 피해 상한이 caveat이다.
 
-### 3.3 함정 — `RELAYER_ADDRESS`는 세 서비스에서 세 가지 의미다
+### 3.3 명명 규약 — 지갑 하나, 이름 하나
 
-| 파일 | `RELAYER_ADDRESS`가 가리키는 것 | 실제 지갑 |
-|---|---|---|
-| `apps/facilitator-erc7710/.env` | **자기** 정산 서명자 (키도 이 서비스에 있음) | ② |
-| `apps/account-bootstrap/.env` | **남** — 정산 서명자 참조 (주소만, 충돌 검사용) | ② |
-| `apps/revocation-submitter/.env` | **자기** `handleOps` 발신자 (키도 이 서비스에 있음) | ④ **신규** |
+| 변수명 | 지갑 | 키가 있는 곳 | 참조(주소만)로 쓰는 곳 |
+|---|---|---|---|
+| `FACILITATOR_SIGNER_*` | ② | `apps/facilitator-erc7710/.env` | 부트스트랩·서브미터 (충돌 검사) |
+| `BOOTSTRAP_*` | ③ | `apps/account-bootstrap/.env` | 서브미터 (충돌 검사) |
+| `REVOCATION_RELAYER_*` | ④ | `apps/revocation-submitter/.env` | — |
+| `REVOCATION_SPONSOR_*` | ⑤ | `apps/revocation-submitter/.env` | 부트스트랩 (충돌 검사) |
+| `DEPLOYER_ADDRESS` | ① | `contracts/.env` (`PRIVATE_KEY`) | 부트스트랩·서브미터 (충돌 검사) |
 
-부트스트랩의 `.env`에서 `RELAYER_ADDRESS=0x5eA109ED…`를 보고 서브미터에도 같은
-값을 넣으면, "이 주소와 겹치지 마라"는 참조를 "이 주소로 브로드캐스트해라"로
-뒤집는 셈이 된다. 그 실수는 이제 코드가 잡는다 — 서브미터는
-`FACILITATOR_SIGNER_ADDRESS`(②)와 자기 릴레이어가 같으면 부팅을 거부한다.
+과거에는 `RELAYER_ADDRESS`라는 이름이 세 서비스에서 세 지갑을 가리켰고, 부트스트랩
+`.env`의 정산 서명자 *참조*를 서브미터의 *발신 지갑*으로 읽는 실수가 실제로
+일어났다. 지금은 이름 자체가 지갑을 특정하고, 두 가지가 그 실수를 코드로 막는다:
+라이브 서비스에서 옛 철자는 경고와 함께 읽히다 값이 갈리면 부팅이 거부되고,
+서브미터에서는 옛 철자가 보이기만 해도 부팅이 거부된다.
 
 ### 3.4 왜 절대 겹치면 안 되나 — 서로 다른 두 위험
 

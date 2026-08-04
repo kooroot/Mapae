@@ -10,6 +10,7 @@ import {
     judgeCorsRequest,
     parseActiveDeploymentArtifactJson,
     parseBootstrapOrigins,
+    readRenamedEnv,
     throttledHttp,
     validateAccountBootstrap,
     type AccountBootstrapPolicy,
@@ -171,13 +172,25 @@ if (sponsor.address !== expectedSponsor) {
  * consumer, and the failure would not be an ETH loss but a settlement outage. The deployer
  * is worse still: five call sites, none of them using `nonceManager`.
  *
- * `RELAYER_ADDRESS` names the *facilitator's* signer here. The revocation submitter uses
- * that same variable for its own `handleOps` sender, so the two services read opposite
- * meanings from one name — do not copy a `.env` between them.
+ * Wallet variable names are global: one wallet, one name, in every service. The
+ * facilitator's signer is `FACILITATOR_SIGNER_ADDRESS` here for the same reason it is in
+ * the revocation submitter — this file used to call it `RELAYER_ADDRESS` while the
+ * submitter used the same spelling for its *own* sender, and that collision of meanings is
+ * how a settlement key nearly became another service's broadcast sender. The legacy name
+ * still works with a warning so the live mini `.env` keeps booting through the rename.
  */
+function readFacilitatorSignerReference(): Address | undefined {
+    const value = readRenamedEnv({
+        current: "FACILITATOR_SIGNER_ADDRESS",
+        legacy: "RELAYER_ADDRESS",
+    });
+    if (value === undefined) return undefined;
+    if (!isAddress(value)) throw new Error("FACILITATOR_SIGNER_ADDRESS must be an address");
+    return getAddress(value);
+}
 assertFundedKeySeparation({
     BOOTSTRAP_ADDRESS: sponsor.address,
-    RELAYER_ADDRESS: readOptionalAddressEnv("RELAYER_ADDRESS"),
+    FACILITATOR_SIGNER_ADDRESS: readFacilitatorSignerReference(),
     DEPLOYER_ADDRESS: readOptionalAddressEnv("DEPLOYER_ADDRESS"),
     REVOCATION_SPONSOR_ADDRESS: readOptionalAddressEnv("REVOCATION_SPONSOR_ADDRESS"),
 });

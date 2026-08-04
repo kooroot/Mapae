@@ -33,6 +33,7 @@ import {
     costOfReceipt,
     isCanonicalSignature,
     parseBootstrapOrigins,
+    readRenamedEnv,
     readReceiptFeeField,
     validateAccountBootstrap,
     type AccountBootstrapPolicy,
@@ -654,6 +655,84 @@ describe("assertFundedKeySeparation", () => {
         expect(() => assertFundedKeySeparation({RELAYER_ADDRESS: A, SPONSOR_ADDRESS: A})).toThrow(
             new RegExp(A, "i"),
         );
+    });
+});
+
+describe("readRenamedEnv", () => {
+    const NAMES = {current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"};
+
+    test("current name wins and no warning fires", () => {
+        const warned: string[] = [];
+        const value = readRenamedEnv({
+            ...NAMES,
+            env: {FACILITATOR_SIGNER_ADDRESS: " 0xabc "},
+            warn: (line) => warned.push(line),
+        });
+        expect(value).toBe("0xabc");
+        expect(warned).toEqual([]);
+    });
+
+    test("legacy name still works but warns, naming both variables", () => {
+        const warned: string[] = [];
+        const value = readRenamedEnv({
+            ...NAMES,
+            env: {RELAYER_ADDRESS: "0xdef"},
+            warn: (line) => warned.push(line),
+        });
+        expect(value).toBe("0xdef");
+        expect(warned).toHaveLength(1);
+        expect(warned[0]).toContain("RELAYER_ADDRESS");
+        expect(warned[0]).toContain("FACILITATOR_SIGNER_ADDRESS");
+    });
+
+    test("both set to the same value is accepted with the warning", () => {
+        const warned: string[] = [];
+        const value = readRenamedEnv({
+            ...NAMES,
+            env: {FACILITATOR_SIGNER_ADDRESS: "0xabc", RELAYER_ADDRESS: "0xabc"},
+            warn: (line) => warned.push(line),
+        });
+        expect(value).toBe("0xabc");
+        expect(warned).toHaveLength(1);
+    });
+
+    test("both set to different values refuses — a half-migrated env must not guess", () => {
+        expect(() =>
+            readRenamedEnv({
+                ...NAMES,
+                env: {FACILITATOR_SIGNER_ADDRESS: "0xabc", RELAYER_ADDRESS: "0xdef"},
+                warn: () => {},
+            }),
+        ).toThrow(/FACILITATOR_SIGNER_ADDRESS.*RELAYER_ADDRESS|RELAYER_ADDRESS.*FACILITATOR_SIGNER_ADDRESS/);
+    });
+
+    // The same helper reads *_PRIVATE_KEY variables, so a value in a message is a key in a
+    // log. The disagreement error and the deprecation warning both carry names only.
+    test("neither the error nor the warning ever contains the values", () => {
+        const warned: string[] = [];
+        readRenamedEnv({...NAMES, env: {RELAYER_ADDRESS: "0xsecret-legacy"}, warn: (l) => warned.push(l)});
+        expect(warned[0]).not.toContain("0xsecret-legacy");
+        try {
+            readRenamedEnv({
+                ...NAMES,
+                env: {FACILITATOR_SIGNER_ADDRESS: "0xsecret-a", RELAYER_ADDRESS: "0xsecret-b"},
+                warn: () => {},
+            });
+            throw new Error("should have refused");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            expect(message).not.toContain("0xsecret-a");
+            expect(message).not.toContain("0xsecret-b");
+        }
+    });
+
+    test("absent everywhere returns undefined silently; blank strings count as absent", () => {
+        const warned: string[] = [];
+        expect(readRenamedEnv({...NAMES, env: {}, warn: (l) => warned.push(l)})).toBeUndefined();
+        expect(
+            readRenamedEnv({...NAMES, env: {RELAYER_ADDRESS: "   "}, warn: (l) => warned.push(l)}),
+        ).toBeUndefined();
+        expect(warned).toEqual([]);
     });
 });
 

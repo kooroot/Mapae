@@ -38,7 +38,7 @@ DeleGator 구현들이 같은 manager와 canonical EntryPoint를 물고 있는�
 
 ## 1. 사전 조건
 
-- `apps/facilitator-erc7710/.env` — `RELAYER_PRIVATE_KEY` (가스 지불), `RELAYER_ADDRESS`
+- `apps/facilitator-erc7710/.env` — `FACILITATOR_SIGNER_PRIVATE_KEY` (가스 지불), `FACILITATOR_SIGNER_ADDRESS`
 - `apps/delegated-seller/.env` — `PAY_TO` (공개 주소)
 - `apps/delegated-agent/.env` — `AGENT_PRIVATE_KEY` (세션키), `PARENT_PERMISSION_CONTEXT_PATH`
 - 서명된 root permission이 유효창 안에 있을 것
@@ -88,7 +88,7 @@ fork를 상대로 통과한 GO는 GO가 아니라 거짓 안심이기 때문이�
 
 확인 항목: head block · 38-unit 구성 · 위임 체인 회수/유효창/주기 잔량 · 결제액이 잔량
 안인지 · payer mUSDC · payer ETH(0이어야 정상) · relayer ETH가 최악 가스비보다 큰지 ·
-facilitator가 광고하는 signer가 `RELAYER_ADDRESS`와 같은지 · 판매자 402의 금액/네트워크/payTo.
+facilitator가 광고하는 signer가 `FACILITATOR_SIGNER_ADDRESS`와 같은지 · 판매자 402의 금액/네트워크/payTo.
 
 ## 4. 드라이런
 

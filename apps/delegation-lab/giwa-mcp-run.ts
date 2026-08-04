@@ -23,6 +23,7 @@ import {
     readDelegationStatus,
     reconcileSettlement,
     throttledHttp,
+    readRenamedEnv,
 } from "@mapae/delegation";
 import {
     MOCK_USDC,
@@ -59,6 +60,16 @@ const balanceOfAbi = [
 function readAddressEnv(name: string): Address {
     const value = process.env[name]?.trim() ?? "";
     if (!isAddress(value)) throw new Error(`${name} must be set to an address`);
+    return getAddress(value);
+}
+
+/** 정산 서명자의 전역 이름. RELAYER_ADDRESS는 폐기된 옛 철자로, 경고와 함께 읽힌다. */
+function readFacilitatorSignerEnv(): Address {
+    const value =
+        readRenamedEnv({current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"}) ?? "";
+    if (!isAddress(value)) {
+        throw new Error("FACILITATOR_SIGNER_ADDRESS must be set to an address");
+    }
     return getAddress(value);
 }
 
@@ -119,7 +130,7 @@ async function main(): Promise<void> {
         transport: throttledHttp(rpcUrl),
     }) as PublicClient;
 
-    const relayer = readAddressEnv("RELAYER_ADDRESS");
+    const relayer = readFacilitatorSignerEnv();
     const sellerUrl = new URL(process.env.SELLER_URL?.trim() || "http://127.0.0.1:3001");
     const facilitatorUrl = new URL(process.env.FACILITATOR_URL?.trim() || "http://127.0.0.1:8081");
 

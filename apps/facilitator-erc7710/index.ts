@@ -4,6 +4,7 @@ import {
     PaymentIntentSingleFlight,
     buildDelegatedTransfer,
     parseActiveDeploymentArtifactJson,
+    readRenamedEnv,
     parseFrameworkDeploymentManifestJson,
     reconcileSettlementReceipt,
     validateDelegatedPayment,
@@ -61,19 +62,24 @@ function readRpcUrl(): string {
     );
 }
 
+// FACILITATOR_SIGNER_* is this wallet's one global name across every service; the legacy
+// RELAYER_* spelling keeps a live mini `.env` booting through the rename, with a warning.
 function readRelayerKey(): Hex {
-    const value = process.env.RELAYER_PRIVATE_KEY?.trim() ?? "";
+    const value =
+        readRenamedEnv({current: "FACILITATOR_SIGNER_PRIVATE_KEY", legacy: "RELAYER_PRIVATE_KEY"}) ??
+        "";
     if (!/^0x[0-9a-fA-F]{64}$/.test(value)) {
-        throw new Error("RELAYER_PRIVATE_KEY must be a 32-byte hex private key");
+        throw new Error("FACILITATOR_SIGNER_PRIVATE_KEY must be a 32-byte hex private key");
     }
     return value as Hex;
 }
 
 function readRelayerAddress(): Address {
-    const value = process.env.RELAYER_ADDRESS?.trim() ?? "";
-    if (!isAddress(value)) throw new Error("RELAYER_ADDRESS must be an address");
+    const value =
+        readRenamedEnv({current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"}) ?? "";
+    if (!isAddress(value)) throw new Error("FACILITATOR_SIGNER_ADDRESS must be an address");
     const address = getAddress(value);
-    if (address === zeroAddress) throw new Error("RELAYER_ADDRESS must not be zero");
+    if (address === zeroAddress) throw new Error("FACILITATOR_SIGNER_ADDRESS must not be zero");
     return address;
 }
 
@@ -155,7 +161,7 @@ const relayer = privateKeyToAccount(readRelayerKey(), {nonceManager});
 const expectedRelayer = readRelayerAddress();
 if (relayer.address !== expectedRelayer) {
     throw new Error(
-        `RELAYER_PRIVATE_KEY resolves to ${relayer.address}, expected ${expectedRelayer}`,
+        `FACILITATOR_SIGNER_PRIVATE_KEY resolves to ${relayer.address}, expected ${expectedRelayer}`,
     );
 }
 const deployment = await readDeployment();

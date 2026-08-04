@@ -18,6 +18,7 @@ import {
     parseActiveDeploymentArtifactJson,
     readDelegationStatus,
     readSettlementReceipts,
+    readRenamedEnv,
 } from "@mapae/delegation";
 import {
     assertRpcTarget,
@@ -176,9 +177,12 @@ function assertPortFree(name: string, port: number): void {
 }
 
 function readRelayerAddress(): Address {
-    const value = process.env.RELAYER_ADDRESS?.trim() ?? "";
+    // The settlement signer's global name; the deprecated RELAYER_ADDRESS spelling
+    // still reads, with a warning, so an old lab .env survives the rename.
+    const value =
+        readRenamedEnv({current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"}) ?? "";
     if (!isAddress(value)) {
-        throw new Error("RELAYER_ADDRESS must be set (apps/delegation-lab/.env)");
+        throw new Error("FACILITATOR_SIGNER_ADDRESS must be set (apps/delegation-lab/.env)");
     }
     return getAddress(value);
 }
@@ -540,10 +544,10 @@ async function proveRevocationStops(
  *
  * This command is what the README points a reader at, so its first failure is the first
  * thing many people see of the project. Without this it reported them one at a time and
- * in the worst possible order: `RELAYER_ADDRESS must be set` first, then — only after
+ * in the worst possible order: `FACILITATOR_SIGNER_ADDRESS must be set` first, then — only after
  * anvil had forked GIWA over the network, some fifteen seconds in — a child process died
  * and printed a *source listing* of `apps/facilitator-erc7710/index.ts` around the line
- * that throws, with the actual missing thing (`RELAYER_PRIVATE_KEY`, in that app's own
+ * that throws, with the actual missing thing (`FACILITATOR_SIGNER_PRIVATE_KEY`, in that app's own
  * `.env`) buried in it. Measured from a clean clone, not imagined.
  *
  * Two properties matter more than the wording. It runs before the fork, so a missing
@@ -557,8 +561,8 @@ async function proveRevocationStops(
 async function assertPrerequisites(): Promise<void> {
     const missing: string[] = [];
 
-    if (!process.env.RELAYER_ADDRESS?.trim()) {
-        missing.push("RELAYER_ADDRESS is unset — see apps/delegation-lab/.env.example");
+    if (!process.env.FACILITATOR_SIGNER_ADDRESS?.trim() && !process.env.RELAYER_ADDRESS?.trim()) {
+        missing.push("FACILITATOR_SIGNER_ADDRESS is unset — see apps/delegation-lab/.env.example");
     }
     const permissionPath =
         process.env.PARENT_PERMISSION_CONTEXT_PATH ??

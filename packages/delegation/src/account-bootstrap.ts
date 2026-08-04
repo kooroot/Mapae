@@ -157,6 +157,48 @@ export function assertFundedKeySeparation(roles: Record<string, Address | undefi
 }
 
 /**
+ * Read an env variable through a rename, keeping a live deployment booting.
+ *
+ * The wallet naming convention is one global name per wallet, identical in every service —
+ * `RELAYER_ADDRESS` had to die because it named a service's *own* signer in one file and a
+ * *reference to another service's* signer in the next, and an operator reading the second
+ * kind as the first is how the settlement key nearly became a second service's broadcast
+ * sender. Renaming an env var on a service that is already running on the mini cannot be a
+ * hard cut, though: the new code would refuse the old `.env` at the next `KeepAlive`
+ * restart, and for the facilitator that outage is settlement.
+ *
+ * So: the new name wins; the legacy name still works but emits one warning line naming
+ * both; the two names set to *different* values refuse outright, because a half-migrated
+ * env must not have the code guess which wallet the operator meant. Messages carry variable
+ * NAMES only — this helper also reads `*_PRIVATE_KEY` variables, and a value in a message
+ * is a key in a log.
+ */
+export function readRenamedEnv(params: {
+    current: string;
+    legacy: string;
+    env?: Record<string, string | undefined>;
+    warn?: (line: string) => void;
+}): string | undefined {
+    const env = params.env ?? process.env;
+    const warn = params.warn ?? ((line: string) => console.error(line));
+    const current = env[params.current]?.trim() || undefined;
+    const legacy = env[params.legacy]?.trim() || undefined;
+    if (current !== undefined && legacy !== undefined && current !== legacy) {
+        throw new Error(
+            `${params.current} and ${params.legacy} are both set and disagree; ` +
+                `remove ${params.legacy} — it is the deprecated name for the same wallet`,
+        );
+    }
+    if (legacy !== undefined) {
+        warn(
+            `[deprecated] ${params.legacy} was renamed to ${params.current}; ` +
+                "update this .env — the old name will stop working",
+        );
+    }
+    return current ?? legacy;
+}
+
+/**
  * Which browser origins may drive the sponsor.
  *
  * Unlike {@link parseCorsAllowlist}, this one must accept a public HTTPS origin: the whole

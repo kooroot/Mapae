@@ -20,6 +20,7 @@ import {
     throttledHttp,
     tightestPeriodRemaining,
     verifyActiveFrameworkDeployment,
+    readRenamedEnv,
 } from "@mapae/delegation";
 import {
     GIWA_SEPOLIA_CAIP2,
@@ -53,6 +54,13 @@ function record(ok: boolean, label: string, detail: string): void {
 
 function readAddressEnv(name: string): Address | undefined {
     const value = process.env[name]?.trim() ?? "";
+    return isAddress(value) ? getAddress(value) : undefined;
+}
+
+/** 정산 서명자의 전역 이름. RELAYER_ADDRESS는 폐기된 옛 철자로, 경고와 함께 읽힌다. */
+function readFacilitatorSignerEnv(): Address | undefined {
+    const value =
+        readRenamedEnv({current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"}) ?? "";
     return isAddress(value) ? getAddress(value) : undefined;
 }
 
@@ -195,7 +203,7 @@ async function main(): Promise<void> {
     const payerEth = await publicClient.getBalance({address: root.delegator});
     record(true, "payer ETH", `${formatEther(payerEth)} (0이 설계값 — 가스리스)`);
 
-    const relayer = readAddressEnv("RELAYER_ADDRESS");
+    const relayer = readFacilitatorSignerEnv();
     if (relayer) {
         const [relayerEth, fees] = await Promise.all([
             publicClient.getBalance({address: relayer}),
@@ -214,7 +222,7 @@ async function main(): Promise<void> {
                 `${formatEther(relayerEth)} (최악 ${formatEther(worstCase)})`);
         }
     } else {
-        record(false, "relayer ETH", "RELAYER_ADDRESS 미설정 — 확인 불가");
+        record(false, "relayer ETH", "FACILITATOR_SIGNER_ADDRESS 미설정 — 확인 불가");
     }
 
     console.log(`\n── 서비스 (떠 있으면 확인) ─────────────────────────────`);
@@ -232,7 +240,7 @@ async function main(): Promise<void> {
             && advertised.some((s) => isAddress(s) && getAddress(s) === relayer);
         record(advertised.length > 0, "facilitator signer",
             advertised.length ? advertised.join(", ") : "GIWA signer 광고 없음");
-        record(matches, "signer == RELAYER_ADDRESS",
+        record(matches, "signer == FACILITATOR_SIGNER_ADDRESS",
             matches ? "일치" : "불일치 — 잔고를 확인한 지갑이 실제 정산 지갑이 아님");
     }
 

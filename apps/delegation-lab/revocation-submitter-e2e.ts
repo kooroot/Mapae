@@ -340,7 +340,10 @@ async function main(): Promise<void> {
     const permissionContext = encodeDelegations([delegation]);
 
     // ── the submitter, for real ───────────────────────────────────────────────────────
-    const submitter = Bun.spawn([process.execPath, "run", "index.ts"], {
+    // --env-file=/dev/null on every service spawn: bun auto-loads the app's own .env from
+    // the spawn cwd, and a real operator value there (a legacy RELAYER_ADDRESS, say) would
+    // change what a case asserts. The curated env below must be the only env.
+    const submitter = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
         cwd: `${REPO}/apps/revocation-submitter`,
         env: {
             PATH: process.env["PATH"] ?? "",
@@ -350,8 +353,8 @@ async function main(): Promise<void> {
             // The override that keeps this off GIWA. Asserted loopback above.
             GIWA_SEPOLIA_RPC_URL: forkRpc,
             PAYER_ACCOUNT_ADDRESS: account.address,
-            RELAYER_ADDRESS: relayer.address,
-            RELAYER_PRIVATE_KEY: relayerKey,
+            REVOCATION_RELAYER_ADDRESS: relayer.address,
+            REVOCATION_RELAYER_PRIVATE_KEY: relayerKey,
             DELEGATION_DEPLOYMENT_PATH: `${REPO}/deployments/giwa-sepolia.framework.json`,
         },
         stdout: "pipe",
@@ -598,8 +601,8 @@ async function main(): Promise<void> {
         // No PAYER_ACCOUNT_ADDRESS — that absence *is* the mode selector, and the boot
         // guards below it (kill switch + approval + dedicated key) are what keep the
         // absence from ever being an accident in production.
-        RELAYER_ADDRESS: relayer.address,
-        RELAYER_PRIVATE_KEY: relayerKey,
+        REVOCATION_RELAYER_ADDRESS: relayer.address,
+        REVOCATION_RELAYER_PRIVATE_KEY: relayerKey,
         REVOCATION_SPONSOR_ENABLED: "true",
         REVOCATION_SPONSOR_APPROVAL: buildSponsoredRevocationApproval(FRAMEWORK_COMPOSITION_ID),
         REVOCATION_SPONSOR_PRIVATE_KEY: sponsorKey,
@@ -633,7 +636,7 @@ async function main(): Promise<void> {
     async function restartSponsored(overrides: Record<string, string> = {}): Promise<void> {
         sponsoredChild.kill();
         await waitForPortRelease(SUBMITTER_PORT);
-        sponsoredChild = Bun.spawn([process.execPath, "run", "index.ts"], {
+        sponsoredChild = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
             cwd: `${REPO}/apps/revocation-submitter`,
             env: {...sponsoredEnv, ...overrides},
             stdout: "pipe",
@@ -890,7 +893,7 @@ async function main(): Promise<void> {
     // separate process filling its nonces from the chain, so nothing in here can serialise
     // against it. Asserted on the *service* rather than on assertFundedKeySeparation alone,
     // because the unit test cannot tell whether the call site was ever wired up.
-    const collided = Bun.spawn([process.execPath, "run", "index.ts"], {
+    const collided = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
         cwd: `${REPO}/apps/revocation-submitter`,
         env: {
             ...sponsoredEnv,
@@ -905,6 +908,28 @@ async function main(): Promise<void> {
         throw new Error("the submitter started while sharing the facilitator's nonce space");
     }
     passed("Q", "shared signer  facilitator collision refuses to boot");
+
+    // ── R. the legacy RELAYER_* spelling must not boot either ─────────────────────────
+    //
+    // In the bootstrap and facilitator .env files that spelling names the settlement
+    // signer, so a .env copied into this service would configure the one wallet it must
+    // never broadcast from. The service refuses the name outright instead of guessing;
+    // this case is what keeps that refusal from being quietly deleted as "compat".
+    const legacyNamed = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
+        cwd: `${REPO}/apps/revocation-submitter`,
+        env: {
+            ...sponsoredEnv,
+            PORT: String(SUBMITTER_PORT + 1),
+            RELAYER_ADDRESS: relayer.address,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+    });
+    children.push({name: "submitter-legacy-name", proc: legacyNamed});
+    if ((await legacyNamed.exited) === 0) {
+        throw new Error("the submitter started with the deprecated RELAYER_ADDRESS present");
+    }
+    passed("R", "legacy naming  RELAYER_ADDRESS refuses to boot");
 
     // ── no-broadcast evidence ─────────────────────────────────────────────────────────
     const nonceAfter = BigInt(

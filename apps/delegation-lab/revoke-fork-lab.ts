@@ -296,8 +296,8 @@ async function main(): Promise<void> {
             GIWA_SEPOLIA_RPC_URL: forkRpc,
             DELEGATION_DEPLOYMENT_PATH: `${REPO}/deployments/giwa-sepolia.framework.json`,
             PAYER_ACCOUNT_ADDRESS: payer,
-            RELAYER_ADDRESS: relayer.address,
-            RELAYER_PRIVATE_KEY: relayerKey,
+            REVOCATION_RELAYER_ADDRESS: relayer.address,
+            REVOCATION_RELAYER_PRIVATE_KEY: relayerKey,
             REVOCATION_CONSOLE_ORIGINS: CONSOLE_PORTS.flatMap((port) => [
                 `http://127.0.0.1:${port}`,
                 `http://localhost:${port}`,

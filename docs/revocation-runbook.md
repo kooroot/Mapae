@@ -88,8 +88,9 @@ single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는
 | N 닫힌 응답 본문 | 공개 모드는 `detail`을 싣지 않는다 | `400 invalid_submission`, `detail` 없음 |
 | O rate 1/시간 | 두 번째 요청부터 끊긴다 | `429 rate_limited` |
 | Q facilitator 서명자 공유 | 정산 키를 물려받은 기동은 아예 뜨지 않는다 | 부팅 실패(0이 아닌 종료 코드) |
+| R 옛 변수명 | 폐기된 `RELAYER_ADDRESS` 철자가 보이면 뜨지 않는다 | 부팅 실패(0이 아닌 종료 코드) |
 
-A–H는 **핀 모드**(단일 payer, loopback, 콘솔용)로, I–Q는 같은 바이너리를
+A–H는 **핀 모드**(단일 payer, loopback, 콘솔용)로, I–R은 같은 바이너리를
 `PAYER_ACCOUNT_ADDRESS` 없이 재기동한 **스폰서드 모드**(공개 터널용)로 돈다.
 스폰서드 케이스가 **새 계정**을 쓰는 이유: 첫 계정의 예치금은 E가 재충전해 두어
 부족분이 0이고, 그 상태로는 이 모드의 존재 이유인 예치 대납 레그가 아예 돌지
