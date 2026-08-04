@@ -106,8 +106,8 @@ flowchart LR
         DEPLOYER["① Deployer<br/>0x5Ea1FB5f…c0DE<br/>contracts/.env"]
         FACSIGNER["② 정산 서명자<br/>0x5eA109ED…E7eC<br/>facilitator-erc7710/.env"]
         BOOTSP["③ 부트스트랩 스폰서<br/>0x11E188f7…3211<br/>account-bootstrap/.env"]
-        SUBREL["④ 서브미터 릴레이어<br/>신규 생성 — 배선 중<br/>revocation-submitter/.env"]
-        REVSP["⑤ 회수 스폰서<br/>신규 생성 — 배선 중<br/>revocation-submitter/.env"]
+        SUBREL["④ 서브미터 릴레이어<br/>0x226B2436…2822<br/>revocation-submitter/.env"]
+        REVSP["⑤ 회수 스폰서<br/>0x3306EC39…DB33<br/>revocation-submitter/.env"]
     end
 
     subgraph USERSIDE["사용자 쪽 — 가스 0"]

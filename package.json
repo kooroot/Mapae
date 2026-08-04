@@ -20,7 +20,9 @@
     "check:counts": "bun run scripts/check-test-counts.ts",
     "verify:explorer": "bun run scripts/verify-explorer.ts",
     "test:web": "cd apps/web && bun test",
-    "build:web": "cd apps/web && bun run build"
+    "build:web": "cd apps/web && bun run build",
+    "deploy:landing": "cd apps/web && bun run deploy:landing",
+    "deploy:app": "cd apps/web && bun run deploy:app"
   },
   "dependencies": {
     "viem": "^2.55.8"
