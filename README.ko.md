@@ -90,7 +90,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 - 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - **에이전트 자율 정산**, MCP 1회 호출, 사람 개입 0:
   [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
-  — block 33534935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
+  — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
   이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
   에이전트는 거절됐다는 답을 받았다. 아래 "settlement-unknown" 참조.
 - **스폰서드 온보딩**, 계정보다 먼저 만들어진 서명으로 계정 배포:

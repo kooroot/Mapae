@@ -91,7 +91,7 @@ a strong result, but nothing was mined and there is no link to follow.
 - Delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - **Agent-driven settlement**, one MCP call, no human step:
   [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
-  — block 33534935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer gas spend 0**.
+  — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer gas spend 0**.
   This run also surfaced a real defect and its fix is in the same tree: the answer the
   agent received said the payment had been rejected while it had in fact been mined. See
   "settlement-unknown" below.
