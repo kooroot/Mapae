@@ -3,6 +3,22 @@ import {decodeDelegations, hashDelegation} from "@metamask/smart-accounts-kit/ut
 import type {Delegation} from "@metamask/smart-accounts-kit";
 import {getAddress, isAddress, slice, hexToBigInt, type Address, type Hex} from "viem";
 import type {PackedUserOperation} from "viem/account-abstraction";
+import {giwaSepolia} from "@mapae/shared";
+
+export const SPONSORED_REVOCATION_APPROVAL_PREFIX = "sponsored-revocation" as const;
+
+/**
+ * The approval phrase an operator must set before the submitter's sponsor mode will boot.
+ *
+ * Same shape as `buildSponsoredBootstrapApproval`, deliberately not the same phrase: the
+ * two services spend differently (a deploy vs. an EntryPoint deposit that partially
+ * refunds into the requester's account), so approving one must never arm the other.
+ * Pinned to the composition because a framework redeploy changes which EntryPoint the
+ * sponsor would be depositing into.
+ */
+export function buildSponsoredRevocationApproval(compositionId: string): string {
+    return `${SPONSORED_REVOCATION_APPROVAL_PREFIX}-chain-${giwaSepolia.id}-${compositionId}`;
+}
 
 /**
  * The operator's boundary on what a submitter will put its own gas behind.
@@ -13,12 +29,37 @@ import type {PackedUserOperation} from "viem/account-abstraction";
  * one account.
  */
 export interface RevocationSubmissionPolicy {
-    /** The only `sender` this submitter acts for. */
-    payer: Address;
+    /**
+     * When set, the only `sender` this submitter acts for — the loopback single-payer
+     * deployment. When absent, any account may submit a revocation *of its own grant*:
+     * the root-delegator == sender check below still pins the operation to the sender's
+     * own permission, and the account's ERC-1271 still decides who may sign it. The pin
+     * is an operator's narrowing, not the security boundary.
+     */
+    payer?: Address;
     maxCallGasLimit: bigint;
     maxVerificationGasLimit: bigint;
     maxPreVerificationGas: bigint;
     maxFeePerGas: bigint;
+    /**
+     * The lowest `maxFeePerGas` this submitter will carry. Unset means no floor.
+     *
+     * A ceiling alone does not protect the relayer, and the base fee is not a floor.
+     * The EntryPoint reimburses the beneficiary at `min(maxFeePerGas, tip + baseFee)` per
+     * gas while the relayer's own transaction is priced at `baseFee + suggested tip` —
+     * and on GIWA those differ by three orders of magnitude (measured: base fee 267 wei,
+     * suggested tip 1,000,000 wei). An operation signed just above the base fee therefore
+     * passes `fee_below_basefee` and reimburses a fraction of what the relayer paid.
+     *
+     * The daily budget does not catch it either: a low fee means a small `requiredPrefund`,
+     * so the cheaper the attack the less the one bound that exists bounds it. That is why
+     * the floor lives here, on the operation, rather than being left to the spend cap.
+     *
+     * Set for the sponsored public mode, left unset for the pinned loopback one — there
+     * the only caller is the operator's own console, and the operator is the party who
+     * would be under-reimbursing themselves.
+     */
+    minFeePerGas?: bigint;
 }
 
 export interface ValidatedRevocationSubmission {
@@ -247,7 +288,7 @@ export function validateRevocationSubmission(
         throw new Error("userOperation.sender must be an address");
     }
     const sender = getAddress(op["sender"]);
-    if (sender !== getAddress(policy.payer)) {
+    if (policy.payer !== undefined && sender !== getAddress(policy.payer)) {
         throw new Error("userOperation.sender is not the account this submitter serves");
     }
     if (getAddress(delegation.delegator) !== sender) {
@@ -290,6 +331,13 @@ export function validateRevocationSubmission(
     // which turns the EntryPoint's prefund check into dead code and lets an unfunded
     // account revoke on the relayer's gas with no reimbursement.
     if (maxFeePerGas === 0n) throw new Error("maxFeePerGas must be non-zero");
+    // Non-zero is not the same as enough — see `minFeePerGas`.
+    if (policy.minFeePerGas !== undefined && maxFeePerGas < policy.minFeePerGas) {
+        throw new Error(
+            `maxFeePerGas ${maxFeePerGas} is below the required ${policy.minFeePerGas}; ` +
+                "the relayer cannot recover what it fronts at that price",
+        );
+    }
 
     const nonce = readUint(op["nonce"], "userOperation.nonce");
     const signature = readHex(op["signature"], "userOperation.signature");

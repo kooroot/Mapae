@@ -59,6 +59,20 @@ single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는
 | F 콘솔 preflight | 회수 버튼이 브라우저에서 닿을 수 있다 | `204` + 정확한 `allow-origin`·`content-type` |
 | G 낯선 출처 preflight | 허용 목록에 없는 출처는 거절 | `403`, `allow-origin` 없음 |
 | H Origin 없는 요청 | CORS 가드가 스크립트를 깨지 않았다 | `200` |
+| I 스폰서드 /health | 모드·스폰서·예산을 밝히고 payer는 없다 | `mode: "sponsored"` + 예산 |
+| J 스폰서드 회수 | ETH 0·예치금 0 계정이 회수되고 스폰서가 낸다 | `200` + tx, 스폰서 지출·잔여 예치 측정 |
+| K 비소유자 서명 | 계정의 ERC-1271이 **예치 전에** 거절한다 | `403 invalid_account_signature`, 스폰서 nonce 불변 |
+| L 완료 후 재제출 | 끝난 회수는 한 푼도 쓰지 않고 거절 | `409 already_revoked`, 추가 예치 없음 |
+| P 수수료 300 wei | 수수료 **하한**이 릴레이어 손실을 막는다 | `400 invalid_submission`, 스폰서 nonce 불변 |
+| M 예산 1 wei | 일일 예산이 실제 상한이다 | `503 budget_exhausted`, 위임은 그대로 |
+| N 닫힌 응답 본문 | 공개 모드는 `detail`을 싣지 않는다 | `400 invalid_submission`, `detail` 없음 |
+| O rate 1/시간 | 두 번째 요청부터 끊긴다 | `429 rate_limited` |
+
+A–H는 **핀 모드**(단일 payer, loopback, 콘솔용)로, I–O는 같은 바이너리를
+`PAYER_ACCOUNT_ADDRESS` 없이 재기동한 **스폰서드 모드**(공개 터널용)로 돈다.
+스폰서드 케이스가 **새 계정**을 쓰는 이유: 첫 계정의 예치금은 E가 재충전해 두어
+부족분이 0이고, 그 상태로는 이 모드의 존재 이유인 예치 대납 레그가 아예 돌지
+않는다.
 
 D와 E가 분리된 이유가 이 수트에서 가장 비자명하다. D만 있으면 "리플레이가
 막혔다"고 말할 수 없다 — D를 막은 것은 체인 앞단의 예치금 게이트이고, nonce는
@@ -68,6 +82,28 @@ D와 E가 분리된 이유가 이 수트에서 가장 비자명하다. D만 있�
 
 케이스 C는 릴레이어의 **수지**까지 확인한다. 트랜잭션이 성공했다는 것만으로는
 릴레이어가 보전됐다는 뜻이 아니라서다(§4).
+
+K가 스폰서드 모드의 축이다. EntryPoint는 서명보다 예치금을 먼저 검사하므로
+(`AA21`이 `AA24`보다 앞), 예치금 없는 계정에서는 시뮬레이션이 서명 판정에
+도달하지 못한다 — 먼저 예치하면 쓰레기 서명 하나하나가 실제 `depositTo`를
+소모한다. 그래서 스폰서드 경로는 예치 전에 계정 자신의
+`getPackedUserOperationTypedDataHash` + `isValidSignature` 두 번의 `eth_call`로
+서명을 묻는다. 판정 주체는 여전히 체인이고, 달라진 것은 시점뿐이다.
+
+J가 측정하는 **잔여 예치(leftover)** 는 이 설계의 비용 상한이다. EntryPoint는
+안 쓴 선납분을 **요청자 계정의 예치금으로** 환급하므로, 스폰서드 프로파일
+(`SPONSORED_REVOCATION_GAS`, 기본 프로파일의 1% 수수료)이 그 선물의 상한을
+정한다 — 요청당 최대 0.000007 ETH, 일일 예산이 총량을 다시 묶는다.
+
+P는 같은 수수료가 **하한**이기도 한 이유다. EntryPoint의 릴레이어 보전은
+`min(서명된 maxFeePerGas, tip + baseFee)`인데 릴레이어 자신의 트랜잭션은
+`baseFee + tip`으로 나간다. GIWA 실측으로 base fee는 267 wei, 권장 tip은
+1,000,000 wei — 세 자릿수 차이다. 하한이 없으면 base fee 바로 위(예: 300 wei)로
+서명한 요청이 `fee_below_basefee`를 통과해 낸 것의 1/3700만 보전받고, 수수료가
+낮으면 선납금도 작아 일일 예산조차 그것을 거의 세지 않는다. 싸게 공격할수록
+유일한 상한이 덜 묶는 구조라, 하한은 예산이 아니라 오퍼레이션 쪽에 둔다.
+릴레이어의 `handleOps` 브로드캐스트도 그 오퍼레이션의 `maxFeePerGas`로 상한을
+잡아 보전액이 지출의 상한이 되게 한다.
 
 ---
 
@@ -81,6 +117,16 @@ D와 E가 분리된 이유가 이 수트에서 가장 비자명하다. D만 있�
 | `400 invalid_submission` | 검증기가 거절. 메시지가 필드를 지목한다 | 바디를 `buildRevocationSubmissionBody`로 다시 생성 |
 | `502` + `AA24 signature error` | 서명자가 계정의 `owner()`가 아니거나 digest가 낡음 | 연결 지갑 확인. nonce를 다시 읽고 한 번에 빌드·서명 |
 | `502` + `AA25 invalid account nonce` | 이미 쓴 UserOperation | 정상 동작. 이미 회수됐는지 확인 |
+| `403 invalid_account_signature` | (스폰서드) 계정의 ERC-1271이 서명을 거절 — 예치 전에 끊은 것 | 소유자 지갑으로 다시 서명 |
+| `409 already_revoked` | (스폰서드) 이미 끝난 회수의 재제출 | 정상 동작. 할 일 없음 |
+| `409 sender_busy` | (스폰서드) 같은 계정의 다른 회수가 진행 중 | 잠시 후 재시도 |
+| `429 rate_limited` | (스폰서드) IP 또는 계정 단위 빈도 초과 | 잠시 후 재시도 |
+| `503 budget_exhausted` / `sponsor_unfunded` | (스폰서드) 일일 예산 소진 또는 스폰서 잔액 부족 | 운영자가 예산·잔액 확인 |
+
+스폰서드 모드의 응답 본문은 **닫힌 enum**이다 — `detail.message`가 없다. 핀
+모드는 loopback에서 소유자 자신에게 답하므로 검증 메시지를 싣지만, 공개 모드에서
+viem 에러 문자열은 전송 URL(경로 키 포함)을 통째로 품을 수 있어 본문에 싣지
+않는다. 자세한 원인은 서비스 stderr에만 남는다.
 
 `AA24`가 특히 헷갈린다 — nonce나 가스 문제처럼 읽히지만 대개 **다른 지갑으로
 서명**했거나 빌드와 서명 사이에 값이 다시 읽힌 경우다. 콘솔이 서명 전에

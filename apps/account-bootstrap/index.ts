@@ -5,10 +5,10 @@ import {
     PaymentIntentSingleFlight,
     SpendBudget,
     buildSponsoredBootstrapApproval,
+    costOfReceipt,
     judgeCorsRequest,
     parseActiveDeploymentArtifactJson,
     parseBootstrapOrigins,
-    readReceiptFeeField,
     throttledHttp,
     validateAccountBootstrap,
     type AccountBootstrapPolicy,
@@ -49,9 +49,9 @@ const BALANCE_ABI = parseAbi(["function balanceOf(address owner) view returns (u
  * the one sink no gate inspects. This service holds a funded key and a path-keyed RPC URL,
  * and viem embeds the whole transport URL in its errors.
  *
- * `apps/revocation-submitter` puts `redactForLog(error)` in its body; that is tolerable
- * only because it is loopback-only and answers the account's own owner. This one answers
- * the public internet.
+ * `apps/revocation-submitter` puts `redactForLog(error)` in its body only in its pinned
+ * loopback mode, where it answers the account's own owner; its sponsored public mode uses
+ * a closed enum for exactly the reasons above. This service answers the public internet.
  */
 type BootstrapRefusal =
     | "bootstrap_disabled"
@@ -338,7 +338,7 @@ async function bootstrap(validated: ValidatedAccountBootstrap): Promise<Bootstra
             confirmations: 1,
             timeout: RECEIPT_TIMEOUT_MS,
         });
-        charged = costOf(receipt, deployReservation);
+        charged = costOfReceipt(receipt, deployReservation);
         if (receipt.status !== "success") throw new Refused("bootstrap_unavailable", 502);
 
         let fundingTransaction: Hex | undefined;
@@ -403,32 +403,6 @@ async function topUp(account: Address): Promise<Hex | undefined> {
 }
 
 /**
- * What a mined transaction cost, including the OP-Stack L1 data fee.
- *
- * `l1Fee` is absent from the EVM's own accounting and omitting it understates the sponsor's
- * real spend by roughly 15%. It arrives as a hex string on GIWA — see `readReceiptFeeField`
- * — and as nothing at all under anvil. When it cannot be read, fall back to the reservation
- * rather than to zero: we know this transaction mined, and the one answer that is certainly
- * wrong is "free".
- *
- * Stated rather than claimed: **no test exercises this function's live-chain branch.** Anvil
- * is not an OP-Stack chain and emits no `l1Fee`, so every fork case takes the `undefined`
- * path. `readReceiptFeeField` is unit-tested against the literal GIWA sends, and
- * `SpendBudget.settle` refuses a non-bigint charge, which is what makes a regression here
- * loud in production rather than silent. That pair is the coverage; the composition is not.
- */
-function costOf(receipt: {gasUsed: bigint; effectiveGasPrice: bigint}, fallback: bigint): bigint {
-    try {
-        return (
-            receipt.gasUsed * receipt.effectiveGasPrice +
-            readReceiptFeeField((receipt as {l1Fee?: unknown}).l1Fee)
-        );
-    } catch {
-        return fallback;
-    }
-}
-
-/**
  * Mint the testnet float, and never let its failure discard a successful deploy.
  *
  * The deploy is the expensive, irreversible half. Throwing from here used to turn a mined
@@ -456,7 +430,7 @@ async function fund(account: Address, reservation: bigint): Promise<{hash?: Hex;
             confirmations: 1,
             timeout: RECEIPT_TIMEOUT_MS,
         });
-        charged = costOf(receipt, reservation);
+        charged = costOfReceipt(receipt, reservation);
         // A reverted mint is not a funding. Reporting its hash as `fundingTransaction`
         // would tell the user their account is funded while the balance is zero.
         if (receipt.status !== "success") return {charged};

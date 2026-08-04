@@ -147,6 +147,34 @@ function assertBootstrapEndpoint(raw: string | undefined): void {
     );
 }
 
+/**
+ * Refuse to build when the sponsored revocation endpoint is not one we chose.
+ *
+ * A deliberately *separate* variable from `VITE_REVOCATION_SUBMITTER_URL`: that name is
+ * the loopback single-payer submitter and its guard above must keep refusing every
+ * non-loopback host. This one is meant to be public — the same host-pin argument as
+ * `assertBootstrapEndpoint`, and the same reason it exists at all: guards are keyed by
+ * variable name, and a new `VITE_` name inherits no protection. A typo pointing this at
+ * the keyed private RPC host would inline that credential into the shipped bundle.
+ */
+function assertPublicSubmitterEndpoint(raw: string | undefined): void {
+    const value = raw?.trim();
+    if (!value) return;
+    let url: URL;
+    try {
+        url = new URL(value);
+    } catch {
+        throw new Error("VITE_REVOCATION_SUBMITTER_PUBLIC_URL is not a valid URL");
+    }
+    if (LOOPBACK_HOSTS.includes(url.hostname)) return;
+    if (url.protocol === "https:" && url.hostname === PUBLIC_BOOTSTRAP_HOST) return;
+    throw new Error(
+        `VITE_REVOCATION_SUBMITTER_PUBLIC_URL must be https://${PUBLIC_BOOTSTRAP_HOST} or loopback, ` +
+            `got "${url.hostname}". Vite inlines this value into the shipped bundle; an unintended ` +
+            "host here is published to every visitor.",
+    );
+}
+
 export default defineConfig(({mode}) => {
     // `loadEnv` sees .env files too, not just the process environment — a credential pasted
     // into apps/web/.env must fail the same way one passed inline does.
@@ -157,6 +185,10 @@ export default defineConfig(({mode}) => {
         env["VITE_REVOCATION_SUBMITTER_URL"] ?? process.env["VITE_REVOCATION_SUBMITTER_URL"],
     );
     assertBootstrapEndpoint(env["VITE_BOOTSTRAP_URL"] ?? process.env["VITE_BOOTSTRAP_URL"]);
+    assertPublicSubmitterEndpoint(
+        env["VITE_REVOCATION_SUBMITTER_PUBLIC_URL"] ??
+            process.env["VITE_REVOCATION_SUBMITTER_PUBLIC_URL"],
+    );
     return {
         plugins: [
             cloudflare({viteEnvironment: {name: "ssr"}}),

@@ -26,6 +26,11 @@ describe("document security policy", () => {
         // Without this entry the browser refuses the bootstrap request before it is sent,
         // so the onboarding flow fails with no network activity to debug. Pinning it here
         // means removing the line breaks a test rather than an onboarding session.
+        //
+        // The same origin also carries the sponsored revocation endpoint (`/revoke` is a
+        // path rule on the facilitator hostname, and CSP polices origins, not paths) — so
+        // this single entry is load-bearing for the kill switch too, and removing it
+        // breaks two flows, not one.
         const policy = createContentSecurityPolicy("0123456789abcdef0123456789abcdef");
         const connect = policy
             .split("; ")

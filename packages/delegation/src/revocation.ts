@@ -5,8 +5,17 @@ import {
 } from "@metamask/smart-accounts-kit/contracts";
 import {hashDelegation, SIGNABLE_USER_OP_TYPED_DATA} from "@metamask/smart-accounts-kit/utils";
 import type {Delegation} from "@metamask/smart-accounts-kit";
-import {EntryPoint as EntryPointAbi} from "@metamask/delegation-abis";
-import {getAddress, type Address, type Hex, type PublicClient} from "viem";
+import {EntryPoint as EntryPointAbi, HybridDeleGator as HybridDeleGatorAbi} from "@metamask/delegation-abis";
+import {
+    BaseError,
+    ContractFunctionExecutionError,
+    ContractFunctionRevertedError,
+    encodeFunctionData,
+    getAddress,
+    type Address,
+    type Hex,
+    type PublicClient,
+} from "viem";
 import {
     toPackedUserOperation,
     type PackedUserOperation,
@@ -92,6 +101,28 @@ export const DEFAULT_REVOCATION_GAS: RevocationGas = {
     preVerificationGas: 100_000n,
     maxFeePerGas: 1_000_000_000n,
     maxPriorityFeePerGas: 1_000_000_000n,
+};
+
+/**
+ * The profile a *sponsored* revocation signs — same limits, 1% of the fee.
+ *
+ * The fee is the sponsor's exposure, not the operation's cost. The EntryPoint takes the
+ * whole prefund from the sender's deposit up front and refunds the unused part back into
+ * that same deposit (`_postExecution`, `refundAddress = mUserOp.sender`) — where the
+ * account's owner can withdraw it. On GIWA, where the measured gas price is ~0.001 gwei,
+ * the default 1 gwei profile consumes about a thousandth of its 0.0007 ETH prefund, so a
+ * public sponsor depositing it would be a per-request faucet for the requester. At 0.01
+ * gwei the prefund is 0.000007 ETH: still ~10x the measured base fee, so inclusion is not
+ * in question, but the worst-case gift per request is now a number a daily budget can
+ * meaningfully bound. A base-fee spike above 0.01 gwei surfaces as `fee_below_basefee`
+ * and the owner retries later — explicit, not silent.
+ */
+export const SPONSORED_REVOCATION_GAS: RevocationGas = {
+    callGasLimit: 300_000n,
+    verificationGasLimit: 300_000n,
+    preVerificationGas: 100_000n,
+    maxFeePerGas: 10_000_000n,
+    maxPriorityFeePerGas: 10_000_000n,
 };
 
 /**
@@ -293,6 +324,107 @@ export async function readRevocationPrefundState(params: {
     const shortfall =
         deposit >= params.requiredPrefund ? 0n : params.requiredPrefund - deposit;
     return {deposit, nativeBalance, shortfall, ready: shortfall === 0n};
+}
+
+/**
+ * The transaction a sponsor sends to arm an account's kill switch.
+ *
+ * `depositTo(sender)` with the amount as value — never a raw transfer: the EntryPoint's
+ * `receive()` credits `msg.sender`, so plain ETH sent to it arms the *sponsor's* deposit
+ * and leaves the account exactly as unarmed as before (`negative-path-suite.ts` records
+ * the same trap). Pure so the service and the e2e share one encoding.
+ */
+export function buildPrefundDepositCall(params: {
+    entryPoint: Address;
+    sender: Address;
+    amount: bigint;
+}): {to: Address; data: Hex; value: bigint} {
+    if (params.amount <= 0n) throw new Error("deposit amount must be positive");
+    return {
+        to: getAddress(params.entryPoint),
+        data: encodeFunctionData({
+            abi: EntryPointAbi,
+            functionName: "depositTo",
+            args: [getAddress(params.sender)],
+        }),
+        value: params.amount,
+    };
+}
+
+/** The ERC-1271 success value — `bytes4(keccak256("isValidSignature(bytes32,bytes)"))`. */
+export const ERC1271_MAGIC_VALUE = "0x1626ba7e";
+
+/**
+ * Ask the account itself whether it would accept this operation's signature — before
+ * anyone spends anything.
+ *
+ * The submitter normally defers signature authority to the EntryPoint's `AA24` at
+ * simulation. A *sponsored* submitter cannot: the EntryPoint checks the prefund before
+ * the signature (`AA21` fires first), so on an unfunded account the simulation can never
+ * reach a signature verdict, and depositing first would mean every garbage signature
+ * costs the sponsor a real `depositTo`. These two reads keep the authority on chain —
+ * `getPackedUserOperationTypedDataHash` is the exact hash `validateUserOp` checks (the
+ * EntryPoint's own userOpHash is ignored by `DeleGatorCore`), and `isValidSignature` is
+ * the same ERC-1271 the account answers everywhere else — while costing zero gas.
+ *
+ * A revert reads as invalid, not as an error: OZ `ECDSA.recover` reverts on malformed
+ * signatures where a wrong-but-well-formed one merely returns a non-magic value, and an
+ * address with no code cannot vouch for anything. A *transport* failure is rethrown —
+ * telling an owner their signature is invalid because our RPC was down would send them
+ * re-signing an operation that was fine.
+ */
+export async function verifyRevocationSignature(params: {
+    publicClient: PublicClient;
+    packed: PackedUserOperation;
+}): Promise<boolean> {
+    const sender = getAddress(params.packed.sender);
+    /**
+     * Only a contract-level refusal means "invalid". Everything else is rethrown.
+     *
+     * The inclusive form — treat every viem `BaseError` as invalid — reads as careful and
+     * is wrong in the one case that matters: an RPC-level throttle (`-32005`) is a
+     * `BaseError` too, and it would tell an owner their signature is bad while consuming
+     * their rate-limit token. So the test is what the *contract* said, not what viem's
+     * class hierarchy happens to contain.
+     */
+    const rethrowUnlessContractRefusal = (error: unknown): void => {
+        if (
+            error instanceof ContractFunctionExecutionError ||
+            error instanceof ContractFunctionRevertedError ||
+            (error instanceof BaseError &&
+                error.walk((e) => e instanceof ContractFunctionRevertedError) !== null)
+        ) {
+            return;
+        }
+        throw error;
+    };
+
+    let hash: Hex;
+    try {
+        hash = (await params.publicClient.readContract({
+            address: sender,
+            abi: HybridDeleGatorAbi,
+            functionName: "getPackedUserOperationTypedDataHash",
+            args: [params.packed],
+        })) as Hex;
+    } catch (error) {
+        rethrowUnlessContractRefusal(error);
+        return false;
+    }
+
+    let magic: Hex;
+    try {
+        magic = (await params.publicClient.readContract({
+            address: sender,
+            abi: HybridDeleGatorAbi,
+            functionName: "isValidSignature",
+            args: [hash, params.packed.signature],
+        })) as Hex;
+    } catch (error) {
+        rethrowUnlessContractRefusal(error);
+        return false;
+    }
+    return magic.toLowerCase() === ERC1271_MAGIC_VALUE;
 }
 
 /**

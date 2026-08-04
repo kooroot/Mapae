@@ -1178,6 +1178,66 @@ a.studio-metric:hover {
     word-break: keep-all;
 }
 
+.studio-revoke-action {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/* The kill switch reads as the destructive act it is — red, not the metal CTA. */
+.studio-revoke-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 22px;
+    border: 1px solid rgba(227, 107, 98, 0.45);
+    border-radius: 9px;
+    color: var(--studio-red);
+    background: var(--studio-red-wash);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        transform 160ms ease,
+        border-color 160ms ease,
+        background 160ms ease,
+        color 160ms ease;
+}
+
+.studio-revoke-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(227, 107, 98, 0.7);
+    background: rgba(227, 107, 98, 0.16);
+}
+
+.studio-revoke-button:disabled {
+    cursor: not-allowed;
+    border-color: var(--studio-line);
+    color: var(--studio-text-3);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* Status copy, not an error — the red form is opt-in via .fault. */
+.studio-revoke-note {
+    max-width: 62ch;
+    color: var(--studio-text-3);
+    font-size: 10px;
+    line-height: 1.6;
+    word-break: keep-all;
+}
+
+.studio-revoke-note.fault {
+    color: var(--studio-red);
+}
+
+.studio-revoke-note a {
+    color: var(--studio-metal);
+    text-decoration: underline;
+}
+
 .studio-security-grid {
     display: grid;
     gap: 1px;

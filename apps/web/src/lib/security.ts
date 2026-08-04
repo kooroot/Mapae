@@ -29,11 +29,14 @@ export function createContentSecurityPolicy(nonce: string): string {
             "connect-src 'self'",
             "https://sepolia-rpc.giwa.io",
             "https://sepolia-explorer.giwa.io",
-            // The sponsored bootstrap endpoint, routed by path on the facilitator host.
-            // Without this entry the browser never sends the request at all, so this line
-            // is a precondition of the onboarding flow rather than a loosening of it. What
-            // travels to it is a signed permission context, which the same page already
-            // holds; the origin is ours and `vite.config.ts` pins the host at build time.
+            // The sponsored bootstrap AND revocation endpoints, both routed by path on
+            // the facilitator host — one origin entry covers `/bootstrap` and `/revoke`
+            // alike, because CSP polices origins, not paths. Without this entry the
+            // browser never sends either request, so this line is a precondition of the
+            // onboarding and kill-switch flows rather than a loosening of them. What
+            // travels to it is a signed permission context or an owner-signed revocation,
+            // which the same page already holds; the origin is ours and `vite.config.ts`
+            // pins the host at build time for both variables.
             "https://facilitator.mapae.io",
             "https://cloudflareinsights.com",
         ].join(" "),

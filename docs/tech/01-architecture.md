@@ -15,7 +15,7 @@
 | `apps/delegated-agent` | parent 위임에서 결제별 leaf 생성 | Bun |
 | `apps/delegated-seller` | ERC-7710 402 발행·리소스 게이트 | Bun + Hono |
 | `apps/agent-mcp` | 결제 루프를 MCP tool로 노출 | Bun + MCP SDK (stdio) |
-| `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` (loopback 전용) | Bun + Hono |
+| `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` — 핀(단일 payer·loopback) / 스폰서드(공개, 예치금 대납) 두 모드 | Bun + Hono |
 | `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 + mUSDC 민팅 | Bun + Hono |
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
 | `apps/web` | 공개 랜딩 + Studio (스폰서드 온보딩·위임 발급·조회·회수) | TanStack Start + Cloudflare |

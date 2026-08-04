@@ -20,8 +20,11 @@
  */
 import {
     DEFAULT_REVOCATION_GAS,
+    FRAMEWORK_COMPOSITION_ID,
+    SPONSORED_REVOCATION_GAS,
     buildRevocationSubmissionBody,
     buildRevocationUserOperation,
+    buildSponsoredRevocationApproval,
     finalizeRevocationUserOperation,
     isDelegationRevoked,
     parseActiveDeploymentArtifactJson,
@@ -268,6 +271,7 @@ async function main(): Promise<void> {
         {stdout: "ignore", stderr: "pipe"},
     );
     children.push({name: "anvil", proc: anvil});
+    void forward("anvil", anvil.stderr);
     await waitFor("anvil", async () => {
         const id = (await rpc(forkRpc, "eth_chainId")) as string;
         return Number(BigInt(id)) === giwaSepolia.id;
@@ -521,6 +525,365 @@ async function main(): Promise<void> {
     // ── F/G/H. the browser leg ────────────────────────────────────────────────────────
     await proveCorsPreflight();
 
+    /**
+     * ── the sponsored public mode, same binary, second shape ──────────────────────────
+     *
+     * Everything above ran the pinned single-payer service. The cases below restart the
+     * child with PAYER_ACCOUNT_ADDRESS unset — the shape that goes behind the tunnel —
+     * where a dedicated sponsor arms the EntryPoint deposit at revoke time and every
+     * response body is a closed enum. A *fresh* account is used on purpose: the first
+     * one's deposit was re-armed by case E, so its shortfall is zero and the deposit leg
+     * this mode exists for would never run against it.
+     */
+    const sponsorKey = signerKey("sponsor");
+    const sponsor = privateKeyToAccount(sponsorKey);
+    const sponsorNonceUpstreamBefore = BigInt(
+        (await rpc(upstream, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
+    );
+    await rpc(forkRpc, "anvil_setBalance", [sponsor.address, "0xde0b6b3a7640000"]);
+    if ((await publicClient.getCode({address: sponsor.address})) !== undefined) {
+        throw new Error(`sponsor ${sponsor.address} carries code — pick a different derived key`);
+    }
+
+    const owner2 = privateKeyToAccount(signerKey("owner2"));
+    const agent2 = privateKeyToAccount(signerKey("agent2"));
+    const agent3 = privateKeyToAccount(signerKey("agent3"));
+    const account2 = await toMetaMaskSmartAccount({
+        client: publicClient,
+        implementation: Implementation.Hybrid,
+        signer: {account: owner2},
+        environment: deployment.environment,
+        deployParams: [owner2.address, [], [], []],
+        deploySalt: keccak256(stringToHex("submitter-e2e-sponsored")) as Hex,
+    });
+    const factory2 = await account2.getFactoryArgs();
+    if (!factory2.factory || !factory2.factoryData) throw new Error("no factory args (account2)");
+    await publicClient.waitForTransactionReceipt({
+        hash: await relayerClient.sendTransaction({
+            to: factory2.factory,
+            data: factory2.factoryData,
+        }),
+    });
+    console.log(`[e2e] sponsored payer  ${account2.address} (owner ${owner2.address})`);
+
+    const grantFrom2 = (delegate: Address) => {
+        const unsignedGrant = preparePeriodDelegation({
+            environment: deployment.environment,
+            delegator: account2.address,
+            delegate,
+            policy: buildD3Policies(token)["open-agent"],
+            startDate: now - 1,
+        });
+        return unsignedGrant;
+    };
+    const unsigned2 = grantFrom2(agent2.address);
+    const delegation2 = withDelegationSignature(
+        unsigned2,
+        await account2.signDelegation({delegation: unsigned2, chainId: chain.id}),
+    );
+    const context2 = encodeDelegations([delegation2]);
+    const unsigned3 = grantFrom2(agent3.address);
+    const delegation3 = withDelegationSignature(
+        unsigned3,
+        await account2.signDelegation({delegation: unsigned3, chainId: chain.id}),
+    );
+    const context3 = encodeDelegations([delegation3]);
+
+    const sponsoredEnv = {
+        PATH: process.env["PATH"] ?? "",
+        HOME: process.env["HOME"] ?? "",
+        HOST: "127.0.0.1",
+        PORT: String(SUBMITTER_PORT),
+        GIWA_SEPOLIA_RPC_URL: forkRpc,
+        // No PAYER_ACCOUNT_ADDRESS — that absence *is* the mode selector, and the boot
+        // guards below it (kill switch + approval + dedicated key) are what keep the
+        // absence from ever being an accident in production.
+        RELAYER_ADDRESS: relayer.address,
+        RELAYER_PRIVATE_KEY: relayerKey,
+        REVOCATION_SPONSOR_ENABLED: "true",
+        REVOCATION_SPONSOR_APPROVAL: buildSponsoredRevocationApproval(FRAMEWORK_COMPOSITION_ID),
+        REVOCATION_SPONSOR_PRIVATE_KEY: sponsorKey,
+        REVOCATION_SPONSOR_ADDRESS: sponsor.address,
+        // The production default is 2/hour, sized so one IP cannot exhaust the daily
+        // budget. Every case below arrives from the same loopback address, so that default
+        // would refuse the suite itself after two requests — a property of the harness, not
+        // of the service. Case O restarts with "1" and is what proves the limit binds.
+        REVOCATION_RATE_PER_HOUR: "50",
+        DELEGATION_DEPLOYMENT_PATH: `${REPO}/deployments/giwa-sepolia.framework.json`,
+    };
+
+    async function waitForPortRelease(port: number): Promise<void> {
+        await waitFor(
+            `port ${port} release`,
+            async () => {
+                try {
+                    Bun.serve({port, hostname: "127.0.0.1", fetch: () => new Response("")}).stop(
+                        true,
+                    );
+                    return true;
+                } catch {
+                    return false;
+                }
+            },
+            15_000,
+        );
+    }
+
+    let sponsoredChild = submitter;
+    async function restartSponsored(overrides: Record<string, string> = {}): Promise<void> {
+        sponsoredChild.kill();
+        await waitForPortRelease(SUBMITTER_PORT);
+        sponsoredChild = Bun.spawn([process.execPath, "run", "index.ts"], {
+            cwd: `${REPO}/apps/revocation-submitter`,
+            env: {...sponsoredEnv, ...overrides},
+            stdout: "pipe",
+            stderr: "pipe",
+        });
+        children.push({name: "submitter-sponsored", proc: sponsoredChild});
+        void forward("submitter-sponsored", sponsoredChild.stderr);
+        await waitFor("sponsored submitter", async () => (await fetch(`${SUBMITTER_URL}/health`)).ok);
+    }
+    await restartSponsored();
+
+    // ── I. the sponsored /health names its mode and budget, and no payer ──────────────
+    const sponsoredHealth = (await (await fetch(`${SUBMITTER_URL}/health`)).json()) as {
+        ok: boolean;
+        mode?: string;
+        sponsor?: string;
+        payer?: string;
+        budgetRemainingWei?: string;
+    };
+    if (sponsoredHealth.mode !== "sponsored" || !sponsoredHealth.ok) {
+        throw new Error(`expected sponsored health, got ${JSON.stringify(sponsoredHealth)}`);
+    }
+    if (getAddress(sponsoredHealth.sponsor ?? "0x") !== sponsor.address) {
+        throw new Error(`health names sponsor ${sponsoredHealth.sponsor}, expected ${sponsor.address}`);
+    }
+    if (sponsoredHealth.payer !== undefined) {
+        throw new Error("sponsored health still names a pinned payer");
+    }
+    if (typeof sponsoredHealth.budgetRemainingWei !== "string") {
+        throw new Error("sponsored health does not report its budget");
+    }
+    passed("I", `sponsored mode budget ${sponsoredHealth.budgetRemainingWei} wei`);
+
+    // ── J. an unfunded account revokes, the sponsor pays, the gift is measured ────────
+    const revoked2 = () =>
+        isDelegationRevoked({
+            publicClient,
+            delegationManager: getAddress(deployment.environment.DelegationManager),
+            delegation: delegation2,
+        });
+    const preState = await readRevocationPrefundState({
+        publicClient,
+        entryPoint,
+        sender: account2.address,
+        requiredPrefund: 1n,
+    });
+    if (preState.deposit !== 0n || preState.nativeBalance !== 0n) {
+        throw new Error("sponsored payer must start with zero deposit and zero ETH");
+    }
+    const nonce2 = await readRevocationNonce({publicClient, entryPoint, sender: account2.address});
+    const built2 = buildRevocationUserOperation({
+        delegation: delegation2,
+        entryPoint,
+        chainId: chain.id,
+        nonce: nonce2,
+        gas: SPONSORED_REVOCATION_GAS,
+    });
+    const signed2 = finalizeRevocationUserOperation(
+        built2,
+        await owner2.signTypedData(built2.typedData),
+    );
+    const body2 = buildRevocationSubmissionBody({permissionContext: context2, packed: signed2.packed});
+    const sponsorBefore = await publicClient.getBalance({address: sponsor.address});
+    const sponsoredOk = await postRevoke(body2);
+    if (sponsoredOk.status !== 200 || !sponsoredOk.body.success || !sponsoredOk.body.transaction) {
+        throw new Error(
+            `sponsored revocation failed: ${sponsoredOk.status} ${JSON.stringify(sponsoredOk.body)}`,
+        );
+    }
+    if (!(await revoked2())) {
+        throw new Error("sponsored submitter reported success but the delegation is still enabled");
+    }
+    const sponsorAfter = await publicClient.getBalance({address: sponsor.address});
+    if (sponsorAfter >= sponsorBefore) {
+        throw new Error("the sponsor spent nothing — who paid the deposit?");
+    }
+    const postState = await readRevocationPrefundState({
+        publicClient,
+        entryPoint,
+        sender: account2.address,
+        requiredPrefund: built2.requiredPrefund,
+    });
+    if (postState.nativeBalance !== 0n) {
+        throw new Error(`sponsored payer holds ${postState.nativeBalance} wei ETH — must stay 0`);
+    }
+    /**
+     * The leftover is the gift: the EntryPoint refunds the unused prefund into the
+     * *sender's* deposit, where its owner can withdraw it. Asserting it exists and is
+     * bounded by the sponsored profile's prefund is what keeps the faucet arithmetic in
+     * this suite instead of in a postmortem.
+     */
+    if (postState.deposit === 0n || postState.deposit >= built2.requiredPrefund) {
+        throw new Error(
+            `leftover deposit ${postState.deposit} wei out of ${built2.requiredPrefund} — ` +
+                "the refund path did not behave as documented",
+        );
+    }
+    passed(
+        "J",
+        `sponsored      tx ${sponsoredOk.body.transaction} · sponsor spent ${sponsorBefore - sponsorAfter} wei · leftover ${postState.deposit} wei`,
+    );
+
+    // ── K. a non-owner signature is refused before the sponsor spends anything ────────
+    const sponsorTxCountBeforeK = BigInt(
+        (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
+    );
+    const nonce3 = await readRevocationNonce({publicClient, entryPoint, sender: account2.address});
+    const built3 = buildRevocationUserOperation({
+        delegation: delegation3,
+        entryPoint,
+        chainId: chain.id,
+        nonce: nonce3,
+        gas: SPONSORED_REVOCATION_GAS,
+    });
+    // `owner` signs — a canonical, well-formed signature from the *wrong* key. The account
+    // itself answers `isValidSignature` with a non-magic value, and the refusal must land
+    // before any depositTo leaves the sponsor.
+    const foreignSigned = finalizeRevocationUserOperation(
+        built3,
+        await owner.signTypedData(built3.typedData),
+    );
+    const foreignBody = buildRevocationSubmissionBody({
+        permissionContext: context3,
+        packed: foreignSigned.packed,
+    });
+    const foreignOwner = await postRevoke(foreignBody);
+    if (foreignOwner.status !== 403 || foreignOwner.body.reason !== "invalid_account_signature") {
+        throw new Error(
+            `expected 403 invalid_account_signature, got ${foreignOwner.status} ${JSON.stringify(foreignOwner.body)}`,
+        );
+    }
+    const sponsorTxCountAfterK = BigInt(
+        (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
+    );
+    if (sponsorTxCountAfterK !== sponsorTxCountBeforeK) {
+        throw new Error("a refused signature still moved the sponsor's nonce — ordering is broken");
+    }
+    passed("K", "foreign owner  403 invalid_account_signature, sponsor untouched");
+
+    // ── L. replaying a finished revocation is refused before any spend ────────────────
+    const replay2 = await postRevoke(body2);
+    if (replay2.status !== 409 || replay2.body.reason !== "already_revoked") {
+        throw new Error(
+            `expected 409 already_revoked, got ${replay2.status} ${JSON.stringify(replay2.body)}`,
+        );
+    }
+    const sponsorTxCountAfterL = BigInt(
+        (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
+    );
+    if (sponsorTxCountAfterL !== sponsorTxCountBeforeK) {
+        throw new Error("a replay after success cost the sponsor a deposit");
+    }
+    passed("L", "replay done    409 already_revoked, no second deposit");
+
+    /**
+     * ── P. an operation signed below the fee floor is refused ─────────────────────────
+     *
+     * The ceiling alone does not protect the relayer. The EntryPoint reimburses it at
+     * `min(maxFeePerGas, tip + baseFee)` of the *signed* operation while the relayer's own
+     * transaction costs `baseFee + tip` — 267 wei versus ~1,000,267 wei as measured on
+     * GIWA. An operation signed just above the base fee therefore passes
+     * `fee_below_basefee` and reimburses a fraction of what was fronted, and because its
+     * prefund shrinks with the fee, the daily budget barely counts it. This case pins the
+     * floor that closes it.
+     */
+    const cheapGas = {...SPONSORED_REVOCATION_GAS, maxFeePerGas: 300n, maxPriorityFeePerGas: 300n};
+    const cheapBuilt = buildRevocationUserOperation({
+        delegation: delegation3,
+        entryPoint,
+        chainId: chain.id,
+        nonce: await readRevocationNonce({publicClient, entryPoint, sender: account2.address}),
+        gas: cheapGas,
+    });
+    const cheapBody = buildRevocationSubmissionBody({
+        permissionContext: context3,
+        packed: finalizeRevocationUserOperation(
+            cheapBuilt,
+            await owner2.signTypedData(cheapBuilt.typedData),
+        ).packed,
+    });
+    const sponsorNonceBeforeP = BigInt(
+        (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
+    );
+    const cheap = await postRevoke(cheapBody);
+    if (cheap.status !== 400 || cheap.body.reason !== "invalid_submission") {
+        throw new Error(
+            `expected 400 invalid_submission for a below-floor fee, got ${cheap.status} ${JSON.stringify(cheap.body)}`,
+        );
+    }
+    const sponsorNonceAfterP = BigInt(
+        (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
+    );
+    if (sponsorNonceAfterP !== sponsorNonceBeforeP) {
+        throw new Error("a below-floor submission still cost the sponsor a deposit");
+    }
+    passed("P", "fee 300 wei    400 invalid_submission, relayer never fronts it");
+
+    // ── M. the daily budget is a real bound, not a speed bump ─────────────────────────
+    await restartSponsored({REVOCATION_DAILY_WEI: "1"});
+    const ownerSigned3 = finalizeRevocationUserOperation(
+        built3,
+        await owner2.signTypedData(built3.typedData),
+    );
+    const budgetBody = buildRevocationSubmissionBody({
+        permissionContext: context3,
+        packed: ownerSigned3.packed,
+    });
+    const exhausted = await postRevoke(budgetBody);
+    if (exhausted.status !== 503 || exhausted.body.reason !== "budget_exhausted") {
+        throw new Error(
+            `expected 503 budget_exhausted, got ${exhausted.status} ${JSON.stringify(exhausted.body)}`,
+        );
+    }
+    const stillEnabled = await isDelegationRevoked({
+        publicClient,
+        delegationManager: getAddress(deployment.environment.DelegationManager),
+        delegation: delegation3,
+    });
+    if (stillEnabled) throw new Error("a budget-refused revocation still executed");
+    passed("M", "budget 1 wei   503 budget_exhausted, nothing spent");
+
+    // ── N/O. closed bodies and the rate limit, on a fresh 1/hour child ────────────────
+    await restartSponsored({REVOCATION_RATE_PER_HOUR: "1"});
+    const closed = await postRevoke({garbage: true});
+    if (closed.status !== 400 || closed.body.reason !== "invalid_submission") {
+        throw new Error(
+            `expected 400 invalid_submission, got ${closed.status} ${JSON.stringify(closed.body)}`,
+        );
+    }
+    /**
+     * The pinned mode ships `detail.message` because it is loopback-only; the public mode
+     * must not — a viem error carries the whole transport URL, and the path of a keyed RPC
+     * URL is a credential. Asserting the *absence* of the field is what keeps that split
+     * from regressing silently.
+     */
+    if ("detail" in closed.body) {
+        throw new Error(
+            `sponsored refusal leaked a detail body: ${JSON.stringify(closed.body)}`,
+        );
+    }
+    passed("N", "closed body    400 invalid_submission, no detail field");
+
+    const flooded = await postRevoke({garbage: true});
+    if (flooded.status !== 429 || flooded.body.reason !== "rate_limited") {
+        throw new Error(
+            `expected 429 rate_limited, got ${flooded.status} ${JSON.stringify(flooded.body)}`,
+        );
+    }
+    passed("O", "rate 1/hour    429 rate_limited on the second request");
+
     // ── no-broadcast evidence ─────────────────────────────────────────────────────────
     const nonceAfter = BigInt(
         (await rpc(upstream, "eth_getTransactionCount", [relayer.address, "latest"])) as string,
@@ -530,7 +893,18 @@ async function main(): Promise<void> {
             `relayer GIWA nonce moved ${nonceBefore} → ${nonceAfter} — something was broadcast`,
         );
     }
+    const sponsorNonceUpstreamAfter = BigInt(
+        (await rpc(upstream, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
+    );
+    if (sponsorNonceUpstreamAfter !== sponsorNonceUpstreamBefore) {
+        throw new Error(
+            `sponsor GIWA nonce moved ${sponsorNonceUpstreamBefore} → ${sponsorNonceUpstreamAfter} — something was broadcast`,
+        );
+    }
     console.log(`[e2e] relayer GIWA nonce after   ${nonceAfter} (unchanged — nothing broadcast) ✅`);
+    console.log(
+        `[e2e] sponsor GIWA nonce after   ${sponsorNonceUpstreamAfter} (unchanged — nothing broadcast) ✅`,
+    );
     console.log("");
     console.log(`[e2e] revocation submitter service PASS — ${cases.length} cases (${cases.join("")})`);
 }

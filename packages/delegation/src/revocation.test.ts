@@ -1,20 +1,30 @@
 import {describe, expect, test} from "bun:test";
 import {
+    ContractFunctionRevertedError,
+    HttpRequestError,
+    LimitExceededRpcError,
     concatHex,
     encodeAbiParameters,
+    encodeFunctionData,
     getAddress,
     hashTypedData,
     keccak256,
     pad,
     toHex,
     type Address,
+    type PublicClient,
 } from "viem";
 import type {SmartAccountsEnvironment} from "@metamask/smart-accounts-kit";
 import {DeleGatorCore} from "@metamask/smart-accounts-kit/contracts";
+import {
+    EntryPoint as EntryPointAbi,
+    HybridDeleGator as HybridDeleGatorAbi,
+} from "@metamask/delegation-abis";
 import {giwaSepolia} from "@mapae/shared";
 import {ENTRY_POINT_V07} from "./config.js";
 import {buildD3Policies, preparePeriodDelegation} from "./policy.js";
 import {
+    buildPrefundDepositCall,
     buildRevocationCall,
     buildRevocationUserOperation,
     DEFAULT_REVOCATION_GAS,
@@ -22,6 +32,8 @@ import {
     KIT_SIGNABLE_USER_OP_TYPED_DATA,
     REVOCATION_USER_OP_TYPES,
     revocationPrefund,
+    SPONSORED_REVOCATION_GAS,
+    verifyRevocationSignature,
 } from "./revocation.js";
 
 const address = (suffix: number): Address =>
@@ -240,5 +252,140 @@ describe("revocation UserOperation", () => {
         const {signature: _dropped, ...rest} = final.packed;
         const {signature: _also, ...original} = built.packed;
         expect(rest).toEqual(original);
+    });
+});
+
+describe("sponsored revocation gas profile", () => {
+    test("same limits as the default profile — only the fee changes", () => {
+        expect(SPONSORED_REVOCATION_GAS.callGasLimit).toBe(DEFAULT_REVOCATION_GAS.callGasLimit);
+        expect(SPONSORED_REVOCATION_GAS.verificationGasLimit).toBe(
+            DEFAULT_REVOCATION_GAS.verificationGasLimit,
+        );
+        expect(SPONSORED_REVOCATION_GAS.preVerificationGas).toBe(
+            DEFAULT_REVOCATION_GAS.preVerificationGas,
+        );
+    });
+
+    test("prefund is 0.000007 ETH — the sponsor's per-request exposure, exactly", () => {
+        expect(SPONSORED_REVOCATION_GAS.maxFeePerGas).toBe(10_000_000n);
+        expect(revocationPrefund(SPONSORED_REVOCATION_GAS)).toBe(7_000_000_000_000n);
+    });
+
+    test("the tip equals the fee, so the prefund is independent of block.basefee", () => {
+        expect(SPONSORED_REVOCATION_GAS.maxPriorityFeePerGas).toBe(
+            SPONSORED_REVOCATION_GAS.maxFeePerGas,
+        );
+    });
+
+    test("caps the leftover gift at 1% of the self-funded profile", () => {
+        // The EntryPoint refunds the unused prefund into the *sender's* deposit, where the
+        // account owner can withdraw it. At the default 1 gwei profile that makes a public
+        // sponsor a 0.0007 ETH-per-request faucet; this profile is what bounds the gift.
+        expect(revocationPrefund(SPONSORED_REVOCATION_GAS) * 100n).toBeLessThanOrEqual(
+            revocationPrefund(DEFAULT_REVOCATION_GAS),
+        );
+    });
+});
+
+describe("buildPrefundDepositCall", () => {
+    const ENTRY = address(30);
+    const SENDER = address(31);
+
+    test("encodes EntryPoint.depositTo(sender) with the amount as value", () => {
+        const call = buildPrefundDepositCall({entryPoint: ENTRY, sender: SENDER, amount: 7n});
+        expect(call.to).toBe(ENTRY);
+        expect(call.value).toBe(7n);
+        expect(call.data).toBe(
+            encodeFunctionData({
+                abi: EntryPointAbi,
+                functionName: "depositTo",
+                args: [SENDER],
+            }),
+        );
+    });
+
+    test("refuses a zero amount — a zero deposit is a bug, not a no-op", () => {
+        expect(() =>
+            buildPrefundDepositCall({entryPoint: ENTRY, sender: SENDER, amount: 0n}),
+        ).toThrow(/amount must be positive/);
+    });
+});
+
+describe("verifyRevocationSignature", () => {
+    const built = build();
+    const packed = finalizeRevocationUserOperation(built, `0x${"ab".repeat(65)}`).packed;
+    const HASH = `0x${"11".repeat(32)}` as const;
+
+    /** A stub is unavoidable here: the helper's whole job is two eth_calls. */
+    function stubClient(
+        onIsValid: (hash: unknown, signature: unknown) => Promise<unknown>,
+    ): Pick<PublicClient, "readContract"> {
+        return {
+            readContract: (async (args: {functionName: string; args: readonly unknown[]}) => {
+                if (args.functionName === "getPackedUserOperationTypedDataHash") return HASH;
+                if (args.functionName === "isValidSignature") {
+                    return onIsValid(args.args[0], args.args[1]);
+                }
+                throw new Error(`unexpected read: ${args.functionName}`);
+            }) as PublicClient["readContract"],
+        };
+    }
+
+    test("returns true only for the ERC-1271 magic value, fed the account's own hash", async () => {
+        let seenHash: unknown;
+        let seenSignature: unknown;
+        const client = stubClient(async (hash, signature) => {
+            seenHash = hash;
+            seenSignature = signature;
+            return "0x1626ba7e";
+        });
+        await expect(
+            verifyRevocationSignature({publicClient: client as PublicClient, packed}),
+        ).resolves.toBe(true);
+        // The hash the account computes is the hash the signature is checked against —
+        // never a hash we derived ourselves.
+        expect(seenHash).toBe(HASH);
+        expect(seenSignature).toBe(packed.signature);
+    });
+
+    test("a non-magic answer is a refusal, not an error", async () => {
+        const client = stubClient(async () => "0xffffffff");
+        await expect(
+            verifyRevocationSignature({publicClient: client as PublicClient, packed}),
+        ).resolves.toBe(false);
+    });
+
+    test("a contract revert reads as invalid — OZ ECDSA reverts on malformed signatures", async () => {
+        const client = stubClient(async () => {
+            throw new ContractFunctionRevertedError({
+                abi: HybridDeleGatorAbi,
+                functionName: "isValidSignature",
+                message: "execution reverted",
+            });
+        });
+        await expect(
+            verifyRevocationSignature({publicClient: client as PublicClient, packed}),
+        ).resolves.toBe(false);
+    });
+
+    test("a transport failure is rethrown — 'unreachable' must not read as 'invalid'", async () => {
+        const client = stubClient(async () => {
+            throw new HttpRequestError({url: "http://127.0.0.1:1", details: "connection refused"});
+        });
+        await expect(
+            verifyRevocationSignature({publicClient: client as PublicClient, packed}),
+        ).rejects.toThrow(/HTTP request failed|connection refused/);
+    });
+
+    test("an RPC throttle is rethrown, not reported as a bad signature", async () => {
+        // A `-32005` is a viem `BaseError` like everything else. Classifying by base class
+        // would tell an owner their signature is invalid *and* consume their rate-limit
+        // token, for a condition that has nothing to do with the signature.
+        const client = stubClient(async () => {
+            throw new LimitExceededRpcError(new Error("too many requests"));
+        });
+        await expect(
+            verifyRevocationSignature({publicClient: client as PublicClient, packed}),
+        ).rejects.toThrow(/limit|too many requests/i);
     });
 });

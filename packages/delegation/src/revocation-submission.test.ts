@@ -8,16 +8,19 @@ import {buildD3Policies, preparePeriodDelegation} from "./policy.js";
 import {
     buildRevocationUserOperation,
     DEFAULT_REVOCATION_GAS,
+    SPONSORED_REVOCATION_GAS,
     finalizeRevocationUserOperation,
 } from "./revocation.js";
 import {
     buildRevocationSubmissionBody,
+    buildSponsoredRevocationApproval,
     judgeSubmissionReadiness,
     validateRevocationSubmission,
     type RevocationSubmissionPolicy,
     judgeCorsRequest,
     parseCorsAllowlist,
 } from "./revocation-submission.js";
+import {buildSponsoredBootstrapApproval} from "./account-bootstrap.js";
 
 const address = (suffix: number): Address =>
     getAddress(`0x${suffix.toString(16).padStart(40, "0")}`);
@@ -267,6 +270,146 @@ describe("revocation submission validation", () => {
         const huge = (`0x${"ee".repeat(11_000)}`) as Hex;
         expect(() => validateRevocationSubmission(wire({callData: huge}), policy)).toThrow(
             /callData is too large/,
+        );
+    });
+});
+
+describe("open submitter policy (no pinned payer)", () => {
+    const openPolicy: RevocationSubmissionPolicy = {
+        maxCallGasLimit: DEFAULT_REVOCATION_GAS.callGasLimit,
+        maxVerificationGasLimit: DEFAULT_REVOCATION_GAS.verificationGasLimit,
+        maxPreVerificationGas: DEFAULT_REVOCATION_GAS.preVerificationGas,
+        maxFeePerGas: DEFAULT_REVOCATION_GAS.maxFeePerGas,
+    };
+
+    test("any account may revoke its own grant when no payer is pinned", () => {
+        // The sponsored public endpoint serves every onboarded account, so the pin has to
+        // be optional — but only the pin. Every other check still binds.
+        const foreign = makeDelegation(OTHER_PAYER);
+        const foreignBuilt = buildRevocationUserOperation({
+            delegation: foreign,
+            entryPoint: ENTRY_POINT_V07,
+            chainId: giwaSepolia.id,
+            nonce: NONCE,
+            gas: DEFAULT_REVOCATION_GAS,
+        });
+        const {packed} = finalizeRevocationUserOperation(foreignBuilt, SIGNATURE);
+        const body = buildRevocationSubmissionBody({
+            permissionContext: encodeDelegations([foreign]),
+            packed,
+        });
+        const result = validateRevocationSubmission(JSON.parse(JSON.stringify(body)), openPolicy);
+        expect(result.sender).toBe(OTHER_PAYER);
+        expect(result.packed).toEqual(packed);
+    });
+
+    test("a sender that did not grant the permission is refused even without a pin", () => {
+        // This is the check that carries the whole security argument once the pin is gone:
+        // the root's delegator must be the sender, so a caller can only ever disable a
+        // grant made by the account it names — and only that account's owner can sign
+        // the operation the EntryPoint will accept.
+        expect(() =>
+            validateRevocationSubmission(wire({sender: OTHER_PAYER}), openPolicy),
+        ).toThrow(/not granted by the sender account/);
+    });
+
+    test("a pinned payer still refuses every other sender", () => {
+        // The loopback single-payer deployment keeps its behaviour byte for byte.
+        expect(() =>
+            validateRevocationSubmission(wire({sender: OTHER_PAYER}), policy),
+        ).toThrow(/not the account this submitter serves/);
+    });
+});
+
+describe("fee floor (sponsored mode)", () => {
+    /**
+     * The ceiling alone does not protect the relayer, and the base fee is not a floor.
+     *
+     * The EntryPoint reimburses the relayer at `min(maxFeePerGas, tip + baseFee)` per gas,
+     * while the relayer's own transaction is priced at `baseFee + suggested tip`. On GIWA
+     * the measured base fee is ~267 wei and the suggested tip is 1,000,000 wei — so an
+     * operation signed just above the base fee is *accepted* by `fee_below_basefee` and
+     * reimburses the relayer at ~1/3700 of what it paid. The deposit for such an
+     * operation is proportionally tiny, so the daily budget barely moves: the cheaper the
+     * attack, the less it is bounded by the one bound that exists.
+     */
+    const floored: RevocationSubmissionPolicy = {
+        maxCallGasLimit: SPONSORED_REVOCATION_GAS.callGasLimit,
+        maxVerificationGasLimit: SPONSORED_REVOCATION_GAS.verificationGasLimit,
+        maxPreVerificationGas: SPONSORED_REVOCATION_GAS.preVerificationGas,
+        maxFeePerGas: SPONSORED_REVOCATION_GAS.maxFeePerGas,
+        minFeePerGas: SPONSORED_REVOCATION_GAS.maxFeePerGas,
+    };
+
+    const sponsoredBuilt = buildRevocationUserOperation({
+        delegation,
+        entryPoint: ENTRY_POINT_V07,
+        chainId: giwaSepolia.id,
+        nonce: NONCE,
+        gas: SPONSORED_REVOCATION_GAS,
+    });
+
+    function sponsoredWire(overrides: Record<string, unknown> = {}) {
+        const {packed} = finalizeRevocationUserOperation(sponsoredBuilt, SIGNATURE);
+        return {
+            permissionContext: encodeDelegations([delegation]),
+            userOperation: {
+                sender: packed.sender,
+                nonce: packed.nonce.toString(),
+                initCode: packed.initCode,
+                callData: packed.callData,
+                accountGasLimits: packed.accountGasLimits,
+                preVerificationGas: packed.preVerificationGas.toString(),
+                gasFees: packed.gasFees,
+                paymasterAndData: packed.paymasterAndData,
+                signature: packed.signature,
+                ...overrides,
+            },
+        };
+    }
+
+    test("the profile's own fee passes", () => {
+        const result = validateRevocationSubmission(sponsoredWire(), floored);
+        expect(result.gas.maxFeePerGas).toBe(SPONSORED_REVOCATION_GAS.maxFeePerGas);
+    });
+
+    test("a fee just above the base fee is refused, not merely under-reimbursed", () => {
+        // 300 wei: above GIWA's measured 267-wei base fee, so `fee_below_basefee` would
+        // have waved it through, and 1/33,000th of the profile's fee.
+        expect(() =>
+            validateRevocationSubmission(
+                sponsoredWire({gasFees: packFees(300n, 300n)}),
+                floored,
+            ),
+        ).toThrow(/maxFeePerGas 300 is below the required 10000000/);
+    });
+
+    test("one wei under the floor is still under it", () => {
+        const under = SPONSORED_REVOCATION_GAS.maxFeePerGas - 1n;
+        expect(() =>
+            validateRevocationSubmission(sponsoredWire({gasFees: packFees(under, under)}), floored),
+        ).toThrow(/is below the required/);
+    });
+
+    test("a policy with no floor accepts what the ceiling allows — the pinned mode is unchanged", () => {
+        expect(() =>
+            validateRevocationSubmission(wire({gasFees: packFees(300n, 300n)}), policy),
+        ).not.toThrow();
+    });
+});
+
+describe("sponsored revocation approval phrase", () => {
+    test("is pinned to the chain and the composition", () => {
+        expect(buildSponsoredRevocationApproval("abc123")).toBe(
+            `sponsored-revocation-chain-${giwaSepolia.id}-abc123`,
+        );
+    });
+
+    test("differs from the bootstrap approval for the same composition", () => {
+        // One phrase must never authorise the other service: they spend differently and
+        // an operator approves each shape separately.
+        expect(buildSponsoredRevocationApproval("abc123")).not.toBe(
+            buildSponsoredBootstrapApproval("abc123"),
         );
     });
 });

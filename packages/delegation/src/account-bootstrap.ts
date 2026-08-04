@@ -125,7 +125,14 @@ function readPermissionContext(value: unknown): Hex {
  *
  * `*` stays banned for the same reason as the submitter: this service fronts a funded key.
  */
-export function parseBootstrapOrigins(value: string | undefined, fallback: string[]): string[] {
+export function parseBootstrapOrigins(
+    value: string | undefined,
+    fallback: string[],
+    // The revocation submitter's public mode reuses this parser; the error messages must
+    // name the env var the operator actually set, or a typo sends them to fix a variable
+    // their service never reads.
+    varName = "BOOTSTRAP_ALLOWED_ORIGINS",
+): string[] {
     const raw = value?.trim();
     if (!raw) return fallback;
     const entries = raw
@@ -136,23 +143,19 @@ export function parseBootstrapOrigins(value: string | undefined, fallback: strin
 
     return entries.map((entry) => {
         if (entry === "*") {
-            throw new Error(
-                "BOOTSTRAP_ALLOWED_ORIGINS must not be '*' — this service fronts a funded key",
-            );
+            throw new Error(`${varName} must not be '*' — this service fronts a funded key`);
         }
         let url: URL;
         try {
             url = new URL(entry);
         } catch {
-            throw new Error(`BOOTSTRAP_ALLOWED_ORIGINS entry is not a URL: ${entry}`);
+            throw new Error(`${varName} entry is not a URL: ${entry}`);
         }
         if (!["http:", "https:"].includes(url.protocol)) {
-            throw new Error(`BOOTSTRAP_ALLOWED_ORIGINS entry must be HTTP(S): ${entry}`);
+            throw new Error(`${varName} entry must be HTTP(S): ${entry}`);
         }
         if (url.protocol === "http:" && !/^(127\.|localhost$|\[?::1\]?$)/.test(url.hostname)) {
-            throw new Error(
-                `BOOTSTRAP_ALLOWED_ORIGINS entry must be HTTPS unless loopback: ${entry}`,
-            );
+            throw new Error(`${varName} entry must be HTTPS unless loopback: ${entry}`);
         }
         return url.origin;
     });
@@ -232,6 +235,30 @@ export function readReceiptFeeField(value: unknown): bigint {
         return BigInt(value.trim());
     }
     throw new Error(`unreadable l1Fee: ${typeof value}`);
+}
+
+/**
+ * What a mined transaction cost, including the OP-Stack L1 data fee.
+ *
+ * `l1Fee` is absent from the EVM's own accounting and omitting it understates the
+ * sponsor's real spend by roughly 15%. It arrives as a hex string on GIWA (see
+ * {@link readReceiptFeeField}) and not at all under anvil. When it cannot be read, fall
+ * back to the caller's reservation rather than to zero: the transaction mined, and the
+ * one answer that is certainly wrong is "free". Shared by both sponsor services so the
+ * fee-shape lesson is encoded once.
+ */
+export function costOfReceipt(
+    receipt: {gasUsed: bigint; effectiveGasPrice: bigint},
+    fallback: bigint,
+): bigint {
+    try {
+        return (
+            receipt.gasUsed * receipt.effectiveGasPrice +
+            readReceiptFeeField((receipt as {l1Fee?: unknown}).l1Fee)
+        );
+    } catch {
+        return fallback;
+    }
 }
 
 /**

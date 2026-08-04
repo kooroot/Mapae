@@ -186,6 +186,38 @@ export function bootstrapAvailability():
     return {kind: "configured", url: url.toString().replace(/\/$/, "")};
 }
 
+/**
+ * Whether the *sponsored* revocation endpoint is reachable, and whether it is safe to name.
+ *
+ * A separate variable from `VITE_REVOCATION_SUBMITTER_URL` on purpose: that one names the
+ * loopback single-payer submitter and its build guard refuses any non-loopback host, which
+ * is exactly the protection this public endpoint must not inherit or weaken. Same
+ * host-pinning shape as {@link bootstrapAvailability}, because the endpoint rides the same
+ * tunnel hostname by path — and the same rule about error text: name the host, never the
+ * URL, since the failure case being guarded is a keyed RPC URL whose secret is its path.
+ */
+export function publicSubmitterAvailability():
+    | {kind: "absent"}
+    | {kind: "configured"; url: string}
+    | {kind: "refused"; reason: string} {
+    const raw = import.meta.env["VITE_REVOCATION_SUBMITTER_PUBLIC_URL"]?.trim();
+    if (!raw) return {kind: "absent"};
+    let url: URL;
+    try {
+        url = new URL(raw);
+    } catch {
+        return {kind: "refused", reason: "주소를 해석할 수 없습니다"};
+    }
+    const loopback = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
+    if (url.protocol !== "https:" && !loopback) {
+        return {kind: "refused", reason: `HTTPS가 아닙니다 (${url.hostname})`};
+    }
+    if (!loopback && url.hostname !== "facilitator.mapae.io") {
+        return {kind: "refused", reason: `허용되지 않은 호스트입니다 (${url.hostname})`};
+    }
+    return {kind: "configured", url: url.toString().replace(/\/$/, "")};
+}
+
 /** Guard for anything an operator may paste in. Validate, never cast. */
 export function parseAddress(value: string): Address | undefined {
     const trimmed = value.trim();

@@ -37,8 +37,10 @@ import {
     explorerTxUrl,
     landingUrl,
     publicClient,
+    publicSubmitterAvailability,
     submitterAvailability,
 } from "../lib/config";
+import {RevokeButton} from "./RevokeButton";
 import {short, struckPercent} from "../lib/dial";
 import {
     importedSessionGrant,
@@ -225,7 +227,11 @@ function StudioBody() {
                         ) : section === "activity" ? (
                             <ActivityView receipts={receipts} />
                         ) : (
-                            <SecurityView permission={permission} status={status.value} />
+                            <SecurityView
+                                permission={permission}
+                                status={status.value}
+                                onRevoked={() => setRefreshKey((value) => value + 1)}
+                            />
                         )}
                     </div>
                 )}
@@ -608,11 +614,14 @@ function ActivityView({receipts}: {receipts: ReadState<ReceiptWindow>}) {
 function SecurityView({
     permission,
     status,
+    onRevoked,
 }: {
     permission: LoadedPermission;
     status: DelegationStatus;
+    onRevoked: () => void;
 }) {
     const submitter = submitterAvailability();
+    const sponsored = publicSubmitterAvailability();
     const halted = status.revoked || status.expired;
 
     return (
@@ -631,10 +640,18 @@ function SecurityView({
                               : "소유자만 권한을 끝낼 수 있습니다."}
                     </h2>
                     <p>
-                        공개 웹 앱은 릴레이어 키나 인증 없는 제출기를 노출하지 않습니다.
-                        회수는 소유자 서명과 EntryPoint UserOperation을 사용하는 별도 운영
-                        경로에서 실행됩니다.
+                        소유자 지갑의 EIP-712 서명 한 번으로 이 위임을 온체인에서
+                        비활성화합니다. EntryPoint 예치금은 회수 시점에 스폰서가
+                        대납하므로, 소유자 지갑에 GIWA ETH가 없어도 됩니다.
                     </p>
+                    {status.revoked ? null : (
+                        <RevokeButton
+                            delegation={permission.root}
+                            permissionContext={permission.context}
+                            revoked={status.revoked}
+                            onRevoked={onRevoked}
+                        />
+                    )}
                 </div>
                 <StatusPill status={status} />
             </section>
@@ -660,12 +677,20 @@ function SecurityView({
                 />
                 <SecurityCheck
                     icon={RotateCcwKey}
-                    title="회수 제출기"
-                    state={submitter.kind === "configured" ? "LOCAL READY" : "NOT EXPOSED"}
+                    title="회수 경로"
+                    state={
+                        sponsored.kind === "configured"
+                            ? "SPONSORED"
+                            : submitter.kind === "configured"
+                              ? "LOCAL READY"
+                              : "NOT CONFIGURED"
+                    }
                     body={
-                        submitter.kind === "configured"
-                            ? "이 로컬 환경에는 회수 제출기가 구성되어 있습니다."
-                            : "공개 배포에는 인증 없는 relayer API를 연결하지 않습니다."
+                        sponsored.kind === "configured"
+                            ? "회수 예치금은 스폰서가 대납합니다. 서명 권한은 소유자 지갑에만 있습니다."
+                            : submitter.kind === "configured"
+                              ? "이 로컬 환경에는 회수 제출기가 구성되어 있습니다."
+                              : "회수 엔드포인트가 설정되지 않았습니다."
                     }
                 />
             </section>
@@ -696,8 +721,11 @@ function SecurityView({
                     <li>
                         <span>03</span>
                         <div>
-                            <strong>EntryPoint 제출</strong>
-                            <p>릴레이어가 제출하고 DelegationManager가 해당 위임을 비활성화합니다.</p>
+                            <strong>EntryPoint 제출 · 대납</strong>
+                            <p>
+                                스폰서가 예치금을 채우고 릴레이어가 제출하면 DelegationManager가
+                                해당 위임을 비활성화합니다.
+                            </p>
                         </div>
                     </li>
                 </ol>

@@ -29,6 +29,7 @@ import {
     SPONSORED_BOOTSTRAP_APPROVAL_PREFIX,
     SpendBudget,
     buildSponsoredBootstrapApproval,
+    costOfReceipt,
     isCanonicalSignature,
     parseBootstrapOrigins,
     readReceiptFeeField,
@@ -407,6 +408,38 @@ describe("parseBootstrapOrigins", () => {
 
     test("refuses a non-URL entry", () => {
         expect(() => parseBootstrapOrigins("app.mapae.io", [])).toThrow("not a URL");
+    });
+
+    test("error messages name the caller's env var, not the bootstrap default", () => {
+        // The revocation submitter reuses this parser for its public mode. An operator
+        // who mistyped REVOCATION_ALLOWED_ORIGINS must not be told to fix a bootstrap
+        // variable their service never reads.
+        for (const bad of ["*", "not a url", "http://evil.example"]) {
+            expect(() => parseBootstrapOrigins(bad, [], "REVOCATION_ALLOWED_ORIGINS")).toThrow(
+                /REVOCATION_ALLOWED_ORIGINS/,
+            );
+        }
+        expect(() => parseBootstrapOrigins("*", [])).toThrow(/BOOTSTRAP_ALLOWED_ORIGINS/);
+    });
+});
+
+describe("costOfReceipt", () => {
+    test("charges execution gas plus the OP-Stack L1 fee, which arrives as a hex string", () => {
+        // The literal shape GIWA sends: viem BigInt-converts only the fields it knows,
+        // so `l1Fee` survives as a string. This is the exact bug class that once turned
+        // the daily cap into a no-op.
+        const receipt = {gasUsed: 100n, effectiveGasPrice: 3n, l1Fee: "0x10"};
+        expect(costOfReceipt(receipt, 999n)).toBe(100n * 3n + 16n);
+    });
+
+    test("an absent l1Fee is zero — anvil is not an OP-Stack chain", () => {
+        expect(costOfReceipt({gasUsed: 100n, effectiveGasPrice: 3n}, 999n)).toBe(300n);
+    });
+
+    test("an unreadable l1Fee charges the fallback, never zero", () => {
+        // The transaction mined; the one certainly-wrong answer is "free".
+        const receipt = {gasUsed: 100n, effectiveGasPrice: 3n, l1Fee: {weird: true}};
+        expect(costOfReceipt(receipt, 999n)).toBe(999n);
     });
 });
 
