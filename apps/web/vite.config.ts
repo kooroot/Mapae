@@ -55,15 +55,15 @@ function keepStaticAssetsOutOfWorker(): Plugin {
 /**
  * Refuse to build when `VITE_RPC_URL` points anywhere that is not public.
  *
- * Ported deliberately from `apps/console/vite.config.ts` rather than imported: a shared
- * helper would live in `src/`, and Vite *bundles* modules instead of executing them, so a
- * module-load guard first runs in a visitor's browser — long after the value was inlined
- * into `dist/`. The console measured that exact failure. Two copies of twelve lines is the
- * correct trade against one copy that runs too late.
+ * The guard lives here, not in `src/`, because Vite *bundles* modules instead of
+ * executing them — a module-load guard first runs in a visitor's browser, long after the
+ * value was inlined into `dist/`. That failure was measured in the since-retired console:
+ * with the check only in `src/`, the build succeeded and the key was greppable in the
+ * output bundle. This file needs no `src/` twin: `defineConfig` runs on every Vite start,
+ * so the same guard covers `bun run dev` and `bun run build` alike.
  *
- * This app raises the stakes over the console's: the console is an operator tool someone
- * runs locally, and this one is published to Cloudflare for anyone to load. A keyed RPC URL
- * inlined here is handed to every visitor on the internet.
+ * The stakes here are the highest in the repo: this bundle is published to Cloudflare for
+ * anyone to load, so a keyed RPC URL inlined here is handed to every visitor.
  *
  * Private RPC providers authenticate with an API key in the URL *path*, which the shared
  * `parseNodeRpcUrl` cannot see — it checks userinfo. So "it passed validation" is never

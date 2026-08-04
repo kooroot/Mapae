@@ -23,8 +23,7 @@
     "test:negative": "bun run negative-path-suite.ts",
     "test:e2e:mcp": "bun run mcp-e2e.ts",
     "test:e2e:revoke": "bun run revocation-submitter-e2e.ts",
-    "test:e2e:bootstrap": "bun run bootstrap-e2e.ts",
-    "lab:revoke": "bun run revoke-fork-lab.ts"
+    "test:e2e:bootstrap": "bun run bootstrap-e2e.ts"
   },
   "dependencies": {
     "@mapae/delegation": "workspace:*",

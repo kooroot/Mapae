@@ -2,7 +2,6 @@ import {describe, expect, test} from "bun:test";
 import {
     describe as describeError,
     httpStatusFor,
-    isRetryable,
     redactForLog,
     redactUrls,
 } from "./errors.js";
@@ -81,8 +80,6 @@ describe("settlement error model", () => {
             balance: 0n,
         };
         expect(httpStatusFor(outOfGas)).toBe(503);
-        expect(isRetryable({_tag: "RpcRateLimited", url: "https://rpc"})).toBe(true);
-        expect(isRetryable(outOfGas)).toBe(false);
     });
 
     test("caller-facing failures keep distinct statuses", () => {
@@ -95,13 +92,12 @@ describe("settlement error model", () => {
         expect(httpStatusFor({_tag: "TxReverted"})).toBe(422);
     });
 
-    test("SettlementUnknown is 504 and — unlike RpcUnavailable — is not retryable", () => {
+    test("SettlementUnknown is its own terminal 504 — neither a retry invitation nor a definite non-payment", () => {
         // A settle call whose answer was lost may have moved money. Reporting it as
         // retryable (503) or as a definite non-payment (422) both invite a re-sign that
         // can double-charge. It is its own terminal, non-operational tag mapped to 504.
         const unknown: SettlementError = {_tag: "SettlementUnknown", transaction: TX_HASH};
         expect(httpStatusFor(unknown)).toBe(504);
-        expect(isRetryable(unknown)).toBe(false);
         expect(describeError(unknown)).toContain("may have settled");
     });
 

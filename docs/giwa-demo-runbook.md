@@ -159,8 +159,8 @@ cd apps/delegation-lab && bun run run:giwa -- --broadcast
 
 - `giwa-mcp-run.evidence.json`의 tx 해시를 `docs/tech-notes.md` 증거표에 추가
 - explorer 링크 확인: `https://sepolia-explorer.giwa.io/tx/<hash>`
-- 콘솔(`apps/console`)의 영수증 화면에 같은 정산이 뜨는지 확인 — 별도 원장 없이
-  `ERC20PeriodTransferEnforcer`의 이벤트에서 직접 읽는다
+- Studio(`apps/web`, `/app`)의 영수증 화면에 같은 정산이 뜨는지 확인 — 별도 원장
+  없이 `ERC20PeriodTransferEnforcer`의 이벤트에서 직접 읽는다
 
 ---
 

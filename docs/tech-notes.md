@@ -19,7 +19,6 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 | `facilitator/` | x402 결제 검증·정산 브로드캐스트 | x402-rs (Rust, 컨테이너 운영) |
 | `apps/seller` | 402 발행 (유료 리소스) | Bun + Hono |
 | `apps/agent` | 402 수신 → 서명 → 재요청 | Bun (→ MCP 클라이언트) |
-| `apps/console` | 위임·한도 관리, 영수증 조회 | Vite + TanStack + wagmi |
 | `packages/shared` | 체인·토큰·x402 타입·에러 모델 | TypeScript |
 | `packages/delegation` | Framework 환경·caveat·서명·재위임·취소·ERC-7710 | Smart Accounts Kit 1.7 |
 | `apps/facilitator-erc7710` | ERC-7710 verify/settle 어댑터 | Bun + viem |
@@ -234,7 +233,7 @@ root의 값이 아니다.**
   복구된다.
 - **stdout은 JSON-RPC 채널이다.** 로깅은 전부 stderr로 나간다.
 
-### 콘솔 (지갑 모듈)
+### Studio (지갑 모듈)
 
 두 화면 모두 데이터를 체인에서 직접 읽는다.
 
@@ -258,9 +257,8 @@ root의 값이 아니다.**
 헤더와 빈 목록 문구가 창이 열린 시각을 함께 표시하고, 그 시각은 가정한
 블록타임이 아니라 `fromBlock` 블록의 타임스탬프를 체인에서 읽어 쓴다. 노드가 그
 블록을 주지 못하면(pruned) 문구는 블록 수 표기로 후퇴하고 화면은 유지된다.
-`fromBlock === 0`이면 "전체 이력"으로 표기한다. 창은
-`VITE_RECEIPT_LOOKBACK_BLOCKS`로 넓힐 수 있으나 10만 블록 상한 위로는 갈 수
-없고, 콘솔은 페이징하지 않으며 패널에 그렇게 적혀 있다.
+`fromBlock === 0`이면 "전체 이력"으로 표기한다. 창은 50,000
+블록으로 고정이며, Studio는 페이징하지 않고 패널에 그렇게 적혀 있다.
 
 **회수의 경계.** `DeleGatorCore.disableDelegation`은 `onlyEntryPointOrSelf`라
 owner EOA가 직접 호출할 수 없고 EntryPoint UserOperation이어야 한다. 두 분기
@@ -324,13 +322,13 @@ designator가 붙어 있고 그 대상은 유입 잔액을 전액 이체하는 �
 1 ETH → 0.00024 ETH, 트랜잭션 비용 0.00017 ETH). 수트는 beneficiary 주소에
 코드가 없음을 시작 시점에 강제한다.
 
-브라우저 레그도 응답을 직접 확인한다. 콘솔(:5173)과 제출기(:8082)는 출처가
+브라우저 레그도 응답을 직접 확인한다. 브라우저 클라이언트(로컬 dev :5173)와 제출기(:8082)는 출처가
 다르고 요청이 `content-type: application/json`을 실으므로 브라우저는 preflight를
 먼저 보낸다 — preflight가 실패하면 POST는 나가지 않는다. 수트는 허용된 출처의
 preflight가 204인지, 낯선 출처가 403인지, `Origin` 없는 요청(서버 사이드
 호출)이 그대로 동작하는지를 각각 검사한다.
 
-**콘솔 버튼 (`RevokeButton`).** 지갑 연결 → `owner()` 대조 → nonce 읽기 → 빌드
+**Studio 회수 버튼 (`apps/web/src/dapp/RevokeButton.tsx`).** 지갑 연결 → `owner()` 대조 → nonce 읽기 → 빌드
 → `signTypedData` → 제출 엔드포인트 POST. 설계 결정 세 가지: (1) **서명 전에
 연결 지갑을 계정의 `owner()`와 대조한다**(`HybridDeleGator.sol:233`) — 다른
 지갑의 서명은 EntryPoint에서 `AA24`로 나타나 nonce·가스 문제와 구별되지 않는다.
@@ -340,21 +338,21 @@ preflight가 204인지, 낯선 출처가 403인지, `Origin` 없는 요청(서�
 모듈의 `buildRevocationSubmissionBody`가 만든다 — 인코더와 디코더가 갈라지지
 않도록 라운드트립 테스트가 바이트 단위 재현을 고정한다.
 
-버튼이 잠기는 사유는 다섯 가지이고 각각 다른 문구를 표시한다 — 제출 엔드포인트
-미설정, 이미 회수됨, 지갑 미연결, 소유자 아님, 예치금 부족. 소유자 불일치를
-예치금 부족보다 먼저 알린다 — 지갑은 화면 앞의 사람이 바꿀 수 있는 유일한
-요소이기 때문이다.
+버튼이 잠기는 사유는 각각 다른 문구를 표시한다 — 회수 엔드포인트 미설정, 이미
+회수됨, 지갑 미연결, 체인 불일치, 소유자 아님. 예치금 부족은 잠금 사유가 아니다
+— 공개 경로에서는 스폰서가 회수 시점에 예치를 채우기 때문이고, 그게 스폰서드
+모드의 존재 이유다. 소유자 불일치는 가장 먼저 알린다 — 지갑은 화면 앞의 사람이
+바꿀 수 있는 유일한 요소이기 때문이다.
 
 **검증되지 않은 구간:** 지갑 확장이 서명 요청 구조체(9개 필드)를 사람이 읽을 수
 있게 렌더링하는지는 실제 지갑을 띄워야 확인된다. 자동화가 덮지 못하는 유일한
 구간으로 남아 있다.
 
-콘솔은 회수의 **재원 상태**를 함께 표시한다(`apps/console/src/Revocation.tsx`):
-EntryPoint 예치금, 1회 필요액, 부족분, 지불 계정의 ETH 잔액. 마지막 항목은 0일
-때도 표시한다 — 가스리스가 핵심 주장인 이상, 값이 0이 아닐 때만 나타나는 행은
-불변식 준수를 확인할 수 없는 행이다. 필요액은
-`revocationPrefund(DEFAULT_REVOCATION_GAS)`로 계산하며, 빌더와 같은 헬퍼를
-쓰므로 표시값과 실제 필요액이 어긋나지 않는다.
+자력(핀 모드) 회수의 **재원 상태** — EntryPoint 예치금, 1회 필요액
+(`revocationPrefund(DEFAULT_REVOCATION_GAS)`), 부족분 — 는 제출 엔드포인트의
+`/health`가 답한다. 과거 D6 콘솔이 이 값들을 화면에 상시 표시했고(0일 때도 —
+가스리스가 핵심 주장인 이상, 값이 0이 아닐 때만 나타나는 행은 불변식 준수를
+확인할 수 없는 행이다), 그 원칙은 Studio의 상태 표시에 승계되어 있다.
 
 **킬 스위치의 가스 재원.** 결제는 EntryPoint를 거치지 않는다 — relayer가
 `redeemDelegations`를 직접 호출하므로 payer의 zero-ETH 불변식은 결제에 대해
@@ -712,11 +710,11 @@ payload와 permission context는 bearer 권한이므로 로그·오류 상세에
   UserOp 4종·제출 엔드포인트 2종·manager 합산)을 일회용 체인과 GIWA fork
   양쪽에서 체인 파라미터화로 실행하며, 각 케이스의 온체인 revert 사유까지
   대조한다. 케이스 수는 수트가 스스로 세어 출력한다
-- **콘솔·회수 제출 엔드포인트 — GIWA fork** — 실제 GIWA 상태·배포 바이트코드를
-  고정한 fork에서 브라우저 CORS leg를 포함해 제출기 E2E와 EntryPoint 회수를
-  완주했다. 다만 **GIWA에서 회수는 아직 채굴된 적이 없다.** payer의 EntryPoint
-  예치금이 `0`이라 선입금이 필요하고, 실제 지갑 UI 승인 화면이 마지막 수동
-  검증으로 남아 있다
+- **회수 제출 엔드포인트 — GIWA fork + 라이브 1건** — 실제 GIWA 상태·배포
+  바이트코드를 고정한 fork에서 브라우저 CORS leg를 포함해 제출기 E2E와
+  EntryPoint 회수를 완주했고, 2026-08-04에는 공개 스폰서드 경로로 **첫 라이브
+  회수가 GIWA에 채굴됐다** — 지갑(MetaMask) 승인 화면을 실제 사람이 통과한
+  건이기도 하다. 자력(핀 모드) 경로의 선예치는 여전히 소유자 몫으로 남아 있다
 - **상시 게이트 — 로컬 + GIWA 읽기 전용** — 타입·테스트·문서·의존성 게이트를
   묶은 `bun run check` 전체 통과. Framework는 실행 bytecode·결정 주소 38/38 재검증.
   익스플로러 소스 검증은 39개(38유닛 + MockUSDC) 중 38이며, 유일한 미검증

@@ -7,13 +7,11 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p packages/delegation/tsconfig.json && tsc -p apps/agent/tsconfig.json && tsc -p apps/seller/tsconfig.json && tsc -p apps/delegation-lab/tsconfig.json && tsc -p apps/facilitator-erc7710/tsconfig.json && tsc -p apps/delegated-agent/tsconfig.json && tsc -p apps/delegated-seller/tsconfig.json && tsc -p apps/agent-mcp/tsconfig.json && tsc -p apps/revocation-submitter/tsconfig.json && tsc -p apps/account-bootstrap/tsconfig.json && tsc -p apps/console/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p scripts/tsconfig.json",
+    "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p packages/delegation/tsconfig.json && tsc -p apps/agent/tsconfig.json && tsc -p apps/seller/tsconfig.json && tsc -p apps/delegation-lab/tsconfig.json && tsc -p apps/facilitator-erc7710/tsconfig.json && tsc -p apps/delegated-agent/tsconfig.json && tsc -p apps/delegated-seller/tsconfig.json && tsc -p apps/agent-mcp/tsconfig.json && tsc -p apps/revocation-submitter/tsconfig.json && tsc -p apps/account-bootstrap/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p scripts/tsconfig.json",
     "test:ts": "bun test packages/shared/src packages/delegation/src scripts",
     "test:mcp": "cd apps/agent-mcp && bun test",
     "test:contracts": "make -C contracts test",
-    "check": "bun run typecheck && bun run check:docs && bun run check:gitbook && bun run check:logging && bun run check:advisories && bun run check:counts && bun run test:ts && bun run test:mcp && bun run test:console && bun run test:web && bun run build:console && bun run build:web && bun run test:contracts",
-    "test:console": "cd apps/console && bun test",
-    "build:console": "cd apps/console && bun run build",
+    "check": "bun run typecheck && bun run check:docs && bun run check:gitbook && bun run check:logging && bun run check:advisories && bun run check:counts && bun run test:ts && bun run test:mcp && bun run test:web && bun run build:web && bun run test:contracts",
     "check:docs": "bun run scripts/check-docs.ts",
     "check:gitbook": "bun run scripts/build-gitbook.ts --check",
     "gitbook:build": "bun run scripts/build-gitbook.ts",

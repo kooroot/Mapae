@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-584%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-487%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -82,8 +82,8 @@ a strong result, but nothing was mined and there is no link to follow.
 | Delegated payment | Delegation Framework and the owner smart account deployed; root permission signed offline and verified through ERC-1271; delegated payments settled gaslessly | **GIWA** |
 | Agent automation | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
 | Sponsored onboarding | A payer smart account deployed by a sponsor from a root permission signed **before the account existed**; the new user holds zero ETH at every step | **GIWA** |
-| Console | Console reads the cap, the remaining period balance and the settlement receipts straight from chain | Local fork |
-| Standing gates | Documentation, logging, advisory and test-count gates; 584 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets; 15/15 onboarding cases on a GIWA fork | Local + read-only GIWA verification |
+| Studio | Studio (app.mapae.io) reads the cap, the remaining period balance and the settlement receipts straight from chain | **GIWA** |
+| Standing gates | Documentation, logging, advisory and test-count gates; 487 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets; 15/15 onboarding cases on a GIWA fork | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681852449cb4d79ad5c468d2675c60cbdd6ffaa3b7a9)
@@ -108,7 +108,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://gitbook.mapae.io).
-- Regression suite: **584 TypeScript tests (418 shared/delegation/scripts + 3 MCP + 94 console + 69 web)
+- Regression suite: **487 TypeScript tests (419 shared/delegation/scripts + 3 MCP + 65 web)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
@@ -118,10 +118,13 @@ a strong result, but nothing was mined and there is no link to follow.
 
 Being explicit about the edges matters more than a longer list of green checks.
 
-- **Revocation has never been executed on GIWA.** Every result below comes from a local
-  fork — real deployed bytecode, real account, real EntryPoint, but no mined transaction
-  and no explorer link. The payer account's EntryPoint deposit on GIWA is `0`, so the
-  console's revoke button renders disabled against the live chain until someone funds it.
+- **The negative-path evidence below comes from a local fork**, not from GIWA — real
+  deployed bytecode, real account, real EntryPoint, but no mined transaction per case.
+  (A first *live* sponsored revocation has since been mined on GIWA, 2026-08-04, through
+  the public `/revoke` path; the per-case fork evidence stands on its own terms.) The demo payer's EntryPoint deposit on GIWA is `0`, so its
+  self-funded (censorship-resistant) revocation path stays un-armed until the owner
+  funds that deposit; the sponsored `/revoke` path arms the deposit at revoke time
+  instead, and completed its first live revocation on 2026-08-04.
   Every sponsored-onboarded account starts at deposit `0` too, so this boundary belongs
   to the whole class of accounts, not to one demo account.
   `DeleGatorCore.disableDelegation` is `onlyEntryPointOrSelf`, so an owner revokes by
@@ -130,8 +133,9 @@ Being explicit about the edges matters more than a longer list of green checks.
   UserOperation through `handleOps`, with three controls proving each dependency is
   load-bearing — an unfunded deposit fails `AA21`, a non-owner signature fails `AA24`,
   and tampering with the signed `entryPoint` field fails `AA24`. The submitter endpoint
-  now exists (`apps/revocation-submitter`) and the console's revoke button is wired to
-  it: connect, check the connected wallet against the account's `owner()`, sign, POST.
+  now exists (`apps/revocation-submitter`) and Studio's revoke button
+  (`apps/web/src/dapp/RevokeButton.tsx`) is wired to it: connect, check the connected
+  wallet against the account's `owner()`, sign, POST.
   What is still not proven is the last inch — **MetaMask rendering that nine-field
   struct legibly for a human to approve**. That needs a real wallet in front of a real
   person, not a test.
@@ -183,8 +187,8 @@ bun run check
 
 `bun run check` runs strict TypeScript across every package, four standing
 checks — documentation, logging, dependency advisories, test counts — the shared
-and delegation suites, the MCP server smoke tests, the console render tests, a
-real console build, and the Foundry contract suite. It needs no keys. Only the
+and delegation suites, the MCP server smoke tests, the web render tests, a
+real web build, and the Foundry contract suite. It needs no keys. Only the
 advisory check wants the network, and it says so and carries on without it.
 The same command and the hermetic 23-case delegation suite run in GitHub Actions
 on every pull request and every push to `main`, from a recursive-submodule checkout
@@ -227,7 +231,7 @@ file by file, but its sweep was scoped to two directories and `apps/agent` kept
 the forbidden expression through it. A rule that new code keeps reintroducing
 belongs in the gate.
 
-The console build is part of the gate because type checking alone does not catch
+The web build is part of the gate because type checking alone does not catch
 it: a `node:`-only import type-checks cleanly and then fails to bundle, which is
 the same class of mistake as reaching for a server-only module from browser code.
 
@@ -301,19 +305,18 @@ Nothing reaches GIWA. The script refuses to start unless every child process is
 pinned to a loopback RPC, and it re-reads the real relayer nonce afterwards to show
 it never moved.
 
-### Open the console
+### Open Studio
 
 ```bash
-cd apps/console
-VITE_RPC_URL=http://127.0.0.1:8546 \
-VITE_PERMISSION_CONTEXT=0x… \
+cd apps/web
 bun run dev
 ```
 
-Two screens: the engraved cap with its remaining period balance, and the
-settlement receipts. The receipts come from the enforcer's own
-`TransferredInPeriod` events, so the console needs no database and no accounts —
-connecting a wallet is the only identity there is.
+Open `/app`: the delegation scope with its remaining period balance, the
+settlement receipts, and the owner kill switch. The receipts come from the
+enforcer's own `TransferredInPeriod` events, so Studio needs no database and no
+accounts — connecting a wallet is the only identity there is. The hosted build
+is https://app.mapae.io.
 
 ### Run the local Delegation Framework scenario
 
@@ -468,7 +471,6 @@ apps/facilitator-erc7710/  delegated settlement adapter
 apps/agent-mcp/            MCP server that pays for a resource on request
 apps/revocation-submitter/ loopback endpoint that carries a signed revocation
 apps/account-bootstrap/    sponsored payer-account deploy from a pre-deployment signature
-apps/console/              delegation and receipt screens, wallet-module sized
 apps/web/                  public landing (mapae.io) and Studio (app.mapae.io)
 docs/                      technical notes and the deployed-contract reference
 ```

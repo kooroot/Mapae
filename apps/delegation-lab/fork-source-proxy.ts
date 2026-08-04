@@ -11,10 +11,13 @@
  * The escape hatch `CLAUDE.md` named is this file: a loopback proxy that keeps the key in
  * its own memory and hands anvil a keyless `http://127.0.0.1:<port>`.
  *
- * What changed the calculus is `revoke-fork-lab.ts`. The suites fork for seconds; the lab
- * is *designed* to sit for as long as a person needs to drive a wallet, which turns a
- * ~15-second window into an open-ended one. A window that stays open is a different
- * finding from one that closes on its own.
+ * What changed the calculus was the since-retired wallet fork lab: the suites fork for
+ * seconds, but the lab was *designed* to sit for as long as a person needed to drive a
+ * wallet, which turned a ~15-second window into an open-ended one. The lab is gone (its
+ * job was done by the first live sponsored revocation), but the proxy stays: every fork
+ * spawn site — `negative-path-suite.ts`, `mcp-e2e.ts`, `bootstrap-e2e.ts`,
+ * `revocation-submitter-e2e.ts` — goes through it, and reverting them to a keyed
+ * `--fork-url` would reopen a hole documented as closed.
  *
  * Deliberately not a general proxy. It binds loopback, forwards `POST` only, and sends a
  * fixed `content-type` — a JSON-RPC pipe for one child process, not something to grow.

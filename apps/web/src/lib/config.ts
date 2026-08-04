@@ -3,7 +3,7 @@
 // carries the same note for the same reason.
 import {parseActiveDeploymentArtifactJson} from "@mapae/delegation/config";
 import {explorerAddressUrl, explorerTxUrl, giwaSepolia} from "@mapae/shared";
-import {createPublicClient, http, isAddress, type Address} from "viem";
+import {createPublicClient, http, type Address} from "viem";
 import frameworkArtifact from "../../../../deployments/giwa-sepolia.framework.json";
 
 export type SiteSurface = "combined" | "landing" | "app";
@@ -149,6 +149,9 @@ export function submitterAvailability():
         // Names the host, never the whole URL.
         return {kind: "refused", reason: `loopback이 아닙니다 (${url.hostname})`};
     }
+    if (url.pathname !== "/" || url.search || url.hash) {
+        return {kind: "refused", reason: `경로 없는 origin이어야 합니다 (${url.hostname})`};
+    }
     return {kind: "configured", url: url.toString().replace(/\/$/, "")};
 }
 
@@ -183,6 +186,12 @@ export function bootstrapAvailability():
         // path, so echoing the value here would defeat the guard that rejected it.
         return {kind: "refused", reason: `허용되지 않은 호스트입니다 (${url.hostname})`};
     }
+    if (url.pathname !== "/" || url.search || url.hash) {
+        // The value is a path-less origin by contract — the client appends /bootstrap or
+        // /revoke itself, so a pathed value here used to pass the hostname check and 404
+        // at runtime as a doubled path. Refuse it by name instead.
+        return {kind: "refused", reason: `경로 없는 origin이어야 합니다 (${url.hostname})`};
+    }
     return {kind: "configured", url: url.toString().replace(/\/$/, "")};
 }
 
@@ -215,11 +224,10 @@ export function publicSubmitterAvailability():
     if (!loopback && url.hostname !== "facilitator.mapae.io") {
         return {kind: "refused", reason: `허용되지 않은 호스트입니다 (${url.hostname})`};
     }
+    if (url.pathname !== "/" || url.search || url.hash) {
+        // Same contract as bootstrapAvailability: path-less origin, client appends /revoke.
+        return {kind: "refused", reason: `경로 없는 origin이어야 합니다 (${url.hostname})`};
+    }
     return {kind: "configured", url: url.toString().replace(/\/$/, "")};
 }
 
-/** Guard for anything an operator may paste in. Validate, never cast. */
-export function parseAddress(value: string): Address | undefined {
-    const trimmed = value.trim();
-    return isAddress(trimmed) ? (trimmed as Address) : undefined;
-}

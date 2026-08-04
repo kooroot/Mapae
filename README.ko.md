@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-584%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-487%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -81,8 +81,8 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 | 위임 결제 | Framework와 owner 스마트계정 배포, root 위임 오프라인 서명·ERC-1271 검증, 위임 결제 가스리스 정산 | **GIWA** |
 | 에이전트 자동화 | MCP tool 한 번 호출로 사람 개입 0 완주 | **GIWA** |
 | 스폰서드 온보딩 | **아직 존재하지 않는 계정**에 서명한 root 위임으로 스폰서가 payer 스마트계정을 배포 — 새 사용자는 어느 단계에서도 ETH를 들지 않음 | **GIWA** |
-| 콘솔 | 콘솔이 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | 로컬 fork |
-| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 584 + Foundry 14, 두 체인 타깃 negative path 23/23, GIWA fork 온보딩 15/15 | 로컬 + GIWA 읽기 전용 검증 |
+| Studio | Studio(app.mapae.io)가 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | **GIWA** |
+| 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 487 + Foundry 14, 두 체인 타깃 negative path 23/23, GIWA fork 온보딩 15/15 | 로컬 + GIWA 읽기 전용 검증 |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681852449cb4d79ad5c468d2675c60cbdd6ffaa3b7a9)
@@ -105,7 +105,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 문서](https://gitbook.mapae.io)에 있다.
-- 회귀 검증: **584 TypeScript tests (shared/delegation/scripts 418 + MCP 3 + 콘솔 94 + 웹 69)
+- 회귀 검증: **487 TypeScript tests (shared/delegation/scripts 419 + MCP 3 + 웹 65)
   + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -115,10 +115,12 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 
 초록 체크를 늘리는 것보다 경계를 분명히 하는 편이 낫다.
 
-- **회수는 GIWA에서 한 번도 실행된 적이 없다.** 아래 결과는 전부 로컬 fork에서 나온
-  것이다 — 실제 배포 바이트코드, 실제 계정, 실제 EntryPoint를 쓰지만 채굴된 트랜잭션도
-  익스플로러 링크도 없다. GIWA에서 payer 계정의 EntryPoint 예치금이 `0`이라, 라이브
-  체인을 상대로는 콘솔의 회수 버튼이 누군가 예치하기 전까지 비활성으로 렌더된다.
+- **아래 negative-path 증거는 로컬 fork에서 나온 것이다** — 실제 배포 바이트코드,
+  실제 계정, 실제 EntryPoint를 쓰지만 케이스별 채굴 트랜잭션은 없다. (그 뒤
+  2026-08-04, 공개 `/revoke` 경로로 첫 *라이브* 대납 회수가 GIWA에 채굴됐다.
+  케이스별 fork 증거는 그것과 별개로 그 자체로 선다.) 데모 payer의 EntryPoint
+  예치금은 `0`이라, 자력(검열 불가) 회수 경로는 소유자가 예치하기 전까지 무장되지
+  않는다 — 스폰서드 경로는 회수 시점에 스폰서가 예치한다.
   스폰서드 온보딩으로 만들어진 계정도 전부 예치금 `0`에서 시작하므로, 이 경계는 데모
   계정 하나가 아니라 계정 전체 부류의 것이다.
   `DeleGatorCore.disableDelegation`은 `onlyEntryPointOrSelf`라 owner는 EntryPoint
@@ -126,8 +128,8 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   분기, 그리고 실제 owner 서명 UserOperation을 `handleOps`로 태우는 *EntryPoint*
   분기. 의존 요소가 실제로 작동함을 증명하는 대조군 3개가 함께 붙는다: 예치금이
   없으면 `AA21`, owner가 아닌 서명은 `AA24`, 서명된 `entryPoint` 필드를 변조하면
-  `AA24`. 제출 엔드포인트(`apps/revocation-submitter`)가 생겼고 콘솔의 회수 버튼도
-  거기에 연결됐다 — 연결 → 계정 `owner()` 대조 → 서명 → POST. 아직 증명하지 않은
+  `AA24`. 제출 엔드포인트(`apps/revocation-submitter`)가 생겼고 Studio의 회수 버튼
+  (`apps/web/src/dapp/RevokeButton.tsx`)도 거기에 연결됐다 — 연결 → 계정 `owner()` 대조 → 서명 → POST. 아직 증명하지 않은
   것은 마지막 한 뼘, **MetaMask가 그 9개 필드 구조체를 사람이 읽을 수 있게
   렌더링하는지**다. 이건 테스트가 아니라 실제 지갑을 실제 사람 앞에 띄워봐야 한다.
 - **킬 스위치는 가스리스가 아니며, 미리 충전해두지 않으면 작동하지 않는다.**
@@ -174,8 +176,8 @@ bun run check
 ```
 
 `bun run check`는 전체 패키지의 strict TypeScript, 네 가지 상시 검사(문서·로깅·
-의존성 권고·테스트 수치), shared/delegation 테스트, MCP 서버 스모크, 콘솔 렌더
-테스트, 실제 콘솔 빌드, Foundry 테스트를 모두 실행합니다. 키는 필요 없습니다.
+의존성 권고·테스트 수치), shared/delegation 테스트, MCP 서버 스모크, 웹 렌더
+테스트, 실제 웹 빌드, Foundry 테스트를 모두 실행합니다. 키는 필요 없습니다.
 네트워크를 원하는 것은 권고 검사 하나뿐이고, 그것도 닿지 못하면 그렇다고 말하고
 계속 갑니다.
 같은 명령과 hermetic 23-case 위임 수트를 모든 pull request와 `main` push에서
@@ -214,7 +216,7 @@ URL을 `scheme://host`로 줄입니다. 이 규칙은 원래 리뷰로 지켜졌
 `apps/agent`는 금지된 표현을 그대로 통과시켰습니다. 새 코드가 계속 되살리는 규칙은
 게이트에 있어야 합니다.
 
-콘솔 빌드를 게이트에 넣은 이유는 타입 검사만으로는 못 잡기 때문입니다. `node:`
+웹 빌드를 게이트에 넣은 이유는 타입 검사만으로는 못 잡기 때문입니다. `node:`
 전용 import는 타입 검사를 멀쩡히 통과한 뒤 번들에서 깨지는데, 이는 브라우저
 코드에서 서버 전용 모듈에 손을 뻗는 것과 같은 부류의 실수입니다.
 
@@ -286,18 +288,17 @@ GIWA에는 아무것도 닿지 않습니다. 자식 프로세스가 loopback RPC
 스크립트가 시작조차 하지 않고, 끝난 뒤 실제 relayer nonce가 그대로인지 다시
 읽어 확인합니다.
 
-### 콘솔 실행
+### Studio 실행
 
 ```bash
-cd apps/console
-VITE_RPC_URL=http://127.0.0.1:8546 \
-VITE_PERMISSION_CONTEXT=0x… \
+cd apps/web
 bun run dev
 ```
 
-화면 두 개 — 각인된 한도와 남은 주기 잔액, 그리고 정산 영수증. 영수증은
-enforcer 자신의 `TransferredInPeriod` 이벤트에서 읽으므로 별도 원장도 계정
-체계도 없습니다. 지갑 연결이 곧 유일한 신원입니다.
+`/app`을 열면 위임 범위와 남은 주기 잔액, 정산 영수증, 소유자 킬 스위치가
+있습니다. 영수증은 enforcer 자신의 `TransferredInPeriod` 이벤트에서 읽으므로
+별도 원장도 계정 체계도 없습니다. 지갑 연결이 곧 유일한 신원입니다. 호스팅
+빌드는 https://app.mapae.io 입니다.
 
 ### 로컬 Delegation Framework 시나리오 실행
 
@@ -444,7 +445,6 @@ apps/facilitator-erc7710/  delegated settlement adapter
 apps/agent-mcp/            요청 시 리소스를 결제하는 MCP 서버
 apps/revocation-submitter/ 서명된 회수를 실어 나르는 loopback 엔드포인트
 apps/account-bootstrap/    배포 전 서명으로 payer 계정을 대납 배포
-apps/console/              위임·영수증 화면, 지갑 모듈 크기
 apps/web/                  공개 랜딩(mapae.io)과 Studio(app.mapae.io)
 docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 ```

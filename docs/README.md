@@ -65,7 +65,7 @@ bun run test:negative        # 일회용 체인에 프레임워크를 직접 배
 | 장 | 내용 |
 |---|---|
 | [1. 시스템 구성](tech/01-architecture.md) | 컴포넌트와 언어 선택 근거 |
-| [2. 결제 흐름](tech/02-payment-flows.md) | 직접 결제, 위임 결제, MCP 자동화, 콘솔과 회수 — 증거표 포함 |
+| [2. 결제 흐름](tech/02-payment-flows.md) | 직접 결제, 위임 결제, MCP 자동화, Studio와 회수 — 증거표 포함 |
 | [3. 에러 모델](tech/03-error-model.md) | 실패 분류와 사유 반환 정책 |
 | [4. 보안 고려](tech/04-security.md) | facilitator 신뢰 경계 — 침해 시 최대 피해의 상한 |
 | [5. 확인된 온체인 환경](tech/05-onchain-environment.md) | 직접 읽어 확인한 주소만 담은 표 |

@@ -38,6 +38,17 @@ describe("parseNodeRpcUrl", () => {
         }
     });
 
+    test("a key in the URL *path* is waved straight through — this validator cannot see it", () => {
+        // Private RPC providers authenticate with an API key in the path, not userinfo.
+        // parseNodeRpcUrl checks userinfo and scheme only, so a path key passes. The
+        // host-allowlist build guards (apps/web/vite.config.ts) exist because of exactly
+        // this; if this assertion ever flips, the shared validator has grown a path check
+        // and those guards can be reconsidered. Until then, "it passed validation" is
+        // never evidence that a URL is publishable.
+        const keyed = "https://giwa-sepolia.example.io/some-opaque-api-key";
+        expect(parseNodeRpcUrl(keyed)).toBe(keyed);
+    });
+
     test("rejects embedded credentials and non-HTTP schemes", () => {
         expect(() => parseNodeRpcUrl("https://user:pass@rpc.example.com")).toThrow(
             "without embedded credentials",

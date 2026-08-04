@@ -8,7 +8,6 @@
 | `facilitator/` | x402 결제 검증·정산 브로드캐스트 | x402-rs (Rust, 컨테이너 운영) |
 | `apps/seller` | 402 발행 (유료 리소스) | Bun + Hono |
 | `apps/agent` | 402 수신 → 서명 → 재요청 | Bun (→ MCP 클라이언트) |
-| `apps/console` | 위임·한도 관리, 영수증 조회 | Vite + TanStack + wagmi |
 | `packages/shared` | 체인·토큰·x402 타입·에러 모델 | TypeScript |
 | `packages/delegation` | Framework 환경·caveat·서명·재위임·취소·ERC-7710 | Smart Accounts Kit 1.7 |
 | `apps/facilitator-erc7710` | ERC-7710 verify/settle 어댑터 | Bun + viem |

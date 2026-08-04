@@ -73,9 +73,9 @@ flowchart TB
     EP -->|"disableDelegation"| DM
 ```
 
-맥북(개발 전용)에는 그림에 없는 세 가지가 더 있다: x402-rs Rust 컨테이너(:8080,
-D1–D2 EOA 흐름 개발용), 콘솔(:5173, loopback 전용 핀 모드 UI), delegation-lab
-(fork 시뮬레이션·e2e). 어느 것도 운영 트래픽을 받지 않는다.
+맥북(개발 전용)에는 그림에 없는 두 가지가 더 있다: x402-rs Rust 컨테이너(:8080,
+D1–D2 EOA 흐름 개발용)와 delegation-lab(fork 시뮬레이션·e2e). 어느 것도 운영
+트래픽을 받지 않는다.
 
 ---
 

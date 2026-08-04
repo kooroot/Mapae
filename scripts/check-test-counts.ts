@@ -29,14 +29,13 @@ const MATCHES_NOTHING = "zzzz-no-such-test-name-zzzz";
 
 /**
  * The TypeScript suites, in the order the README breaks them down. They mirror `test:ts`,
- * `test:mcp` and `test:console` in package.json; the two agent-scoped ones run from their
+ * `test:mcp` and `test:web` in package.json; the two agent-scoped ones run from their
  * own directory because `@mapae/*` resolves through each package's own node_modules and
  * not from the repository root.
  */
 const SUITES = [
     {label: "shared/delegation/scripts", cwd: REPO, args: ["packages/shared/src", "packages/delegation/src", "scripts"]},
     {label: "MCP", cwd: join(REPO, "apps/agent-mcp"), args: []},
-    {label: "console", cwd: join(REPO, "apps/console"), args: []},
     {label: "web", cwd: join(REPO, "apps/web"), args: []},
 ] as const;
 

@@ -1,7 +1,7 @@
 # 회수(revocation) 런북
 
 킬 스위치를 **로컬에서 완주시키고 검증하는** 절차. 설계 근거와 반례표는
-[기술 노트 §2 콘솔·회수](tech-notes.md)에 있고, 여기서는 중복하지 않는다.
+[기술 노트 §2 Studio·회수](tech-notes.md)에 있고, 여기서는 중복하지 않는다.
 
 GIWA 활성화 절차(예치금 arming, 서비스 배포, 키 보관)는 이 문서에 없다 — 운영
 비밀값이 필요하므로 내부 런북에서 다룬다.
@@ -76,7 +76,7 @@ single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는
 | C 정상 | 실제로 회수된다 | `200` + tx, `disabledDelegations` 참 |
 | D 재요청 | 예치금이 실제로 소모됐다 | `409 prefund_short` |
 | E 재충전 후 재요청 | 리플레이를 막는 건 **nonce**다 | `502` + `AA25 invalid account nonce` |
-| F 콘솔 preflight | 회수 버튼이 브라우저에서 닿을 수 있다 | `204` + 정확한 `allow-origin`·`content-type` |
+| F 브라우저 preflight | 회수 버튼이 브라우저에서 닿을 수 있다 | `204` + 정확한 `allow-origin`·`content-type` |
 | G 낯선 출처 preflight | 허용 목록에 없는 출처는 거절 | `403`, `allow-origin` 없음 |
 | H Origin 없는 요청 | CORS 가드가 스크립트를 깨지 않았다 | `200` |
 | I 스폰서드 /health | 모드·스폰서·예산을 밝히고 payer는 없다 | `mode: "sponsored"` + 예산 |
@@ -90,7 +90,7 @@ single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는
 | Q facilitator 서명자 공유 | 정산 키를 물려받은 기동은 아예 뜨지 않는다 | 부팅 실패(0이 아닌 종료 코드) |
 | R 옛 변수명 | 폐기된 `RELAYER_ADDRESS` 철자가 보이면 뜨지 않는다 | 부팅 실패(0이 아닌 종료 코드) |
 
-A–H는 **핀 모드**(단일 payer, loopback, 콘솔용)로, I–R은 같은 바이너리를
+A–H는 **핀 모드**(단일 payer, loopback 운영용)로, I–R은 같은 바이너리를
 `PAYER_ACCOUNT_ADDRESS` 없이 재기동한 **스폰서드 모드**(공개 터널용)로 돈다.
 스폰서드 케이스가 **새 계정**을 쓰는 이유: 첫 계정의 예치금은 E가 재충전해 두어
 부족분이 0이고, 그 상태로는 이 모드의 존재 이유인 예치 대납 레그가 아예 돌지
@@ -151,7 +151,7 @@ viem 에러 문자열은 전송 URL(경로 키 포함)을 통째로 품을 수 �
 않는다. 자세한 원인은 서비스 stderr에만 남는다.
 
 `AA24`가 특히 헷갈린다 — nonce나 가스 문제처럼 읽히지만 대개 **다른 지갑으로
-서명**했거나 빌드와 서명 사이에 값이 다시 읽힌 경우다. 콘솔이 서명 전에
+서명**했거나 빌드와 서명 사이에 값이 다시 읽힌 경우다. Studio가 서명 전에
 `owner()`를 대조하는 이유가 이것이다.
 
 ---
@@ -176,32 +176,38 @@ funds"로 나타나 엉뚱한 곳을 보게 만든다.
 
 ---
 
-## 5. 콘솔에서
+## 5. Studio에서
 
 ```bash
-cd apps/console && bun run dev
+cd apps/web && bun run dev
 ```
 
-`VITE_REVOCATION_SUBMITTER_URL`이 없으면 회수 버튼은 **비활성 상태로 남는다.**
-보낼 곳 없이 지갑 서명을 받는 것은 버튼이 없는 것보다 나쁘다 — 그 서명은 위임을
-끄는 bearer 권한이기 때문이다.
+Studio의 회수 버튼은 **스폰서드 엔드포인트**(`VITE_REVOCATION_SUBMITTER_PUBLIC_URL`)를
+탄다. 값은 **경로 없는 origin**이어야 한다 — 클라이언트가 `/revoke`를 스스로
+붙이므로, `/revoke`가 이미 붙은 값은 런타임에 `/revoke/revoke` 404가 된다. 지금은
+가드가 그런 값을 이름으로 거부한다. 로컬에서 완주하려면 스폰서드 모드 제출기를
+loopback에 띄우고 `http://127.0.0.1:8082`를 넣으면 된다.
 
-이 값은 loopback만 허용하며 빌드 시점에 강제된다. 제출 엔드포인트에는 애플리케이션
-인증이 없고 릴레이어 키를 들고 있다.
+엔드포인트가 없으면 버튼은 **비활성 상태로 남는다.** 보낼 곳 없이 지갑 서명을
+받는 것은 버튼이 없는 것보다 나쁘다 — 그 서명은 위임을 끄는 bearer 권한이기
+때문이다. 버튼이 잠기는 상태는 각각 다른 문장을 보여준다 — 엔드포인트 미설정,
+이미 회수됨, 지갑 미연결(이때는 연결 버튼이 된다), 네트워크 다름, 소유자 아님.
+예치금 부족은 이 목록에 없다 — 예치금을 채우는 일이 바로 스폰서가 하는 일이다.
 
-버튼이 잠기는 다섯 가지 이유는 각각 다른 문장을 보여준다 — 엔드포인트 미설정,
-이미 회수됨, 지갑 미연결, 소유자 아님, 예치금 부족.
+`VITE_REVOCATION_SUBMITTER_URL`(핀 모드 제출기)은 별도 변수로 남아 있고 상태
+표시에만 쓰인다. 이 값은 loopback만 허용하며 빌드 시점에 강제된다 — 핀 모드
+제출 엔드포인트에는 애플리케이션 인증이 없고 릴레이어 키를 들고 있다.
 
 ### 브라우저 레그 — cross-origin preflight
 
-콘솔은 `:5173`, 제출기는 `:8082`다. 포트가 다르면 다른 출처이고, 회수 요청이
-`content-type: application/json`을 실어 보내므로 **브라우저가 preflight를 먼저 보낸다.**
-그 preflight가 실패하면 POST는 아예 나가지 않는다 — 버튼은 살아 있어 보이고 아무 일도
-일어나지 않으며, 콘솔에도 서버 로그에도 흔적이 남지 않는다.
+로컬에서 Studio는 `:5173`, 제출기는 `:8082`다. 포트가 다르면 다른 출처이고, 회수
+요청이 `content-type: application/json`을 실어 보내므로 **브라우저가 preflight를
+먼저 보낸다.** 그 preflight가 실패하면 POST는 아예 나가지 않는다 — 버튼은 살아
+있어 보이고 아무 일도 일어나지 않으며, 페이지에도 서버 로그에도 흔적이 남지 않는다.
 
 제출기는 `REVOCATION_CONSOLE_ORIGINS`의 출처만 답한다. 기본값은 `vite`(5173)와
-`vite preview`(4173)를 loopback 두 표기로 덮는다. 콘솔을 다른 포트에서 띄웠다면 이
-값을 같이 바꿔야 한다.
+`vite preview`(4173)를 loopback 두 표기로 덮는다. Studio를 다른 포트에서 띄웠다면
+이 값을 같이 바꿔야 한다.
 
 **`*`는 거부한다.** 이 서비스는 애플리케이션 인증이 없고 자금이 든 릴레이어 키를 들고
 있다. 와일드카드는 운영자가 열어 둔 아무 페이지에나 이 서비스의 가스를 쓸 길을 준다.
@@ -226,49 +232,18 @@ cd apps/console && bun run dev
 
 ---
 
-## 지갑 레그를 fork에서 검증하기
+## 지갑 레그
 
-회수 경로에서 자동화가 덮지 못하는 곳은 정확히 하나다 — **사람이 지갑 승인 화면을
-보고 승인하는 구간.** `revocation-submitter-e2e.ts`가 빌드→서명→POST→CORS
-preflight→simulate→`handleOps`→`UserOperationEvent.success`까지 전 케이스를
-완주하지만 서명은 viem `LocalAccount`가 만든다. 지갑 확장이 하는 일(사람에게
-렌더링, `domain.chainId` 강제, 계정 전환, 사용자 거절)은 그 경로에 아예 없고,
-injected provider를 스텁으로 흉내내면 검증 대상이 스텁 자신이 된다.
+회수 경로에서 자동화가 덮지 못하는 곳은 정확히 하나였다 — **사람이 지갑 승인
+화면을 보고 승인하는 구간.** `revocation-submitter-e2e.ts`는 전 케이스를
+완주하지만 서명은 viem `LocalAccount`가 만들고, 지갑 확장이 하는 일(사람에게
+렌더링, `domain.chainId` 강제, 계정 전환, 사용자 거절)은 그 경로에 없다.
 
-```bash
-cd apps/delegation-lab
-bun run lab:revoke        # GIWA head를 fork, 예치금 arming, 제출기 기동 후 대기
-```
-
-랩이 하는 일: GIWA 헤드를 fork → 파생 relayer에 `anvil_setBalance` →
-`EntryPoint.depositTo(payer)`로 1회분의 8배 예치 → 제출기를 fork에 물려 기동 →
-`apps/console/.env.local` 작성 → **Ctrl-C까지 그대로 대기.**
-
-### fork로 충분한 이유
-
-서명이 오프라인 EIP-712이고 **fork도 chain id 91342**라, 지갑이 서명하도록
-요청받는 다이제스트가 라이브 GIWA의 것과 바이트 단위로 같다 — 같은 도메인, 같은
-`verifyingContract`, 같은 `entryPoint`. 그리고 fork는 GIWA의 실제 상태를 들고
-있으므로 커서 아래 계정이 진짜 payer `0xA4e4d00E…DDF382`와 진짜 owner다. 라이브
-GIWA가 추가로 주는 것은 채굴된 트랜잭션과 익스플로러 링크뿐이다.
-
-여기서 따라오는 결론: **MetaMask에 커스텀 네트워크를 추가할 필요가 없다.** 지갑은
-`domain.chainId`를 선택된 네트워크와 비교하는데 실제 GIWA Sepolia도 91342다.
-소유자는 GIWA Sepolia에 그대로 있으면서 서명하면 된다. 지갑은 fork에 접속하지
-않는다 — fork와 말하는 것은 이 프로세스와 콘솔뿐이다.
-
-### 알려진 함정 둘
-
-- **`localhost` 말고 `127.0.0.1`로 열 것.** 같은 머신의 다른 프로젝트가
-  `localhost:5173`에 service worker를 남겨두면 그 앱이 대신 뜬다. 서버는 두 호스트
-  모두 정상 응답하는데 브라우저만 다른 것을 보여주므로, 원인을 콘솔에서 찾게 된다.
-- **콘솔 포트가 5173이 아닐 수 있다.** 그 포트가 이미 쓰이면 vite는 5174로
-  내려가고, CORS allowlist가 그 포트를 안 덮으면 회수 버튼이 **조용히** 아무 것도
-  안 한다. 랩은 5173–5176과 4173을 두 호스트 표기로 모두 덮고, 어느 포트로 갈지
-  미리 알려준다.
-
-### 안전
-
-라이브 GIWA에 닿는 것은 없다. 제출기 자식 프로세스는 spawn 전에 loopback fork로
-고정되고, 실제 GIWA relayer nonce를 시작과 종료 시점에 각각 읽어 불변임을
-증명한다. `.env.local`은 gitignored이며, 지우면 콘솔이 다시 라이브 GIWA를 본다.
+이 레그는 GIWA fork 위 지갑 랩으로 먼저 검증했고(당시 도구는 콘솔과 함께
+폐기됐다), 2026-08-04 라이브 GIWA에서 실제 소유자 지갑으로 완주됐다 — 스폰서드
+`/revoke`를 통해 payer의 위임이 `DisabledDelegation`으로 비활성화됐고, 소유자
+지갑의 GIWA ETH는 처음부터 끝까지 0이었다. fork로 충분했던 이유는 서명이
+오프라인 EIP-712이고 fork도 chain id 91342라, 지갑이 서명하는 다이제스트가
+라이브의 것과 바이트 단위로 같기 때문이다 — 라이브가 추가로 준 것은 채굴된
+트랜잭션과 익스플로러 링크뿐이었고, 실측값은 fork e2e 케이스 J와 wei 단위까지
+일치했다.
