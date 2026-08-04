@@ -12,11 +12,55 @@ import {useState} from "react";
 import {getAddress, isHash, type Hex} from "viem";
 import {useAccount, useConnect, useSignTypedData} from "wagmi";
 import {chain, deployment, explorerTxUrl, publicSubmitterAvailability, publicClient} from "../lib/config";
+import type {Locale} from "../lib/i18n";
+import {useLocale} from "../lib/locale";
 import {
     judgeStudioRevokeGate,
     requestSponsoredRevocation,
     studioRevokeButtonLabel,
 } from "../lib/revoke";
+
+const COPY: Record<
+    Locale,
+    {
+        signing: string;
+        submitting: string;
+        endpointMisconfigured: string;
+        wrongChain: (expected: number, connected: number) => string;
+        wrongWallet: (owner: string, connected: string) => string;
+        sponsoredGas: string;
+        confirmed: string;
+        viewTransaction: string;
+        requestFailed: string;
+    }
+> = {
+    en: {
+        signing: "Waiting for the wallet signature…",
+        submitting: "Submitting the revocation…",
+        endpointMisconfigured: "The revocation endpoint is misconfigured",
+        wrongChain: (expected, connected) =>
+            `Switch the wallet to GIWA Sepolia (chain ${expected}). It is currently connected to chain ${connected}.`,
+        wrongWallet: (owner, connected) =>
+            `The owner of this permission is ${owner}. The connected wallet ${connected} cannot sign the revocation.`,
+        sponsoredGas: "Gas is sponsored — this wallet needs no GIWA ETH.",
+        confirmed: "The revocation is confirmed on-chain.",
+        viewTransaction: "View transaction",
+        requestFailed: "The request could not be completed. Check the wallet and network status.",
+    },
+    ko: {
+        signing: "지갑에서 서명 대기 중…",
+        submitting: "회수 제출 중…",
+        endpointMisconfigured: "회수 엔드포인트 설정이 잘못되었습니다",
+        wrongChain: (expected, connected) =>
+            `지갑을 GIWA Sepolia(chain ${expected})로 전환해 주세요. 현재 chain ${connected}에 연결되어 있습니다.`,
+        wrongWallet: (owner, connected) =>
+            `이 권한의 소유자는 ${owner} 입니다. 연결된 ${connected} 지갑으로는 회수를 서명할 수 없습니다.`,
+        sponsoredGas: "가스는 스폰서가 대납합니다 — 이 지갑에는 GIWA ETH가 필요 없습니다.",
+        confirmed: "회수가 온체인에서 확인되었습니다.",
+        viewTransaction: "트랜잭션 보기",
+        requestFailed: "요청을 완료하지 못했습니다. 지갑과 네트워크 상태를 확인해 주세요.",
+    },
+};
 
 type RevokeProgress =
     | {phase: "idle"}
@@ -55,6 +99,8 @@ export function RevokeButton({
     revoked: boolean;
     onRevoked: () => void;
 }) {
+    const {locale} = useLocale();
+    const t = COPY[locale];
     const endpoint = publicSubmitterAvailability();
     const payer = getAddress(delegation.delegator);
     // `useAccount().chainId` rather than `useChainId()`: the latter falls back to the
@@ -102,16 +148,19 @@ export function RevokeButton({
             const final = finalizeRevocationUserOperation(built, signature as Hex);
 
             setProgress({phase: "submitting"});
-            const result = await requestSponsoredRevocation({
-                endpoint: endpoint.url,
-                permissionContext,
-                packed: final.packed,
-                delegation,
-            });
+            const result = await requestSponsoredRevocation(
+                {
+                    endpoint: endpoint.url,
+                    permissionContext,
+                    packed: final.packed,
+                    delegation,
+                },
+                locale,
+            );
             setProgress({phase: "done", transaction: result.transaction ?? ""});
             onRevoked();
         } catch (error) {
-            setProgress({phase: "failed", reason: faultLine(error)});
+            setProgress({phase: "failed", reason: faultLine(error, locale)});
         }
     }
 
@@ -136,39 +185,35 @@ export function RevokeButton({
             >
                 {busy
                     ? progress.phase === "signing"
-                        ? "지갑에서 서명 대기 중…"
-                        : "회수 제출 중…"
-                    : studioRevokeButtonLabel(gate)}
+                        ? t.signing
+                        : t.submitting
+                    : studioRevokeButtonLabel(gate, locale)}
             </button>
             {endpoint.kind === "refused" ? (
                 <small className="studio-revoke-note fault">
-                    회수 엔드포인트 설정이 잘못되었습니다 — {endpoint.reason}
+                    {t.endpointMisconfigured} — {endpoint.reason}
                 </small>
             ) : gate.kind === "wrong-chain" ? (
                 <small className="studio-revoke-note">
-                    지갑을 GIWA Sepolia(chain {gate.expected})로 전환해 주세요. 현재 chain{" "}
-                    {gate.connected}에 연결되어 있습니다.
+                    {t.wrongChain(gate.expected, gate.connected)}
                 </small>
             ) : gate.kind === "wrong-wallet" ? (
                 <small className="studio-revoke-note">
-                    이 권한의 소유자는 {shortAddress(gate.owner)} 입니다. 연결된{" "}
-                    {shortAddress(gate.connected)} 지갑으로는 회수를 서명할 수 없습니다.
+                    {t.wrongWallet(shortAddress(gate.owner), shortAddress(gate.connected))}
                 </small>
             ) : gate.kind === "ready" ? (
-                <small className="studio-revoke-note">
-                    가스는 스폰서가 대납합니다 — 이 지갑에는 GIWA ETH가 필요 없습니다.
-                </small>
+                <small className="studio-revoke-note">{t.sponsoredGas}</small>
             ) : null}
             {progress.phase === "failed" ? (
                 <small className="studio-revoke-note fault">{progress.reason}</small>
             ) : progress.phase === "done" ? (
                 <small className="studio-revoke-note">
-                    회수가 온체인에서 확인되었습니다.{" "}
+                    {t.confirmed}{" "}
                     {/* Validated, not cast: the hash comes from the server's response body,
                         and it is about to be interpolated into a URL. */}
                     {isHash(progress.transaction) ? (
                         <a href={explorerTxUrl(progress.transaction)} target="_blank" rel="noreferrer">
-                            트랜잭션 보기
+                            {t.viewTransaction}
                         </a>
                     ) : null}
                 </small>
@@ -186,7 +231,7 @@ function shortAddress(value: string): string {
  * raises, a private GIWA endpoint carries its API key in the URL *path*, and this string
  * is rendered straight into the DOM — a sink `check:logging` does not inspect.
  */
-function faultLine(error: unknown): string {
+function faultLine(error: unknown, locale: Locale): string {
     if (error instanceof Error && error.message) return redactUrls(error.message);
-    return "요청을 완료하지 못했습니다. 지갑과 네트워크 상태를 확인해 주세요.";
+    return COPY[locale].requestFailed;
 }

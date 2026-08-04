@@ -290,3 +290,37 @@ button {
     border: 0;
 }
 
+/* The language setting. Inherits its surface's text colour through currentColor so the
+   same component sits on paper and obsidian; the active locale carries full ink, the
+   inactive one recedes the way .dim does. Deliberately no border, no fill — a setting,
+   not a call to action. */
+.lang-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    opacity: 0.92;
+}
+
+.lang-switch button {
+    padding: 2px 1px;
+    color: currentColor;
+    opacity: 0.45;
+    transition: opacity 0.15s var(--ease);
+}
+
+.lang-switch button:hover {
+    opacity: 0.8;
+}
+
+.lang-switch button[aria-pressed="true"] {
+    opacity: 1;
+}
+
+.lang-switch > span {
+    opacity: 0.35;
+}
+

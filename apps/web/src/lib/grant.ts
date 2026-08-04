@@ -16,6 +16,116 @@ import {
 } from "viem";
 import {deployment, publicClient} from "./config";
 import type {AgentSessionKey} from "./agent-key";
+import type {Locale} from "./i18n";
+
+/**
+ * Every user-facing sentence this module produces, both locales, `en` first because
+ * English is the base. Producers take an optional trailing `locale` defaulting to
+ * `"en"`, so existing call sites keep compiling; components pass the active locale.
+ */
+const MSG: Record<
+    Locale,
+    {
+        agentNameRequired: string;
+        agentNameTooLong: string;
+        delegateInvalid: string;
+        delegateZero: string;
+        delegateAnyone: string;
+        amountInvalid: string;
+        amountZero: string;
+        amountOverflow: string;
+        periodRequired: string;
+        expiryRequired: string;
+        expiryShorterThanPeriod: string;
+        recipientInvalid: string;
+        recipientZero: string;
+        recipientAnyone: string;
+        noRootPermission: string;
+        signatureNotAccepted: string;
+        signatureNotCanonical: string;
+        signatureUnreadable: string;
+        signatureWrongOwner: string;
+        bootstrapUnreachable: string;
+        bootstrapNotConfirmed: string;
+        bootstrapDisabled: string;
+        bootstrapRateLimited: string;
+        bootstrapBudgetExhausted: string;
+        bootstrapFeeTooHigh: string;
+        bootstrapPermissionRejected: string;
+        bootstrapFailed: string;
+        importedEmpty: string;
+        importedAgentPrefix: string;
+    }
+> = {
+    en: {
+        agentNameRequired: "Enter an agent name.",
+        agentNameTooLong: "Keep the agent name to 40 characters or fewer.",
+        delegateInvalid: "Check the agent's 0x wallet address.",
+        delegateZero: "The 0x0 address cannot be used as the agent address.",
+        delegateAnyone: "This address is usable by anyone and cannot be the agent address.",
+        amountInvalid: "Enter a positive amount with at most 6 decimal places.",
+        amountZero: "The amount must be greater than 0.",
+        amountOverflow: "The amount exceeds the on-chain uint256 range.",
+        periodRequired: "Select a payment period.",
+        expiryRequired: "Select how long the permission remains valid.",
+        expiryShorterThanPeriod: "The permission's validity cannot be shorter than the payment period.",
+        recipientInvalid: "Check the allowed recipient's 0x address.",
+        recipientZero: "The 0x0 address cannot be used as the recipient.",
+        recipientAnyone: "This address is usable by anyone and cannot be the recipient.",
+        noRootPermission: "The signed result contains no root permission.",
+        signatureNotAccepted: "The payer account did not approve this signature.",
+        signatureNotCanonical:
+            "The wallet produced a signature in a form the chain rejects. Try again with a different wallet.",
+        signatureUnreadable: "The signature could not be parsed.",
+        signatureWrongOwner: "This signature was not made by the owner of this payer account.",
+        bootstrapUnreachable: "Could not connect to the payer account setup service.",
+        bootstrapNotConfirmed:
+            "The payer account deployment has not been confirmed yet. Try again in a moment.",
+        bootstrapDisabled: "Payer account setup is currently turned off.",
+        bootstrapRateLimited: "Too many requests. Try again in a moment.",
+        bootstrapBudgetExhausted:
+            "Today's allowance of new accounts has been used. Try again later.",
+        bootstrapFeeTooHigh: "Network fees are temporarily high. Try again in a moment.",
+        bootstrapPermissionRejected: "A payer account cannot be set up from this permission.",
+        bootstrapFailed: "The payer account could not be set up.",
+        importedEmpty: "An empty permission code cannot be imported.",
+        importedAgentPrefix: "Agent",
+    },
+    ko: {
+        agentNameRequired: "에이전트 이름을 입력해 주세요.",
+        agentNameTooLong: "에이전트 이름은 40자 이내로 입력해 주세요.",
+        delegateInvalid: "에이전트의 0x 지갑 주소를 확인해 주세요.",
+        delegateZero: "에이전트 주소로 0x0 주소를 사용할 수 없습니다.",
+        delegateAnyone: "이 주소는 누구나 사용할 수 있는 값이라 에이전트 주소로 쓸 수 없습니다.",
+        amountInvalid: "금액은 소수점 6자리 이하의 양수로 입력해 주세요.",
+        amountZero: "금액은 0보다 커야 합니다.",
+        amountOverflow: "금액이 온체인 uint256 범위를 넘습니다.",
+        periodRequired: "결제 주기를 선택해 주세요.",
+        expiryRequired: "권한 유효 기간을 선택해 주세요.",
+        expiryShorterThanPeriod: "권한 유효 기간은 결제 주기보다 짧을 수 없습니다.",
+        recipientInvalid: "허용할 수취인의 0x 주소를 확인해 주세요.",
+        recipientZero: "수취인으로 0x0 주소를 사용할 수 없습니다.",
+        recipientAnyone: "이 주소는 누구나 사용할 수 있는 값이라 수취인으로 쓸 수 없습니다.",
+        noRootPermission: "서명 결과에 루트 권한이 없습니다.",
+        signatureNotAccepted: "지불 계정이 이 서명을 승인하지 않았습니다.",
+        signatureNotCanonical:
+            "지갑이 만든 서명이 온체인에서 거부되는 형식입니다. 다른 지갑으로 다시 시도해 주세요.",
+        signatureUnreadable: "서명을 해석할 수 없습니다.",
+        signatureWrongOwner: "이 서명은 해당 지불 계정의 소유자가 만든 것이 아닙니다.",
+        bootstrapUnreachable: "지불 계정 준비 서버에 연결하지 못했습니다.",
+        bootstrapNotConfirmed:
+            "지불 계정 배포가 아직 확인되지 않았습니다. 잠시 후 다시 시도해 주세요.",
+        bootstrapDisabled: "지불 계정 준비 기능이 현재 꺼져 있습니다.",
+        bootstrapRateLimited: "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.",
+        bootstrapBudgetExhausted:
+            "오늘 준비 가능한 계정 수를 모두 사용했습니다. 잠시 후 다시 시도해 주세요.",
+        bootstrapFeeTooHigh: "네트워크 수수료가 일시적으로 높습니다. 잠시 후 다시 시도해 주세요.",
+        bootstrapPermissionRejected: "이 권한으로는 지불 계정을 준비할 수 없습니다.",
+        bootstrapFailed: "지불 계정을 준비하지 못했습니다.",
+        importedEmpty: "비어 있는 권한 코드는 가져올 수 없습니다.",
+        importedAgentPrefix: "에이전트",
+    },
+};
 
 export interface GrantDraft {
     agentName: string;
@@ -75,37 +185,38 @@ function positiveSafeInteger(raw: string): number | undefined {
     return Number.isSafeInteger(value) ? value : undefined;
 }
 
-export function validateGrantDraft(draft: GrantDraft): GrantDraftState {
+export function validateGrantDraft(draft: GrantDraft, locale: Locale = "en"): GrantDraftState {
+    const m = MSG[locale];
     const agentName = draft.agentName.trim();
     if (!agentName) {
-        return {kind: "invalid", field: "agentName", reason: "에이전트 이름을 입력해 주세요."};
+        return {kind: "invalid", field: "agentName", reason: m.agentNameRequired};
     }
     if (agentName.length > 40) {
         return {
             kind: "invalid",
             field: "agentName",
-            reason: "에이전트 이름은 40자 이내로 입력해 주세요.",
+            reason: m.agentNameTooLong,
         };
     }
     if (!isAddress(draft.delegate.trim())) {
         return {
             kind: "invalid",
             field: "delegate",
-            reason: "에이전트의 0x 지갑 주소를 확인해 주세요.",
+            reason: m.delegateInvalid,
         };
     }
     if (getAddress(draft.delegate.trim()) === zeroAddress) {
         return {
             kind: "invalid",
             field: "delegate",
-            reason: "에이전트 주소로 0x0 주소를 사용할 수 없습니다.",
+            reason: m.delegateZero,
         };
     }
     if (getAddress(draft.delegate.trim()) === ANY_DELEGATE) {
         return {
             kind: "invalid",
             field: "delegate",
-            reason: "이 주소는 누구나 사용할 수 있는 값이라 에이전트 주소로 쓸 수 없습니다.",
+            reason: m.delegateAnyone,
         };
     }
 
@@ -116,21 +227,21 @@ export function validateGrantDraft(draft: GrantDraft): GrantDraftState {
         return {
             kind: "invalid",
             field: "amount",
-            reason: "금액은 소수점 6자리 이하의 양수로 입력해 주세요.",
+            reason: m.amountInvalid,
         };
     }
     if (periodAmount <= 0n) {
         return {
             kind: "invalid",
             field: "amount",
-            reason: "금액은 0보다 커야 합니다.",
+            reason: m.amountZero,
         };
     }
     if (periodAmount > maxUint256) {
         return {
             kind: "invalid",
             field: "amount",
-            reason: "금액이 온체인 uint256 범위를 넘습니다.",
+            reason: m.amountOverflow,
         };
     }
 
@@ -139,7 +250,7 @@ export function validateGrantDraft(draft: GrantDraft): GrantDraftState {
         return {
             kind: "invalid",
             field: "periodSeconds",
-            reason: "결제 주기를 선택해 주세요.",
+            reason: m.periodRequired,
         };
     }
     const expiresAfterSeconds = positiveSafeInteger(draft.expirySeconds);
@@ -147,14 +258,14 @@ export function validateGrantDraft(draft: GrantDraft): GrantDraftState {
         return {
             kind: "invalid",
             field: "expirySeconds",
-            reason: "권한 유효 기간을 선택해 주세요.",
+            reason: m.expiryRequired,
         };
     }
     if (expiresAfterSeconds < periodDurationSeconds) {
         return {
             kind: "invalid",
             field: "expirySeconds",
-            reason: "권한 유효 기간은 결제 주기보다 짧을 수 없습니다.",
+            reason: m.expiryShorterThanPeriod,
         };
     }
 
@@ -164,7 +275,7 @@ export function validateGrantDraft(draft: GrantDraft): GrantDraftState {
             return {
                 kind: "invalid",
                 field: "recipient",
-                reason: "허용할 수취인의 0x 주소를 확인해 주세요.",
+                reason: m.recipientInvalid,
             };
         }
         recipient = getAddress(draft.recipient.trim());
@@ -172,14 +283,14 @@ export function validateGrantDraft(draft: GrantDraft): GrantDraftState {
             return {
                 kind: "invalid",
                 field: "recipient",
-                reason: "수취인으로 0x0 주소를 사용할 수 없습니다.",
+                reason: m.recipientZero,
             };
         }
         if (recipient === ANY_DELEGATE) {
             return {
                 kind: "invalid",
                 field: "recipient",
-                reason: "이 주소는 누구나 사용할 수 있는 값이라 수취인으로 쓸 수 없습니다.",
+                reason: m.recipientAnyone,
             };
         }
     }
@@ -258,10 +369,14 @@ const ERC1271_ABI = parseAbi([
  * `InvalidEOASignature`, so a grant on an undeployed account cannot settle. This function
  * decides which check applies; it never lets a grant through unchecked.
  */
-export async function verifyPermissionArtifact(artifact: PermissionArtifact): Promise<void> {
+export async function verifyPermissionArtifact(
+    artifact: PermissionArtifact,
+    locale: Locale = "en",
+): Promise<void> {
+    const m = MSG[locale];
     const chain = decodeDelegations(artifact.permissionContext);
     const root = chain.at(-1);
-    if (!root) throw new Error("서명 결과에 루트 권한이 없습니다.");
+    if (!root) throw new Error(m.noRootPermission);
 
     const typedData = buildRootDelegationTypedData(
         getAddress(deployment.environment.DelegationManager),
@@ -270,7 +385,7 @@ export async function verifyPermissionArtifact(artifact: PermissionArtifact): Pr
 
     const code = await publicClient.getCode({address: artifact.delegator});
     if (!code || code === "0x") {
-        await verifyUndeployedPermissionArtifact(artifact.delegator, root, typedData);
+        await verifyUndeployedPermissionArtifact(artifact.delegator, root, typedData, locale);
         return;
     }
 
@@ -282,7 +397,7 @@ export async function verifyPermissionArtifact(artifact: PermissionArtifact): Pr
         args: [digest, root.signature],
     });
     if (magic.toLowerCase() !== ERC1271_MAGIC_VALUE) {
-        throw new Error("지불 계정이 이 서명을 승인하지 않았습니다.");
+        throw new Error(m.signatureNotAccepted);
     }
 }
 
@@ -306,17 +421,17 @@ async function verifyUndeployedPermissionArtifact(
     delegator: Address,
     root: {signature: `0x${string}`},
     typedData: ReturnType<typeof buildRootDelegationTypedData>,
+    locale: Locale = "en",
 ): Promise<void> {
+    const m = MSG[locale];
     if (!isCanonicalSignature(root.signature)) {
-        throw new Error(
-            "지갑이 만든 서명이 온체인에서 거부되는 형식입니다. 다른 지갑으로 다시 시도해 주세요.",
-        );
+        throw new Error(m.signatureNotCanonical);
     }
     let signer: Address;
     try {
         signer = await recoverTypedDataAddress({...typedData, signature: root.signature});
     } catch {
-        throw new Error("서명을 해석할 수 없습니다.");
+        throw new Error(m.signatureUnreadable);
     }
     const derived = await getCounterfactualAccountData({
         factory: getAddress(deployment.environment.SimpleFactory),
@@ -326,7 +441,7 @@ async function verifyUndeployedPermissionArtifact(
         deploySalt: OWNER_ACCOUNT_SALT,
     });
     if (getAddress(derived.address) !== getAddress(delegator)) {
-        throw new Error("이 서명은 해당 지불 계정의 소유자가 만든 것이 아닙니다.");
+        throw new Error(m.signatureWrongOwner);
     }
 }
 
@@ -342,7 +457,9 @@ async function verifyUndeployedPermissionArtifact(
 export async function requestSponsoredBootstrap(
     endpoint: string,
     artifact: PermissionArtifact,
+    locale: Locale = "en",
 ): Promise<void> {
+    const m = MSG[locale];
     let response: Response;
     try {
         response = await fetch(`${endpoint}/bootstrap`, {
@@ -353,7 +470,7 @@ export async function requestSponsoredBootstrap(
             signal: AbortSignal.timeout(90_000),
         });
     } catch {
-        throw new Error("지불 계정 준비 서버에 연결하지 못했습니다.");
+        throw new Error(m.bootstrapUnreachable);
     }
     if (!response.ok) {
         // The body is a closed enum by design; map it rather than rendering it, so a new
@@ -362,30 +479,31 @@ export async function requestSponsoredBootstrap(
             .json()
             .then((body: unknown) => (body as {reason?: string}).reason)
             .catch(() => undefined);
-        throw new Error(bootstrapRefusalMessage(reason));
+        throw new Error(bootstrapRefusalMessage(reason, locale));
     }
     const code = await publicClient.getCode({address: artifact.delegator});
     if (!code || code === "0x") {
-        throw new Error("지불 계정 배포가 아직 확인되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+        throw new Error(m.bootstrapNotConfirmed);
     }
 }
 
-function bootstrapRefusalMessage(reason: string | undefined): string {
+function bootstrapRefusalMessage(reason: string | undefined, locale: Locale = "en"): string {
+    const m = MSG[locale];
     switch (reason) {
         case "bootstrap_disabled":
-            return "지불 계정 준비 기능이 현재 꺼져 있습니다.";
+            return m.bootstrapDisabled;
         case "rate_limited":
-            return "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.";
+            return m.bootstrapRateLimited;
         case "budget_exhausted":
         case "sponsor_unfunded":
-            return "오늘 준비 가능한 계정 수를 모두 사용했습니다. 잠시 후 다시 시도해 주세요.";
+            return m.bootstrapBudgetExhausted;
         case "fee_too_high":
-            return "네트워크 수수료가 일시적으로 높습니다. 잠시 후 다시 시도해 주세요.";
+            return m.bootstrapFeeTooHigh;
         case "malformed_request":
         case "gas_estimate_rejected":
-            return "이 권한으로는 지불 계정을 준비할 수 없습니다.";
+            return m.bootstrapPermissionRejected;
         default:
-            return "지불 계정을 준비하지 못했습니다.";
+            return m.bootstrapFailed;
     }
 }
 
@@ -407,15 +525,19 @@ export function signedSessionGrant(
     };
 }
 
-export function importedSessionGrant(permissionContext: `0x${string}`): SessionGrant {
+export function importedSessionGrant(
+    permissionContext: `0x${string}`,
+    locale: Locale = "en",
+): SessionGrant {
+    const m = MSG[locale];
     const links = decodeDelegations(permissionContext);
     const leaf = links[0];
     const root = links.at(-1);
-    if (!leaf || !root) throw new Error("비어 있는 권한 코드는 가져올 수 없습니다.");
+    if (!leaf || !root) throw new Error(m.importedEmpty);
     const createdAt = Math.floor(Date.now() / 1000);
     return {
         id: `imported:${createdAt}:${permissionContext.slice(-18)}`,
-        name: `에이전트 ${getAddress(leaf.delegate).slice(0, 8)}`,
+        name: `${m.importedAgentPrefix} ${getAddress(leaf.delegate).slice(0, 8)}`,
         source: "imported",
         artifact: {
             frameworkVersion: DELEGATION_FRAMEWORK_VERSION,

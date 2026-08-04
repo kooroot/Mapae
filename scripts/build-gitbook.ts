@@ -27,6 +27,7 @@ import {join} from "node:path";
 const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 
 const SOURCE = "docs/tech-notes.md";
+const SOURCE_EN = "docs/tech-notes.en.md";
 
 /**
  * Section titles → URL slugs, maintained by hand on purpose. Deriving slugs from the
@@ -44,11 +45,31 @@ const SLUGS = new Map<string, string>([
 ]);
 
 /**
+ * The English edition reuses the SAME slugs so the two editions stay URL-parallel:
+ * `/tech/01-architecture` and `/tech/en/01-architecture` are the same chapter in two
+ * languages. A section pair that disagrees on its slug is a registration mistake, not
+ * a translation choice.
+ */
+const SLUGS_EN = new Map<string, string>([
+    ["System architecture", "architecture"],
+    ["Payment flows", "payment-flows"],
+    ["Error model", "error-model"],
+    ["Security considerations", "security"],
+    ["Verified on-chain environment", "onchain-environment"],
+    ["Verification status and roadmap", "roadmap"],
+]);
+
+export type Lang = "ko" | "en";
+
+/**
  * Every generated file opens with this. An HTML comment renders as nothing on GitBook
  * and GitHub, but the first thing an editor sees is where the real file lives.
  */
 export const BANNER =
     "<!-- 생성된 파일 — 직접 수정하지 말 것. 정본은 `docs/tech-notes.md`, 재생성은 `bun run gitbook:build`. -->";
+
+export const BANNER_EN =
+    "<!-- Generated file — do not edit. The source of truth is `docs/tech-notes.en.md`; regenerate with `bun run gitbook:build`. -->";
 
 /**
  * Owned here rather than committed free-standing so that `check:gitbook` also catches
@@ -133,10 +154,11 @@ function mapOutsideFences(text: string, transform: (line: string) => string): st
  * `check-docs.ts` verified against `docs/` must climb one level to keep resolving.
  * Absolute URLs, mailto and in-page anchors are position-independent and stay put.
  */
-export function rewriteRelativeLinks(line: string): string {
+export function rewriteRelativeLinks(line: string, depth = 1): string {
+    const climb = "../".repeat(depth);
     return line.replace(/\]\(([^)\s]+)(\s[^)]*)?\)/g, (whole, target: string, title: string | undefined) => {
         if (/^(https?:|mailto:|#|\.\.\/)/.test(target)) return whole;
-        return `](../${target}${title ?? ""})`;
+        return `](${climb}${target}${title ?? ""})`;
     });
 }
 
@@ -144,31 +166,44 @@ export function rewriteRelativeLinks(line: string): string {
  * The section heading becomes the page's `# ` title, so every heading below it moves
  * up one level to keep the hierarchy contiguous.
  */
-export function transformSectionBody(body: string): string {
+export function transformSectionBody(body: string, depth = 1): string {
     return mapOutsideFences(body, (line) => {
         const promoted = /^#{2,6} /.test(line) ? line.slice(1) : line;
-        return rewriteRelativeLinks(promoted);
+        return rewriteRelativeLinks(promoted, depth);
     });
 }
 
-export function chapterPath(section: TechNotesSection): string {
-    const slug = SLUGS.get(section.title);
+export function chapterPath(section: TechNotesSection, lang: Lang = "ko"): string {
+    const slugs = lang === "en" ? SLUGS_EN : SLUGS;
+    const slug = slugs.get(section.title);
     if (slug === undefined) {
         throw new Error(
             `no slug registered for section "${section.title}" — ` +
-                "add it to SLUGS in scripts/build-gitbook.ts so its URL is chosen, not guessed",
+                `add it to ${lang === "en" ? "SLUGS_EN" : "SLUGS"} in scripts/build-gitbook.ts ` +
+                "so its URL is chosen, not guessed",
         );
     }
-    return `tech/${String(section.number).padStart(2, "0")}-${slug}.md`;
+    const prefix = lang === "en" ? "tech/en/" : "tech/";
+    return `${prefix}${String(section.number).padStart(2, "0")}-${slug}.md`;
 }
 
-export function renderChapter(section: TechNotesSection): string {
-    return `${BANNER}\n\n# ${section.number}. ${section.title}\n\n${transformSectionBody(section.body)}\n`;
+export function renderChapter(section: TechNotesSection, lang: Lang = "ko"): string {
+    const banner = lang === "en" ? BANNER_EN : BANNER;
+    // English chapters sit at docs/tech/en/ — two levels below docs/ — so their
+    // relative links climb twice where the Korean chapters climb once.
+    const depth = lang === "en" ? 2 : 1;
+    return `${banner}\n\n# ${section.number}. ${section.title}\n\n${transformSectionBody(section.body, depth)}\n`;
 }
 
-export function renderSummary(sections: TechNotesSection[]): string {
-    const chapters = sections
+export function renderSummary(
+    sectionsKo: TechNotesSection[],
+    sectionsEn: TechNotesSection[],
+): string {
+    const chaptersKo = sectionsKo
         .map((section) => `* [${section.number}. ${section.title}](${chapterPath(section)})`)
+        .join("\n");
+    const chaptersEn = sectionsEn
+        .map((section) => `* [${section.number}. ${section.title}](${chapterPath(section, "en")})`)
         .join("\n");
     // No banner here, unlike the chapters: GitBook's summary parser is documented for
     // headings and list items only, and what it does with an HTML comment ahead of the
@@ -179,13 +214,23 @@ export function renderSummary(sections: TechNotesSection[]): string {
     // Korean-only title slugs to an empty string and the site falls back to
     // /undefined/, /undefined-1/. "(Tech)" and "(Operations)" make the URLs
     // /tech/… and /operations/….
+    //
+    // The English group comes first because English is the base language of the public
+    // site — but the TWO EXISTING group headings are byte-frozen: published Korean URLs
+    // derive from them (d99e67a measured the failure), and the submitted GASOK links
+    // must keep resolving.
     return `# Summary
 
-* [Mapae 원페이저](README.md)
+* [Mapae one-pager](README.md)
+* [마패 원페이저 (한국어)](README.ko.md)
+
+## Tech (English)
+
+${chaptersEn}
 
 ## 기술자료 (Tech)
 
-${chapters}
+${chaptersKo}
 
 ## 증거와 운영 (Operations)
 
@@ -197,13 +242,35 @@ ${chapters}
 }
 
 /** Everything the generator owns, keyed by repository-relative path. */
-export function expectedOutputs(source: string): Map<string, string> {
-    const {sections} = splitTechNotes(source);
+export function expectedOutputs(sourceKo: string, sourceEn: string): Map<string, string> {
+    const {sections: sectionsKo} = splitTechNotes(sourceKo);
+    const {sections: sectionsEn} = splitTechNotes(sourceEn);
+    // The editions are the same document in two languages. A section present in one and
+    // not the other is a half-translated book; failing here keeps that out of the gate
+    // instead of publishing a skewed summary.
+    if (sectionsKo.length !== sectionsEn.length) {
+        throw new Error(
+            `edition skew: ${SOURCE} has ${sectionsKo.length} sections, ` +
+                `${SOURCE_EN} has ${sectionsEn.length} — every section needs both languages`,
+        );
+    }
+    for (const [index, ko] of sectionsKo.entries()) {
+        const en = sectionsEn[index];
+        if (en && (en.number !== ko.number || chapterPath(en, "en").slice(8) !== chapterPath(ko).slice(5))) {
+            throw new Error(
+                `edition skew at section ${ko.number}: "${ko.title}" pairs with "${en.title}" ` +
+                    "but they derive different slugs — the editions must stay URL-parallel",
+            );
+        }
+    }
     const outputs = new Map<string, string>();
     outputs.set(".gitbook.yaml", GITBOOK_YAML);
-    outputs.set("docs/SUMMARY.md", renderSummary(sections));
-    for (const section of sections) {
+    outputs.set("docs/SUMMARY.md", renderSummary(sectionsKo, sectionsEn));
+    for (const section of sectionsKo) {
         outputs.set(`docs/${chapterPath(section)}`, renderChapter(section));
+    }
+    for (const section of sectionsEn) {
+        outputs.set(`docs/${chapterPath(section, "en")}`, renderChapter(section, "en"));
     }
     return outputs;
 }
@@ -235,13 +302,16 @@ export function diffOutputs(
 }
 
 function listChapterFiles(): string[] {
-    try {
-        return readdirSync(join(REPO, "docs/tech"))
-            .filter((entry) => entry.endsWith(".md"))
-            .map((entry) => `docs/tech/${entry}`);
-    } catch {
-        return []; // the missing directory surfaces as every chapter reported missing
-    }
+    const list = (dir: string): string[] => {
+        try {
+            return readdirSync(join(REPO, dir))
+                .filter((entry) => entry.endsWith(".md"))
+                .map((entry) => `${dir}/${entry}`);
+        } catch {
+            return []; // the missing directory surfaces as every chapter reported missing
+        }
+    };
+    return [...list("docs/tech"), ...list("docs/tech/en")];
 }
 
 async function readActual(paths: Iterable<string>): Promise<Map<string, string | null>> {
@@ -256,7 +326,8 @@ async function readActual(paths: Iterable<string>): Promise<Map<string, string |
 async function main(): Promise<void> {
     const check = process.argv.includes("--check");
     const source = await Bun.file(join(REPO, SOURCE)).text();
-    const expected = expectedOutputs(source);
+    const sourceEn = await Bun.file(join(REPO, SOURCE_EN)).text();
+    const expected = expectedOutputs(source, sourceEn);
     const orphans = listChapterFiles().filter((path) => !expected.has(path));
 
     if (check) {
@@ -273,7 +344,7 @@ async function main(): Promise<void> {
         return;
     }
 
-    mkdirSync(join(REPO, "docs/tech"), {recursive: true});
+    mkdirSync(join(REPO, "docs/tech/en"), {recursive: true});
     // Orphans go first. On a case-insensitive filesystem a case-only rename makes the
     // stray file and an expected chapter the same inode: reading first counts the
     // chapter "unchanged", and the orphan removal then deletes it — leaving a build

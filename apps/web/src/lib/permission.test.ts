@@ -43,7 +43,37 @@ describe("parsePermissionContext", () => {
         // page and leave nothing on screen at all.
         const parsed = parsePermissionContext(`0x${"ab".repeat(64)}`);
         expect(parsed.kind).toBe("invalid");
-        expect(parsed.kind === "invalid" && parsed.reason).toContain("전체");
+        expect(parsed.kind === "invalid" && parsed.reason).toContain("entire value");
+    });
+
+    test("reasons default to English", () => {
+        const notHex = parsePermissionContext("permission context goes here");
+        expect(notHex.kind === "invalid" && notHex.reason).toBe(
+            "A permission code starts with 0x. Check the value you copied.",
+        );
+        const notDelegations = parsePermissionContext(`0x${"ab".repeat(64)}`);
+        expect(notDelegations.kind === "invalid" && notDelegations.reason).toBe(
+            "This is not a valid Mapae permission code. Check that the entire value was copied.",
+        );
+        const emptyChain = parsePermissionContext(encodeDelegations([]));
+        expect(emptyChain.kind === "invalid" && emptyChain.reason).toBe(
+            "This permission code is empty. Copy the full approval output again.",
+        );
+    });
+
+    test('locale "ko" pins the Korean reasons verbatim', () => {
+        const notHex = parsePermissionContext("permission context goes here", "ko");
+        expect(notHex.kind === "invalid" && notHex.reason).toBe(
+            "권한 코드는 0x로 시작해야 합니다. 복사한 값을 다시 확인해 주세요.",
+        );
+        const notDelegations = parsePermissionContext(`0x${"ab".repeat(64)}`, "ko");
+        expect(notDelegations.kind === "invalid" && notDelegations.reason).toBe(
+            "올바른 마패 권한 코드가 아닙니다. 값 전체가 복사됐는지 확인해 주세요.",
+        );
+        const emptyChain = parsePermissionContext(encodeDelegations([]), "ko");
+        expect(emptyChain.kind === "invalid" && emptyChain.reason).toBe(
+            "비어 있는 권한 코드입니다. 승인 결과 전체를 다시 복사해 주세요.",
+        );
     });
 
     test("the root is the LAST link, because the leaf is the throwaway", () => {

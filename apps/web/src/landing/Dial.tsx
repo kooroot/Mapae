@@ -1,6 +1,8 @@
 import {ClientOnly} from "@tanstack/react-router";
 import {Suspense, lazy, useEffect, useRef, useState} from "react";
 import type {PointerEvent as ReactPointerEvent} from "react";
+import type {Locale} from "../lib/i18n";
+import {useLocale} from "../lib/locale";
 
 type MapaeRenderState = "loading" | "ready" | "fallback";
 
@@ -10,22 +12,40 @@ const LazyMapaeScene = lazy(async () => {
 });
 
 const BOUNDARIES = [
-    {
-        key: "SCOPE",
-        value: "ASSET + PAYEE",
-        detail: "사용할 자산과 결제할 상대를 지정합니다",
-    },
-    {
-        key: "BUDGET",
-        value: "AMOUNT + PERIOD",
-        detail: "소유자가 금액과 주기를 목적에 맞게 정합니다",
-    },
-    {
-        key: "CONTROL",
-        value: "EXPIRY + REVOKE",
-        detail: "권한은 만료되며 소유자가 언제든 회수할 수 있습니다",
-    },
+    {key: "SCOPE", value: "ASSET + PAYEE"},
+    {key: "BUDGET", value: "AMOUNT + PERIOD"},
+    {key: "CONTROL", value: "EXPIRY + REVOKE"},
 ] as const;
+
+type BoundaryKey = (typeof BOUNDARIES)[number]["key"];
+
+const COPY: Record<
+    Locale,
+    {
+        details: Record<BoundaryKey, string>;
+        nextBoundary: string;
+        boundariesAria: string;
+    }
+> = {
+    en: {
+        details: {
+            SCOPE: "Specifies the asset to spend and the payee to pay",
+            BUDGET: "The owner sets the amount and period to fit the purpose",
+            CONTROL: "The permission expires, and the owner can revoke it at any time",
+        },
+        nextBoundary: "Show the next boundary",
+        boundariesAria: "Boundaries of the delegated permission",
+    },
+    ko: {
+        details: {
+            SCOPE: "사용할 자산과 결제할 상대를 지정합니다",
+            BUDGET: "소유자가 금액과 주기를 목적에 맞게 정합니다",
+            CONTROL: "권한은 만료되며 소유자가 언제든 회수할 수 있습니다",
+        },
+        nextBoundary: "다음 경계 보기",
+        boundariesAria: "위임된 권한의 경계",
+    },
+};
 
 function SceneFallback() {
     return <span className="ritual-canvas-host" aria-hidden="true" />;
@@ -40,6 +60,8 @@ function SceneFallback() {
  * and never gates Studio or performs a wallet action.
  */
 export function Dial() {
+    const {locale} = useLocale();
+    const t = COPY[locale];
     const rootRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef(1);
     const progressRef = useRef(0);
@@ -110,7 +132,7 @@ export function Dial() {
             <button
                 className="ritual-object"
                 type="button"
-                aria-label={`${current.key}: ${current.detail}. 다음 경계 보기`}
+                aria-label={`${current.key}: ${t.details[current.key]}. ${t.nextBoundary}`}
                 onPointerMove={onPointerMove}
                 onPointerLeave={() => {
                     pointerRef.current = {x: 0, y: 0};
@@ -159,13 +181,13 @@ export function Dial() {
                 </div>
             </dl>
 
-            <ol className="ritual-boundaries" aria-label="위임된 권한의 경계">
+            <ol className="ritual-boundaries" aria-label={t.boundariesAria}>
                 {BOUNDARIES.map((boundary, index) => (
                     <li key={boundary.key} data-active={selected === index ? "true" : "false"}>
                         <button
                             type="button"
                             onClick={() => chooseBoundary(index)}
-                            aria-label={`${boundary.key}: ${boundary.detail}`}
+                            aria-label={`${boundary.key}: ${t.details[boundary.key]}`}
                         >
                             <i aria-hidden="true" />
                             <span>{boundary.key}</span>
@@ -178,7 +200,7 @@ export function Dial() {
             <p className="ritual-readout" aria-live="polite">
                 <span>{current.key}</span>
                 <strong>{current.value}</strong>
-                <small>{current.detail}</small>
+                <small>{t.details[current.key]}</small>
             </p>
 
             <div className="ritual-scroll-cue" aria-hidden="true">

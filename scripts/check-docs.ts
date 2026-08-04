@@ -28,13 +28,16 @@ const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
  * missing chapter by name instead of crashing this gate with a raw ENOENT.
  */
 function listGeneratedChapters(): string[] {
-    try {
-        return readdirSync(join(REPO, "docs/tech"))
-            .filter((entry) => entry.endsWith(".md"))
-            .map((entry) => `docs/tech/${entry}`);
-    } catch {
-        return [];
-    }
+    const list = (dir: string): string[] => {
+        try {
+            return readdirSync(join(REPO, dir))
+                .filter((entry) => entry.endsWith(".md"))
+                .map((entry) => `${dir}/${entry}`);
+        } catch {
+            return [];
+        }
+    };
+    return [...list("docs/tech"), ...list("docs/tech/en")];
 }
 
 const DOCS = [
@@ -43,12 +46,14 @@ const DOCS = [
     "AGENTS.md",
     "CLAUDE.md",
     "docs/tech-notes.md",
+    "docs/tech-notes.en.md",
     "docs/deployed-contracts.md",
     "docs/mcp-guide.md",
     "docs/revocation-runbook.md",
     "docs/giwa-demo-runbook.md",
     "docs/infra-map.md",
     "docs/README.md",
+    "docs/README.ko.md",
     "docs/SUMMARY.md",
     ...listGeneratedChapters(),
 ];

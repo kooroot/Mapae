@@ -1,6 +1,62 @@
 import {Link} from "@tanstack/react-router";
 import {Lockup, PassEmblem, Tagline, Wordmark} from "../brand/marks";
 import {appUrl, docsUrl, githubUrl} from "../lib/config";
+import type {Locale} from "../lib/i18n";
+import {LocaleSwitch, useLocale} from "../lib/locale";
+
+/*
+ * The bilingual-copy pattern every ported component follows: one `COPY` object per
+ * component, `en` first because English is the base, the JSX untouched apart from
+ * reading it. Copy lives next to the markup that renders it — a central catalogue
+ * would turn every copy edit into a two-file change and invite keys to drift from
+ * their usage.
+ */
+const COPY: Record<
+    Locale,
+    {
+        homeAria: string;
+        product: string;
+        boundaries: string;
+        security: string;
+        evidence: string;
+        docs: string;
+        githubAria: string;
+        openStudio: string;
+        mottoLead: string;
+        mottoMark: string;
+        mottoTail: string;
+        testnetOnly: string;
+    }
+> = {
+    en: {
+        homeAria: "Mapae home",
+        product: "Product",
+        boundaries: "Boundaries",
+        security: "Security",
+        evidence: "Evidence",
+        docs: "Docs",
+        githubAria: "Open the Mapae GitHub repository",
+        openStudio: "Open Studio",
+        mottoLead: "The Mapae was not a token of privilege — it was ",
+        mottoMark: "a token of limits",
+        mottoTail: ". The engraved horse count was where the authority ended.",
+        testnetOnly: "Operates on testnet assets only.",
+    },
+    ko: {
+        homeAria: "Mapae 홈",
+        product: "제품",
+        boundaries: "권한 경계",
+        security: "보안",
+        evidence: "증거",
+        docs: "문서",
+        githubAria: "Mapae GitHub 저장소 열기",
+        openStudio: "Studio 열기",
+        mottoLead: "마패는 특권의 증표가 아니라 ",
+        mottoMark: "한계의 증표다",
+        mottoTail: ". 새겨진 말의 수는 권한이 끝나는 지점이었다.",
+        testnetOnly: "테스트넷 자산으로만 동작합니다.",
+    },
+};
 
 function GitHubMark() {
     return (
@@ -20,34 +76,37 @@ function GitHubMark() {
 }
 
 export function Nav({variant = "paper"}: {variant?: "paper" | "dark"}) {
+    const {locale} = useLocale();
+    const t = COPY[locale];
     return (
         <header className={`nav nav-${variant}`}>
             <div className="wrap nav-inner">
-                <Link to="/" aria-label="Mapae 홈">
+                <Link to="/" aria-label={t.homeAria}>
                     <Lockup />
                 </Link>
                 <nav className="nav-links">
-                    <a href="/#authority">제품</a>
-                    <a href="/#boundaries">권한 경계</a>
-                    <a href="/#security">보안</a>
-                    <a href="/#evidence">증거</a>
+                    <a href="/#authority">{t.product}</a>
+                    <a href="/#boundaries">{t.boundaries}</a>
+                    <a href="/#security">{t.security}</a>
+                    <a href="/#evidence">{t.evidence}</a>
                     <a href={docsUrl} target="_blank" rel="noreferrer noopener">
-                        문서
+                        {t.docs}
                     </a>
                 </nav>
                 <div className="nav-actions">
+                    <LocaleSwitch />
                     <a
                         href={githubUrl}
                         className="nav-github"
                         target="_blank"
                         rel="noreferrer noopener"
-                        aria-label="Mapae GitHub 저장소 열기"
+                        aria-label={t.githubAria}
                     >
                         <GitHubMark />
                         <span>GitHub</span>
                     </a>
                     <a href={appUrl} className="btn">
-                        <span>Studio 열기</span>
+                        <span>{t.openStudio}</span>
                         <span aria-hidden="true">↗</span>
                     </a>
                 </div>
@@ -57,6 +116,8 @@ export function Nav({variant = "paper"}: {variant?: "paper" | "dark"}) {
 }
 
 export function Footer({variant = "paper"}: {variant?: "paper" | "dark"}) {
+    const {locale} = useLocale();
+    const t = COPY[locale];
     return (
         <footer className={`foot foot-${variant}`}>
             <div className="wrap foot-inner">
@@ -67,14 +128,14 @@ export function Footer({variant = "paper"}: {variant?: "paper" | "dark"}) {
                     </span>
                     <Tagline />
                     <p className="label foot-motto">
-                        마패는 특권의 증표가 아니라{" "}
-                        <span style={{color: "var(--ink)"}}>한계의 증표다</span>. 새겨진 말의 수는
-                        권한이 끝나는 지점이었다.
+                        {t.mottoLead}
+                        <span style={{color: "var(--ink)"}}>{t.mottoMark}</span>
+                        {t.mottoTail}
                     </p>
                 </div>
                 <div className="label foot-meta">
                     <p>GIWA Sepolia · eip155:91342</p>
-                    <p>테스트넷 자산으로만 동작합니다.</p>
+                    <p>{t.testnetOnly}</p>
                 </div>
             </div>
         </footer>

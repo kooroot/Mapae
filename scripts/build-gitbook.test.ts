@@ -2,6 +2,7 @@ import {describe, expect, test} from "bun:test";
 import {join} from "node:path";
 import {
     BANNER,
+    BANNER_EN,
     chapterPath,
     diffOutputs,
     expectedOutputs,
@@ -49,6 +50,82 @@ bun run check   # [링크](fence-inside.md)
 
 [앵커](#소제목)와 [메일](mailto:a@b.c).
 `;
+
+/** The same two sections as FIXTURE, in the English edition's voice and titles. */
+const FIXTURE_EN = `# Mapae — Technical notes
+
+Intro paragraph.
+
+---
+
+## 1. System architecture
+
+First chapter body. [Revocation runbook](revocation-runbook.md).
+
+### A subsection
+
+\`\`\`bash
+# this comment is not a heading
+bun run check
+\`\`\`
+
+---
+
+## 2. Payment flows
+
+Second chapter body. [anchor](#a-subsection).
+`;
+
+describe("the English edition", () => {
+    const sectionsEn = splitTechNotes(FIXTURE_EN).sections;
+
+    test("English chapters live one directory deeper, under tech/en/, on the same slugs", () => {
+        const first = sectionsEn[0];
+        expect(first).toBeDefined();
+        expect(chapterPath(first!, "en")).toBe("tech/en/01-architecture.md");
+        expect(chapterPath(sectionsEn[1]!, "en")).toBe("tech/en/02-payment-flows.md");
+    });
+
+    test("an unregistered English title fails loudly, naming the title", () => {
+        expect(() => chapterPath({number: 9, title: "Ghost section", body: ""}, "en")).toThrow(
+            /Ghost section/,
+        );
+    });
+
+    test("an English chapter opens with the English banner and climbs two levels for links", () => {
+        const chapter = renderChapter(sectionsEn[0]!, "en");
+        expect(chapter.startsWith(`${BANNER_EN}\n\n# 1. System architecture\n\n`)).toBe(true);
+        expect(chapter).toContain("](../../revocation-runbook.md)");
+        // Fences and anchors keep the ko edition's guarantees.
+        expect(chapter).toContain("# this comment is not a heading");
+        expect(renderChapter(sectionsEn[1]!, "en")).toContain("](#a-subsection)");
+    });
+
+    test("the summary puts the English group first and preserves the ko group headings byte-for-byte", () => {
+        const summary = renderSummary(splitTechNotes(FIXTURE).sections, sectionsEn);
+        // Published Korean URLs derive from these exact headings (d99e67a); a reworded
+        // heading silently mints new group slugs and 404s the submitted links.
+        expect(summary).toContain("## 기술자료 (Tech)");
+        expect(summary).toContain("## 증거와 운영 (Operations)");
+        expect(summary).toContain("## Tech (English)");
+        expect(summary.indexOf("Tech (English)")).toBeLessThan(summary.indexOf("기술자료 (Tech)"));
+        expect(summary).toContain("* [1. System architecture](tech/en/01-architecture.md)");
+        expect(summary).toContain("* [1. 시스템 구성](tech/01-architecture.md)");
+        expect(summary).toContain("(README.ko.md)");
+    });
+
+    test("expectedOutputs derives both editions side by side", () => {
+        const outputs = expectedOutputs(FIXTURE, FIXTURE_EN);
+        expect(outputs.has("docs/tech/01-architecture.md")).toBe(true);
+        expect(outputs.has("docs/tech/en/01-architecture.md")).toBe(true);
+        expect(outputs.has("docs/SUMMARY.md")).toBe(true);
+    });
+
+    test("editions disagreeing on section count is a build failure, not a quiet skew", () => {
+        const missingSecond = `# t\n\n## 1. System architecture\n\nbody\n`;
+        expect(() => expectedOutputs(FIXTURE, missingSecond)).toThrow(/section/i);
+    });
+});
 
 describe("splitTechNotes", () => {
     const split = splitTechNotes(FIXTURE);
@@ -115,7 +192,7 @@ describe("chapter and summary rendering", () => {
     });
 
     test("the summary lists every chapter once, in order, plus the standing documents", () => {
-        const summary = renderSummary(sections);
+        const summary = renderSummary(sections, splitTechNotes(FIXTURE_EN).sections);
         expect(summary).toContain("* [1. 시스템 구성](tech/01-architecture.md)");
         expect(summary).toContain("* [2. 결제 흐름](tech/02-payment-flows.md)");
         expect(summary.indexOf("01-architecture")).toBeLessThan(summary.indexOf("02-payment-flows"));
@@ -150,24 +227,29 @@ describe("diffOutputs", () => {
 });
 
 describe("against the real docs/tech-notes.md", () => {
-    const load = async () => Bun.file(join(REPO, "docs/tech-notes.md")).text();
+    const load = async (): Promise<[string, string]> =>
+        Promise.all([
+            Bun.file(join(REPO, "docs/tech-notes.md")).text(),
+            Bun.file(join(REPO, "docs/tech-notes.en.md")).text(),
+        ]);
 
-    test("every section has a registered slug and derives a chapter under docs/tech/", async () => {
-        const outputs = expectedOutputs(await load());
+    test("every section has a registered slug and derives a chapter in both editions", async () => {
+        const outputs = expectedOutputs(...(await load()));
         const chapters = [...outputs.keys()].filter((path) => path.startsWith("docs/tech/"));
-        expect(chapters.length).toBeGreaterThanOrEqual(6);
+        expect(chapters.length).toBeGreaterThanOrEqual(12);
         for (const path of chapters) {
-            expect(path).toMatch(/^docs\/tech\/\d{2}-[a-z-]+\.md$/);
+            expect(path).toMatch(/^docs\/tech\/(en\/)?\d{2}-[a-z-]+\.md$/);
         }
         expect(outputs.has(".gitbook.yaml")).toBe(true);
         expect(outputs.has("docs/SUMMARY.md")).toBe(true);
     });
 
     test("no chapter still contains a section-boundary heading — the split consumed them all", async () => {
-        const outputs = expectedOutputs(await load());
+        const outputs = expectedOutputs(...(await load()));
         for (const [path, content] of outputs) {
             if (!path.startsWith("docs/tech/")) continue;
-            expect(content.startsWith(BANNER)).toBe(true);
+            const banner = path.startsWith("docs/tech/en/") ? BANNER_EN : BANNER;
+            expect(content.startsWith(banner)).toBe(true);
             let inFence = false;
             for (const line of content.split("\n")) {
                 if (/^```/.test(line)) inFence = !inFence;
@@ -176,10 +258,12 @@ describe("against the real docs/tech-notes.md", () => {
         }
     });
 
-    test("the payment-flows chapter carries the mermaid diagram through intact", async () => {
-        const outputs = expectedOutputs(await load());
-        const chapter = outputs.get("docs/tech/02-payment-flows.md") ?? "";
-        expect(chapter).toContain("```mermaid");
-        expect(chapter).toContain("sequenceDiagram");
+    test("the payment-flows chapter carries the mermaid diagram through intact, in both editions", async () => {
+        const outputs = expectedOutputs(...(await load()));
+        for (const path of ["docs/tech/02-payment-flows.md", "docs/tech/en/02-payment-flows.md"]) {
+            const chapter = outputs.get(path) ?? "";
+            expect(chapter).toContain("```mermaid");
+            expect(chapter).toContain("sequenceDiagram");
+        }
     });
 });

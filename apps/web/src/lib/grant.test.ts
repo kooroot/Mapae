@@ -34,7 +34,7 @@ describe("grant draft", () => {
         expect(result).toEqual({
             kind: "invalid",
             field: "recipient",
-            reason: "허용할 수취인의 0x 주소를 확인해 주세요.",
+            reason: "Check the allowed recipient's 0x address.",
         });
     });
 
@@ -63,6 +63,43 @@ describe("grant draft", () => {
                 recipient: zero,
             }).kind,
         ).toBe("invalid");
+    });
+});
+
+describe("locale toggle", () => {
+    // English is the base: no locale argument means English sentences (pinned above).
+    // These three pin the Korean side of the same reasons.
+    test("ko: missing agent name", () => {
+        const result = validateGrantDraft({...base, agentName: "  "}, "ko");
+        expect(result).toEqual({
+            kind: "invalid",
+            field: "agentName",
+            reason: "에이전트 이름을 입력해 주세요.",
+        });
+    });
+
+    test("ko: missing fixed recipient", () => {
+        const result = validateGrantDraft({...base, recipientMode: "fixed"}, "ko");
+        expect(result).toEqual({
+            kind: "invalid",
+            field: "recipient",
+            reason: "허용할 수취인의 0x 주소를 확인해 주세요.",
+        });
+    });
+
+    test("ko: zero amount", () => {
+        const result = validateGrantDraft({...base, amount: "0"}, "ko");
+        expect(result).toEqual({
+            kind: "invalid",
+            field: "amount",
+            reason: "금액은 0보다 커야 합니다.",
+        });
+    });
+
+    test("an explicit en argument matches the default", () => {
+        expect(validateGrantDraft({...base, amount: "0"}, "en")).toEqual(
+            validateGrantDraft({...base, amount: "0"}),
+        );
     });
 });
 

@@ -1,6 +1,8 @@
 import {HeadContent, Scripts, createRootRoute} from "@tanstack/react-router";
 import type {ReactNode} from "react";
 import {appUrl, landingUrl, siteSurface} from "../lib/config";
+import {pick} from "../lib/i18n";
+import {LocaleProvider, resolveLocale, useLocale} from "../lib/locale";
 
 import "../styles/fonts.css";
 import "../styles/tokens.css";
@@ -24,24 +26,32 @@ const DOCUMENT_SECURITY_HEADERS = {
 /*
  * The document.
  *
- * `lang="ko"` is load-bearing rather than metadata. This page mixes Hangul,
- * Hanja and Latin in the same sentence, and the language tag is what decides
- * which glyph a browser picks for the codepoints Chinese and Japanese share with
- * Korean — 馬 renders differently under `lang="ja"`. It also drives `word-break:
- * keep-all`, which is the difference between Korean lines that break between
- * words and Korean lines that break mid-word.
+ * `lang` is load-bearing rather than metadata, and follows the locale cookie.
+ * Under `ko` it decides which glyph a browser picks for the codepoints Chinese
+ * and Japanese share with Korean — 馬 renders differently under `lang="ja"` —
+ * and it drives `word-break: keep-all`, the difference between Korean lines
+ * that break between words and Korean lines that break mid-word. Elements that
+ * stay Korean regardless of locale (the crest, the Korean toggle label) carry
+ * their own `lang="ko"` attribute instead.
  */
 
 export const Route = createRootRoute({
     headers: () => DOCUMENT_SECURITY_HEADERS,
     head: () => {
         const isApp = siteSurface === "app";
+        const locale = resolveLocale();
         const title = isApp
             ? "Mapae Studio — Delegated payment control"
             : "Mapae — Limit the authority. Let the agent act.";
         const description = isApp
-            ? "자산·금액·기간·수취인 경계를 지갑으로 승인하고, GIWA에서 에이전트 결제 권한과 정산 상태를 관리합니다."
-            : "자산·금액·기간·수취인의 경계를 정하면 AI 에이전트가 그 안에서 x402로 결제합니다. 소유자는 언제든 권한을 회수할 수 있습니다.";
+            ? pick(locale, {
+                  en: "Approve asset, amount, period, and recipient boundaries from your wallet, and manage agent payment authority and settlement state on GIWA.",
+                  ko: "자산·금액·기간·수취인 경계를 지갑으로 승인하고, GIWA에서 에이전트 결제 권한과 정산 상태를 관리합니다.",
+              })
+            : pick(locale, {
+                  en: "Set the boundaries — asset, amount, period, recipient — and an AI agent pays within them over x402. The owner can revoke the authority at any time.",
+                  ko: "자산·금액·기간·수취인의 경계를 정하면 AI 에이전트가 그 안에서 x402로 결제합니다. 소유자는 언제든 권한을 회수할 수 있습니다.",
+              });
 
         return {
             meta: [
@@ -112,8 +122,19 @@ export const Route = createRootRoute({
 });
 
 function RootDocument({children}: {children: ReactNode}) {
+    // Resolved during render on both sides from the same cookie, so the server's
+    // document and the client's hydration agree without a flash or a mismatch.
     return (
-        <html lang="ko">
+        <LocaleProvider initial={resolveLocale()}>
+            <LocalizedDocument>{children}</LocalizedDocument>
+        </LocaleProvider>
+    );
+}
+
+function LocalizedDocument({children}: {children: ReactNode}) {
+    const {locale} = useLocale();
+    return (
+        <html lang={locale}>
             <head>
                 <HeadContent />
             </head>

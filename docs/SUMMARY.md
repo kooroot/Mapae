@@ -1,6 +1,16 @@
 # Summary
 
-* [Mapae 원페이저](README.md)
+* [Mapae one-pager](README.md)
+* [마패 원페이저 (한국어)](README.ko.md)
+
+## Tech (English)
+
+* [1. System architecture](tech/en/01-architecture.md)
+* [2. Payment flows](tech/en/02-payment-flows.md)
+* [3. Error model](tech/en/03-error-model.md)
+* [4. Security considerations](tech/en/04-security.md)
+* [5. Verified on-chain environment](tech/en/05-onchain-environment.md)
+* [6. Verification status and roadmap](tech/en/06-roadmap.md)
 
 ## 기술자료 (Tech)
 

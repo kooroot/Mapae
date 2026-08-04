@@ -67,4 +67,34 @@ describe("buildMcpBundle", () => {
         expect(bundle.mcpCommand).toContain("apps/delegated-agent");
         expect(bundle.mcpCommand).toContain("exec bun ../agent-mcp/index.ts");
     });
+
+    test("the default bundle is English and reaches no Korean text", () => {
+        expect(bundle.bundleText).toContain("# Mapae MCP connection bundle");
+        expect(bundle.bundleText).toContain(
+            "# AGENT_PRIVATE_KEY is a secret — move it into the file, then discard this text,",
+        );
+        // Nothing Korean may be reachable when locale === "en" — that includes
+        // generated text, which is copy the same as anything rendered. Ranges:
+        // Hangul Jamo, Compatibility Jamo, Syllables, written as escapes so the
+        // test does not depend on how an editor renders the endpoints.
+        expect(bundle.bundleText).not.toMatch(
+            new RegExp("[\\u1100-\\u11FF\\u3130-\\u318F\\uAC00-\\uD7A3]"),
+        );
+    });
+
+    test('locale "ko" pins the Korean bundle lines verbatim', () => {
+        const koBundle = buildMcpBundle(
+            {permissionContext: CONTEXT, agentKey: key, frameworkAdmin: ADMIN},
+            "ko",
+        );
+        expect(koBundle.bundleText).toContain("# Mapae MCP 연결 번들");
+        expect(koBundle.bundleText).toContain(
+            "# AGENT_PRIVATE_KEY는 비밀값입니다 — 파일로 옮긴 뒤 이 텍스트는 폐기하고,",
+        );
+        expect(koBundle.mcpCommand).toContain("<Mapae 저장소 경로>");
+        // The machine-readable artifacts are locale-independent: only the human
+        // instructions around them change.
+        expect(koBundle.permissionFileText).toBe(bundle.permissionFileText);
+        expect(koBundle.envFileText).toBe(bundle.envFileText);
+    });
 });

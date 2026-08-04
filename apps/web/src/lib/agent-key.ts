@@ -1,6 +1,7 @@
 import {getAddress, type Address, type Hex} from "viem";
 import {generatePrivateKey, privateKeyToAccount} from "viem/accounts";
 import {giwaSepolia} from "@mapae/shared";
+import type {Locale} from "./i18n";
 
 /**
  * An agent session key born in this browser tab.
@@ -32,6 +33,54 @@ export interface McpBundle {
 const HOSTED_SELLER_URL = "https://seller.mapae.io";
 const HOSTED_FACILITATOR_URL = "https://facilitator.mapae.io";
 
+/*
+ * The human-readable lines of the generated bundle. Generated text is user-facing
+ * copy like any rendered string, so it follows the same bilingual rule: English is
+ * the base, Korean is the toggle, and the map stays local to the module that emits
+ * it. Paths, env values, and command syntax are not copy and stay out of the map —
+ * only the repo-path placeholder inside the command is language.
+ */
+const BUNDLE_COPY: Record<
+    Locale,
+    {
+        title: string;
+        provenance: string;
+        secretLine1: string;
+        secretLine2: string;
+        step0: string;
+        step1: string;
+        step2: string;
+        step3: string;
+        repoPathPlaceholder: string;
+    }
+> = {
+    en: {
+        title: "# Mapae MCP connection bundle",
+        provenance:
+            "# This text was generated in this browser only and is stored nowhere else.",
+        secretLine1:
+            "# AGENT_PRIVATE_KEY is a secret — move it into the file, then discard this text,",
+        secretLine2:
+            "# and if you use clipboard history or cross-device clipboard sync, clear those too.",
+        step0: "## 0) Prepare the repository (after installing Bun)",
+        step1: "## 1) Save the following as apps/delegated-agent/open-agent.permission.json",
+        step2: "## 2) Save the following as apps/delegated-agent/.env",
+        step3: "## 3) Register the MCP client — replace the path with your actual clone location",
+        repoPathPlaceholder: "<path to the Mapae repository>",
+    },
+    ko: {
+        title: "# Mapae MCP 연결 번들",
+        provenance: "# 이 내용은 이 브라우저에서만 만들어졌으며 어디에도 저장되어 있지 않습니다.",
+        secretLine1: "# AGENT_PRIVATE_KEY는 비밀값입니다 — 파일로 옮긴 뒤 이 텍스트는 폐기하고,",
+        secretLine2: "# 클립보드 기록·기기 간 클립보드 동기화를 쓴다면 그 기록도 지우세요.",
+        step0: "## 0) 저장소 준비 (Bun 설치 후)",
+        step1: "## 1) 아래 내용을 apps/delegated-agent/open-agent.permission.json 으로 저장",
+        step2: "## 2) 아래 내용을 apps/delegated-agent/.env 로 저장",
+        step3: "## 3) MCP 클라이언트 등록 — 경로를 실제 클론 위치로 바꾸세요",
+        repoPathPlaceholder: "<Mapae 저장소 경로>",
+    },
+};
+
 /**
  * Everything the MCP setup needs, assembled where all three inputs already are.
  *
@@ -43,11 +92,15 @@ const HOSTED_FACILITATOR_URL = "https://facilitator.mapae.io";
  * generated session key, and the committed deployment artifact with the real
  * Framework admin, so it emits the finished set instead of pieces.
  */
-export function buildMcpBundle(params: {
-    permissionContext: Hex;
-    agentKey: AgentSessionKey;
-    frameworkAdmin: Address;
-}): McpBundle {
+export function buildMcpBundle(
+    params: {
+        permissionContext: Hex;
+        agentKey: AgentSessionKey;
+        frameworkAdmin: Address;
+    },
+    locale: Locale = "en",
+): McpBundle {
+    const t = BUNDLE_COPY[locale];
     const permissionFileText = `${JSON.stringify(
         {permissionContext: params.permissionContext},
         null,
@@ -68,25 +121,25 @@ export function buildMcpBundle(params: {
 
     const mcpCommand =
         "claude mcp add mapae -- sh -c " +
-        "'cd <Mapae 저장소 경로>/apps/delegated-agent && exec bun ../agent-mcp/index.ts'";
+        `'cd ${t.repoPathPlaceholder}/apps/delegated-agent && exec bun ../agent-mcp/index.ts'`;
 
     const bundleText = [
-        "# Mapae MCP 연결 번들",
-        "# 이 내용은 이 브라우저에서만 만들어졌으며 어디에도 저장되어 있지 않습니다.",
-        "# AGENT_PRIVATE_KEY는 비밀값입니다 — 파일로 옮긴 뒤 이 텍스트는 폐기하고,",
-        "# 클립보드 기록·기기 간 클립보드 동기화를 쓴다면 그 기록도 지우세요.",
+        t.title,
+        t.provenance,
+        t.secretLine1,
+        t.secretLine2,
         "",
-        "## 0) 저장소 준비 (Bun 설치 후)",
+        t.step0,
         "git clone --recurse-submodules https://github.com/kooroot/Mapae.git",
         "cd Mapae && bun install --frozen-lockfile",
         "",
-        "## 1) 아래 내용을 apps/delegated-agent/open-agent.permission.json 으로 저장",
+        t.step1,
         permissionFileText.trimEnd(),
         "",
-        "## 2) 아래 내용을 apps/delegated-agent/.env 로 저장",
+        t.step2,
         envFileText.trimEnd(),
         "",
-        "## 3) MCP 클라이언트 등록 — 경로를 실제 클론 위치로 바꾸세요",
+        t.step3,
         mcpCommand,
         "",
     ].join("\n");

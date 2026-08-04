@@ -4,6 +4,7 @@ import {buildRevocationSubmissionBody} from "@mapae/delegation/revocation-submis
 import type {Address, Hex} from "viem";
 import type {PackedUserOperation} from "viem/account-abstraction";
 import {deployment, publicClient} from "./config";
+import type {Locale} from "./i18n";
 
 /**
  * Why the Studio revoke button is or is not actionable.
@@ -58,23 +59,32 @@ export function judgeStudioRevokeGate(input: {
 }
 
 /** What the button says in each gate. Separated so the copy is assertable. */
-export function studioRevokeButtonLabel(gate: StudioRevokeGate): string {
-    switch (gate.kind) {
-        case "no-endpoint":
-            return "회수 엔드포인트 미설정";
-        case "already-revoked":
-            return "이미 회수됨";
-        case "disconnected":
-            return "소유자 지갑 연결";
-        case "wrong-chain":
-            return "지갑 네트워크가 다름";
-        case "wrong-wallet":
-            return "다른 지갑이 연결됨";
-        case "owner-unknown":
-            return "소유자 확인 중…";
-        case "ready":
-            return "권한 회수 서명";
-    }
+const BUTTON_COPY: Record<Locale, Record<StudioRevokeGate["kind"], string>> = {
+    en: {
+        "no-endpoint": "Revocation endpoint not configured",
+        "already-revoked": "Already revoked",
+        disconnected: "Connect the owner wallet",
+        "wrong-chain": "Wallet on a different network",
+        "wrong-wallet": "A different wallet is connected",
+        "owner-unknown": "Confirming owner…",
+        ready: "Sign to revoke this permission",
+    },
+    ko: {
+        "no-endpoint": "회수 엔드포인트 미설정",
+        "already-revoked": "이미 회수됨",
+        disconnected: "소유자 지갑 연결",
+        "wrong-chain": "지갑 네트워크가 다름",
+        "wrong-wallet": "다른 지갑이 연결됨",
+        "owner-unknown": "소유자 확인 중…",
+        ready: "권한 회수 서명",
+    },
+};
+
+export function studioRevokeButtonLabel(
+    gate: StudioRevokeGate,
+    locale: Locale = "en",
+): string {
+    return BUTTON_COPY[locale][gate.kind];
 }
 
 /**
@@ -84,29 +94,75 @@ export function studioRevokeButtonLabel(gate: StudioRevokeGate): string {
  * reason becomes the generic sentence here — not UI text nobody wrote. Same rule as
  * `bootstrapRefusalMessage` in `grant.ts`.
  */
-export function revokeRefusalMessage(reason: string | undefined): string {
+const REFUSAL_COPY: Record<
+    Locale,
+    {
+        alreadyRevoked: string;
+        rateLimited: string;
+        invalidSignature: string;
+        senderBusy: string;
+        budgetExhausted: string;
+        feeBelowBaseFee: string;
+        pathNotReady: string;
+        invalidSubmission: string;
+        generic: string;
+    }
+> = {
+    en: {
+        alreadyRevoked: "This permission is already revoked.",
+        rateLimited: "Too many requests. Try again shortly.",
+        invalidSignature:
+            "The signature does not match this account's owner. Sign again with the owner wallet.",
+        senderBusy: "Another revocation for this account is in progress. Try again shortly.",
+        budgetExhausted:
+            "Today's sponsored revocation allowance is used up. Try again later.",
+        feeBelowBaseFee: "Network fees are temporarily high. Try again shortly.",
+        pathNotReady: "The revocation path is temporarily unavailable. Try again shortly.",
+        invalidSubmission: "The submission was refused. Check the permission code and try again.",
+        generic: "The revocation could not be completed.",
+    },
+    ko: {
+        alreadyRevoked: "이미 회수된 권한입니다.",
+        rateLimited: "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.",
+        invalidSignature:
+            "서명이 이 계정의 소유자와 일치하지 않습니다. 소유자 지갑으로 다시 서명해 주세요.",
+        senderBusy: "이 계정의 다른 회수가 처리 중입니다. 잠시 후 다시 시도해 주세요.",
+        budgetExhausted:
+            "오늘 대납 가능한 회수 한도를 모두 사용했습니다. 잠시 후 다시 시도해 주세요.",
+        feeBelowBaseFee: "네트워크 수수료가 일시적으로 높습니다. 잠시 후 다시 시도해 주세요.",
+        pathNotReady: "회수 경로가 일시적으로 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.",
+        invalidSubmission: "제출이 거절되었습니다. 권한 코드를 다시 확인해 주세요.",
+        generic: "회수를 완료하지 못했습니다.",
+    },
+};
+
+export function revokeRefusalMessage(
+    reason: string | undefined,
+    locale: Locale = "en",
+): string {
+    const t = REFUSAL_COPY[locale];
     switch (reason) {
         case "already_revoked":
-            return "이미 회수된 권한입니다.";
+            return t.alreadyRevoked;
         case "rate_limited":
-            return "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.";
+            return t.rateLimited;
         case "invalid_account_signature":
-            return "서명이 이 계정의 소유자와 일치하지 않습니다. 소유자 지갑으로 다시 서명해 주세요.";
+            return t.invalidSignature;
         case "sender_busy":
-            return "이 계정의 다른 회수가 처리 중입니다. 잠시 후 다시 시도해 주세요.";
+            return t.senderBusy;
         case "budget_exhausted":
         case "sponsor_unfunded":
-            return "오늘 대납 가능한 회수 한도를 모두 사용했습니다. 잠시 후 다시 시도해 주세요.";
+            return t.budgetExhausted;
         case "fee_below_basefee":
-            return "네트워크 수수료가 일시적으로 높습니다. 잠시 후 다시 시도해 주세요.";
+            return t.feeBelowBaseFee;
         case "base_fee_unreadable":
         case "relayer_unfunded":
         case "prefund_short":
-            return "회수 경로가 일시적으로 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.";
+            return t.pathNotReady;
         case "invalid_submission":
-            return "제출이 거절되었습니다. 권한 코드를 다시 확인해 주세요.";
+            return t.invalidSubmission;
         default:
-            return "회수를 완료하지 못했습니다.";
+            return t.generic;
     }
 }
 
@@ -119,12 +175,28 @@ export function revokeRefusalMessage(reason: string | undefined): string {
  * the sponsor's claim, so the delegation's on-chain disabled flag is what this function
  * actually returns on.
  */
-export async function requestSponsoredRevocation(params: {
-    endpoint: string;
-    permissionContext: Hex;
-    packed: PackedUserOperation;
-    delegation: Delegation;
-}): Promise<{transaction?: string}> {
+const REQUEST_COPY: Record<Locale, {unreachable: string; unconfirmed: string}> = {
+    en: {
+        unreachable: "Could not reach the revocation server.",
+        unconfirmed:
+            "The revocation is not yet confirmed on chain. Refresh the status in a moment.",
+    },
+    ko: {
+        unreachable: "회수 서버에 연결하지 못했습니다.",
+        unconfirmed: "회수가 아직 온체인에서 확인되지 않았습니다. 잠시 후 상태를 새로고침해 주세요.",
+    },
+};
+
+export async function requestSponsoredRevocation(
+    params: {
+        endpoint: string;
+        permissionContext: Hex;
+        packed: PackedUserOperation;
+        delegation: Delegation;
+    },
+    locale: Locale = "en",
+): Promise<{transaction?: string}> {
+    const t = REQUEST_COPY[locale];
     let response: Response;
     try {
         response = await fetch(`${params.endpoint}/revoke`, {
@@ -140,7 +212,7 @@ export async function requestSponsoredRevocation(params: {
             signal: AbortSignal.timeout(90_000),
         });
     } catch {
-        throw new Error("회수 서버에 연결하지 못했습니다.");
+        throw new Error(t.unreachable);
     }
     const body = (await response.json().catch(() => ({}))) as {
         success?: boolean;
@@ -148,7 +220,7 @@ export async function requestSponsoredRevocation(params: {
         reason?: string;
     };
     if (!response.ok || !body.success) {
-        throw new Error(revokeRefusalMessage(body.reason));
+        throw new Error(revokeRefusalMessage(body.reason, locale));
     }
     const revoked = await isDelegationRevoked({
         publicClient,
@@ -156,7 +228,7 @@ export async function requestSponsoredRevocation(params: {
         delegation: params.delegation,
     });
     if (!revoked) {
-        throw new Error("회수가 아직 온체인에서 확인되지 않았습니다. 잠시 후 상태를 새로고침해 주세요.");
+        throw new Error(t.unconfirmed);
     }
     return {transaction: body.transaction};
 }

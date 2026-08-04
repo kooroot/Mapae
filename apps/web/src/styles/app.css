@@ -213,6 +213,15 @@
     backdrop-filter: blur(18px);
 }
 
+/* Groups the language setting with the network chip on the topbar's right edge.
+   A dedicated class on purpose: reusing .lang-switch as the wrapper composited its
+   container opacity onto the network chip. */
+.studio-topbar-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+}
+
 .studio-mobile-brand {
     display: none;
 }

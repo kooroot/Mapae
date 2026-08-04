@@ -84,39 +84,79 @@ describe("judgeStudioRevokeGate", () => {
 });
 
 describe("studioRevokeButtonLabel", () => {
-    test("each gate has its own sentence", () => {
-        expect(studioRevokeButtonLabel({kind: "no-endpoint"})).toBe("회수 엔드포인트 미설정");
-        expect(studioRevokeButtonLabel({kind: "already-revoked"})).toBe("이미 회수됨");
-        expect(studioRevokeButtonLabel({kind: "disconnected"})).toBe("소유자 지갑 연결");
+    test("each gate has its own sentence — English is the default", () => {
+        expect(studioRevokeButtonLabel({kind: "no-endpoint"})).toBe(
+            "Revocation endpoint not configured",
+        );
+        expect(studioRevokeButtonLabel({kind: "already-revoked"})).toBe("Already revoked");
+        expect(studioRevokeButtonLabel({kind: "disconnected"})).toBe(
+            "Connect the owner wallet",
+        );
         expect(
             studioRevokeButtonLabel({kind: "wrong-chain", connected: 1, expected: 91_342}),
-        ).toBe("지갑 네트워크가 다름");
+        ).toBe("Wallet on a different network");
         expect(
             studioRevokeButtonLabel({kind: "wrong-wallet", connected: OTHER, owner: OWNER}),
+        ).toBe("A different wallet is connected");
+        expect(studioRevokeButtonLabel({kind: "owner-unknown"})).toBe("Confirming owner…");
+        expect(studioRevokeButtonLabel({kind: "ready", owner: OWNER})).toBe(
+            "Sign to revoke this permission",
+        );
+    });
+
+    test("the Korean toggle keeps each gate's original sentence", () => {
+        expect(studioRevokeButtonLabel({kind: "no-endpoint"}, "ko")).toBe(
+            "회수 엔드포인트 미설정",
+        );
+        expect(studioRevokeButtonLabel({kind: "already-revoked"}, "ko")).toBe("이미 회수됨");
+        expect(studioRevokeButtonLabel({kind: "disconnected"}, "ko")).toBe("소유자 지갑 연결");
+        expect(
+            studioRevokeButtonLabel({kind: "wrong-chain", connected: 1, expected: 91_342}, "ko"),
+        ).toBe("지갑 네트워크가 다름");
+        expect(
+            studioRevokeButtonLabel({kind: "wrong-wallet", connected: OTHER, owner: OWNER}, "ko"),
         ).toBe("다른 지갑이 연결됨");
-        expect(studioRevokeButtonLabel({kind: "owner-unknown"})).toBe("소유자 확인 중…");
-        expect(studioRevokeButtonLabel({kind: "ready", owner: OWNER})).toBe("권한 회수 서명");
+        expect(studioRevokeButtonLabel({kind: "owner-unknown"}, "ko")).toBe("소유자 확인 중…");
+        expect(studioRevokeButtonLabel({kind: "ready", owner: OWNER}, "ko")).toBe(
+            "권한 회수 서명",
+        );
     });
 });
 
 describe("revokeRefusalMessage", () => {
     test("maps every server refusal to a sentence nobody has to debug", () => {
-        expect(revokeRefusalMessage("already_revoked")).toContain("이미 회수");
-        expect(revokeRefusalMessage("rate_limited")).toContain("잠시 후");
-        expect(revokeRefusalMessage("invalid_account_signature")).toContain("소유자");
-        expect(revokeRefusalMessage("budget_exhausted")).toContain("잠시 후");
-        expect(revokeRefusalMessage("sponsor_unfunded")).toContain("잠시 후");
-        expect(revokeRefusalMessage("sender_busy")).toContain("처리 중");
-        expect(revokeRefusalMessage("fee_below_basefee")).toContain("수수료");
-        expect(revokeRefusalMessage("base_fee_unreadable")).toContain("잠시 후");
-        expect(revokeRefusalMessage("invalid_submission")).toContain("권한");
+        expect(revokeRefusalMessage("already_revoked")).toContain("already revoked");
+        expect(revokeRefusalMessage("rate_limited")).toContain("Try again");
+        expect(revokeRefusalMessage("invalid_account_signature")).toContain("owner");
+        expect(revokeRefusalMessage("budget_exhausted")).toContain("Try again");
+        expect(revokeRefusalMessage("sponsor_unfunded")).toContain("Try again");
+        expect(revokeRefusalMessage("sender_busy")).toContain("in progress");
+        expect(revokeRefusalMessage("fee_below_basefee")).toContain("fees");
+        expect(revokeRefusalMessage("base_fee_unreadable")).toContain("Try again");
+        expect(revokeRefusalMessage("invalid_submission")).toContain("permission");
     });
 
     test("an unknown or missing reason maps to the generic sentence, never to raw server text", () => {
         // The body is a closed enum by design; mapping (rather than rendering) it means a
         // new server-side reason can never become UI text nobody wrote.
-        expect(revokeRefusalMessage("brand_new_reason")).toBe("회수를 완료하지 못했습니다.");
-        expect(revokeRefusalMessage(undefined)).toBe("회수를 완료하지 못했습니다.");
+        expect(revokeRefusalMessage("brand_new_reason")).toBe(
+            "The revocation could not be completed.",
+        );
+        expect(revokeRefusalMessage(undefined)).toBe("The revocation could not be completed.");
+    });
+
+    test("the Korean toggle maps the same refusals", () => {
+        expect(revokeRefusalMessage("already_revoked", "ko")).toContain("이미 회수");
+        expect(revokeRefusalMessage("rate_limited", "ko")).toContain("잠시 후");
+        expect(revokeRefusalMessage("invalid_account_signature", "ko")).toContain("소유자");
+        expect(revokeRefusalMessage("budget_exhausted", "ko")).toContain("잠시 후");
+        expect(revokeRefusalMessage("sponsor_unfunded", "ko")).toContain("잠시 후");
+        expect(revokeRefusalMessage("sender_busy", "ko")).toContain("처리 중");
+        expect(revokeRefusalMessage("fee_below_basefee", "ko")).toContain("수수료");
+        expect(revokeRefusalMessage("base_fee_unreadable", "ko")).toContain("잠시 후");
+        expect(revokeRefusalMessage("invalid_submission", "ko")).toContain("권한");
+        expect(revokeRefusalMessage("brand_new_reason", "ko")).toBe("회수를 완료하지 못했습니다.");
+        expect(revokeRefusalMessage(undefined, "ko")).toBe("회수를 완료하지 못했습니다.");
     });
 });
 

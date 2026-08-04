@@ -67,7 +67,10 @@ export function PassEmblem({size = 40, className}: {size?: number; className?: s
     return (
         <img
             src="/brand/emblem.png"
+            // The crest stays Korean in every locale — the object is named 마패 — so the
+            // alt carries its own language tag instead of inheriting <html lang>.
             alt="마패"
+            lang="ko"
             width={size}
             height={Math.round(size * EMBLEM_ASPECT)}
             className={className}

@@ -1,10 +1,10 @@
 // Subpath import on purpose: the package barrel also pulls in the Bun-only agent
-// runtime, which does not resolve in a browser bundle. The console's config.ts
-// carries the same note for the same reason.
+// runtime, which does not resolve in a browser bundle.
 import {parseActiveDeploymentArtifactJson} from "@mapae/delegation/config";
 import {explorerAddressUrl, explorerTxUrl, giwaSepolia} from "@mapae/shared";
 import {createPublicClient, http, type Address} from "viem";
 import frameworkArtifact from "../../../../deployments/giwa-sepolia.framework.json";
+import type {Locale} from "./i18n";
 
 export type SiteSurface = "combined" | "landing" | "app";
 
@@ -126,6 +126,20 @@ export const refusals = [
 ] as const;
 
 /**
+ * Locale-facing view over the bilingual rows above. The data keeps both languages in
+ * one place so a new row cannot ship half-translated; components read through this so
+ * no JSX ever branches on locale for evidence content. (The settlements rows need no
+ * selector — the landing renders their hashes only.)
+ */
+export function refusalsFor(locale: Locale) {
+    return refusals.map(({attempt, attemptEn, enforcer, revert}) => ({
+        attempt: locale === "en" ? attemptEn : attempt,
+        enforcer,
+        revert,
+    }));
+}
+
+/**
  * Whether a revocation submitter is reachable at all.
  *
  * The submitter holds a funded relayer key and refuses any non-loopback bind, so
@@ -143,14 +157,14 @@ export function submitterAvailability():
     try {
         url = new URL(raw);
     } catch {
-        return {kind: "refused", reason: "주소를 해석할 수 없습니다"};
+        return {kind: "refused", reason: "the value cannot be parsed as a URL"};
     }
     if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname)) {
         // Names the host, never the whole URL.
-        return {kind: "refused", reason: `loopback이 아닙니다 (${url.hostname})`};
+        return {kind: "refused", reason: `not a loopback host (${url.hostname})`};
     }
     if (url.pathname !== "/" || url.search || url.hash) {
-        return {kind: "refused", reason: `경로 없는 origin이어야 합니다 (${url.hostname})`};
+        return {kind: "refused", reason: `must be a path-less origin (${url.hostname})`};
     }
     return {kind: "configured", url: url.toString().replace(/\/$/, "")};
 }
@@ -175,22 +189,22 @@ export function bootstrapAvailability():
     try {
         url = new URL(raw);
     } catch {
-        return {kind: "refused", reason: "주소를 해석할 수 없습니다"};
+        return {kind: "refused", reason: "the value cannot be parsed as a URL"};
     }
     const loopback = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
     if (url.protocol !== "https:" && !loopback) {
-        return {kind: "refused", reason: `HTTPS가 아닙니다 (${url.hostname})`};
+        return {kind: "refused", reason: `not HTTPS (${url.hostname})`};
     }
     if (!loopback && url.hostname !== "facilitator.mapae.io") {
         // Names the host, never the whole URL — a keyed RPC URL carries its secret in the
         // path, so echoing the value here would defeat the guard that rejected it.
-        return {kind: "refused", reason: `허용되지 않은 호스트입니다 (${url.hostname})`};
+        return {kind: "refused", reason: `host not allowed (${url.hostname})`};
     }
     if (url.pathname !== "/" || url.search || url.hash) {
         // The value is a path-less origin by contract — the client appends /bootstrap or
         // /revoke itself, so a pathed value here used to pass the hostname check and 404
         // at runtime as a doubled path. Refuse it by name instead.
-        return {kind: "refused", reason: `경로 없는 origin이어야 합니다 (${url.hostname})`};
+        return {kind: "refused", reason: `must be a path-less origin (${url.hostname})`};
     }
     return {kind: "configured", url: url.toString().replace(/\/$/, "")};
 }
@@ -215,18 +229,18 @@ export function publicSubmitterAvailability():
     try {
         url = new URL(raw);
     } catch {
-        return {kind: "refused", reason: "주소를 해석할 수 없습니다"};
+        return {kind: "refused", reason: "the value cannot be parsed as a URL"};
     }
     const loopback = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
     if (url.protocol !== "https:" && !loopback) {
-        return {kind: "refused", reason: `HTTPS가 아닙니다 (${url.hostname})`};
+        return {kind: "refused", reason: `not HTTPS (${url.hostname})`};
     }
     if (!loopback && url.hostname !== "facilitator.mapae.io") {
-        return {kind: "refused", reason: `허용되지 않은 호스트입니다 (${url.hostname})`};
+        return {kind: "refused", reason: `host not allowed (${url.hostname})`};
     }
     if (url.pathname !== "/" || url.search || url.hash) {
         // Same contract as bootstrapAvailability: path-less origin, client appends /revoke.
-        return {kind: "refused", reason: `경로 없는 origin이어야 합니다 (${url.hostname})`};
+        return {kind: "refused", reason: `must be a path-less origin (${url.hostname})`};
     }
     return {kind: "configured", url: url.toString().replace(/\/$/, "")};
 }
