@@ -85,7 +85,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 | 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트, TypeScript 510 + Foundry 14, 두 체인 타깃 negative path 23/23, GIWA fork 온보딩 15/15 | 로컬 + GIWA 읽기 전용 검증 |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
-- 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681852449cb4d79ad5c468d2675c60cbdd6ffaa3b7a9)
+- 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - **에이전트 자율 정산**, MCP 1회 호출, 사람 개입 0:
