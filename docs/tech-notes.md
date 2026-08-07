@@ -486,6 +486,7 @@ root permission 아티팩트를 요구하므로, 배포된 계정을 소유한 �
 | `check:docs` | 문서의 모든 `bun run`·`make` 명령이 실제로 존재하는지, 상대 링크가 열리는지, 모든 주소가 배포 아티팩트·토큰 정본과 일치하는지 |
 | `check:gitbook` | GitBook 챕터·SUMMARY·설정이 정본(`docs/tech-notes.md`)에서 유도한 것과 바이트 단위로 일치하는지 |
 | `check:logging` | `apps/`·`packages/`·`scripts/`의 `console.*` 인자에 날것의 에러가 닿지 않는지 — viem은 전송 URL을 에러 메시지에 포함시키므로, 경로에 키가 든 RPC URL이 로그로 새는 경로를 차단한다 |
+| `check:storage` | `apps/web/src` 전역에서 브라우저 저장소 **쓰기**가 승인된 한 모듈(`lib/grant-store.ts`) 밖으로 나가지 않는지 — 그 모듈의 투영은 에이전트 세션 키를 뺀 화이트리스트이고, 다른 곳의 두 번째 쓰기는 그 화이트리스트도 그 테스트도 물려받지 않는다. 읽기와 삭제는 어디서나 허용한다 |
 | `check:advisories` | `bun audit`의 모든 발견이 수정되었거나, 매 실행 재측정되는 `prove` 함수가 딸린 수용인지 |
 | `check:counts` | 저장소 README가 적은 테스트 수가 bun·forge가 실제로 수집하는 수와 일치하는지 — 문서의 숫자끼리의 일치가 아니라 수트와의 일치를 검사한다 |
 
