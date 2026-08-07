@@ -83,6 +83,23 @@
     --measure: 62ch; /* prose column ceiling */
     --radius: 2px; /* the record is not a rounded card */
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* ── Emblem geometry ───────────────────────────────────────────────────
+       The 마패 is a *hanging* pass: a suspension loop sits above the disc, so
+       the artwork's disc is not centred in its own image box. Measured on
+       public/brand/emblem.png (439×512, least-squares fit of the disc's lower
+       boundary): centre y = 288.8, r = 201.0. The image centre is y = 256, so
+       the disc rides 32.8px low — 6.408% of the image height, and 16.3% of the
+       disc's own radius.
+
+       Every circular plate in this app centres the image *box*, which puts the
+       disc visibly below the plate's centre while the surrounding rings stay
+       true. Each such plate cancels it with translateY(-1 × this). Sites with
+       no plate (the nav and footer lockups) have nothing to be concentric
+       with and must NOT apply it.
+
+       Re-export the emblem and this number changes. Re-measure, do not guess. */
+    --emblem-disc-offset: 6.408%;
 }
 
 @media (max-width: 1024px) {

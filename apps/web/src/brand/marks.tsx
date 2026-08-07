@@ -72,7 +72,12 @@ export function PassEmblem({size = 40, className}: {size?: number; className?: s
             alt="마패"
             lang="ko"
             width={size}
-            height={Math.round(size * EMBLEM_ASPECT)}
+            // Not rounded. The attributes are a reflow guard, but they are also the *only*
+            // sizing wherever no CSS rule overrides them — the footer lockup at size 34 is
+            // one such site, and Math.round(34 × 512/439) = 40 stretches the pass 0.87%
+            // vertically. A fractional attribute reserves the same space and keeps the
+            // ratio exact.
+            height={size * EMBLEM_ASPECT}
             className={className}
             decoding="async"
         />
@@ -124,11 +129,11 @@ export function InterfaceIcon({
 }
 
 /** Emblem and wordmark, locked to one baseline. */
-export function Lockup({compact = false}: {compact?: boolean}) {
+export function Lockup() {
     return (
         <span className="lockup">
-            <PassEmblem size={compact ? 20 : 30} />
-            <Wordmark height={compact ? 13 : 17} />
+            <PassEmblem size={30} />
+            <Wordmark height={17} />
         </span>
     );
 }

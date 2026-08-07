@@ -104,6 +104,8 @@
     width: 20px;
     height: auto;
     filter: none;
+    /* Cancel the artwork's low-riding disc — see --emblem-disc-offset. */
+    transform: translateY(calc(-1 * var(--emblem-disc-offset)));
 }
 
 .studio-brand-copy {
@@ -591,6 +593,8 @@
     width: auto;
     height: 78%;
     object-fit: contain;
+    /* Cancel the artwork's low-riding disc — see --emblem-disc-offset. */
+    transform: translateY(calc(-1 * var(--emblem-disc-offset)));
 }
 
 .studio-status-pill {
@@ -2043,6 +2047,8 @@ a.studio-metric:hover {
     .studio-mobile-mark img {
         width: 17px;
         height: auto;
+        /* Cancel the artwork's low-riding disc — see --emblem-disc-offset. */
+        transform: translateY(calc(-1 * var(--emblem-disc-offset)));
     }
 
     .studio-mobile-brand > img {

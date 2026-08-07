@@ -530,6 +530,13 @@
     width: 72%;
     height: 72%;
     object-fit: contain;
+    /*
+     * Cancel the artwork's low-riding disc — see --emblem-disc-offset. The box is square
+     * and the artwork is taller than wide, so `contain` fits to height: the painted height
+     * equals the box height, which is what a percentage translate resolves against. No
+     * letterbox factor is needed here, unlike a box that fits to width.
+     */
+    transform: translateY(calc(-1 * var(--emblem-disc-offset)));
 }
 
 .home-boundary-core small {
