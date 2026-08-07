@@ -45,12 +45,14 @@ import {awaitRevocationVisible} from "../lib/revoke";
 import {short, struckPercent} from "../lib/dial";
 import {
     importedSessionGrant,
+    recoverGrantsFromChain,
     judgeSpendable,
     readPayerBalance,
     type SessionGrant,
     verifyPermissionArtifact,
 } from "../lib/grant";
 import {useGrantLibrary} from "../lib/grant-library";
+import {useAccount} from "wagmi";
 import {parsePermissionContext, type ParsedPermission} from "../lib/permission";
 import {pick, type Locale} from "../lib/i18n";
 import {LocaleSwitch, useLocale} from "../lib/locale";
@@ -391,6 +393,8 @@ function StudioBody() {
     const [section, setSection] = useState<StudioSection>("create");
     const library = useGrantLibrary();
     const [refreshKey, setRefreshKey] = useState(0);
+    const [recovering, setRecovering] = useState(false);
+    const {address: owner} = useAccount();
 
     const loadedState = useMemo(() => parsePermissionContext(loadedRaw), [loadedRaw]);
     const permission = loadedState.kind === "ok" ? loadedState : undefined;
@@ -411,6 +415,36 @@ function StudioBody() {
     function addGrant(grant: SessionGrant) {
         library.add(grant);
         openGrant(grant);
+    }
+
+    /**
+     * Rebuild settled grants from the chain and merge them in.
+     *
+     * Complements the local store rather than replacing it: this finds grants that have
+     * paid at least once — including ones signed on another browser or another machine —
+     * while the store covers the ones that never settled and therefore exist nowhere else.
+     * Recovered entries carry no agent key, because the chain never held one.
+     */
+    async function recoverFromChain() {
+        if (!owner) return;
+        setRecovering(true);
+        try {
+            const head = await publicClient.getBlockNumber();
+            const recovered = await recoverGrantsFromChain({
+                owner,
+                fromBlock: head > RECEIPT_LOOKBACK_BLOCKS ? head - RECEIPT_LOOKBACK_BLOCKS : 0n,
+                locale,
+            });
+            // Only genuinely new contexts are added. `add` replaces on a context match, so
+            // adding blindly would rename a grant the owner already named to "Recovered
+            // agent" — recovery must not overwrite what it was meant to rescue.
+            const known = new Set(library.grants.map((item) => item.artifact.permissionContext));
+            for (const grant of recovered) {
+                if (!known.has(grant.artifact.permissionContext)) library.add(grant);
+            }
+        } finally {
+            setRecovering(false);
+        }
     }
 
     function forgetGrant(permissionContext: `0x${string}`) {
@@ -476,6 +510,8 @@ function StudioBody() {
                         onSelect={openGrant}
                         onCreate={() => setSection("create")}
                         onForget={forgetGrant}
+                        onRecover={recoverFromChain}
+                        recovering={recovering}
                     />
                 ) : (
                     <div className="studio-workspace">

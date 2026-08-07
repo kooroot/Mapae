@@ -297,3 +297,81 @@ export async function readSettlementReceipts(params: {
         };
     });
 }
+
+/**
+ * The delegation the `DelegationManager` publishes when a payment settles.
+ *
+ * Emitted once per link, so a single payment writes both the leaf and the root, and the
+ * struct is complete — delegate, delegator, authority, caveats, salt *and signature*. That
+ * completeness is what makes recovery possible rather than approximate: `permissionContext`
+ * is nothing but the ABI encoding of this same tuple array, so a context rebuilt from these
+ * logs is byte-identical to the one the browser lost.
+ */
+export const REDEEMED_DELEGATION_EVENT = parseAbiItem([
+    "event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, Delegation delegation)",
+    "struct Delegation { address delegate; address delegator; bytes32 authority; Caveat[] caveats; uint256 salt; bytes signature; }",
+    "struct Caveat { address enforcer; bytes terms; bytes args; }",
+]);
+
+/** `DelegationManager.ROOT_AUTHORITY` — the sentinel marking a link as a root. */
+export const ROOT_AUTHORITY: Hex = `0x${"f".repeat(64)}`;
+
+/**
+ * Reduce a stream of redeemed links to the distinct roots among them.
+ *
+ * Two reductions, both load-bearing. Leaves are dropped because they are minted per payment
+ * and bound to one settlement — restoring them as "agents" would list a user's payment
+ * history as their grant library. And a root is deduped because every settlement re-emits
+ * it, so a busy agent would otherwise return one card per payment.
+ */
+export function selectRootDelegations<T extends {authority: Hex; delegate: Address}>(
+    links: readonly T[],
+): T[] {
+    const seen = new Set<string>();
+    const roots: T[] = [];
+    for (const link of links) {
+        if (link.authority.toLowerCase() !== ROOT_AUTHORITY) continue;
+        const key = hashDelegation(link as unknown as Delegation);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        roots.push(link);
+    }
+    return roots;
+}
+
+/**
+ * Rebuild a payer account's grants from the chain.
+ *
+ * This exists because a grant's *only* copy used to be the browser's: a root delegation is
+ * signed offline and the manager stores nothing per delegation until it is disabled. The
+ * chain does hold it from the first settlement onward, indexed by `rootDelegator`, and that
+ * index is free — the payer account is re-derived from the connected wallet on every load.
+ *
+ * **Scope, stated because the gap is the point.** This recovers grants that have settled at
+ * least once. A grant created and never used has no on-chain footprint at all and cannot
+ * appear here; that case is what local persistence covers. The two are complementary, not
+ * alternatives.
+ *
+ * `fromBlock` is required for the same reason `readSettlementReceipts` requires it: an
+ * unbounded range either fails outright or silently truncates, and a truncated grant list
+ * reads exactly like a complete one.
+ */
+export async function readGrantsFromChain(params: {
+    publicClient: PublicClient;
+    environment: SmartAccountsEnvironment;
+    rootDelegator: Address;
+    fromBlock: bigint;
+    toBlock?: bigint | "latest";
+}): Promise<Delegation[]> {
+    const logs = await params.publicClient.getLogs({
+        address: getAddress(params.environment.DelegationManager),
+        event: REDEEMED_DELEGATION_EVENT,
+        args: {rootDelegator: getAddress(params.rootDelegator)},
+        fromBlock: params.fromBlock,
+        toBlock: params.toBlock ?? "latest",
+    });
+    const links = logs
+        .map((log) => (log.args as {delegation?: Delegation}).delegation)
+        .filter((delegation): delegation is Delegation => delegation !== undefined);
+    return selectRootDelegations(links);
+}

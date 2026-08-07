@@ -2614,3 +2614,10 @@ a.studio-metric:hover {
     border-style: dashed;
     opacity: 0.35;
 }
+
+.studio-agents-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}

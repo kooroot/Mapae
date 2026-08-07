@@ -1,6 +1,13 @@
 import {describe, expect, test} from "bun:test";
 import type {SmartAccountsEnvironment} from "@metamask/smart-accounts-kit";
-import {createPublicClient, custom, encodeAbiParameters, getAddress, type Address} from "viem";
+import {
+    createPublicClient,
+    custom,
+    encodeAbiParameters,
+    getAddress,
+    type Address,
+    type Hex,
+} from "viem";
 import {MOCK_USDC, toTokenAmount} from "@mapae/shared";
 import {ENTRY_POINT_V07} from "./config.js";
 import {buildD3Policies, preparePeriodDelegation} from "./policy.js";
@@ -12,6 +19,7 @@ import {
     readDelegationStatus,
     readSettlementReceipts,
     resolveChainTime,
+    selectRootDelegations,
 } from "./delegation-status.js";
 
 const address = (suffix: number): Address =>
@@ -419,5 +427,57 @@ describe("settlement receipt amounts", () => {
 
         expect(receipts.map((receipt) => receipt.period)).toEqual([0n, 0n, 1n]);
         expect(receipts[2]?.amount).toBe(toTokenAmount("2"));
+    });
+});
+
+describe("selectRootDelegations", () => {
+    const ROOT = `0x${"f".repeat(64)}` as Hex;
+    const OWNER = "0x0000000000000000000000000000000000000a11" as Address;
+    const AGENT = "0x0000000000000000000000000000000000000b22" as Address;
+
+    function delegation(authority: Hex, delegate: Address, salt = 0n) {
+        return {
+            delegate,
+            delegator: OWNER,
+            authority,
+            caveats: [],
+            salt,
+            signature: "0x" as Hex,
+        };
+    }
+
+    test("keeps roots and drops the per-payment leaves minted under them", () => {
+        // `RedeemedDelegation` fires once per link, so a single payment emits both the
+        // leaf and the root. Only the root is the grant the owner signed and the Studio
+        // manages; the leaf is ephemeral and re-minted for the next payment.
+        const roots = selectRootDelegations([
+            delegation(`0x${"11".repeat(32)}` as Hex, AGENT),
+            delegation(ROOT, AGENT),
+        ]);
+        expect(roots).toHaveLength(1);
+        expect(roots[0]?.authority).toBe(ROOT);
+    });
+
+    test("a root redeemed many times is returned once", () => {
+        // Every settlement re-emits the same root. Without dedupe a busy agent would come
+        // back as one card per payment.
+        const roots = selectRootDelegations([
+            delegation(ROOT, AGENT),
+            delegation(ROOT, AGENT),
+            delegation(ROOT, AGENT),
+        ]);
+        expect(roots).toHaveLength(1);
+    });
+
+    test("two distinct roots both survive", () => {
+        const roots = selectRootDelegations([
+            delegation(ROOT, AGENT, 1n),
+            delegation(ROOT, AGENT, 2n),
+        ]);
+        expect(roots).toHaveLength(2);
+    });
+
+    test("no roots at all is an empty list, not a throw", () => {
+        expect(selectRootDelegations([])).toEqual([]);
     });
 });

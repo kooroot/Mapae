@@ -5,6 +5,7 @@ import {
     Check,
     Clipboard,
     Clock3,
+    History,
     Trash2,
     Info,
     KeyRound,
@@ -27,6 +28,8 @@ const COPY: Record<
         title: string;
         subtitle: string;
         newGrant: string;
+        recover: string;
+        recovering: string;
         sessionNote: string;
         forget: string;
         forgetWarning: string;
@@ -53,6 +56,8 @@ const COPY: Record<
         title: "My agents",
         subtitle: "Manage the payment grants signed or imported in this Studio session.",
         newGrant: "New grant",
+        recover: "Recover from chain",
+        recovering: "Reading chain…",
         sessionNote:
             "Grant issuance is an off-chain signature, so a grant that has never settled exists nowhere but here. This list is kept in this browser — never sent to a server, never placed in a URL. The agent session key is the one thing not kept: copy its bundle before you leave.",
         forget: "Forget",
@@ -82,6 +87,8 @@ const COPY: Record<
         title: "내 에이전트",
         subtitle: "이 Studio 세션에서 서명하거나 불러온 결제 권한을 관리합니다.",
         newGrant: "새 권한",
+        recover: "체인에서 복구",
+        recovering: "체인 읽는 중…",
         sessionNote:
             "위임 발급은 오프체인 서명이라, 한 번도 정산되지 않은 권한은 여기 말고는 어디에도 없습니다. 이 목록은 이 브라우저에 보관됩니다 — 서버로 보내지 않고 URL에도 남기지 않습니다. 보관하지 않는 단 하나는 에이전트 세션 키이니, 떠나기 전에 번들을 복사해 두세요.",
         forget: "목록에서 지우기",
@@ -113,6 +120,8 @@ export function AgentGrantList({
     onSelect,
     onCreate,
     onForget,
+    onRecover,
+    recovering,
 }: {
     /**
      * `undefined` means the store has not been consulted yet, which is not the same as an
@@ -124,6 +133,9 @@ export function AgentGrantList({
     onSelect: (grant: SessionGrant) => void;
     onCreate: () => void;
     onForget: (permissionContext: `0x${string}`) => void;
+    /** Rebuilds settled grants from chain — see `recoverGrantsFromChain`. */
+    onRecover: () => Promise<void>;
+    recovering: boolean;
 }) {
     const {locale} = useLocale();
     const t = COPY[locale];
@@ -174,10 +186,21 @@ export function AgentGrantList({
                     <h1>{t.title}</h1>
                     <p>{t.subtitle}</p>
                 </div>
-                <button type="button" className="studio-wallet-button" onClick={onCreate}>
-                    <Plus size={17} />
-                    {t.newGrant}
-                </button>
+                <div className="studio-agents-actions">
+                    <button
+                        type="button"
+                        className="studio-secondary-button"
+                        onClick={() => void onRecover()}
+                        disabled={recovering}
+                    >
+                        <History size={16} />
+                        {recovering ? t.recovering : t.recover}
+                    </button>
+                    <button type="button" className="studio-wallet-button" onClick={onCreate}>
+                        <Plus size={17} />
+                        {t.newGrant}
+                    </button>
+                </div>
             </header>
 
             <div className="studio-session-note">

@@ -1,9 +1,14 @@
 import {buildRootDelegationTypedData, type PermissionArtifact} from "@mapae/delegation/signing";
 import {isCanonicalSignature} from "@mapae/delegation/account-bootstrap";
 import {DELEGATION_FRAMEWORK_VERSION, OWNER_ACCOUNT_SALT} from "@mapae/delegation/config";
+import {readGrantsFromChain} from "@mapae/delegation/delegation-status";
 import {MOCK_USDC, giwaSepolia, toTokenAmount} from "@mapae/shared";
 import {Implementation} from "@metamask/smart-accounts-kit";
-import {decodeDelegations, getCounterfactualAccountData} from "@metamask/smart-accounts-kit/utils";
+import {
+    decodeDelegations,
+    encodeDelegations,
+    getCounterfactualAccountData,
+} from "@metamask/smart-accounts-kit/utils";
 import {
     getAddress,
     hashTypedData,
@@ -55,6 +60,7 @@ const MSG: Record<
         bootstrapFailed: string;
         importedEmpty: string;
         importedAgentPrefix: string;
+        recoveredAgentPrefix: string;
     }
 > = {
     en: {
@@ -90,6 +96,7 @@ const MSG: Record<
         bootstrapFailed: "The payer account could not be set up.",
         importedEmpty: "An empty permission code cannot be imported.",
         importedAgentPrefix: "Agent",
+        recoveredAgentPrefix: "Recovered agent",
     },
     ko: {
         agentNameRequired: "에이전트 이름을 입력해 주세요.",
@@ -124,6 +131,7 @@ const MSG: Record<
         bootstrapFailed: "지불 계정을 준비하지 못했습니다.",
         importedEmpty: "비어 있는 권한 코드는 가져올 수 없습니다.",
         importedAgentPrefix: "에이전트",
+        recoveredAgentPrefix: "복구된 에이전트",
     },
 };
 
@@ -567,4 +575,62 @@ export function importedSessionGrant(
 
 export function tokenLabel(): string {
     return `${MOCK_USDC.symbol} · GIWA Sepolia`;
+}
+
+/**
+ * The payer smart account a wallet owns, derived rather than remembered.
+ *
+ * CREATE2 from `[owner, [], [], []]` at a fixed salt, which is the same derivation the
+ * bootstrap sponsor performs — so a returning user always knows which account to ask the
+ * chain about, with no storage and no server.
+ */
+export async function derivePayerAccount(owner: Address): Promise<Address> {
+    const derived = await getCounterfactualAccountData({
+        factory: getAddress(deployment.environment.SimpleFactory),
+        implementations: deployment.environment.implementations,
+        implementation: Implementation.Hybrid,
+        deployParams: [getAddress(owner), [], [], []],
+        deploySalt: OWNER_ACCOUNT_SALT,
+    });
+    return getAddress(derived.address);
+}
+
+/**
+ * Rebuild this wallet's grants from settled payments on chain.
+ *
+ * Only covers grants that have settled at least once — an unused grant has no on-chain
+ * footprint, which is exactly the gap the local store closes. Restored grants carry no
+ * agent key: the chain never held one, and neither does the store.
+ */
+export async function recoverGrantsFromChain(params: {
+    owner: Address;
+    fromBlock: bigint;
+    locale?: Locale;
+}): Promise<SessionGrant[]> {
+    const m = MSG[params.locale ?? "en"];
+    const rootDelegator = await derivePayerAccount(params.owner);
+    const roots = await readGrantsFromChain({
+        publicClient,
+        environment: deployment.environment,
+        rootDelegator,
+        fromBlock: params.fromBlock,
+    });
+    return roots.map((root) => {
+        const permissionContext = encodeDelegations([root]);
+        const createdAt = Math.floor(Date.now() / 1000);
+        return {
+            id: `chain:${getAddress(root.delegate)}:${permissionContext.slice(-18)}`,
+            name: `${m.recoveredAgentPrefix} ${getAddress(root.delegate).slice(0, 8)}`,
+            source: "imported",
+            artifact: {
+                frameworkVersion: DELEGATION_FRAMEWORK_VERSION,
+                chainId: giwaSepolia.id,
+                role: "imported",
+                delegator: getAddress(root.delegator),
+                delegate: getAddress(root.delegate),
+                permissionContext,
+                createdAt,
+            },
+        } satisfies SessionGrant;
+    });
 }
