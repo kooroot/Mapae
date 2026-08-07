@@ -311,20 +311,34 @@ export function validateGrantDraft(draft: GrantDraft, locale: Locale = "en"): Gr
 /**
  * What the agent can actually spend right now — which is not what the caveat allows.
  *
- * The enforcer caps how much may leave the account; it says nothing about how much is in
- * it. Showing the cap alone is how a freshly bootstrapped account displays "3 mUSDC
- * available" over a zero balance: the first payment then dies inside the token transfer
- * rather than at the enforcer, and the user reads "settlement failed" when the true answer
- * is "you have not funded this account".
+ * Three separate things can say no, and the caveat is only one of them:
+ *
+ * - `halted` — the permission itself is dead (revoked, expired, or not yet active). A
+ *   disabled root fails in `DelegationManager` before any caveat is consulted, so the cap
+ *   is not merely unreachable, it is irrelevant. This is checked first for that reason:
+ *   the answer needs no balance read and no period arithmetic.
+ * - the balance — the enforcer caps how much may leave the account; it says nothing about
+ *   how much is in it. Showing the cap alone is how a freshly bootstrapped account displays
+ *   "3 mUSDC available" over a zero balance: the first payment then dies inside the token
+ *   transfer rather than at the enforcer, and the user reads "settlement failed" when the
+ *   true answer is "you have not funded this account".
+ * - the cap itself, once neither of the above binds.
  *
  * `undefined` balance is `"unknown"`, never zero. A read we could not make is a question we
  * could not answer, and answering it "empty" would put a false warning in front of an
  * account that is fine.
  */
-export function judgeSpendable(params: {available: bigint; balance: bigint | undefined}): {
+export function judgeSpendable(params: {
+    available: bigint;
+    balance: bigint | undefined;
+    halted: boolean;
+}): {
     spendable: bigint;
-    limitedBy: "cap" | "balance" | "unknown";
+    limitedBy: "cap" | "balance" | "unknown" | "halted";
 } {
+    if (params.halted) {
+        return {spendable: 0n, limitedBy: "halted"};
+    }
     if (params.balance === undefined) {
         return {spendable: params.available, limitedBy: "unknown"};
     }

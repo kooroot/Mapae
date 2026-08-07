@@ -91,6 +91,9 @@ const COPY: Record<
         aboutMapae: string;
         techDocs: string;
         availableNow: string;
+        haltRevoked: {label: string; note: string};
+        haltExpired: {label: string; note: string};
+        haltNotStarted: {label: string; note: string};
         balanceNote: (cap: string, balance: string) => string;
         usageAria: string;
         spentLegend: (amount: string) => string;
@@ -180,6 +183,18 @@ const COPY: Record<
         aboutMapae: "About Mapae",
         techDocs: "Technical docs",
         availableNow: "Available now",
+        haltRevoked: {
+            label: "No longer available",
+            note: "This permission was revoked on chain. The payer account refuses any payment that presents it, whatever the cap below says.",
+        },
+        haltExpired: {
+            label: "No longer available",
+            note: "This permission is past its expiry. The payer account refuses any payment that presents it, whatever the cap below says.",
+        },
+        haltNotStarted: {
+            label: "Not yet available",
+            note: "This permission has not reached its start time. Payments made with it are rejected until then.",
+        },
         balanceNote: (cap, balance) =>
             `The cap is ${cap} mUSDC, but the payer account balance is ${balance} mUSDC. Fund the payer account with mUSDC to pay.`,
         usageAria: "Current period usage",
@@ -277,6 +292,18 @@ const COPY: Record<
         aboutMapae: "Mapae 소개",
         techDocs: "기술 문서",
         availableNow: "현재 사용 가능",
+        haltRevoked: {
+            label: "더 이상 사용 불가",
+            note: "이 권한은 온체인에서 회수되었습니다. 아래 한도와 무관하게, 이 권한을 제시하는 결제는 페이어 계정이 거부합니다.",
+        },
+        haltExpired: {
+            label: "더 이상 사용 불가",
+            note: "이 권한은 만료되었습니다. 아래 한도와 무관하게, 이 권한을 제시하는 결제는 페이어 계정이 거부합니다.",
+        },
+        haltNotStarted: {
+            label: "아직 사용 불가",
+            note: "이 권한은 아직 시작 시각에 도달하지 않았습니다. 그때까지의 결제는 거부됩니다.",
+        },
         balanceNote: (cap, balance) =>
             `한도는 ${cap} mUSDC이지만 지불 계정 잔액이 ${balance} mUSDC입니다. 결제하려면 지불 계정에 mUSDC를 채워 주세요.`,
         usageAria: "현재 주기 사용률",
@@ -634,6 +661,18 @@ function Overview({
     const cap = status.limit?.periodAmount;
     const remaining = cap === undefined ? undefined : started ? status.remaining : cap;
     const available = remaining ?? cap;
+    // One verdict, rendered twice — the headline number and the note under it have to agree
+    // about which constraint is binding, and computing them separately is how the headline
+    // came to read the full cap over a revoked permission.
+    const verdict =
+        available === undefined ? undefined : judgeSpendable({available, balance, halted: !live});
+    const halt = status.revoked
+        ? t.haltRevoked
+        : status.expired
+          ? t.haltExpired
+          : status.notYetActive
+            ? t.haltNotStarted
+            : undefined;
     const spent =
         cap === undefined || remaining === undefined || cap <= remaining ? 0n : cap - remaining;
     const usedPercent =
@@ -648,18 +687,21 @@ function Overview({
                         <StatusPill status={status} />
                     </div>
 
-                    {available !== undefined && cap !== undefined ? (
+                    {verdict !== undefined && available !== undefined && cap !== undefined ? (
                         <>
-                            <p className="studio-amount-label">{t.availableNow}</p>
-                            <div className="studio-amount">
-                                <strong>
-                                    {fromTokenAmount(
-                                        judgeSpendable({available, balance}).spendable,
-                                    )}
-                                </strong>
+                            <p className="studio-amount-label">
+                                {halt ? halt.label : t.availableNow}
+                            </p>
+                            <div className="studio-amount" data-halted={!live}>
+                                <strong>{fromTokenAmount(verdict.spendable)}</strong>
                                 <span>mUSDC</span>
                             </div>
-                            {judgeSpendable({available, balance}).limitedBy === "balance" ? (
+                            {verdict.limitedBy === "halted" && halt ? (
+                                // Why the number is zero. Without it the card reads as an
+                                // account that ran out of money, which is a different
+                                // problem with a different fix.
+                                <p className="studio-amount-note">{halt.note}</p>
+                            ) : verdict.limitedBy === "balance" ? (
                                 // The cap is not the binding constraint right now. Saying
                                 // so here is the difference between a user who funds the
                                 // account and one who reads an unexplained payment failure.
@@ -694,8 +736,10 @@ function Overview({
                 </div>
 
                 <div className="studio-authority-emblem" aria-hidden="true">
-                    <span />
-                    <PassEmblem size={118} />
+                    <span className="studio-authority-ring" />
+                    <span className="studio-authority-disc">
+                        <PassEmblem size={104} />
+                    </span>
                 </div>
             </section>
 

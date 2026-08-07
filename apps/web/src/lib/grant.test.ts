@@ -133,12 +133,12 @@ describe("ANY_DELEGATE in the root form", () => {
 
 describe("judgeSpendable", () => {
     test("the cap is the limit when the account holds more than it", () => {
-        const result = judgeSpendable({available: 3_000_000n, balance: 10_000_000n});
+        const result = judgeSpendable({available: 3_000_000n, balance: 10_000_000n, halted: false});
         expect(result).toEqual({spendable: 3_000_000n, limitedBy: "cap"});
     });
 
     test("the balance is the limit when it sits below the cap", () => {
-        const result = judgeSpendable({available: 3_000_000n, balance: 1_000_000n});
+        const result = judgeSpendable({available: 3_000_000n, balance: 1_000_000n, halted: false});
         expect(result).toEqual({spendable: 1_000_000n, limitedBy: "balance"});
     });
 
@@ -147,19 +147,35 @@ describe("judgeSpendable", () => {
         // period cap as "available" while holding zero tokens, so the first payment
         // fails in the token transfer rather than at the enforcer, and the user is told
         // "settlement failed" instead of "you have no balance".
-        const result = judgeSpendable({available: 3_000_000n, balance: 0n});
+        const result = judgeSpendable({available: 3_000_000n, balance: 0n, halted: false});
         expect(result).toEqual({spendable: 0n, limitedBy: "balance"});
     });
 
     test("equal cap and balance is reported as cap-limited", () => {
-        const result = judgeSpendable({available: 5n, balance: 5n});
+        const result = judgeSpendable({available: 5n, balance: 5n, halted: false});
         expect(result.limitedBy).toBe("cap");
     });
 
     test("an unread balance is not treated as zero", () => {
         // A read we could not make is a question we cannot answer, not an answer of zero.
-        const result = judgeSpendable({available: 3_000_000n, balance: undefined});
+        const result = judgeSpendable({available: 3_000_000n, balance: undefined, halted: false});
         expect(result).toEqual({spendable: 3_000_000n, limitedBy: "unknown"});
+    });
+
+    test("a halted permission can spend nothing, whatever the cap and balance say", () => {
+        // The bug this exists to stop: revoking a grant flipped the status pill and dimmed
+        // the card, but the headline still read the full period cap, because the number was
+        // computed from the caveat alone. The enforcer is not the only thing that can say
+        // no — a disabled root fails in `DelegationManager` before any caveat is consulted.
+        const result = judgeSpendable({available: 3_000_000n, balance: 10_000_000n, halted: true});
+        expect(result).toEqual({spendable: 0n, limitedBy: "halted"});
+    });
+
+    test("halted outranks an unread balance", () => {
+        // Ordering matters: `undefined` balance means "we could not ask the token contract",
+        // but a revoked delegation needs no balance read to be answered.
+        const result = judgeSpendable({available: 3_000_000n, balance: undefined, halted: true});
+        expect(result).toEqual({spendable: 0n, limitedBy: "halted"});
     });
 });
 
