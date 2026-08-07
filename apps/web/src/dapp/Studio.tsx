@@ -53,6 +53,7 @@ import {
 } from "../lib/grant";
 import {useGrantLibrary} from "../lib/grant-library";
 import {useAccount} from "wagmi";
+import type {Address} from "viem";
 import {parsePermissionContext, type ParsedPermission} from "../lib/permission";
 import {pick, type Locale} from "../lib/i18n";
 import {LocaleSwitch, useLocale} from "../lib/locale";
@@ -90,6 +91,8 @@ const COPY: Record<
         myAgents: string;
         landingAria: string;
         navAria: string;
+        grantNavAria: string;
+        openGrantLabel: string;
         createGrant: string;
         aboutMapae: string;
         techDocs: string;
@@ -182,6 +185,8 @@ const COPY: Record<
         myAgents: "My agents",
         landingAria: "Go to the Mapae landing page",
         navAria: "Studio menu",
+        grantNavAria: "Open grant menu",
+        openGrantLabel: "OPEN GRANT",
         createGrant: "Create a grant",
         aboutMapae: "About Mapae",
         techDocs: "Technical docs",
@@ -291,6 +296,8 @@ const COPY: Record<
         myAgents: "내 에이전트",
         landingAria: "Mapae 랜딩으로 이동",
         navAria: "Studio 메뉴",
+        grantNavAria: "열린 권한 메뉴",
+        openGrantLabel: "열린 권한",
         createGrant: "권한 만들기",
         aboutMapae: "Mapae 소개",
         techDocs: "기술 문서",
@@ -476,7 +483,19 @@ function StudioBody() {
         <div className="studio-shell">
             <StudioSidebar
                 section={section}
-                hasPermission={Boolean(permission)}
+                activeGrant={
+                    permission
+                        ? {
+                              // The library holds the name its owner typed; a permission
+                              // opened by paste alone has none, and the delegate address
+                              // is then the only honest label.
+                              name: library.grants.find(
+                                  (item) => item.artifact.permissionContext === loadedRaw,
+                              )?.name,
+                              delegate: permission.root.delegate as Address,
+                          }
+                        : undefined
+                }
                 onSectionChange={setSection}
             />
 
@@ -588,11 +607,17 @@ function StudioBody() {
 
 function StudioSidebar({
     section,
-    hasPermission,
+    activeGrant,
     onSectionChange,
 }: {
     section: StudioSection;
-    hasPermission: boolean;
+    /**
+     * The grant whose detail screens are open, or `undefined` when none is. Carries the
+     * label rather than a boolean because the three detail sections belong *to* a grant —
+     * a flat nav that only knows "some permission is loaded" cannot say which, and with
+     * several agents registered that is the question the screen has to answer first.
+     */
+    activeGrant: {name?: string; delegate: Address} | undefined;
     onSectionChange: (section: StudioSection) => void;
 }) {
     const {locale} = useLocale();
@@ -626,25 +651,39 @@ function StudioSidebar({
                     <WalletCards size={18} />
                     <span>{t.myAgents}</span>
                 </button>
-                {hasPermission ? (
-                    (Object.entries(SECTION_META) as Array<
-                        [DetailSection, (typeof SECTION_META)[DetailSection]]
-                    >).map(([key, item]) => {
-                        const Icon = item.icon;
-                        return (
-                            <button
-                                type="button"
-                                key={key}
-                                data-active={section === key}
-                                onClick={() => onSectionChange(key)}
-                            >
-                                <Icon size={18} />
-                                <span>{t.sections[key].label}</span>
-                            </button>
-                        );
-                    })
-                ) : null}
             </nav>
+
+            {activeGrant ? (
+                <div className="studio-nav-group">
+                    <button
+                        type="button"
+                        className="studio-nav-group-head"
+                        onClick={() => onSectionChange("agents")}
+                    >
+                        <span className="studio-kicker">{t.openGrantLabel}</span>
+                        <strong>{activeGrant.name ?? short(activeGrant.delegate)}</strong>
+                        <small>{short(activeGrant.delegate)}</small>
+                    </button>
+                    <nav className="studio-nav studio-nav-sub" aria-label={t.grantNavAria}>
+                        {(Object.entries(SECTION_META) as Array<
+                            [DetailSection, (typeof SECTION_META)[DetailSection]]
+                        >).map(([key, item]) => {
+                            const Icon = item.icon;
+                            return (
+                                <button
+                                    type="button"
+                                    key={key}
+                                    data-active={section === key}
+                                    onClick={() => onSectionChange(key)}
+                                >
+                                    <Icon size={18} />
+                                    <span>{t.sections[key].label}</span>
+                                </button>
+                            );
+                        })}
+                    </nav>
+                </div>
+            ) : null}
 
             <div className="studio-sidebar-foot">
                 <a href={landingUrl}>

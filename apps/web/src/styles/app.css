@@ -2621,3 +2621,62 @@ a.studio-metric:hover {
     align-items: center;
     gap: 10px;
 }
+
+/*
+ * The three detail screens belong to one grant, and the nav has to say so. Previously they
+ * sat in the same flat list as "Create a grant" and "My agents", which read as five
+ * equal destinations — and worse, with several agents registered the screen never named
+ * which one was open. The group header carries that name and doubles as the way back up.
+ */
+.studio-nav-group {
+    margin-top: 26px;
+    padding-top: 18px;
+    border-top: 1px solid var(--studio-line);
+}
+
+.studio-nav-group-head {
+    display: grid;
+    width: 100%;
+    gap: 3px;
+    padding: 0 13px 12px;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.studio-nav-group-head strong {
+    overflow: hidden;
+    color: var(--studio-text);
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.studio-nav-group-head small {
+    color: var(--studio-text-3);
+    font-family: var(--mono);
+    font-size: 10px;
+}
+
+.studio-nav-group-head:hover strong {
+    color: var(--studio-metal);
+}
+
+/*
+ * Indented behind a rule: the line is the containment, the indent is the rank. Cheaper to
+ * read at a glance than an icon change, and it survives translation — the Korean labels
+ * are a different length and the geometry still says "these are inside that".
+ */
+.studio-nav-sub {
+    margin-top: 0;
+    margin-left: 21px;
+    padding-left: 11px;
+    border-left: 1px solid var(--studio-line);
+}
+
+.studio-nav-sub button {
+    min-height: 38px;
+    font-size: 12.5px;
+}
