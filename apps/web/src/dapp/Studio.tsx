@@ -50,6 +50,7 @@ import {
     type SessionGrant,
     verifyPermissionArtifact,
 } from "../lib/grant";
+import {useGrantLibrary} from "../lib/grant-library";
 import {parsePermissionContext, type ParsedPermission} from "../lib/permission";
 import {pick, type Locale} from "../lib/i18n";
 import {LocaleSwitch, useLocale} from "../lib/locale";
@@ -240,7 +241,7 @@ const COPY: Record<
         ownerCheckBody: "The revocation signer must match the smart account's actual owner.",
         inputCheckTitle: "Input handling",
         inputCheckBody:
-            "The Mapae permission code is never written to a URL or to browser storage.",
+            "The permission code is kept in this browser so a reload does not destroy a grant you have not settled yet — never sent to a server, never written to a URL. The agent session key is never stored at all.",
         revocationPathTitle: "Revocation path",
         revocationSponsoredBody:
             "The revocation deposit is covered by the sponsor. Signing authority stays with the owner wallet alone.",
@@ -348,7 +349,8 @@ const COPY: Record<
         ownerCheckTitle: "소유자 검증",
         ownerCheckBody: "회수 서명자는 smart account의 실제 owner와 일치해야 합니다.",
         inputCheckTitle: "입력 보존",
-        inputCheckBody: "마패 권한 코드는 URL이나 브라우저 저장소에 기록하지 않습니다.",
+        inputCheckBody:
+            "권한 코드는 이 브라우저에 보관합니다 — 아직 정산하지 않은 권한이 새로고침으로 사라지지 않도록. 서버로 보내지 않고 URL에도 기록하지 않습니다. 에이전트 세션 키는 아예 저장하지 않습니다.",
         revocationPathTitle: "회수 경로",
         revocationSponsoredBody:
             "회수 예치금은 스폰서가 대납합니다. 서명 권한은 소유자 지갑에만 있습니다.",
@@ -387,7 +389,7 @@ function StudioBody() {
     const t = COPY[locale];
     const [loadedRaw, setLoadedRaw] = useState("");
     const [section, setSection] = useState<StudioSection>("create");
-    const [grants, setGrants] = useState<SessionGrant[]>([]);
+    const library = useGrantLibrary();
     const [refreshKey, setRefreshKey] = useState(0);
 
     const loadedState = useMemo(() => parsePermissionContext(loadedRaw), [loadedRaw]);
@@ -407,14 +409,15 @@ function StudioBody() {
     }
 
     function addGrant(grant: SessionGrant) {
-        setGrants((current) => [
-            grant,
-            ...current.filter(
-                (item) =>
-                    item.artifact.permissionContext !== grant.artifact.permissionContext,
-            ),
-        ]);
+        library.add(grant);
         openGrant(grant);
+    }
+
+    function forgetGrant(permissionContext: `0x${string}`) {
+        library.forget(permissionContext);
+        // Forgetting the grant that is currently open would otherwise leave the workspace
+        // rendering a permission the list no longer offers a way back to.
+        if (permissionContext === loadedRaw) chooseAnotherPermission();
     }
 
     async function importPermission(permissionContext: `0x${string}`) {
@@ -468,10 +471,11 @@ function StudioBody() {
                     />
                 ) : section === "agents" || !permission ? (
                     <AgentGrantList
-                        grants={grants}
+                        grants={library.hydrated ? library.grants : undefined}
                         selectedContext={loadedRaw}
                         onSelect={openGrant}
                         onCreate={() => setSection("create")}
+                        onForget={forgetGrant}
                     />
                 ) : (
                     <div className="studio-workspace">
@@ -1003,7 +1007,7 @@ function SecurityView({
                 <SecurityCheck
                     icon={LockKeyhole}
                     title={t.inputCheckTitle}
-                    state="MEMORY ONLY"
+                    state="THIS BROWSER"
                     body={t.inputCheckBody}
                 />
                 <SecurityCheck

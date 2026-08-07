@@ -5,6 +5,7 @@ import {
     Check,
     Clipboard,
     Clock3,
+    Trash2,
     Info,
     KeyRound,
     Plus,
@@ -27,6 +28,10 @@ const COPY: Record<
         subtitle: string;
         newGrant: string;
         sessionNote: string;
+        forget: string;
+        forgetWarning: string;
+        forgetConfirm: string;
+        forgetCancel: string;
         emptyTitle: string;
         emptyBody: string;
         createFirst: string;
@@ -49,7 +54,12 @@ const COPY: Record<
         subtitle: "Manage the payment grants signed or imported in this Studio session.",
         newGrant: "New grant",
         sessionNote:
-            "Grant issuance is an off-chain signature, so the full list cannot be recovered from the chain automatically. To keep sensitive permission codes out of browser storage, this list lives in the current tab only.",
+            "Grant issuance is an off-chain signature, so a grant that has never settled exists nowhere but here. This list is kept in this browser — never sent to a server, never placed in a URL. The agent session key is the one thing not kept: copy its bundle before you leave.",
+        forget: "Forget",
+        forgetWarning:
+            "This removes the grant from this browser only. It does not revoke anything — the delegation stays live inside its caveat until it expires or you revoke it. Copy the permission code first if you want to keep it.",
+        forgetConfirm: "Forget it",
+        forgetCancel: "Keep",
         emptyTitle: "No agents registered yet.",
         emptyBody:
             "Set the asset, amount, period, and recipient boundaries, sign in your wallet, and the grant appears here.",
@@ -73,7 +83,12 @@ const COPY: Record<
         subtitle: "이 Studio 세션에서 서명하거나 불러온 결제 권한을 관리합니다.",
         newGrant: "새 권한",
         sessionNote:
-            "위임 발급은 오프체인 서명이므로 체인에서 전체 목록을 자동 복구할 수 없습니다. 민감한 권한 코드를 브라우저 저장소에 남기지 않기 위해 이 목록은 현재 탭에만 유지됩니다.",
+            "위임 발급은 오프체인 서명이라, 한 번도 정산되지 않은 권한은 여기 말고는 어디에도 없습니다. 이 목록은 이 브라우저에 보관됩니다 — 서버로 보내지 않고 URL에도 남기지 않습니다. 보관하지 않는 단 하나는 에이전트 세션 키이니, 떠나기 전에 번들을 복사해 두세요.",
+        forget: "목록에서 지우기",
+        forgetWarning:
+            "이 브라우저의 목록에서만 지웁니다. 회수가 아닙니다 — 위임은 만료되거나 회수하기 전까지 caveat 안에서 그대로 살아 있습니다. 보관하려면 먼저 권한 코드를 복사하세요.",
+        forgetConfirm: "지웁니다",
+        forgetCancel: "그대로 두기",
         emptyTitle: "아직 등록된 에이전트가 없습니다.",
         emptyBody: "자산·금액·기간·수취인 경계를 정하고 지갑에서 서명하면 여기에 바로 추가됩니다.",
         createFirst: "첫 권한 만들기",
@@ -97,16 +112,24 @@ export function AgentGrantList({
     selectedContext,
     onSelect,
     onCreate,
+    onForget,
 }: {
-    grants: SessionGrant[];
+    /**
+     * `undefined` means the store has not been consulted yet, which is not the same as an
+     * empty library. Rendering the "no agents" screen for that one frame shows a returning
+     * user the exact message that reads as data loss.
+     */
+    grants: SessionGrant[] | undefined;
     selectedContext: string;
     onSelect: (grant: SessionGrant) => void;
     onCreate: () => void;
+    onForget: (permissionContext: `0x${string}`) => void;
 }) {
     const {locale} = useLocale();
     const t = COPY[locale];
     const [copied, setCopied] = useState<string>();
     const [copyFault, setCopyFault] = useState<string>();
+    const [confirming, setConfirming] = useState<string>();
 
     useEffect(() => {
         if (!copied) return;
@@ -167,7 +190,12 @@ export function AgentGrantList({
                 </p>
             ) : null}
 
-            {grants.length === 0 ? (
+            {grants === undefined ? (
+                <div className="studio-agent-grid" aria-busy="true">
+                    <article className="studio-agent-card" data-placeholder="true" />
+                    <article className="studio-agent-card" data-placeholder="true" />
+                </div>
+            ) : grants.length === 0 ? (
                 <section className="studio-agents-empty">
                     <span>
                         <Bot size={27} />
@@ -278,6 +306,42 @@ export function AgentGrantList({
                                 {grant.agentKey ? (
                                     <p className="studio-bundle-note">{t.bundleNote}</p>
                                 ) : null}
+                                {confirming === grant.id ? (
+                                    // Two-step inline rather than window.confirm: that dialog
+                                    // is unstyled and untranslatable through the COPY maps
+                                    // every component here uses. The copy has to say what
+                                    // forgetting is *not* — this browser holds the only copy,
+                                    // and removing it does not revoke anything on chain.
+                                    <p className="studio-forget-confirm" role="alert">
+                                        <span>{t.forgetWarning}</span>
+                                        <button
+                                            type="button"
+                                            className="studio-forget-go"
+                                            onClick={() => {
+                                                setConfirming(undefined);
+                                                onForget(grant.artifact.permissionContext);
+                                            }}
+                                        >
+                                            {t.forgetConfirm}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="studio-forget-cancel"
+                                            onClick={() => setConfirming(undefined)}
+                                        >
+                                            {t.forgetCancel}
+                                        </button>
+                                    </p>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        className="studio-forget"
+                                        onClick={() => setConfirming(grant.id)}
+                                    >
+                                        <Trash2 size={13} />
+                                        {t.forget}
+                                    </button>
+                                )}
                             </article>
                         );
                     })}

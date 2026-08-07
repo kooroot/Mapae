@@ -2553,3 +2553,64 @@ a.studio-metric:hover {
     font-size: 9px;
     line-height: 1.55;
 }
+
+/*
+ * "Forget" removes the grant from this browser and nothing else — the delegation stays
+ * live inside its caveat. The affordance is deliberately quiet and the confirm states
+ * that distinction, because a control that looks like Revoke but is not would invert the
+ * product's own claim about where the limit lives.
+ */
+.studio-forget {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    padding: 0;
+    border: 0;
+    color: var(--studio-text-3);
+    background: none;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.studio-forget:hover {
+    color: var(--studio-red);
+}
+
+.studio-forget-confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(227, 107, 98, 0.28);
+    border-radius: 10px;
+    background: var(--studio-red-wash);
+    color: var(--studio-text-2);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.studio-forget-go,
+.studio-forget-cancel {
+    padding: 5px 12px;
+    border: 1px solid var(--studio-line);
+    border-radius: 999px;
+    background: none;
+    color: var(--studio-text-2);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.studio-forget-go {
+    border-color: rgba(227, 107, 98, 0.5);
+    color: var(--studio-red);
+}
+
+/* The store has not been consulted yet — not "there are no agents". */
+.studio-agent-card[data-placeholder="true"] {
+    min-height: 232px;
+    border-style: dashed;
+    opacity: 0.35;
+}
