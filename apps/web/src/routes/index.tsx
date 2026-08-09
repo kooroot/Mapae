@@ -20,26 +20,35 @@ const LazyStudio = lazy(() =>
     import("../dapp/Studio").then(({Studio}) => ({default: Studio})),
 );
 
+/*
+ * Exported because `routes/ko/index.tsx` mounts the same surface at `/ko`. They must be
+ * named bindings rather than `Route.options.component`: the router's code splitter
+ * rejects a member expression there, and the failure is a build error rather than a
+ * runtime one, so this is the only shape that works.
+ */
+export function rootSurfaceHead() {
+    return siteSurface === "app"
+        ? {
+              meta: [
+                  {title: "Mapae Studio — Delegated payment control"},
+                  {
+                      name: "description",
+                      content: pick(resolveLocale(), {
+                          en: "Approve asset, amount, period, and recipient boundaries from your wallet, and manage agent payment authority and settlement state on GIWA.",
+                          ko: "자산·금액·기간·수취인 경계를 지갑으로 승인하고, GIWA에서 에이전트 결제 권한과 정산 상태를 관리합니다.",
+                      }),
+                  },
+              ],
+          }
+        : {};
+}
+
 export const Route = createFileRoute("/")({
     component: RootSurface,
-    head: () =>
-        siteSurface === "app"
-            ? {
-                  meta: [
-                      {title: "Mapae Studio — Delegated payment control"},
-                      {
-                          name: "description",
-                          content: pick(resolveLocale(), {
-                              en: "Approve asset, amount, period, and recipient boundaries from your wallet, and manage agent payment authority and settlement state on GIWA.",
-                              ko: "자산·금액·기간·수취인 경계를 지갑으로 승인하고, GIWA에서 에이전트 결제 권한과 정산 상태를 관리합니다.",
-                          }),
-                      },
-                  ],
-              }
-            : {},
+    head: rootSurfaceHead,
 });
 
-function RootSurface() {
+export function RootSurface() {
     return siteSurface === "app" ? (
         <Suspense fallback={<StudioEntryLoading />}>
             <LazyStudio />

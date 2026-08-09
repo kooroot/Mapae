@@ -1,81 +1,121 @@
+import {useRouterState} from "@tanstack/react-router";
 import {createIsomorphicFn} from "@tanstack/react-start";
-import {getCookie} from "@tanstack/react-start/server";
-import {createContext, useCallback, useContext, useMemo, useState, type ReactNode} from "react";
-import {LOCALE_COOKIE, parseLocale, readLocaleFromCookieString, type Locale} from "./i18n";
+import {getCookie, getRequestUrl} from "@tanstack/react-start/server";
+import {createContext, useContext, useMemo, type ReactNode} from "react";
+import {
+    LOCALE_COOKIE,
+    localizePath,
+    parseLocale,
+    readLocaleFromCookieString,
+    readLocaleFromPath,
+    type Locale,
+} from "./i18n";
 
 /**
  * The language layer, runtime half.
  *
  * The locale must be known *during* server render — `<html lang>` and every visible
  * string depend on it — and must resolve to the same value when the client hydrates,
- * or React reports a mismatch and repaints. A cookie is the only store both sides can
- * read synchronously, so the toggle writes a cookie and this resolver reads it:
- * server through the framework's request storage, client through `document.cookie`.
- * First visit has no cookie and renders the English base on both sides.
+ * or React reports a mismatch and repaints. Both inputs this reads satisfy that: the
+ * request path and the cookie are visible synchronously on both sides.
+ *
+ * **The path wins, the cookie only remembers.** `/ko` is Korean no matter what any
+ * cookie says, which is what makes a Korean URL forwardable, indexable, and cacheable
+ * (see `LOCALE_PATH_PREFIX`). The cookie decides only what an *unprefixed* path
+ * renders, so a returning reader still lands in their language at the bare domain —
+ * and a crawler, which carries no cookie, always sees the English base at `/` and the
+ * Korean copy at `/ko`. Those are the two URLs `hreflang` declares.
  *
  * Deliberately not persisted in localStorage: the server cannot see localStorage, so
  * a returning Korean reader would get an English SSR paint and a Korean repaint —
  * the exact flash this design exists to avoid.
  */
 export const resolveLocale = createIsomorphicFn()
-    .server((): Locale => parseLocale(getCookie(LOCALE_COOKIE)))
-    .client((): Locale => readLocaleFromCookieString(document.cookie));
+    .server(
+        (): Locale =>
+            readLocaleFromPath(getRequestUrl().pathname) ??
+            parseLocale(getCookie(LOCALE_COOKIE)),
+    )
+    .client(
+        (): Locale =>
+            readLocaleFromPath(window.location.pathname) ??
+            readLocaleFromCookieString(document.cookie),
+    );
 
-const LocaleContext = createContext<{
-    locale: Locale;
-    setLocale: (next: Locale) => void;
-} | null>(null);
+const LocaleContext = createContext<{locale: Locale} | null>(null);
 
 export function LocaleProvider({initial, children}: {initial: Locale; children: ReactNode}) {
-    const [locale, setLocaleState] = useState<Locale>(initial);
-
-    const setLocale = useCallback((next: Locale) => {
-        setLocaleState(next);
-        // One year, Lax, path-wide. `Secure` is omitted on purpose: local dev serves
-        // plain HTTP on loopback, and a Secure cookie there would silently never stick.
-        document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
-    }, []);
-
-    const value = useMemo(() => ({locale, setLocale}), [locale, setLocale]);
+    // No setter, and that is the design: language is a property of the URL now, so it
+    // changes by navigating rather than by mutating state. A setter would let a caller
+    // put the rendered language out of step with the address bar.
+    const value = useMemo(() => ({locale: initial}), [initial]);
     return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
 
-export function useLocale(): {locale: Locale; setLocale: (next: Locale) => void} {
+export function useLocale(): {locale: Locale} {
     const context = useContext(LocaleContext);
     if (!context) throw new Error("useLocale must be used inside LocaleProvider");
     return context;
 }
 
+function GlobeMark() {
+    return (
+        <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            aria-hidden="true"
+            focusable="false"
+        >
+            <circle cx="12" cy="12" r="9.25" />
+            <path d="M2.75 12h18.5" />
+            <path d="M12 2.75c2.4 2.5 3.6 5.58 3.6 9.25s-1.2 6.75-3.6 9.25c-2.4-2.5-3.6-5.58-3.6-9.25S9.6 5.25 12 2.75Z" />
+        </svg>
+    );
+}
+
 /**
- * The language setting. One control, text only, styled from existing tokens through
- * `currentColor` so it sits on paper and obsidian alike — the port's rule is that
- * language is the only thing that changes, so the switch itself must not read as a
- * new design element.
+ * The language switch: one control naming the language it switches *to*.
+ *
+ * It used to show both locales with the inactive one at 45% opacity, which asks the
+ * reader to work out which of two dim labels is the current state — and at that opacity
+ * on the obsidian surfaces the inactive label was barely legible. Naming only the
+ * destination removes the question rather than restyling it: there is no inactive state
+ * left to dim, so the whole control can carry full contrast.
+ *
+ * A plain link doing a **full navigation**, not a client-side one. The locale is
+ * resolved from the path during SSR, so a document load is what regenerates
+ * `<html lang>`, every `head()` tag, and the canonical/hreflang set together. A
+ * client-side transition would move the address bar and leave the rendered language
+ * behind until reload. Switching language is a once-a-session act; a document load is
+ * the cheap and correct mechanism for it.
  */
 export function LocaleSwitch({className}: {className?: string}) {
-    const {locale, setLocale} = useLocale();
+    const {locale} = useLocale();
+    const pathname = useRouterState({select: (state) => state.location.pathname});
+    const target: Locale = locale === "en" ? "ko" : "en";
     return (
-        <div
+        <a
             className={`lang-switch ${className ?? ""}`}
-            role="group"
-            aria-label="Language / 언어"
+            href={localizePath(pathname, target)}
+            hrefLang={target}
+            // The label is always in the language it offers, so it reads as itself to the
+            // reader who wants it — but the accessible name has to state the action.
+            aria-label={target === "ko" ? "한국어로 전환" : "Switch to English"}
+            onClick={() => {
+                // Written before the navigation the browser is about to make, so the
+                // choice survives a later visit to an unprefixed URL. Synchronous, so it
+                // lands regardless. One year, Lax, path-wide. `Secure` is omitted on
+                // purpose: local dev serves plain HTTP on loopback, and a Secure cookie
+                // there would silently never stick.
+                document.cookie = `${LOCALE_COOKIE}=${target}; path=/; max-age=31536000; samesite=lax`;
+            }}
         >
-            <button
-                type="button"
-                aria-pressed={locale === "en"}
-                onClick={() => setLocale("en")}
-            >
-                EN
-            </button>
-            <span aria-hidden="true">·</span>
-            <button
-                type="button"
-                lang="ko"
-                aria-pressed={locale === "ko"}
-                onClick={() => setLocale("ko")}
-            >
-                한국어
-            </button>
-        </div>
+            <GlobeMark />
+            <span lang={target}>{target === "ko" ? "한국어" : "EN"}</span>
+        </a>
     );
 }

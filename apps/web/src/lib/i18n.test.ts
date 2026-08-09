@@ -1,5 +1,13 @@
 import {describe, expect, test} from "bun:test";
-import {LOCALE_COOKIE, parseLocale, pick, readLocaleFromCookieString} from "./i18n";
+import {
+    LOCALE_COOKIE,
+    LOCALE_PATH_PREFIX,
+    localizePath,
+    parseLocale,
+    pick,
+    readLocaleFromCookieString,
+    readLocaleFromPath,
+} from "./i18n";
 
 /**
  * The locale is an *input* — it arrives from a cookie any client can set to anything —
@@ -50,5 +58,65 @@ describe("pick", () => {
         const copy = {en: "Open Studio", ko: "Studio 열기"};
         expect(pick("en", copy)).toBe("Open Studio");
         expect(pick("ko", copy)).toBe("Studio 열기");
+    });
+});
+
+/**
+ * The path is the *authority* on locale and the cookie is only a memory, so the
+ * distinction this reader has to keep is between "the path says English" and "the path
+ * says nothing" — only the second may fall through to the cookie. It returns `undefined`
+ * rather than `"en"` for that reason.
+ */
+describe("readLocaleFromPath", () => {
+    test("the prefix, with or without a trailing path, names Korean", () => {
+        expect(readLocaleFromPath("/ko")).toBe("ko");
+        expect(readLocaleFromPath("/ko/")).toBe("ko");
+        expect(readLocaleFromPath("/ko/app")).toBe("ko");
+    });
+
+    test("an unprefixed path names no locale — the cookie still gets a say", () => {
+        expect(readLocaleFromPath("/")).toBeUndefined();
+        expect(readLocaleFromPath("/app")).toBeUndefined();
+        expect(readLocaleFromPath("")).toBeUndefined();
+    });
+
+    test("the prefix must be a whole segment", () => {
+        // `/korea` starts with the same three characters and is not Korean. Matching on
+        // the raw prefix would hand every such route to the wrong dictionary.
+        expect(readLocaleFromPath("/korea")).toBeUndefined();
+        expect(readLocaleFromPath("/kotlin/guide")).toBeUndefined();
+    });
+
+    test("paths are case-sensitive, so the uppercase form names nothing", () => {
+        expect(readLocaleFromPath("/KO")).toBeUndefined();
+    });
+});
+
+describe("localizePath", () => {
+    test("adds the prefix for Korean", () => {
+        expect(localizePath("/", "ko")).toBe("/ko");
+        expect(localizePath("/app", "ko")).toBe("/ko/app");
+    });
+
+    test("strips the prefix for English", () => {
+        expect(localizePath("/ko", "en")).toBe("/");
+        expect(localizePath("/ko/", "en")).toBe("/");
+        expect(localizePath("/ko/app", "en")).toBe("/app");
+    });
+
+    test("is idempotent — switching to the locale a path already names is a no-op", () => {
+        expect(localizePath("/ko/app", "ko")).toBe("/ko/app");
+        expect(localizePath("/app", "en")).toBe("/app");
+    });
+
+    test("a path that merely starts with the prefix letters is not stripped", () => {
+        expect(localizePath("/korea", "en")).toBe("/korea");
+        expect(localizePath("/korea", "ko")).toBe("/ko/korea");
+    });
+
+    test("the prefix constant is the one the routes are named after", () => {
+        // Route files live at `src/routes/ko/`; if this constant moves, they must move
+        // with it, and a silent drift would 404 every Korean URL.
+        expect(LOCALE_PATH_PREFIX).toBe("/ko");
     });
 });

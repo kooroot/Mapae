@@ -1,7 +1,7 @@
 import {HeadContent, Scripts, createRootRoute} from "@tanstack/react-router";
 import type {ReactNode} from "react";
 import {appUrl, landingUrl, siteSurface} from "../lib/config";
-import {pick} from "../lib/i18n";
+import {LOCALE_PATH_PREFIX, pick} from "../lib/i18n";
 import {LocaleProvider, resolveLocale, useLocale} from "../lib/locale";
 
 import "../styles/fonts.css";
@@ -40,6 +40,15 @@ export const Route = createRootRoute({
     head: () => {
         const isApp = siteSurface === "app";
         const locale = resolveLocale();
+        // Each surface publishes the same page at two addresses, so every response has
+        // to say which one it is (`canonical`) and where the other lives (`alternate`).
+        // Without the pair a crawler either indexes one language and drops the other, or
+        // reads the two as duplicates and picks one itself. `x-default` points at the
+        // English base because that is what an unprefixed request renders for a visitor
+        // carrying no cookie — which is every crawler.
+        const origin = (isApp ? appUrl : landingUrl).replace(/\/$/, "");
+        const enHref = `${origin}/`;
+        const koHref = `${origin}${LOCALE_PATH_PREFIX}`;
         const title = isApp
             ? "Mapae Studio — Delegated payment control"
             : "Mapae — Limit the authority. Let the agent act.";
@@ -64,7 +73,7 @@ export const Route = createRootRoute({
                 {property: "og:description", content: description},
                 {property: "og:type", content: "website"},
                 {property: "og:site_name", content: "Mapae"},
-                {property: "og:url", content: isApp ? appUrl : landingUrl},
+                {property: "og:url", content: locale === "ko" ? koHref : enHref},
                 {
                     property: "og:image",
                     content: `${landingUrl.replace(/\/$/, "")}/og-hero-v2.png`,
@@ -93,8 +102,11 @@ export const Route = createRootRoute({
             links: [
                 {
                     rel: "canonical",
-                    href: isApp ? appUrl : landingUrl,
+                    href: locale === "ko" ? koHref : enHref,
                 },
+                {rel: "alternate", hrefLang: "en", href: enHref},
+                {rel: "alternate", hrefLang: "ko", href: koHref},
+                {rel: "alternate", hrefLang: "x-default", href: enHref},
                 {
                     rel: "icon",
                     href: "/favicon.ico",

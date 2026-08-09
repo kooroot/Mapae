@@ -307,37 +307,59 @@ button {
     border: 0;
 }
 
-/* The language setting. Inherits its surface's text colour through currentColor so the
-   same component sits on paper and obsidian; the active locale carries full ink, the
-   inactive one recedes the way .dim does. Deliberately no border, no fill — a setting,
-   not a call to action. */
+/* The language switch. Inherits its surface's text colour through currentColor so the
+   same component sits on paper and obsidian.
+
+   It carries full contrast on purpose. The earlier version showed both locales and dimmed
+   the inactive one to 45%, which on the obsidian surfaces landed near the background and
+   made the control read as decoration. Naming only the destination language leaves no
+   inactive state to dim, so nothing here recedes: the label is full ink and only the
+   globe sits back, because the glyph is a hint and the word is the content. */
 .lang-switch {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    color: currentColor;
     font-family: var(--mono);
     font-weight: 500;
     font-size: 11px;
     letter-spacing: 0.08em;
-    opacity: 0.92;
+    text-decoration: none;
+    transition:
+        background 0.15s var(--ease),
+        border-color 0.15s var(--ease);
+    /* Tinted from the surface's own text colour rather than a fixed grey, so one rule
+       reads correctly on both the paper landing and the obsidian Studio. */
+    border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
 }
 
-.lang-switch button {
-    padding: 2px 1px;
-    color: currentColor;
-    opacity: 0.45;
-    transition: opacity 0.15s var(--ease);
+.lang-switch:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    border-color: color-mix(in srgb, currentColor 32%, transparent);
 }
 
-.lang-switch button:hover {
-    opacity: 0.8;
+.lang-switch:focus-visible {
+    outline: 2px solid color-mix(in srgb, currentColor 55%, transparent);
+    outline-offset: 2px;
 }
 
-.lang-switch button[aria-pressed="true"] {
-    opacity: 1;
+.lang-switch svg {
+    flex: none;
+    opacity: 0.6;
 }
 
-.lang-switch > span {
-    opacity: 0.35;
+.lang-switch span {
+    line-height: 1;
+}
+
+/* The mono stack carries Hangul (Nanum Gothic Coding), so the Korean label stays in the
+   same face as the Latin one — no fallback, no family switch. Only the tracking changes:
+   0.08em is spacing built for capitals, and Hangul syllables are already square, so the
+   same value reads as a gap between characters rather than as letter-spacing. */
+.lang-switch span[lang="ko"] {
+    font-size: 12px;
+    letter-spacing: 0;
 }
 

@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as KoIndexRouteImport } from './routes/ko/index'
+import { Route as KoAppRouteImport } from './routes/ko/app'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +24,49 @@ const AppRoute = AppRouteImport.update({
   path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KoIndexRoute = KoIndexRouteImport.update({
+  id: '/ko/',
+  path: '/ko/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KoAppRoute = KoAppRouteImport.update({
+  id: '/ko/app',
+  path: '/ko/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/ko/app': typeof KoAppRoute
+  '/ko/': typeof KoIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/ko/app': typeof KoAppRoute
+  '/ko': typeof KoIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/ko/app': typeof KoAppRoute
+  '/ko/': typeof KoIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app'
+  fullPaths: '/' | '/app' | '/ko/app' | '/ko/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app'
-  id: '__root__' | '/' | '/app'
+  to: '/' | '/app' | '/ko/app' | '/ko'
+  id: '__root__' | '/' | '/app' | '/ko/app' | '/ko/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
+  KoAppRoute: typeof KoAppRoute
+  KoIndexRoute: typeof KoIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +85,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ko/': {
+      id: '/ko/'
+      path: '/ko'
+      fullPath: '/ko/'
+      preLoaderRoute: typeof KoIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ko/app': {
+      id: '/ko/app'
+      path: '/ko/app'
+      fullPath: '/ko/app'
+      preLoaderRoute: typeof KoAppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
+  KoAppRoute: KoAppRoute,
+  KoIndexRoute: KoIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

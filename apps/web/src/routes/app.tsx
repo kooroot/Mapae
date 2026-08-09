@@ -3,9 +3,9 @@ import {Studio} from "../dapp/Studio";
 import {pick} from "../lib/i18n";
 import {resolveLocale} from "../lib/locale";
 
-export const Route = createFileRoute("/app")({
-    component: Studio,
-    head: () => ({
+/** Exported for `routes/ko/app.tsx`, which mounts the same screen at `/ko/app`. */
+export function appHead() {
+    return {
         meta: [
             {title: "Mapae Studio — Delegated payment control"},
             {
@@ -16,5 +16,10 @@ export const Route = createFileRoute("/app")({
                 }),
             },
         ],
-    }),
+    };
+}
+
+export const Route = createFileRoute("/app")({
+    component: Studio,
+    head: appHead,
 });
