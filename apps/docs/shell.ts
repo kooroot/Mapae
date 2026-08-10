@@ -41,6 +41,28 @@ function sidebar(all: DocPage[], current: DocPage): string {
     return out.join("\n");
 }
 
+/**
+ * The 404, which is the one page a migration is most likely to need.
+ *
+ * It offers the contents rather than an apology: if a URL did move despite the pinned map,
+ * a reader who lands here can still see every page and find theirs, which is what they
+ * came for. Built from the same shell, so it is not a second design to maintain.
+ */
+export function renderNotFound(all: DocPage[]): string {
+    const body =
+        `<h1>페이지를 찾을 수 없습니다</h1>\n` +
+        `<p lang="en">This page does not exist. The full contents are in the sidebar, and ` +
+        `the <a href="/">one-pager</a> is the place to start.</p>\n` +
+        `<p>이 주소에는 문서가 없습니다. 전체 목차는 왼쪽에 있고, ` +
+        `<a href="/">원페이저</a>에서 시작하면 됩니다.</p>\n`;
+    return renderPage({
+        page: {url: "404", source: "", title: "404", locale: "ko"},
+        all,
+        body,
+        hasDiagram: false,
+    });
+}
+
 export function renderPage(params: {
     page: DocPage;
     all: DocPage[];

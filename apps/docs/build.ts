@@ -19,7 +19,7 @@ import {cpSync, mkdirSync, readdirSync, rmSync} from "node:fs";
 import {dirname, join, relative} from "node:path";
 import {pages} from "./pages";
 import {renderMarkdown} from "./render";
-import {renderPage} from "./shell";
+import {renderNotFound, renderPage} from "./shell";
 
 const HERE = new URL(".", import.meta.url).pathname.replace(/\/$/, "");
 const REPO = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
@@ -105,6 +105,10 @@ async function main(): Promise<void> {
         write(page.url === "" ? "index.html" : `${page.url}/index.html`,
             renderPage({page, all, body: html, hasDiagram}));
     }
+
+    // `wrangler.jsonc` names this in `not_found_handling`, so it has to exist or an
+    // unknown path falls back to a bare Cloudflare error page.
+    write("404.html", renderNotFound(all));
 
     cpSync(join(HERE, "assets"), join(OUT, "assets"), {recursive: true});
 
