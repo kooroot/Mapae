@@ -1,0 +1,22 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "mapae-docs",
+    "compatibility_date": "2025-09-02",
+    "observability": {"enabled": true},
+    "workers_dev": false,
+    "preview_urls": false,
+    // No `main`: the book is eighteen files and a stylesheet, so there is nothing for a
+    // Worker script to decide. Cloudflare serves the directory and runs no code — the
+    // cheapest thing to operate and the hardest to break.
+    "assets": {
+        "directory": "./dist",
+        // The published URLs are extensionless (`/tech/01-architecture`), and each is a
+        // directory holding `index.html`. This mode resolves that without a redirect, so
+        // the address a reader typed is the address they keep.
+        "html_handling": "auto-trailing-slash",
+        "not_found_handling": "404-page"
+    },
+    "routes": [
+        {"pattern": "gitbook.mapae.io", "custom_domain": true}
+    ]
+}

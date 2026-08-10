@@ -89,3 +89,6 @@ temp/
 # dev-tool artifacts
 .openai/
 .claude/
+
+# Generated documentation site — rebuilt by `bun run build:docs`.
+apps/docs/dist/

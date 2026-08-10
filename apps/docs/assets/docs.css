@@ -1,0 +1,382 @@
+/* The documentation surface.
+   Obsidian and bronze, the same identity as the landing and Studio — but a reading
+   surface rather than a product one, so the palette is flatter and nothing animates. */
+
+@import url("./fonts.css");
+
+:root {
+    --ground: #0b0a09;
+    --raised: #121110;
+    --well: #171614;
+    --line: rgba(240, 232, 218, 0.11);
+    --line-strong: rgba(240, 232, 218, 0.2);
+    --text: #ece6dc; /* body */
+    --text-2: #b3aa9c; /* secondary */
+    --text-3: #857c6e; /* labels; the floor for text */
+    --bronze: #c98a4b;
+    --bronze-soft: #e0a86b;
+    --measure: 74ch;
+    --side: 268px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Korean breaks between words rather than mid-word — the single most visible
+   difference between typeset Korean and Korean that merely wraps. */
+html[lang="ko"] body,
+[lang="ko"] {
+    word-break: keep-all;
+}
+
+.skip {
+    position: absolute;
+    left: -9999px;
+}
+
+.skip:focus {
+    left: 12px;
+    top: 12px;
+    z-index: 10;
+    padding: 8px 14px;
+    border-radius: 6px;
+    background: var(--bronze);
+    color: #14110d;
+}
+
+/* ── chrome ─────────────────────────────────────────────────────────────── */
+
+.top {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    height: 58px;
+    padding: 0 22px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(11, 10, 9, 0.86);
+    backdrop-filter: blur(14px);
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.brand img {
+    display: block;
+}
+
+.brand em {
+    color: var(--text-3);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-style: normal;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.top-links {
+    display: flex;
+    gap: 18px;
+    font-size: 13px;
+}
+
+.top-links a {
+    color: var(--text-2);
+    text-decoration: none;
+}
+
+.top-links a:hover {
+    color: var(--text);
+}
+
+.frame {
+    display: grid;
+    grid-template-columns: var(--side) minmax(0, 1fr);
+    gap: 0;
+    max-width: 1240px;
+    margin: 0 auto;
+}
+
+/* ── sidebar ────────────────────────────────────────────────────────────── */
+
+.side {
+    position: sticky;
+    top: 58px;
+    align-self: start;
+    max-height: calc(100vh - 58px);
+    overflow-y: auto;
+    padding: 26px 20px 60px;
+    border-right: 1px solid var(--line);
+    font-size: 13.5px;
+}
+
+.side h2 {
+    margin: 26px 0 8px;
+    color: var(--text-3);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+}
+
+.side ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.side li {
+    margin: 1px 0;
+}
+
+.side a {
+    display: block;
+    padding: 5px 10px;
+    border-radius: 6px;
+    color: var(--text-2);
+    text-decoration: none;
+}
+
+.side a:hover {
+    background: rgba(240, 232, 218, 0.05);
+    color: var(--text);
+}
+
+.side a[aria-current="page"] {
+    background: rgba(201, 138, 75, 0.13);
+    color: var(--bronze-soft);
+    /* Colour alone would not survive a monochrome display or a colour-blind reader; the
+       rule carries the same signal geometrically. */
+    box-shadow: inset 2px 0 0 var(--bronze);
+}
+
+/* ── document ───────────────────────────────────────────────────────────── */
+
+.doc {
+    min-width: 0;
+    max-width: var(--measure);
+    padding: 40px 34px 100px;
+}
+
+.doc h1,
+.doc h2,
+.doc h3,
+.doc h4 {
+    line-height: 1.32;
+    scroll-margin-top: 76px;
+}
+
+.doc h1 {
+    margin: 0 0 24px;
+    font-size: 30px;
+    letter-spacing: -0.015em;
+}
+
+.doc h2 {
+    margin: 46px 0 14px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    font-size: 21px;
+    letter-spacing: -0.01em;
+}
+
+.doc h3 {
+    margin: 32px 0 10px;
+    font-size: 16.5px;
+}
+
+.doc h4 {
+    margin: 24px 0 8px;
+    color: var(--text-2);
+    font-size: 14.5px;
+}
+
+.doc .anchor {
+    color: inherit;
+    text-decoration: none;
+}
+
+.doc .anchor:hover {
+    color: var(--bronze-soft);
+}
+
+.doc p,
+.doc li {
+    color: var(--text);
+}
+
+.doc a {
+    color: var(--bronze-soft);
+    text-decoration: underline;
+    text-decoration-color: rgba(224, 168, 107, 0.35);
+    text-underline-offset: 3px;
+}
+
+.doc a:hover {
+    text-decoration-color: var(--bronze-soft);
+}
+
+.doc strong {
+    color: #fff;
+    font-weight: 650;
+}
+
+.doc blockquote {
+    margin: 20px 0;
+    padding: 2px 0 2px 18px;
+    border-left: 2px solid var(--bronze);
+    color: var(--text-2);
+}
+
+.doc hr {
+    height: 1px;
+    margin: 40px 0;
+    border: 0;
+    background: var(--line);
+}
+
+/* ── code ───────────────────────────────────────────────────────────────── */
+
+.doc code {
+    padding: 1.5px 5px;
+    border-radius: 4px;
+    background: var(--well);
+    color: var(--bronze-soft);
+    font-family: var(--mono);
+    font-size: 0.875em;
+}
+
+.doc pre {
+    overflow-x: auto;
+    margin: 20px 0;
+    padding: 15px 17px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--well);
+    line-height: 1.6;
+}
+
+.doc pre code {
+    padding: 0;
+    background: none;
+    color: var(--text);
+    font-size: 13px;
+}
+
+/* ── tables ─────────────────────────────────────────────────────────────── */
+
+/* The evidence tables are the widest thing in this book and several exceed the measure.
+   The wrapper scrolls rather than the page: a document whose body scrolls sideways is
+   unreadable on a phone, and these tables are exactly what a phone reader came for. */
+.doc table {
+    display: block;
+    overflow-x: auto;
+    width: 100%;
+    margin: 22px 0;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+
+.doc th,
+.doc td {
+    padding: 9px 13px;
+    border: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+}
+
+.doc th {
+    background: var(--raised);
+    color: var(--text-2);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.doc tbody tr:nth-child(even) td {
+    background: rgba(240, 232, 218, 0.022);
+}
+
+/* ── diagrams ───────────────────────────────────────────────────────────── */
+
+.doc pre.mermaid {
+    padding: 22px;
+    border-radius: 9px;
+    background: var(--raised);
+    text-align: center;
+    /* Hidden until drawn: the raw `sequenceDiagram …` source flashing before mermaid
+       runs reads as a broken page. `diagrams.js` reveals it. */
+    visibility: hidden;
+}
+
+.doc pre.mermaid[data-drawn] {
+    visibility: visible;
+}
+
+.foot {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 22px;
+    border-top: 1px solid var(--line);
+    color: var(--text-3);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+}
+
+.foot p {
+    margin: 0;
+}
+
+/* ── narrow ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .frame {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .side {
+        position: static;
+        max-height: none;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 22px;
+    }
+
+    .doc {
+        padding: 28px 20px 80px;
+    }
+
+    .top-links a:first-child {
+        display: none;
+    }
+}

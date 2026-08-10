@@ -1,0 +1,26 @@
+/* Self-hosted, like the rest of the site: no third-party font host, so the content
+   security policy needs no exception and no visitor is announced to a CDN.
+
+   Pretendard arrives as its **dynamic subset** — 92 files split by `unicode-range`, of
+   which a browser fetches only the ranges a page actually contains. The single-file build
+   is 765 KB and every reader pays it; an English chapter here pulls one small subset and a
+   Korean one a handful. Same choice, and same file, as the product surfaces.
+
+   IBM Plex Mono is Latin-only on purpose. It sets code, commands, and addresses, which are
+   Latin; the stack below therefore does not name a Korean monospace it would not be
+   shipping, and Korean inside a mono run falls to the body face rather than to a font that
+   is not there. */
+
+@import url("./fonts/pretendard.css");
+
+@font-face {
+    font-family: "IBM Plex Mono";
+    src: url("./fonts/plex-mono-regular.woff2") format("woff2");
+    font-weight: 400 500;
+    font-display: swap;
+}
+
+:root {
+    --sans: "Pretendard Variable", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
