@@ -350,16 +350,11 @@ button {
     opacity: 0.6;
 }
 
+/* Both labels are now two Latin capitals, so one rule covers both directions and the
+   control keeps its width when it flips. The earlier per-locale override existed because
+   the Korean side read `한국어`: Hangul syllables are already square, so 0.08em tracking
+   built for capitals landed as a gap between characters rather than as letter-spacing. */
 .lang-switch span {
     line-height: 1;
-}
-
-/* The mono stack carries Hangul (Nanum Gothic Coding), so the Korean label stays in the
-   same face as the Latin one — no fallback, no family switch. Only the tracking changes:
-   0.08em is spacing built for capitals, and Hangul syllables are already square, so the
-   same value reads as a gap between characters rather than as letter-spacing. */
-.lang-switch span[lang="ko"] {
-    font-size: 12px;
-    letter-spacing: 0;
 }
 

@@ -102,9 +102,11 @@ export function LocaleSwitch({className}: {className?: string}) {
             className={`lang-switch ${className ?? ""}`}
             href={localizePath(pathname, target)}
             hrefLang={target}
-            // The label is always in the language it offers, so it reads as itself to the
-            // reader who wants it — but the accessible name has to state the action.
-            aria-label={target === "ko" ? "한국어로 전환" : "Switch to English"}
+            // The accessible name opens with the visible label rather than replacing it.
+            // "KO" alone does not say a language switch is on offer, so the name has to
+            // state the action — but a name that omits the word on screen breaks the
+            // control for anyone driving the page by voice, who says what they can see.
+            aria-label={target === "ko" ? "KO — 한국어로 전환" : "EN — Switch to English"}
             onClick={() => {
                 // Written before the navigation the browser is about to make, so the
                 // choice survives a later visit to an unprefixed URL. Synchronous, so it
@@ -115,7 +117,13 @@ export function LocaleSwitch({className}: {className?: string}) {
             }}
         >
             <GlobeMark />
-            <span lang={target}>{target === "ko" ? "한국어" : "EN"}</span>
+            {/* Two-letter codes rather than endonyms. `한국어` beside `EN` made the two
+                states different *kinds* of label — a word in one direction, an abbreviation
+                in the other — so the control changed width and weight on every switch. No
+                `lang` here: the string is a Latin-script ISO code, not Korean text, and
+                marking it `ko` would hand a screen reader two letters to pronounce as
+                Korean. The destination's language is already declared by `hreflang`. */}
+            <span>{target === "ko" ? "KO" : "EN"}</span>
         </a>
     );
 }
