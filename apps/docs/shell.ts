@@ -1,7 +1,7 @@
 import type {DocPage} from "./pages";
 import {escapeHtml} from "./render";
 
-const SITE_URL = "https://gitbook.mapae.io";
+const SITE_URL = "https://docs.mapae.io";
 const LANDING_URL = "https://mapae.io";
 const GITHUB_URL = "https://github.com/kooroot/Mapae";
 

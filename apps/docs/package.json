@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "bun run build.ts",
-    "deploy": "bun run build.ts && wrangler deploy"
+    "deploy": "bun run build.ts && wrangler deploy",
+    "deploy:legacy": "wrangler deploy --config wrangler.legacy.jsonc"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",

@@ -80,6 +80,6 @@ shortest path — one signature and a sponsor deploys the account.
 | [5. Verified On-chain Environment](tech/en/05-onchain-environment.md) | A table holding only addresses read and verified directly |
 | [6. Verification Status and Roadmap](tech/en/06-roadmap.md) | Current state by verification level and the plan ahead |
 
-Public documentation: [gitbook.mapae.io](https://gitbook.mapae.io) ·
+Public documentation: [docs.mapae.io](https://docs.mapae.io) ·
 Repository: [github.com/kooroot/Mapae](https://github.com/kooroot/Mapae) ·
 Original single-file source: [tech-notes.md](https://github.com/kooroot/Mapae/blob/main/docs/tech-notes.md)

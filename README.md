@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-569%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-575%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -107,8 +107,8 @@ a strong result, but nothing was mined and there is no link to follow.
   before it broadcasts, so the enforcer's revert arrives at `/verify` and no doomed
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
-  evidence table in the [technical documentation](https://gitbook.mapae.io).
-- Regression suite: **569 TypeScript tests (437 shared/delegation/scripts + 3 MCP + 102 web + 27 docs)
+  evidence table in the [technical documentation](https://docs.mapae.io).
+- Regression suite: **575 TypeScript tests (437 shared/delegation/scripts + 3 MCP + 102 web + 33 docs)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
@@ -437,7 +437,7 @@ In-process idempotency is covered. Before multi-replica production deployment,
 `paymentIntentId → transaction hash` state must move to a durable store such as
 Redis or Postgres.
 
-See the [technical documentation](https://gitbook.mapae.io) for the threat model and the
+See the [technical documentation](https://docs.mapae.io) for the threat model and the
 on-chain security design.
 
 ## GIWA integration
@@ -479,7 +479,7 @@ docs/                      technical notes and the deployed-contract reference
 
 - [mapae.io](https://mapae.io) — live landing with onchain evidence
 - [app.mapae.io](https://app.mapae.io) — Studio: sponsored onboarding, then grant, inspect and revoke a delegation
-- [Technical documentation](https://gitbook.mapae.io)
+- [Technical documentation](https://docs.mapae.io)
 - [MCP guide](docs/mcp-guide.md) — register the payment server in an MCP client
 - [Revocation runbook](docs/revocation-runbook.md) — the kill switch, and how to verify it
 - [Deployed contracts](docs/deployed-contracts.md)

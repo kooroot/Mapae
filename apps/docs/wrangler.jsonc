@@ -7,7 +7,9 @@
     "preview_urls": false,
     // No `main`: the book is eighteen files and a stylesheet, so there is nothing for a
     // Worker script to decide. Cloudflare serves the directory and runs no code — the
-    // cheapest thing to operate and the hardest to break.
+    // cheapest thing to operate and the hardest to break. The one thing that did need a
+    // decision — forwarding the old `gitbook.mapae.io` host — lives in its own Worker
+    // (`wrangler.legacy.jsonc`) precisely so this one can stay scriptless.
     "assets": {
         "directory": "./dist",
         // The published URLs are extensionless (`/tech/01-architecture`), and each is a
@@ -17,6 +19,6 @@
         "not_found_handling": "404-page"
     },
     "routes": [
-        {"pattern": "gitbook.mapae.io", "custom_domain": true}
+        {"pattern": "docs.mapae.io", "custom_domain": true}
     ]
 }

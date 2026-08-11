@@ -1,0 +1,18 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    // Deployed separately from `mapae-docs` and deliberately so — see `worker.ts` for why
+    // the redirect is not folded into the docs Worker. Nothing depends on this being
+    // deployed except the survival of links that already exist, so it can be deleted with
+    // `wrangler delete` on the day those stop mattering.
+    "name": "mapae-docs-legacy",
+    "compatibility_date": "2025-09-02",
+    "observability": {"enabled": true},
+    "workers_dev": false,
+    "preview_urls": false,
+    "main": "./worker.ts",
+    // No `assets`: this Worker serves nothing. Every request it receives is a stale link,
+    // and its only answer is where the book went.
+    "routes": [
+        {"pattern": "gitbook.mapae.io", "custom_domain": true}
+    ]
+}

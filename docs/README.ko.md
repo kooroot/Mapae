@@ -73,6 +73,6 @@ bun run test:negative        # 일회용 체인에 프레임워크를 직접 배
 | [5. 확인된 온체인 환경](tech/05-onchain-environment.md) | 직접 읽어 확인한 주소만 담은 표 |
 | [6. 검증 상태와 로드맵](tech/06-roadmap.md) | 검증 수준별 현재 상태와 향후 계획 |
 
-공개 문서: [gitbook.mapae.io](https://gitbook.mapae.io) ·
+공개 문서: [docs.mapae.io](https://docs.mapae.io) ·
 저장소: [github.com/kooroot/Mapae](https://github.com/kooroot/Mapae) ·
 원문 단일 문서: [tech-notes.md](https://github.com/kooroot/Mapae/blob/main/docs/tech-notes.md)

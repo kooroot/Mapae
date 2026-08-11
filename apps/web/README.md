@@ -37,7 +37,7 @@ Cloudflare가 `mapae.io`와 `app.mapae.io`의 DNS 레코드와 인증서를 관�
 `https://app.mapae.io`, `https://mapae.io`다.
 
 랜딩과 Studio의 기술 문서 링크는 `VITE_DOCS_URL`을 사용한다. 기본 프로덕션
-값은 `https://gitbook.mapae.io`이며, GitHub 원문 URL을 제품 UI에 직접
+값은 `https://docs.mapae.io`이며, GitHub 원문 URL을 제품 UI에 직접
 하드코딩하지 않는다.
 
 스폰서드 온보딩 엔드포인트는 `VITE_BOOTSTRAP_URL`로 지정한다. 프로덕션 값은

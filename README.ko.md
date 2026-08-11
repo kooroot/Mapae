@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-569%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-575%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -104,8 +104,8 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   facilitator가 브로드캐스트 전에 `redeemDelegations`를 GIWA 현재 상태에 시뮬레이션하므로
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
-  `eth_call`이다. 증거표는 [기술 문서](https://gitbook.mapae.io)에 있다.
-- 회귀 검증: **569 TypeScript tests (shared/delegation/scripts 437 + MCP 3 + 웹 102 + 문서 27)
+  `eth_call`이다. 증거표는 [기술 문서](https://docs.mapae.io)에 있다.
+- 회귀 검증: **575 TypeScript tests (shared/delegation/scripts 437 + MCP 3 + 웹 102 + 문서 33)
   + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -410,7 +410,7 @@ facilitator는 릴레이어 키를 쥐고, 서명된 `Payment-Signature`를 받�
 현재 프로세스 내 중복방지는 안전하지만, 재시작과 다중 replica를 넘는
 idempotency는 제품화 전에 Redis/Postgres 같은 영속 저장소로 이전해야 합니다.
 
-위협 모델과 온체인 보안 설계는 [기술 문서](https://gitbook.mapae.io)에 정리되어 있습니다.
+위협 모델과 온체인 보안 설계는 [기술 문서](https://docs.mapae.io)에 정리되어 있습니다.
 
 ## GIWA 연동
 
@@ -453,7 +453,7 @@ docs/                      기술 노트와 배포 컨트랙트 레퍼런스
 
 - [mapae.io](https://mapae.io) — 온체인 증거를 담은 라이브 랜딩
 - [app.mapae.io](https://app.mapae.io) — Studio: 스폰서드 온보딩과 위임 발급·조회·회수
-- [기술 문서](https://gitbook.mapae.io)
+- [기술 문서](https://docs.mapae.io)
 - [MCP 가이드](docs/mcp-guide.md) — 결제 서버를 MCP 클라이언트에 등록하는 절차
 - [회수 런북](docs/revocation-runbook.md) — 킬 스위치와 그 검증 방법
 - [배포된 컨트랙트](docs/deployed-contracts.md)

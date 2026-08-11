@@ -31,7 +31,7 @@ export const appUrl =
     import.meta.env["VITE_APP_URL"]?.trim() ||
     (import.meta.env.DEV ? "/app" : "https://app.mapae.io");
 export const docsUrl =
-    import.meta.env["VITE_DOCS_URL"]?.trim() || "https://gitbook.mapae.io";
+    import.meta.env["VITE_DOCS_URL"]?.trim() || "https://docs.mapae.io";
 export const githubUrl =
     import.meta.env["VITE_GITHUB_URL"]?.trim() || "https://github.com/kooroot/Mapae";
 

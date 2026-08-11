@@ -3,9 +3,10 @@
  *
  * The book was hosted on GitBook until 2026-08-10, on the paid tier, because a custom
  * domain is a paid feature there. That custom domain is what makes leaving cheap:
- * `gitbook.mapae.io` is ours, so the URLs in bookmarks and in one filed submission form
+ * `gitbook.mapae.io` is ours, so the paths in bookmarks and in one filed submission form
  * survive a change of renderer. `pages.test.ts` holds that promise to the eighteen paths
- * GitBook actually served.
+ * GitBook actually served; the host itself now forwards to `docs.mapae.io`, which is what
+ * `worker.ts` is for.
  *
  * Nothing here is a new source of truth. `docs/SUMMARY.md` decides what is published and
  * in what order; the chapters are still generated from `docs/tech-notes.md` by
@@ -125,7 +126,7 @@ async function main(): Promise<void> {
     }
 
     write("_headers", HEADERS);
-    write("robots.txt", `User-agent: *\nAllow: /\nSitemap: https://gitbook.mapae.io/sitemap.xml\n`);
+    write("robots.txt", `User-agent: *\nAllow: /\nSitemap: https://docs.mapae.io/sitemap.xml\n`);
     write("sitemap.xml", sitemap(all));
 
     console.log(
@@ -151,7 +152,7 @@ const HEADERS = `/*
 
 function sitemap(all: ReturnType<typeof pages>): string {
     const urls = all
-        .map((p) => `  <url><loc>https://gitbook.mapae.io/${p.url}</loc></url>`)
+        .map((p) => `  <url><loc>https://docs.mapae.io/${p.url}</loc></url>`)
         .join("\n");
     return `<?xml version="1.0" encoding="utf-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }

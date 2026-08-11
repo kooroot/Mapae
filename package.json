@@ -13,6 +13,7 @@
     "test:docs": "cd apps/docs && bun test",
     "build:docs": "cd apps/docs && bun run build",
     "deploy:docs": "cd apps/docs && bun run deploy",
+    "deploy:docs:legacy": "cd apps/docs && bun run deploy:legacy",
     "test:contracts": "make -C contracts test",
     "check": "bun run typecheck && bun run check:docs && bun run check:gitbook && bun run check:logging && bun run check:storage && bun run check:advisories && bun run check:counts && bun run test:ts && bun run test:mcp && bun run test:web && bun run test:docs && bun run build:web && bun run build:docs && bun run test:contracts",
     "check:docs": "bun run scripts/check-docs.ts",

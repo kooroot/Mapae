@@ -37,7 +37,8 @@ flowchart TB
     subgraph EDGE["Cloudflare 엣지"]
         LANDING["Worker mapae<br/>mapae.io 랜딩"]
         APP["Worker mapae-app<br/>app.mapae.io Studio"]
-        DOCS["gitbook.mapae.io<br/>기술 문서"]
+        DOCS["Worker mapae-docs<br/>docs.mapae.io 기술 문서"]
+        OLDDOCS["Worker mapae-docs-legacy<br/>gitbook.mapae.io → 301"]
         TUNNEL["Tunnel mapae<br/>facilitator.mapae.io<br/>seller.mapae.io"]
     end
 
@@ -57,6 +58,7 @@ flowchart TB
     end
 
     BROWSER --> APP
+    OLDDOCS -->|"301, 경로 보존"| DOCS
     WALLET -.서명만.- BROWSER
     AGENT -->|"402 → Payment-Signature"| TUNNEL
     BROWSER -->|"/bootstrap · /revoke"| TUNNEL
@@ -88,6 +90,8 @@ D1–D2 EOA 흐름 개발용)와 delegation-lab(fork 시뮬레이션·e2e). 어�
 | `apps/account-bootstrap` | 미니 | 8083 | `facilitator.mapae.io/bootstrap` | **부트스트랩 스폰서** | 서명만 있고 배포 안 된 payer 계정을 스폰서 가스로 배포 |
 | `apps/revocation-submitter` | 미니 | 8082 | `facilitator.mapae.io/revoke` (라이브, 2026-08-04) | **서브미터 릴레이어 + 회수 스폰서** | 오너가 서명한 회수 UserOp을 EntryPoint에 실어 보낸다 |
 | Worker `mapae` / `mapae-app` | Cloudflare | — | `mapae.io` / `app.mapae.io` | 없음 | 랜딩 / Studio. 브라우저 코드만 서빙, 키 없음 |
+| Worker `mapae-docs` | Cloudflare | — | `docs.mapae.io` | 없음 | 기술 문서. 스크립트 없이 정적 파일만 서빙 |
+| Worker `mapae-docs-legacy` | Cloudflare | — | `gitbook.mapae.io` | 없음 | GitBook 시절 주소를 경로째 301로 넘긴다. 제출 폼에 적힌 링크가 여기로 온다 |
 
 같은 도메인(`facilitator.mapae.io`) 아래 세 서비스가 사는 이유: cloudflared가
 **경로 규칙**으로 가른다. `^/bootstrap` → 8083, `^/revoke` → 8082, 나머지 → 8081.
