@@ -741,7 +741,7 @@ async function run(ctx: Ctx): Promise<void> {
             await settle(ctx, leaf.permissionContext, OTHER_PAYEE, 1_000_000n);
         }
         const overflow = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
-        return expectRevert("period-cap", "ERC20PeriodTransferEnforcer", () =>
+        return expectRevert("period-cap", "ERC20PeriodTransferEnforcer:transfer-amount-exceeded", () =>
             simulateRedeem(ctx, ctx.relayer, overflow.permissionContext, OTHER_PAYEE, 1_000_000n),
         );
     });
@@ -767,7 +767,7 @@ async function run(ctx: Ctx): Promise<void> {
         const expiredPolicy = {...openPolicy, expiresAfterSeconds: 3600};
         const root = await signedRoot(ctx, acct, agent.address, expiredPolicy, now - 7200);
         const leaf = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
-        return expectRevert("expiry", "TimestampEnforcer", () =>
+        return expectRevert("expiry", "TimestampEnforcer:expired-delegation", () =>
             simulateRedeem(ctx, ctx.relayer, leaf.permissionContext, OTHER_PAYEE, 1_000_000n),
         );
     });
@@ -778,7 +778,7 @@ async function run(ctx: Ctx): Promise<void> {
         const root = await signedRoot(ctx, acct, agent.address, openPolicy, start);
         const leaf = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
         // leaf is scoped to ctx.relayer; redeem from wrongRelayer must fail
-        return expectRevert("wrong-redeemer", undefined, () =>
+        return expectRevert("wrong-redeemer", "RedeemerEnforcer:unauthorized-redeemer", () =>
             simulateRedeem(ctx, ctx.wrongRelayer, leaf.permissionContext, OTHER_PAYEE, 1_000_000n),
         );
     });
@@ -788,7 +788,7 @@ async function run(ctx: Ctx): Promise<void> {
         const start = (await chainNow(ctx)) - 1;
         const root = await signedRoot(ctx, acct, agent.address, vendorPolicy, start);
         const leaf = await buildLeaf(ctx, AGENT_KEY, root, WRONG_PAYEE, 1_000_000n);
-        return expectRevert("recipient-mismatch", undefined, () =>
+        return expectRevert("recipient-mismatch", "AllowedCalldataEnforcer:invalid-calldata", () =>
             simulateRedeem(ctx, ctx.relayer, leaf.permissionContext, WRONG_PAYEE, 1_000_000n),
         );
     });
@@ -801,7 +801,7 @@ async function run(ctx: Ctx): Promise<void> {
         await settle(ctx, leaf.permissionContext, OTHER_PAYEE, 2_000_000n);
         // The payment-specific leaf carries a one-shot ERC20TransferAmount allowance equal
         // to the exact payment, so redeeming the identical context again is refused.
-        return expectRevert("replay", "ERC20TransferAmountEnforcer", () =>
+        return expectRevert("replay", "ERC20TransferAmountEnforcer:allowance-exceeded", () =>
             simulateRedeem(ctx, ctx.relayer, leaf.permissionContext, OTHER_PAYEE, 2_000_000n),
         );
     });
@@ -1016,7 +1016,7 @@ async function run(ctx: Ctx): Promise<void> {
         await ctx.publicClient.waitForTransactionReceipt({hash: revokeHash});
         await rpc(ctx.rpcUrl, "anvil_stopImpersonatingAccount", [acct.address]);
         const leaf = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
-        return expectRevert("root-revocation", undefined, () =>
+        return expectRevert("root-revocation", "CannotUseADisabledDelegation", () =>
             simulateRedeem(ctx, ctx.relayer, leaf.permissionContext, OTHER_PAYEE, 1_000_000n),
         );
     });
@@ -1176,7 +1176,7 @@ async function run(ctx: Ctx): Promise<void> {
         }
         // and the consequence the payer actually cares about
         const leaf = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
-        const reason = await expectRevert("revocation-userop", undefined, () =>
+        const reason = await expectRevert("revocation-userop", "CannotUseADisabledDelegation", () =>
             simulateRedeem(ctx, ctx.relayer, leaf.permissionContext, OTHER_PAYEE, 1_000_000n),
         );
         return `revoked via EntryPoint (prefund ${built.requiredPrefund} wei, payer ETH still 0); redemption then reverts: ${reason}`;
