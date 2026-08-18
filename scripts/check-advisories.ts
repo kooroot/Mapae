@@ -30,8 +30,6 @@
  * When the registry is unreachable the comparison is skipped and said out loud, but the
  * proofs still run: they are local, and it is the proofs that rot.
  */
-import {basename, dirname} from "node:path";
-
 const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 
 export interface Finding {
@@ -62,87 +60,17 @@ interface Acceptance extends AcceptanceIdentity {
 }
 
 /**
- * Count references to the vulnerable adapter in an entry point's transitive closure.
- * Returns null when the bundle could not be built — imports that cannot be read support
- * no claim either way.
- */
-export async function countAdapterReferences(entrypoint: string): Promise<number | null> {
-    // Bundled from the directory that owns the entry point rather than from wherever this
-    // script was invoked. `@mapae/*` and the MCP SDK resolve through each package's own
-    // node_modules, and the in-process `Bun.build` takes its resolution root from the
-    // caller: the identical call succeeded under `bun run` from the repo root and failed
-    // under `bun test` with "Could not resolve: @mapae/shared". A detector whose answer
-    // depends on who is asking is worthless here, because the answer it gives when it
-    // cannot resolve is indistinguishable from "not imported" unless null is handled — and
-    // that is the fail-open this whole file exists to prevent. Spawning with an explicit
-    // cwd removes the question; ~100 ms is a fair price.
-    try {
-        const proc = Bun.spawn(["bun", "build", `./${basename(entrypoint)}`, "--target=node"], {
-            cwd: dirname(entrypoint),
-            stdout: "pipe",
-            stderr: "ignore",
-        });
-        const bundle = await new Response(proc.stdout).text();
-        if ((await proc.exited) !== 0) return null;
-        return (bundle.match(/hono/gi) ?? []).length;
-    } catch {
-        // A missing directory makes the spawn itself throw, which must read the same as a
-        // failed build: unknown, never zero.
-        return null;
-    }
-}
-
-/**
- * The advisory is a path traversal in `serve-static`, which lives in the Node HTTP adapter
- * that `@modelcontextprotocol/sdk` pulls in for its *streamable HTTP* transport. Our MCP
- * server speaks stdio and starts no HTTP server, so that adapter never enters the bundle.
+ * Empty, and that is the passing state. Every entry here is a vulnerability we decided to
+ * live with; the list is meant to stay short and to shrink whenever a fix arrives.
  *
- * The claim is measured rather than asserted, and the instrument is measured too. A
- * detector that always returned zero — a renamed package, a bundler that minifies the
- * string away, a silently failing build — would pass this check while proving nothing,
- * which is a fail-open in the one place that must not have one. So the control runs first
- * and must find what the real entry point must not: `apps/agent-mcp/advisory-control.ts`
- * imports the HTTP transport on purpose. Measured at the time of writing, 3 references for
- * the control and 0 across the real entry point's 974 modules.
+ * It held one entry until 2026-08-18 — a path traversal in `@hono/node-server` reachable
+ * only through the MCP SDK's streamable-HTTP transport, which we do not use. The advisory
+ * was later revised: the fix had been backported to 1.19.15, the version the lockfile
+ * already resolved, so there was nothing left to accept. The proof that entry carried now
+ * stands on its own as `scripts/check-mcp-stdio.ts`, because the reason it was written —
+ * this server must not grow an HTTP listener — never depended on the advisory.
  */
-async function proveMcpStaysStdioOnly(): Promise<string | null> {
-    const control = await countAdapterReferences(`${REPO}/apps/agent-mcp/advisory-control.ts`);
-    if (control === null) {
-        return "the control bundle could not be built, so a zero from apps/agent-mcp proves nothing";
-    }
-    if (control === 0) {
-        return (
-            "apps/agent-mcp/advisory-control.ts imports the HTTP transport, yet no reference to " +
-            "@hono/node-server appears in its bundle — the detector is broken, not the dependency"
-        );
-    }
-
-    const actual = await countAdapterReferences(`${REPO}/apps/agent-mcp/index.ts`);
-    if (actual === null) {
-        return "apps/agent-mcp/index.ts could not be bundled, so its imports cannot be read";
-    }
-    if (actual === 0) return null;
-    return (
-        `apps/agent-mcp/index.ts now reaches @hono/node-server (${actual} references in its ` +
-        "bundle) — the HTTP transport is no longer unused, so this advisory is no longer unreachable"
-    );
-}
-
-const ACCEPTED: Acceptance[] = [
-    {
-        package: "@hono/node-server",
-        url: "https://github.com/advisories/GHSA-frvp-7c67-39w9",
-        vulnerableVersions: "<2.0.5",
-        why:
-            "Windows-only path traversal in serve-static, reachable only through the MCP SDK's " +
-            "streamable-HTTP transport, which we do not use. No compatible update exists: " +
-            "@modelcontextprotocol/sdk@1.29.0 is the latest published release and declares " +
-            "^1.19.9, while 1.19.15 is the highest 1.x ever published — the fix landed in 2.0.5. " +
-            "An overrides entry would install a major the SDK never tested against in order to " +
-            "patch code the bundle proves we never load.",
-        prove: proveMcpStaysStdioOnly,
-    },
-];
+const ACCEPTED: Acceptance[] = [];
 
 export type AuditReport =
     | {kind: "unavailable"}
@@ -247,10 +175,12 @@ async function main(): Promise<void> {
             ? " (registry unreachable — proofs ran, findings not compared)"
             : "";
     const count = ACCEPTED.length;
-    console.log(
-        `[advisories] no unaccepted advisories; ${count} accepted ${count === 1 ? "one" : "ones"} ` +
-            `still ${count === 1 ? "matches its" : "match their"} stated reason${note}`,
-    );
+    const accepted =
+        count === 0
+            ? "nothing accepted"
+            : `${count} accepted ${count === 1 ? "one" : "ones"} still ` +
+              `${count === 1 ? "matches its" : "match their"} stated reason`;
+    console.log(`[advisories] no unaccepted advisories; ${accepted}${note}`);
 }
 
 if (import.meta.main) await main();

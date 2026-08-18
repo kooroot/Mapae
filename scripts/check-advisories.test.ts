@@ -9,12 +9,9 @@ import {describe, expect, test} from "bun:test";
 import {
     classifyAudit,
     compareFindings,
-    countAdapterReferences,
     type AcceptanceIdentity,
     type Finding,
 } from "./check-advisories.js";
-
-const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 
 /** Verbatim stdout from `bun audit --json` in this repo on 2026-07-26. */
 const REAL_REPORT =
@@ -61,25 +58,6 @@ describe("classifyAudit", () => {
         expect(classifyAudit("error: audit request failed")).toEqual({kind: "unavailable"});
         expect(classifyAudit("[]")).toEqual({kind: "unavailable"});
         expect(classifyAudit("null")).toEqual({kind: "unavailable"});
-    });
-});
-
-describe("the reachability detector", () => {
-    /**
-     * The gate runs this control internally too, but only when it is about to trust a zero.
-     * That branch never executes in a healthy tree, so deleting it there would go unnoticed;
-     * pinning both directions here keeps the claim measured even if the gate's own guard is
-     * removed. A zero from the real entry point means nothing unless the same measurement is
-     * non-zero for a bundle that genuinely imports the transport.
-     */
-    test("finds the adapter when it is imported, and not when it is not", async () => {
-        expect(await countAdapterReferences(`${REPO}/apps/agent-mcp/advisory-control.ts`))
-            .toBeGreaterThan(0);
-        expect(await countAdapterReferences(`${REPO}/apps/agent-mcp/index.ts`)).toBe(0);
-    });
-
-    test("an unbuildable entry point reports null rather than zero", async () => {
-        expect(await countAdapterReferences(`${REPO}/apps/agent-mcp/does-not-exist.ts`)).toBeNull();
     });
 });
 

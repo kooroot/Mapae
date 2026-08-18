@@ -81,6 +81,7 @@ gives the same result on a clean clone.
 | `check:gitbook` | That the GitBook chapters, SUMMARY, and configuration match, byte for byte, what is derived from the canonical source (`docs/tech-notes.md`) |
 | `check:logging` | That no raw error reaches a `console.*` argument in `apps/`, `packages/`, or `scripts/` — viem embeds the transport URL in error messages, so this blocks the path by which an RPC URL with a key in its path leaks into logs |
 | `check:storage` | That no browser-storage **write** anywhere in `apps/web/src` happens outside the one sanctioned module (`lib/grant-store.ts`) — that module's projection is an allowlist which omits the agent session key, and a second write elsewhere would inherit neither the allowlist nor the test that pins it. Reads and removals are allowed everywhere |
+| `check:mcp-stdio` | That the MCP server's entrypoint bundle reaches no HTTP adapter — the zero is trusted only after the references are found in a control first. Since the output is an absence, a detector that always returns zero *is* the fail-open |
 | `check:advisories` | That every `bun audit` finding is either fixed or an acceptance carrying a `prove` function that is re-measured on every run |
 | `check:counts` | That the test counts the repository README states match what bun and forge actually collect — it checks agreement with the suites, not agreement among the numbers in the documentation |
 

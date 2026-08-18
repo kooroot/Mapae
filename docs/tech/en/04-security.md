@@ -105,23 +105,39 @@ griefing spread into a settlement outage.
 ## Acceptance criteria for dependency advisories
 
 A finding reported by `bun audit` is either fixed or explicitly accepted with a
-rationale attached. One is accepted today — the Windows path traversal (moderate) in
-`@hono/node-server <2.0.5`. The MCP server uses only the stdio transport, and the
-adapter in question is something the SDK pulls in for its streamable HTTP transport, so
-it is not part of the bundle (0 references to `hono` across the 974 modules of the
-entrypoint bundle). No compatible update closes it — the fix landed in 2.0.5, and the
-SDK (declares `^1.19.9`; the final 1.x is 1.19.15) does not include it.
+rationale attached. Nothing is accepted today.
 
 The basis for an acceptance is code, not prose. Each accepted item in
 `scripts/check-advisories.ts` carries a `prove` function that re-measures its own claim
 on every run, and there are three failure directions — a new finding that is not
 accepted, an acceptance whose proof has broken, and an acceptance that is no longer
-reported (an unused exception outlives its rationale). To rule out a detector that
-always returns zero, the gate trusts the real entrypoint's zero only after it has found
-the references in a control that imports the transport on purpose (measured 3 versus
-0). A run that cannot reach the registry is distinguished from zero findings — in that
-case it prints that the comparison was skipped, and the `prove` functions still run
-offline as-is.
+reported (an unused exception outlives its rationale). A run that cannot reach the
+registry is distinguished from zero findings — in that case it prints that the
+comparison was skipped, and the `prove` functions still run offline as-is.
+
+The third direction has fired for real. We were accepting the Windows path traversal
+(moderate) in `@hono/node-server <2.0.5`, and the advisory was later revised into two
+affected ranges — `< 1.19.15` and `>= 2.0.0, < 2.0.5`. The fix had been backported to
+1.x, and the lockfile already resolved that same 1.19.15, so there was nothing left to
+accept and the entry was deleted. The acceptance text had said "the final 1.x is
+1.19.15", which was true; what could not be known at the time was that this 1.19.15
+*was* the backport.
+
+## The MCP server is stdio-only
+
+The proof that acceptance carried did not disappear with the advisory. It now stands on
+its own as `scripts/check-mcp-stdio.ts`, because the property it proves never depended
+on the advisory: `apps/agent-mcp` speaks stdio and opens no HTTP listener. That is a
+design property, not an accident, nothing in the code says so out loud, and one `import`
+line breaks it.
+
+The gate bundles the entrypoint and checks that references to the HTTP adapter are zero.
+Since its entire output is an absence, a detector that always returns zero — a renamed
+package, a bundler that minifies the string away, a silently failing build — would pass
+while proving nothing. So the control is measured first:
+`apps/agent-mcp/http-transport-control.ts` imports on purpose the transport the real
+server does not, and only after the references are found there (measured 3 versus 0) is
+the entrypoint's zero trusted.
 
 ## Logging and credentials
 
