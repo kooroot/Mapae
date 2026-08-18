@@ -56,6 +56,7 @@ const BALANCE_ABI = parseAbi(["function balanceOf(address owner) view returns (u
  * a closed enum for exactly the reasons above. This service answers the public internet.
  */
 type BootstrapRefusal =
+    | "origin_refused"
     | "bootstrap_disabled"
     | "malformed_request"
     | "rate_limited"
@@ -462,7 +463,7 @@ const app = new Hono();
 app.use("*", async (c, next) => {
     const decision = judgeCorsRequest(c.req.header("origin"), CORS_POLICY);
     if (!decision.allowed) {
-        return c.json({network: GIWA_SEPOLIA_CAIP2, reason: "origin_refused"}, 403);
+        return refuse(c, "origin_refused", 403);
     }
     await next();
     c.header("Cache-Control", "no-store");
