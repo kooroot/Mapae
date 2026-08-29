@@ -53,7 +53,6 @@ const MSG: Record<
         bootstrapUnreachable: string;
         bootstrapNotConfirmed: string;
         bootstrapDisabled: string;
-        bootstrapRateLimited: string;
         bootstrapBudgetExhausted: string;
         bootstrapFeeTooHigh: string;
         bootstrapPermissionRejected: string;
@@ -88,7 +87,6 @@ const MSG: Record<
         bootstrapNotConfirmed:
             "The payer account deployment has not been confirmed yet. Try again in a moment.",
         bootstrapDisabled: "Payer account setup is currently turned off.",
-        bootstrapRateLimited: "Too many requests. Try again in a moment.",
         bootstrapBudgetExhausted:
             "Today's allowance of new accounts has been used. Try again later.",
         bootstrapFeeTooHigh: "Network fees are temporarily high. Try again in a moment.",
@@ -123,7 +121,6 @@ const MSG: Record<
         bootstrapNotConfirmed:
             "지불 계정 배포가 아직 확인되지 않았습니다. 잠시 후 다시 시도해 주세요.",
         bootstrapDisabled: "지불 계정 준비 기능이 현재 꺼져 있습니다.",
-        bootstrapRateLimited: "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.",
         bootstrapBudgetExhausted:
             "오늘 준비 가능한 계정 수를 모두 사용했습니다. 잠시 후 다시 시도해 주세요.",
         bootstrapFeeTooHigh: "네트워크 수수료가 일시적으로 높습니다. 잠시 후 다시 시도해 주세요.",
@@ -468,54 +465,75 @@ async function verifyUndeployedPermissionArtifact(
 }
 
 /**
- * Ask the sponsor to deploy the payer account, then confirm on chain.
- *
- * The request body carries the signed permission context and nothing else — no owner
- * address, no salt, no bytecode. Everything the sponsor acts on is reconstructed from that
- * signature, so there is no field a caller can steer. The post-deploy `getCode` read is
- * not decoration: a success response is the sponsor's claim, and the account either has
- * code or it does not.
+ * The sponsor's reply body. A closed shape by design: it is mapped, never rendered, so a
+ * new server-side field or reason can never become UI text nobody wrote.
  */
-export async function requestSponsoredBootstrap(
+export interface BootstrapReply {
+    status?: string;
+    transaction?: string;
+    fundingTransaction?: string;
+    mintedBase?: string;
+    targetBase?: string;
+    reason?: string;
+}
+
+/**
+ * One POST to the sponsor, shared by the deploy path and the testnet top-up.
+ *
+ * The body carries the signed permission context and nothing else — no owner address, no
+ * salt, no bytecode. Everything the sponsor acts on is reconstructed from that signature,
+ * so there is no field a caller can steer. `redirect: "error"` because that context is a
+ * signed delegation, and a redirect would carry it to an origin nobody chose.
+ */
+export async function postBootstrap(
     endpoint: string,
-    artifact: PermissionArtifact,
+    permissionContext: `0x${string}`,
     locale: Locale = "en",
-): Promise<void> {
-    const m = MSG[locale];
+): Promise<{ok: boolean; body: BootstrapReply}> {
     let response: Response;
     try {
         response = await fetch(`${endpoint}/bootstrap`, {
             method: "POST",
             redirect: "error",
             headers: {"content-type": "application/json"},
-            body: JSON.stringify({permissionContext: artifact.permissionContext}),
+            body: JSON.stringify({permissionContext}),
             signal: AbortSignal.timeout(90_000),
         });
     } catch {
-        throw new Error(m.bootstrapUnreachable);
+        throw new Error(MSG[locale].bootstrapUnreachable);
     }
-    if (!response.ok) {
-        // The body is a closed enum by design; map it rather than rendering it, so a new
-        // server-side reason can never become UI text nobody wrote.
-        const reason = await response
-            .json()
-            .then((body: unknown) => (body as {reason?: string}).reason)
-            .catch(() => undefined);
-        throw new Error(bootstrapRefusalMessage(reason, locale));
+    const body = (await response.json().catch(() => ({}))) as BootstrapReply;
+    return {ok: response.ok, body};
+}
+
+/**
+ * Ask the sponsor to deploy the payer account, then confirm on chain.
+ *
+ * The post-deploy `getCode` read is not decoration: a success response is the sponsor's
+ * claim, and the account either has code or it does not. `faucet_recently_used` is the one
+ * refusal only an already-deployed account can receive — the deploy this call exists for
+ * has happened, so that read is the verdict and the top-up refusal is not.
+ */
+export async function requestSponsoredBootstrap(
+    endpoint: string,
+    artifact: PermissionArtifact,
+    locale: Locale = "en",
+): Promise<void> {
+    const {ok, body} = await postBootstrap(endpoint, artifact.permissionContext, locale);
+    if (!ok && body.reason !== "faucet_recently_used") {
+        throw new Error(bootstrapRefusalMessage(body.reason, locale));
     }
     const code = await publicClient.getCode({address: artifact.delegator});
     if (!code || code === "0x") {
-        throw new Error(m.bootstrapNotConfirmed);
+        throw new Error(MSG[locale].bootstrapNotConfirmed);
     }
 }
 
-function bootstrapRefusalMessage(reason: string | undefined, locale: Locale = "en"): string {
+function bootstrapRefusalMessage(reason: string | undefined, locale: Locale): string {
     const m = MSG[locale];
     switch (reason) {
         case "bootstrap_disabled":
             return m.bootstrapDisabled;
-        case "rate_limited":
-            return m.bootstrapRateLimited;
         case "budget_exhausted":
         case "sponsor_unfunded":
             return m.bootstrapBudgetExhausted;
