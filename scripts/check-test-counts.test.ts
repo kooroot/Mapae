@@ -29,12 +29,12 @@ const FORGE_OUTPUT =
 /** The English README's shape. The Korean one orders the breakdown label-after-number. */
 const README_EN =
     "![Tests](https://img.shields.io/badge/tests-353%20TS%20%2B%2014%20Foundry-16A34A)\n" +
-    "- Regression suite: **353 TypeScript tests (256 shared/delegation/scripts + 3 MCP + 94 web)\n" +
+    "- Regression suite: **353 TypeScript tests (256 shared/delegation/seller/scripts + 3 MCP + 94 web)\n" +
     "  + 14 Foundry tests**, plus a chain-parameterised negative-path suite\n";
 
 const README_KO =
     "![Tests](https://img.shields.io/badge/tests-353%20TS%20%2B%2014%20Foundry-16A34A)\n" +
-    "- 회귀 검증: **353 TypeScript tests (shared/delegation/scripts 256 + MCP 3 + 웹 94)\n" +
+    "- 회귀 검증: **353 TypeScript tests (shared/delegation/seller/scripts 256 + MCP 3 + 웹 94)\n" +
     "  + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를\n";
 
 const REAL = {parts: [256, 3, 94], total: 353, foundry: 14};
