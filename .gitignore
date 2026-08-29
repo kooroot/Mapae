@@ -86,6 +86,12 @@ temp/
 # Run artifacts written into the tree by the GIWA demo scripts
 *.evidence.json
 
+# `@mapae/store` ledgers (bun:sqlite) — a service's persisted state lives beside it and
+# must never be commit-eligible. WAL leaves the two sidecar files while a store is open.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 # dev-tool artifacts
 .openai/
 .claude/

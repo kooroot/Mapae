@@ -34,7 +34,11 @@ const MATCHES_NOTHING = "zzzz-no-such-test-name-zzzz";
  * and not from the repository root.
  */
 const SUITES = [
-    {label: "shared/delegation/scripts", cwd: REPO, args: ["packages/shared/src", "packages/delegation/src", "scripts"]},
+    {
+        label: "shared/delegation/store/scripts",
+        cwd: REPO,
+        args: ["packages/shared/src", "packages/delegation/src", "packages/store/src", "scripts"],
+    },
     {label: "MCP", cwd: join(REPO, "apps/agent-mcp"), args: []},
     {label: "web", cwd: join(REPO, "apps/web"), args: []},
     {label: "docs", cwd: join(REPO, "apps/docs"), args: []},
