@@ -1,0 +1,41 @@
+{
+  "name": "@mapae/seller",
+  "version": "0.1.0",
+  "description": "Hono paywall middleware for x402 ERC-7710 delegated payments on GIWA Sepolia (tUSDC testnet).",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "bun": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && bun build src/index.ts --outdir dist --target node --format esm --external hono --external viem",
+    "test": "bun test src"
+  },
+  "peerDependencies": {
+    "hono": ">=4.13.0",
+    "viem": ">=2.55.0"
+  },
+  "devDependencies": {
+    "@mapae/delegation": "workspace:*",
+    "@mapae/shared": "workspace:*",
+    "@metamask/smart-accounts-kit": "1.7.0",
+    "hono": "^4.13.0",
+    "viem": "^2.55.8"
+  },
+  "keywords": [
+    "x402",
+    "erc-7710",
+    "hono",
+    "giwa",
+    "mapae"
+  ]
+}
