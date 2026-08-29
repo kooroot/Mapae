@@ -116,7 +116,7 @@ const MAX_PAYMENT_HEADER_LENGTH = 150_000;
  * Timeout budgets. `/verify` is a simulation and answers quickly; `/settle` broadcasts
  * and waits for a receipt, so it must exceed the facilitator's own receipt wait
  * (25 s by default). Whatever serves this middleware needs an idle timeout above
- * `SETTLE_TIMEOUT_MS`, or the server hangs up on its own settlement — with Bun.serve,
+ * `SETTLE_TIMEOUT_MS`, or the server hangs up on its own settlement — under Bun's server,
  * whose default is 10 s, that means setting `idleTimeout` explicitly.
  */
 const VERIFY_TIMEOUT_MS = 15_000;
