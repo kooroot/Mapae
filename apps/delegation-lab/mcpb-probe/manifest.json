@@ -1,0 +1,36 @@
+{
+  "manifest_version": "0.3",
+  "name": "mapae-hello-probe",
+  "display_name": "Mapae Hello Probe",
+  "version": "0.1.0",
+  "description": "마패 .mcpb 설치 프로브 — 도구 하나(mapae_hello)로 이 계정에서 확장 설치와 도구 호출이 되는지 확인한다. 네트워크·키·의존성 없음.",
+  "author": {
+    "name": "Mapae"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kooroot/Mapae.git"
+  },
+  "homepage": "https://mapae.io",
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"]
+    }
+  },
+  "tools": [
+    {
+      "name": "mapae_hello",
+      "description": "마패 .mcpb 설치 프로브. 인자 없이 호출하면 고정 문장 하나를 돌려준다 — 이 계정에서 확장 설치와 도구 호출이 되는지 확인하는 용도다."
+    }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}
