@@ -159,6 +159,10 @@
         "viem": "*",
       },
     },
+    "packages/store": {
+      "name": "@mapae/store",
+      "version": "0.0.0",
+    },
   },
   "overrides": {
     "fast-uri": "3.1.5",
@@ -397,6 +401,8 @@
     "@mapae/seller": ["@mapae/seller@workspace:apps/seller"],
 
     "@mapae/shared": ["@mapae/shared@workspace:packages/shared"],
+
+    "@mapae/store": ["@mapae/store@workspace:packages/store"],
 
     "@mapae/web": ["@mapae/web@workspace:apps/web"],
 
