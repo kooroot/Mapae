@@ -33,11 +33,17 @@ const MATCHES_NOTHING = "zzzz-no-such-test-name-zzzz";
  * their own directory because `@mapae/*` resolves through each package's own node_modules
  * and not from the repository root.
  */
-const SUITES = [
+export const SUITES = [
     {
-        label: "shared/delegation/store/scripts",
+        label: "shared/delegation/store/facilitator/scripts",
         cwd: REPO,
-        args: ["packages/shared/src", "packages/delegation/src", "packages/store/src", "scripts"],
+        args: [
+            "packages/shared/src",
+            "packages/delegation/src",
+            "packages/store/src",
+            "apps/facilitator-erc7710",
+            "scripts",
+        ],
     },
     {label: "MCP", cwd: join(REPO, "apps/agent-mcp"), args: []},
     {label: "web", cwd: join(REPO, "apps/web"), args: []},

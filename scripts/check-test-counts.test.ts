@@ -5,6 +5,7 @@
  */
 import {describe, expect, test} from "bun:test";
 import {
+    SUITES,
     compareCounts,
     parseCollectedTotal,
     parseDocumentCounts,
@@ -99,7 +100,8 @@ describe("compareCounts", () => {
             REAL,
         );
         expect(failures.some((f) => f.includes("the suites collect 353"))).toBe(true);
-        expect(failures.some((f) => f.includes("shared/delegation/scripts"))).toBe(true);
+        // The message names the first suite by its live label, whatever it is called today.
+        expect(failures.some((f) => f.includes(SUITES[0].label))).toBe(true);
     });
 
     test("a badge that disagrees with the body is still caught", () => {

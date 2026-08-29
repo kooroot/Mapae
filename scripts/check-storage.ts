@@ -30,7 +30,11 @@ import {stripNonCode} from "./check-logging";
 
 const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 
-/** Only the web app runs in a browser; the services have no storage to write to. */
+/**
+ * Only the web app runs in a browser. The services persist through `@mapae/store`
+ * (bun:sqlite) alone, whose schema has no column a payload, a signature or a key could
+ * land in — so browser-storage writes are the one class this gate has to catch.
+ */
 const ROOT = "apps/web/src";
 
 /**
