@@ -5,6 +5,7 @@ export * from "./config.js";
 export * from "./composition.js";
 export * from "./delegation-status.js";
 export * from "./deployment-record.js";
+export * from "./facilitator-contract.js";
 export * from "./faucet-policy.js";
 export * from "./live-verifier.js";
 export * from "./oracle.js";

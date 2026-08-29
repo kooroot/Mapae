@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./account-bootstrap": "./src/account-bootstrap.ts",
     "./config": "./src/config.ts",
+    "./facilitator-contract": "./src/facilitator-contract.ts",
     "./policy": "./src/policy.ts",
     "./x402": "./src/x402.ts",
     "./delegation-status": "./src/delegation-status.ts",

@@ -15,14 +15,12 @@ import {
     withDelegationSignature,
 } from "./policy.js";
 import {
-    PaymentIntentSingleFlight,
     SETTLEMENT_UNCONFIRMED,
-    buildDelegatedTransfer,
     decideSettlement,
     decideVerification,
     isVerificationAccepted,
-    validateDelegatedPayment,
-} from "./x402.js";
+} from "./facilitator-contract.js";
+import {PaymentIntentSingleFlight, buildDelegatedTransfer, validateDelegatedPayment} from "./x402.js";
 
 const address = (suffix: number): Address =>
     getAddress(`0x${suffix.toString(16).padStart(40, "0")}`);
