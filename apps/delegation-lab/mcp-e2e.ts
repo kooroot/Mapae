@@ -652,10 +652,8 @@ async function main(): Promise<void> {
     );
 
     spawnApp("seller", `${REPO}/apps/delegated-seller`, "index.ts", {
-        GIWA_SEPOLIA_RPC_URL: forkRpc,
         HOST: "127.0.0.1",
         PORT: String(SELLER_PORT),
-        BASE_URL: SELLER_URL,
         FACILITATOR_URL,
     });
     await waitFor("seller", async () =>

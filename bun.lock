@@ -50,7 +50,7 @@
     "apps/delegated-seller": {
       "name": "@mapae/delegated-seller",
       "dependencies": {
-        "@mapae/delegation": "workspace:*",
+        "@mapae/seller": "workspace:*",
         "@mapae/shared": "workspace:*",
         "hono": "^4",
         "viem": "^2.55.8",
