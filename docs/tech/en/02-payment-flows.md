@@ -143,13 +143,18 @@ signatures that OZ `ECDSA` reverts on, so without this check we would pay to dep
 accounts whose every grant reverts forever.
 
 Per-account idempotency is identity, not a budget — keypairs are free offline, so
-the real bounds on a griefing run are the per-IP rate limit, the daily gas budget
-(`BOOTSTRAP_DAILY_WEI`), and the sponsor balance kept deliberately small. The
-sponsor holds no delegation authority, so it cannot reach payer funds, caps, or
-settlement. Verification is `bun run test:e2e:bootstrap` — 15 cases on a GIWA fork
-(kill switch, approval mismatch, shared-relayer refusal, foreign signer, high-s,
-deployment, late binding, gas accounting, faucet, idempotency, concurrency, rate
-limit, budget exhaustion, chain-failure leak guard), 15/15.
+the real bounds on a griefing run are the faucet window (one top-up per account per
+24 hours), the daily gas budget (`BOOTSTRAP_DAILY_WEI`), and the sponsor balance
+kept deliberately small. There is no per-IP limit: IPs are shared and keys are
+free, so it never stopped a griefer and did stop two people in one office. The
+faucet tops any account below 1000 tUSDC (testnet, not real money) up to that
+target (`packages/delegation/src/faucet-policy.ts`). The sponsor holds no
+delegation authority, so it cannot reach payer funds, caps, or settlement.
+Verification is `bun run test:e2e:bootstrap` — 15 cases on a GIWA fork (kill
+switch, approval mismatch, shared-relayer refusal, foreign signer, high-s,
+deployment, late binding, gas accounting, faucet top-up to target, idempotency,
+concurrency, faucet 24-hour window, budget exhaustion, chain-failure leak guard),
+15/15.
 
 ## Agent automation (MCP)
 
