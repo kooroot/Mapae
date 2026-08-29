@@ -1,5 +1,4 @@
-import type {Address, Hex, TypedDataDomain} from "viem";
-import {giwaSepolia} from "./chain.js";
+import type {Address, Hex} from "viem";
 
 /**
  * MockUSDC — EIP-3009 test stablecoin deployed for Mapae.

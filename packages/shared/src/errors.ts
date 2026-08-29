@@ -37,12 +37,6 @@ export type SettlementError =
 
 export type SettlementErrorTag = SettlementError["_tag"];
 
-/** Errors worth retrying. Everything else is terminal — surface it, don't loop. */
-const RETRYABLE: ReadonlySet<SettlementErrorTag> = new Set([
-    "RpcUnavailable",
-    "RpcRateLimited",
-]);
-
 /**
  * Operator-facing errors. These mean the service is misconfigured or starved,
  * not that the caller did something wrong — they should page, not 400.
