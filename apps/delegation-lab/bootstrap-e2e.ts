@@ -1,12 +1,12 @@
 /**
  * Boot `apps/account-bootstrap` for real and drive sponsored onboarding through it.
  *
- * The unit tests cover `validateAccountBootstrap`, `FixedWindowLimiter` and `SpendBudget`
- * as pure functions. None of that starts the service, and none of it proves the claim the
- * whole design rests on: that a root signed *before* the payer account exists is still the
- * signature the deployed account accepts. That claim is only settled by deploying the
- * account from the signature and then verifying ERC-1271 against the real bytecode, which
- * is what case C does.
+ * The unit tests cover `validateAccountBootstrap`, `SpendBudget` and the faucet policy
+ * (`planTopUp`, `FaucetGate`) as pure functions. None of that starts the service, and none
+ * of it proves the claim the whole design rests on: that a root signed *before* the payer
+ * account exists is still the signature the deployed account accepts. That claim is only
+ * settled by deploying the account from the signature and then verifying ERC-1271 against
+ * the real bytecode, which is what case H does.
  *
  * Everything happens on a local Anvil fork of GIWA against the real Framework bytecode.
  * The sponsor key, the owner key and the agent address are throwaway and derived here; no
@@ -19,6 +19,7 @@
  * sponsor's real GIWA nonce is read before and after to prove nothing was broadcast.
  */
 import {
+    FAUCET_TARGET_BASE,
     FRAMEWORK_COMPOSITION_ID,
     OWNER_ACCOUNT_SALT,
     buildD3Policies,
@@ -40,10 +41,12 @@ import {
     createPublicClient,
     createWalletClient,
     defineChain,
+    encodeFunctionData,
     getAddress,
     hashTypedData,
     http,
     keccak256,
+    numberToHex,
     parseAbi,
     publicActions,
     stringToHex,
@@ -65,7 +68,10 @@ const MOCK_USDC = getAddress("0xcfeb694719A09caeb80798e2011298F29CDa4e92");
 const ERC1271_ABI = parseAbi([
     "function isValidSignature(bytes32 hash, bytes signature) view returns (bytes4)",
 ]);
-const ERC20_ABI = parseAbi(["function balanceOf(address account) view returns (uint256)"]);
+const ERC20_ABI = parseAbi([
+    "function balanceOf(address account) view returns (uint256)",
+    "function transfer(address to, uint256 value) returns (bool)",
+]);
 
 /**
  * Derived, high-entropy, throwaway. The well-known Anvil dev keys are unusable against a
@@ -149,6 +155,8 @@ interface BootstrapBody {
     account?: string;
     transaction?: string;
     fundingTransaction?: string;
+    mintedBase?: string;
+    targetBase?: string;
     reason?: string;
 }
 
@@ -177,7 +185,7 @@ async function postBootstrap(
 const ALLOWED_REASONS = new Set([
     "bootstrap_disabled",
     "malformed_request",
-    "rate_limited",
+    "faucet_recently_used",
     "budget_exhausted",
     "sponsor_unfunded",
     "fee_too_high",
@@ -412,6 +420,13 @@ async function main(): Promise<void> {
 
     // ── G. the real thing: deploy from a signature made before the account existed ────
     const sponsorBefore = await publicClient.getBalance({address: sponsor.address});
+    // The keys are deterministic, so the counterfactual address is the same on every run and
+    // MockUSDC.mint is permissionless: the fork inherits whatever balance real GIWA holds
+    // there. J can only prove a top-up from below the target.
+    const tokensBefore = await tokenBalance(account);
+    if (tokensBefore >= FAUCET_TARGET_BASE) {
+        throw new Error(`${account} already holds ${tokensBefore} base units — J cannot prove a top-up`);
+    }
     const ok = await postBootstrap({permissionContext});
     if (ok.status !== 200 || ok.body.status !== "deployed") {
         throw new Error(`bootstrap failed: ${ok.status} ${ok.raw}`);
@@ -456,27 +471,31 @@ async function main(): Promise<void> {
         `gas            sponsor -${sponsorBefore - sponsorAfter} wei, payer still 0 ETH`,
     );
 
-    // ── J. the testnet faucet leg actually credited the account ───────────────────────
+    // ── J. the testnet faucet leg topped the account up to the target, not by a fixed sum ─
     if (!ok.body.fundingTransaction) throw new Error("faucet was enabled but no mint happened");
-    const balance = await publicClient.readContract({
-        address: MOCK_USDC,
-        abi: ERC20_ABI,
-        functionName: "balanceOf",
-        args: [account],
-    });
-    if (balance === 0n) throw new Error("faucet reported a transaction but the balance is 0");
-    passed("J", `faucet         ${balance} base units credited`);
+    const shortfall = FAUCET_TARGET_BASE - tokensBefore;
+    if (ok.body.mintedBase !== String(shortfall) || ok.body.targetBase !== String(FAUCET_TARGET_BASE)) {
+        throw new Error(`faucet reported minted=${ok.body.mintedBase} target=${ok.body.targetBase}, expected ${shortfall}/${FAUCET_TARGET_BASE}`);
+    }
+    const balance = await tokenBalance(account);
+    if (balance !== FAUCET_TARGET_BASE) {
+        throw new Error(`balance is ${balance} base units after the top-up, expected ${FAUCET_TARGET_BASE}`);
+    }
+    passed("J", `faucet         +${shortfall} base units, balance now ${balance} (the target)`);
 
-    // ── K. idempotency: a second request spends nothing ───────────────────────────────
+    // ── K. idempotency: a second request at the target spends and mints nothing ──────
     const balanceBeforeRepeat = await publicClient.getBalance({address: sponsor.address});
     const again = await postBootstrap({permissionContext});
     if (again.status !== 200 || again.body.status !== "already_deployed") {
         throw new Error(`expected already_deployed, got ${again.status} ${again.raw}`);
     }
+    if (again.body.mintedBase !== "0" || again.body.fundingTransaction !== undefined) {
+        throw new Error(`a repeat at the target still minted: ${again.raw}`);
+    }
     if ((await publicClient.getBalance({address: sponsor.address})) !== balanceBeforeRepeat) {
         throw new Error("a repeat request spent gas");
     }
-    passed("K", "idempotent     already_deployed, zero spend");
+    passed("K", "idempotent     already_deployed, minted 0, zero spend");
 
     // ── L. concurrency: five identical requests deploy exactly once ───────────────────
     // Against a fresh account, so `already_deployed` cannot mask a missing single-flight.
@@ -586,7 +605,47 @@ async function main(): Promise<void> {
         );
     }
 
-    /** The same service, restarted with one bound turned down far enough to hit. */
+    async function tokenBalance(holder: Address): Promise<bigint> {
+        return publicClient.readContract({
+            address: MOCK_USDC,
+            abi: ERC20_ABI,
+            functionName: "balanceOf",
+            args: [holder],
+        });
+    }
+
+    /**
+     * Empty the payer's token balance so the next request would mint again.
+     *
+     * The payer is a deployed smart account, so the transfer is sent from it under Anvil
+     * impersonation — the same way the MCP suite revokes from the payer. Its ETH is put back
+     * to zero afterwards; nothing here must leave the payer looking funded.
+     */
+    async function drainTokens(payer: Address): Promise<void> {
+        const held = await tokenBalance(payer);
+        await rpc(forkRpc, "anvil_setBalance", [payer, numberToHex(10n ** 18n)]);
+        await rpc(forkRpc, "anvil_impersonateAccount", [payer]);
+        const hash = (await rpc(forkRpc, "eth_sendTransaction", [
+            {
+                from: payer,
+                to: MOCK_USDC,
+                data: encodeFunctionData({
+                    abi: ERC20_ABI,
+                    functionName: "transfer",
+                    args: [sponsor.address, held],
+                }),
+                gas: numberToHex(100_000n),
+            },
+        ])) as Hex;
+        const receipt = await publicClient.waitForTransactionReceipt({hash});
+        await rpc(forkRpc, "anvil_stopImpersonatingAccount", [payer]);
+        await rpc(forkRpc, "anvil_setBalance", [payer, "0x0"]);
+        if (receipt.status !== "success") throw new Error(`draining ${payer} reverted`);
+        const left = await tokenBalance(payer);
+        if (left !== 0n) throw new Error(`${payer} still holds ${left} base units after draining`);
+    }
+
+    /** The same service, restarted — optionally with one bound turned down far enough to hit. */
     async function restart(overrides: Record<string, string>) {
         const proc = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
             cwd: `${REPO}/apps/account-bootstrap`,
@@ -611,24 +670,32 @@ async function main(): Promise<void> {
     /**
      * M and N exist because deleting either bound left every other test green.
      *
-     * The daily budget and the rate limiter were only ever exercised as classes. The service
-     * ran nine requests against a limit of twenty and two deploys against a budget that
-     * allows thousands, so `if (!budget.reserve(...)) throw` could become a bare
-     * `budget.reserve(...)` and nothing would notice — while the live griefing ceiling
-     * silently became the sponsor's whole balance. Both cases below drive the service past
-     * a deliberately tiny limit, which is the only way the wiring is asserted at all.
+     * The faucet window and the daily budget were only ever exercised as classes. K repeats
+     * a request at the target, which the window never sees, and two deploys run against a
+     * budget that allows thousands, so `if (!faucetGate.allows(...)) throw` or
+     * `if (!budget.reserve(...)) throw` could become bare calls and nothing would notice —
+     * while the live griefing ceiling silently became the sponsor's whole balance. Both
+     * cases below drive the service into the bound, which is the only way the wiring is
+     * asserted at all.
      */
     const third = await signedRootFor(signerKey("owner-3"));
 
-    const rateLimited = await restart({BOOTSTRAP_RATE_PER_HOUR: "1"});
-    await postBootstrap({permissionContext: third.context});
-    const overRate = await postBootstrap({permissionContext: third.context});
-    if (overRate.status !== 429 || overRate.body.reason !== "rate_limited") {
-        throw new Error(`rate limit is not wired: ${overRate.status} ${overRate.raw}`);
+    // The window opens from the deploy's mint. Draining the account afterwards makes the
+    // second request one that WOULD mint — the only case the window is allowed to refuse.
+    const gated = await restart({});
+    const firstTopUp = await postBootstrap({permissionContext: third.context});
+    if (firstTopUp.status !== 200 || firstTopUp.body.mintedBase === "0") {
+        throw new Error(`the first top-up did not mint: ${firstTopUp.status} ${firstTopUp.raw}`);
     }
-    assertEnumOnly("rate limited", overRate.raw, overRate.body);
-    passed("M", "rate limit     second request in the window → 429 rate_limited");
-    rateLimited.kill();
+    await drainTokens(third.account);
+    const overWindow = await postBootstrap({permissionContext: third.context});
+    if (overWindow.status !== 429 || overWindow.body.reason !== "faucet_recently_used") {
+        throw new Error(`faucet window is not wired: ${overWindow.status} ${overWindow.raw}`);
+    }
+    assertEnumOnly("faucet window", overWindow.raw, overWindow.body);
+    if ((await tokenBalance(third.account)) !== 0n) throw new Error("a refused top-up still minted");
+    passed("M", "faucet window  drained account, 2nd top-up in 24h → 429 faucet_recently_used");
+    gated.kill();
     await waitForPortRelease();
 
     const fourth = await signedRootFor(signerKey("owner-4"));
