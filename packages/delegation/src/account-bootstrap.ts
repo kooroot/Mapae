@@ -34,7 +34,6 @@ import {buildRootDelegationTypedData} from "./signing.js";
  */
 export interface AccountBootstrapPolicy {
     environment: SmartAccountsEnvironment;
-    chainId: number;
     /**
      * The exact phrase the operator wrote into the service's environment. Checked at
      * boot, not per request; carried here so the validator and the service cannot drift

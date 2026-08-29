@@ -73,7 +73,6 @@ const policies = buildD3Policies(VENDOR);
 
 const policy: AccountBootstrapPolicy = {
     environment,
-    chainId: giwaSepolia.id,
     approval: buildSponsoredBootstrapApproval(FRAMEWORK_COMPOSITION_ID),
 };
 

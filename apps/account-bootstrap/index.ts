@@ -200,7 +200,6 @@ const deployment = await readDeployment();
 
 const policy: AccountBootstrapPolicy = {
     environment: deployment.environment,
-    chainId: giwaSepolia.id,
     approval: EXPECTED_APPROVAL,
 };
 
