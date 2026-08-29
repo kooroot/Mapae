@@ -30,13 +30,13 @@ import {
     createWalletClient,
     getAddress,
     isAddress,
+    nonceManager,
     publicActions,
     zeroAddress,
     type Address,
     type Hex,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
-import {nonceManager} from "viem";
 
 const MAX_BODY_CHARACTERS = 150_000;
 
@@ -212,12 +212,6 @@ const startupVerification = await verifyActiveFrameworkDeployment({
 });
 const readiness = new FrameworkReadinessGate(startupVerification);
 
-// The wire contract is shared with the seller that reads it — see the note on
-// SETTLEMENT_UNCONFIRMED in packages/delegation/src/x402.ts for why it stopped being
-// declared once per process.
-type VerifyResponse = Erc7710VerifyResponse;
-type SettleResponse = Erc7710SettleResponse;
-
 /**
  * How long a broadcast transaction stays remembered for its payment intent.
  *
@@ -270,7 +264,7 @@ class SettlementNotCredited extends Error {
 }
 
 class SettlementCoordinator {
-    readonly #singleFlight = new PaymentIntentSingleFlight<SettleResponse>();
+    readonly #singleFlight = new PaymentIntentSingleFlight<Erc7710SettleResponse>();
     readonly #broadcastTransactions = new Map<Hex, {hash: Hex; at: number}>();
 
     #rememberBroadcast(intent: Hex, hash: Hex): void {
@@ -281,7 +275,12 @@ class SettlementCoordinator {
         this.#broadcastTransactions.set(intent, {hash, at: Date.now()});
     }
 
-    async simulate(payment: ValidatedDelegatedPayment): Promise<void> {
+    /**
+     * Simulate the redemption against live state and price it. Nothing in here can
+     * broadcast — a simulation revert or a gas-cap refusal charges nobody — so a throw
+     * from this method is a genuine rejection on `/verify` and `/settle` alike.
+     */
+    async #prepareRedemption(payment: ValidatedDelegatedPayment) {
         const transfer = buildDelegatedTransfer(payment);
         const simulation = await DelegationManager.simulate.redeemDelegations({
             client: facilitatorClient,
@@ -294,31 +293,24 @@ class SettlementCoordinator {
         if (gas > MAX_REDEMPTION_GAS) {
             throw new Error(`redemption gas ${gas} exceeds configured cap`);
         }
+        return {request: simulation.request, gas};
     }
 
-    async settle(payment: ValidatedDelegatedPayment): Promise<SettleResponse> {
+    async simulate(payment: ValidatedDelegatedPayment): Promise<void> {
+        await this.#prepareRedemption(payment);
+    }
+
+    async settle(payment: ValidatedDelegatedPayment): Promise<Erc7710SettleResponse> {
         return this.#singleFlight.run(payment.paymentIntentId, () =>
             this.#settleOnce(payment),
         );
     }
 
-    async #settleOnce(payment: ValidatedDelegatedPayment): Promise<SettleResponse> {
+    async #settleOnce(payment: ValidatedDelegatedPayment): Promise<Erc7710SettleResponse> {
         let hash = this.#broadcastTransactions.get(payment.paymentIntentId)?.hash;
         if (!hash) {
-            const transfer = buildDelegatedTransfer(payment);
-            const simulation = await DelegationManager.simulate.redeemDelegations({
-                client: facilitatorClient,
-                delegationManagerAddress: manager,
-                delegations: [...transfer.delegations],
-                modes: [...transfer.modes],
-                executions: transfer.executions.map((batch) => [...batch]),
-            });
-            const gas = await facilitatorClient.estimateContractGas(simulation.request);
-            if (gas > MAX_REDEMPTION_GAS) {
-                throw new Error(`redemption gas ${gas} exceeds configured cap`);
-            }
-            // Everything above this line provably did not broadcast — a simulation
-            // revert or a gas-cap refusal charges nobody, so those throws are genuine
+            const {request, gas} = await this.#prepareRedemption(payment);
+            // `#prepareRedemption` provably did not broadcast, so its throws are genuine
             // rejections. `writeContract` is the one ambiguous step: it prepares, signs,
             // and sends in a single call, so a lost response after the node accepted the
             // transaction rejects here while the transfer will still mine. Reporting that
@@ -329,7 +321,7 @@ class SettlementCoordinator {
             // retry is safe regardless: the leaf's one-shot ERC20TransferAmountEnforcer
             // reverts a second redemption of the identical context.
             try {
-                hash = await facilitatorClient.writeContract({...simulation.request, gas});
+                hash = await facilitatorClient.writeContract({...request, gas});
             } catch {
                 throw new SettlementUnconfirmed();
             }
@@ -437,14 +429,14 @@ app.post("/verify", async (c) => {
             maxAmount: MAX_AMOUNT,
         });
         await coordinator.simulate(payment);
-        const response: VerifyResponse = {
+        const response: Erc7710VerifyResponse = {
             isValid: true,
             payer: payment.payer,
         };
         return c.json(response);
     } catch (error) {
         logSafeFailure("verify", error);
-        const response: VerifyResponse = {isValid: false, invalidReason: "delegation_rejected"};
+        const response: Erc7710VerifyResponse = {isValid: false, invalidReason: "delegation_rejected"};
         return c.json(response);
     }
 });
@@ -465,7 +457,7 @@ app.post("/settle", async (c) => {
     } catch (error) {
         logSafeFailure("settle", error);
         if (error instanceof SettlementUnconfirmed) {
-            const pending: SettleResponse = {
+            const pending: Erc7710SettleResponse = {
                 success: false,
                 network: GIWA_SEPOLIA_CAIP2,
                 transaction: error.transaction,
@@ -477,7 +469,7 @@ app.post("/settle", async (c) => {
             // `success: false` sends the seller's ladder to "failed" — the resource is
             // withheld. The hash still travels: allowance was consumed by a transaction
             // that paid nobody, and an operator has to be able to find it.
-            const notCredited: SettleResponse = {
+            const notCredited: Erc7710SettleResponse = {
                 success: false,
                 network: GIWA_SEPOLIA_CAIP2,
                 transaction: error.transaction,
@@ -485,7 +477,7 @@ app.post("/settle", async (c) => {
             };
             return c.json(notCredited);
         }
-        const response: SettleResponse = {
+        const response: Erc7710SettleResponse = {
             success: false,
             network: GIWA_SEPOLIA_CAIP2,
             errorReason: "delegation_rejected",
