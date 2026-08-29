@@ -64,7 +64,10 @@ export function TestnetTopUp({root, onMinted}: {root: Delegation; onMinted: () =
                 <Droplets size={14} />
                 {busy ? t.busy : t.action}
             </button>
-            <p className="studio-amount-note" role={state.kind === "failed" ? "alert" : "status"}>
+            <p
+                className="studio-amount-note"
+                role={state.kind === "failed" ? "alert" : state.kind === "done" ? "status" : undefined}
+            >
                 {message}
                 {transaction ? (
                     <>
