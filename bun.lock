@@ -102,7 +102,7 @@
       },
     },
     "apps/seller": {
-      "name": "@mapae/seller",
+      "name": "@mapae/seller-eip3009",
       "dependencies": {
         "@mapae/shared": "workspace:*",
         "hono": "^4",
@@ -152,6 +152,21 @@
         "@metamask/x402": "0.2.0",
         "@x402/core": "2.20.0",
         "@x402/evm": "2.20.0",
+      },
+    },
+    "packages/seller": {
+      "name": "@mapae/seller",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@mapae/delegation": "workspace:*",
+        "@mapae/shared": "workspace:*",
+        "@metamask/smart-accounts-kit": "1.7.0",
+        "hono": "^4.13.0",
+        "viem": "^2.55.8",
+      },
+      "peerDependencies": {
+        "hono": ">=4.13.0",
+        "viem": ">=2.55.0",
       },
     },
     "packages/shared": {
@@ -400,7 +415,9 @@
 
     "@mapae/revocation-submitter": ["@mapae/revocation-submitter@workspace:apps/revocation-submitter"],
 
-    "@mapae/seller": ["@mapae/seller@workspace:apps/seller"],
+    "@mapae/seller": ["@mapae/seller@workspace:packages/seller"],
+
+    "@mapae/seller-eip3009": ["@mapae/seller-eip3009@workspace:apps/seller"],
 
     "@mapae/shared": ["@mapae/shared@workspace:packages/shared"],
 

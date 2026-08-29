@@ -35,11 +35,12 @@ const MATCHES_NOTHING = "zzzz-no-such-test-name-zzzz";
  */
 export const SUITES = [
     {
-        label: "shared/delegation/store/facilitator/scripts",
+        label: "shared/delegation/seller/store/facilitator/scripts",
         cwd: REPO,
         args: [
             "packages/shared/src",
             "packages/delegation/src",
+            "packages/seller/src",
             "packages/store/src",
             "apps/facilitator-erc7710",
             "scripts",

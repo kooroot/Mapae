@@ -7,11 +7,12 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "tsc -p packages/shared/tsconfig.json && tsc -p packages/delegation/tsconfig.json && tsc -p packages/store/tsconfig.json && tsc -p apps/agent/tsconfig.json && tsc -p apps/seller/tsconfig.json && tsc -p apps/delegation-lab/tsconfig.json && tsc -p apps/facilitator-erc7710/tsconfig.json && tsc -p apps/delegated-agent/tsconfig.json && tsc -p apps/delegated-seller/tsconfig.json && tsc -p apps/agent-mcp/tsconfig.json && tsc -p apps/revocation-submitter/tsconfig.json && tsc -p apps/account-bootstrap/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p apps/docs/tsconfig.json && tsc -p scripts/tsconfig.json",
-    "test:ts": "bun test packages/shared/src packages/delegation/src packages/store/src apps/facilitator-erc7710 scripts",
+    "typecheck": "bun run build:seller && tsc -p packages/shared/tsconfig.json && tsc -p packages/delegation/tsconfig.json && tsc -p packages/seller/tsconfig.test.json && tsc -p packages/store/tsconfig.json && tsc -p apps/agent/tsconfig.json && tsc -p apps/seller/tsconfig.json && tsc -p apps/delegation-lab/tsconfig.json && tsc -p apps/facilitator-erc7710/tsconfig.json && tsc -p apps/delegated-agent/tsconfig.json && tsc -p apps/delegated-seller/tsconfig.json && tsc -p apps/agent-mcp/tsconfig.json && tsc -p apps/revocation-submitter/tsconfig.json && tsc -p apps/account-bootstrap/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p apps/docs/tsconfig.json && tsc -p scripts/tsconfig.json",
+    "test:ts": "bun test packages/shared/src packages/delegation/src packages/seller/src packages/store/src apps/facilitator-erc7710 scripts",
     "test:mcp": "cd apps/agent-mcp && bun test",
     "test:docs": "cd apps/docs && bun test",
     "build:docs": "cd apps/docs && bun run build",
+    "build:seller": "cd packages/seller && bun run build",
     "deploy:docs": "cd apps/docs && bun run deploy",
     "deploy:docs:legacy": "cd apps/docs && bun run deploy:legacy",
     "test:contracts": "make -C contracts test",

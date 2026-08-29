@@ -1,5 +1,5 @@
 {
-  "name": "@mapae/seller",
+  "name": "@mapae/seller-eip3009",
   "private": true,
   "type": "module",
   "scripts": {

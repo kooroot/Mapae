@@ -108,7 +108,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://docs.mapae.io).
-- Regression suite: **673 TypeScript tests (488 shared/delegation/store/facilitator/scripts + 3 MCP + 149 web + 33 docs)
+- Regression suite: **673 TypeScript tests (488 shared/delegation/seller/store/facilitator/scripts + 3 MCP + 149 web + 33 docs)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
