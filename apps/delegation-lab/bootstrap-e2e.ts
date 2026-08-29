@@ -39,7 +39,6 @@ import {
 import {
     concatHex,
     createPublicClient,
-    createWalletClient,
     defineChain,
     encodeFunctionData,
     getAddress,
@@ -48,7 +47,6 @@ import {
     keccak256,
     numberToHex,
     parseAbi,
-    publicActions,
     stringToHex,
     type Address,
     type Hex,
