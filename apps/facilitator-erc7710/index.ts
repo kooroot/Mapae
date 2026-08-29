@@ -25,6 +25,7 @@ import {
     redactForLog,
     toTokenAmount,
 } from "@mapae/shared";
+import {openStore, type SettlementEventInput} from "@mapae/store";
 import {
     createPublicClient,
     createWalletClient,
@@ -37,6 +38,7 @@ import {
     type Hex,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
+import {bearerTokenMatches, metricsReport, readMetricsToken} from "./metrics.js";
 
 const MAX_BODY_CHARACTERS = 150_000;
 
@@ -119,10 +121,17 @@ function readFrameworkAdmin(): Address {
     return address;
 }
 
+/** `:memory:` is accepted for dry runs; anything else is a file whose directory is created. */
+function readStorePath(): string {
+    return process.env.STORE_PATH?.trim() || "./data/facilitator.sqlite";
+}
+
 const HOST = readHost();
 const PORT = readPort();
 const RPC_URL = readRpcUrl();
 const MAX_AMOUNT = toTokenAmount(process.env.MAX_SETTLEMENT_AMOUNT ?? "10.00");
+const STORE_PATH = readStorePath();
+const METRICS_TOKEN = readMetricsToken(process.env.METRICS_TOKEN);
 // 1.5M was an unsourced guess until 2026-07-28; these are the first measured numbers.
 // Twelve successful `redeemDelegations` receipts scanned out of a local anvil after the
 // 23-case ephemeral negative-path suite ran against it:
@@ -168,6 +177,9 @@ const deployment = await readDeployment();
 const manifest = await readManifest();
 const frameworkAdmin = readFrameworkAdmin();
 const manager = getAddress(deployment.environment.DelegationManager);
+// After the signer and the artifacts, so a misconfigured boot fails before a ledger
+// file is created for nothing.
+const store = openStore(STORE_PATH);
 
 const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
 const facilitatorClient = createWalletClient({
@@ -263,6 +275,52 @@ class SettlementNotCredited extends Error {
     }
 }
 
+interface SettlementFailure {
+    outcome: "rejected" | "error";
+    errorCode: string;
+    transaction: Hex | null;
+}
+
+/**
+ * One classification for both consumers of a failed settlement — the wire response and
+ * the ledger row — so the two can never disagree about what happened.
+ *
+ * `rejected`: nobody was charged (validation, simulation revert, gas cap). `error`: the
+ * chain was touched and the answer is unknown (SETTLEMENT_UNCONFIRMED — broadcast,
+ * receipt not seen) or wrong (`vendor_not_credited` — mined, allowance consumed, the
+ * recipient not paid). Both send the seller's ladder to "failed" and withhold the
+ * resource; both carry the hash when there is one, because an operator has to be able
+ * to find a transaction that consumed allowance without paying anybody.
+ */
+function describeFailure(error: unknown): SettlementFailure {
+    if (error instanceof SettlementUnconfirmed) {
+        return {
+            outcome: "error",
+            errorCode: SETTLEMENT_UNCONFIRMED,
+            transaction: error.transaction ?? null,
+        };
+    }
+    if (error instanceof SettlementNotCredited) {
+        return {outcome: "error", errorCode: "vendor_not_credited", transaction: error.transaction};
+    }
+    return {outcome: "rejected", errorCode: "delegation_rejected", transaction: null};
+}
+
+/**
+ * One ledger row per settle attempt. Called from inside the single-flight, so a
+ * coalesced duplicate request is not counted twice — and never allowed to throw. A
+ * ledger that cannot be written is an operator problem; letting it surface here would
+ * report a payment that mined as `delegation_rejected`, the exact collapse the rest of
+ * this file exists to prevent.
+ */
+function recordSettlement(event: SettlementEventInput): void {
+    try {
+        store.ledger.record(event);
+    } catch (error) {
+        console.error(`[ledger] settlement event not recorded — ${redactForLog(error)}`);
+    }
+}
+
 class SettlementCoordinator {
     readonly #singleFlight = new PaymentIntentSingleFlight<Erc7710SettleResponse>();
     readonly #broadcastTransactions = new Map<Hex, {hash: Hex; at: number}>();
@@ -307,6 +365,36 @@ class SettlementCoordinator {
     }
 
     async #settleOnce(payment: ValidatedDelegatedPayment): Promise<Erc7710SettleResponse> {
+        const event = {
+            kind: "settle",
+            payer: payment.payer,
+            payTo: payment.paymentRequirements.payTo,
+            amountBase: payment.amount,
+        } as const;
+        try {
+            const {hash, gasUsed} = await this.#redeem(payment);
+            recordSettlement({...event, at: Date.now(), outcome: "settled", txHash: hash, gasUsed});
+            return {
+                success: true,
+                transaction: hash,
+                network: GIWA_SEPOLIA_CAIP2,
+                payer: payment.payer,
+            };
+        } catch (error) {
+            const failure = describeFailure(error);
+            recordSettlement({
+                ...event,
+                at: Date.now(),
+                outcome: failure.outcome,
+                txHash: failure.transaction,
+                errorCode: failure.errorCode,
+            });
+            throw error;
+        }
+    }
+
+    /** Broadcast (or resume) the redemption and wait for a receipt that credited the vendor. */
+    async #redeem(payment: ValidatedDelegatedPayment): Promise<{hash: Hex; gasUsed: bigint}> {
         let hash = this.#broadcastTransactions.get(payment.paymentIntentId)?.hash;
         if (!hash) {
             const {request, gas} = await this.#prepareRedemption(payment);
@@ -361,12 +449,7 @@ class SettlementCoordinator {
                 discrepancies.map((problem) => problem.detail).join("; "),
             );
         }
-        return {
-            success: true,
-            transaction: hash,
-            network: GIWA_SEPOLIA_CAIP2,
-            payer: payment.payer,
-        };
+        return {hash, gasUsed: receipt.gasUsed};
     }
 }
 
@@ -420,6 +503,17 @@ app.get("/supported", (c) =>
     ),
 );
 
+// Operator-only. 503 while no token is configured, so a deployment that forgot the
+// secret exposes nothing rather than everything; the token compare is constant-time.
+app.get("/metrics", (c) => {
+    if (METRICS_TOKEN === undefined) return c.json({error: "metrics_disabled"}, 503);
+    if (!bearerTokenMatches(c.req.header("authorization"), METRICS_TOKEN)) {
+        c.header("WWW-Authenticate", 'Bearer realm="metrics"');
+        return c.json({error: "unauthorized"}, 401);
+    }
+    return c.json(metricsReport(store.ledger, Date.now()));
+});
+
 app.post("/verify", async (c) => {
     try {
         await readiness.verify();
@@ -456,31 +550,12 @@ app.post("/settle", async (c) => {
         return c.json(response);
     } catch (error) {
         logSafeFailure("settle", error);
-        if (error instanceof SettlementUnconfirmed) {
-            const pending: Erc7710SettleResponse = {
-                success: false,
-                network: GIWA_SEPOLIA_CAIP2,
-                transaction: error.transaction,
-                errorReason: SETTLEMENT_UNCONFIRMED,
-            };
-            return c.json(pending);
-        }
-        if (error instanceof SettlementNotCredited) {
-            // `success: false` sends the seller's ladder to "failed" — the resource is
-            // withheld. The hash still travels: allowance was consumed by a transaction
-            // that paid nobody, and an operator has to be able to find it.
-            const notCredited: Erc7710SettleResponse = {
-                success: false,
-                network: GIWA_SEPOLIA_CAIP2,
-                transaction: error.transaction,
-                errorReason: "vendor_not_credited",
-            };
-            return c.json(notCredited);
-        }
+        const failure = describeFailure(error);
         const response: Erc7710SettleResponse = {
             success: false,
             network: GIWA_SEPOLIA_CAIP2,
-            errorReason: "delegation_rejected",
+            transaction: failure.transaction ?? undefined,
+            errorReason: failure.errorCode,
         };
         return c.json(response);
     }
@@ -516,5 +591,7 @@ console.log(`ERC-7710 facilitator listening on ${HOST}:${PORT}`);
 console.log(`  network ${GIWA_SEPOLIA_CAIP2}`);
 console.log(`  manager ${manager}`);
 console.log(`  signer  ${relayer.address}`);
+console.log(`  store   ${STORE_PATH}`);
+console.log(`  metrics ${METRICS_TOKEN === undefined ? "disabled (METRICS_TOKEN unset)" : "enabled"}`);
 
 export default {hostname: HOST, port: PORT, fetch: app.fetch};

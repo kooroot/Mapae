@@ -8,6 +8,7 @@
   "dependencies": {
     "@mapae/delegation": "workspace:*",
     "@mapae/shared": "workspace:*",
+    "@mapae/store": "workspace:*",
     "@metamask/smart-accounts-kit": "1.7.0",
     "hono": "^4",
     "viem": "^2.55.8"
