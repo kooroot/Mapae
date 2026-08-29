@@ -508,7 +508,7 @@ root permission 아티팩트를 요구하므로, 배포된 계정을 소유한 �
 (25 → 35 → 45 → 50초), 결과 미확정 결제는 `SETTLEMENT_UNKNOWN`으로 반환된다.
 
 판정은 순수 함수 `decideSettlement()`로 분리되어 있고
-(`packages/delegation/src/x402.ts`), 판정 기준 문자열
+(`packages/delegation/src/facilitator-contract.ts`), 판정 기준 문자열
 (`SETTLEMENT_UNCONFIRMED`)과 응답 타입은 생산자·소비자가 같은 모듈에서
 가져간다. 판정 사다리는 `unknown` 쪽으로 기운다.
 

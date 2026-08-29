@@ -550,7 +550,7 @@ to grow toward the outer layers (25 → 35 → 45 → 50 s), and a payment whose
 outcome is unresolved is returned as `SETTLEMENT_UNKNOWN`.
 
 The judgment is isolated in a pure function, `decideSettlement()`
-(`packages/delegation/src/x402.ts`), and the criterion string
+(`packages/delegation/src/facilitator-contract.ts`), and the criterion string
 (`SETTLEMENT_UNCONFIRMED`) and the response type are taken from the same module
 by producer and consumer alike. The decision ladder leans toward `unknown`.
 
