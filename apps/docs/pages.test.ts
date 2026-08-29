@@ -34,9 +34,21 @@ const LIVE_GITBOOK_URLS = [
     "operations/revocation-runbook",
 ];
 
+/**
+ * Pages published after the migration. Listed apart so the GitBook set above stays the
+ * untouched contract it is, and so adding a page is a deliberate edit here rather than a
+ * silent widening of what "served" means.
+ */
+const ADDED_SINCE_GITBOOK = [
+    // 2026-08-29 — the @mapae/seller guide.
+    "operations/seller-guide",
+];
+
 describe("published URLs", () => {
-    test("every URL GitBook served is still served, and no others", () => {
-        expect(new Set(Object.values(URL_FOR_SOURCE))).toEqual(new Set(LIVE_GITBOOK_URLS));
+    test("every URL GitBook served is still served, plus the pages added since, and no others", () => {
+        expect(new Set(Object.values(URL_FOR_SOURCE))).toEqual(
+            new Set([...LIVE_GITBOOK_URLS, ...ADDED_SINCE_GITBOOK]),
+        );
     });
 
     test("SUMMARY.md and the URL map cover exactly the same documents", () => {
@@ -59,7 +71,7 @@ describe("published URLs", () => {
 describe("pages", () => {
     test("reads order, titles and sections from SUMMARY.md", () => {
         const found = pages(summary);
-        expect(found).toHaveLength(18);
+        expect(found).toHaveLength(19);
         expect(found[0]).toMatchObject({url: "", title: "Mapae one-pager", locale: "en"});
         expect(found[1]).toMatchObject({url: "readme.ko", locale: "ko"});
         expect(found[2]).toMatchObject({

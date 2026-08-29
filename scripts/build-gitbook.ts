@@ -236,6 +236,7 @@ ${chaptersKo}
 
 * [배포 컨트랙트](deployed-contracts.md)
 * [MCP 연결 가이드](mcp-guide.md)
+* [셀러 가이드](seller-guide.md)
 * [GIWA 데모 런북](giwa-demo-runbook.md)
 * [회수 런북](revocation-runbook.md)
 `;
