@@ -176,12 +176,15 @@ OZ `ECDSA`가 revert하는 서명도 수락하므로, 이 검사가 없으면 �
 revert하는 계정을 돈 내고 배포하게 된다.
 
 계정 단위 중복방지는 예산이 아니라 신원이다 — 키페어는 오프라인에서 공짜이므로,
-그리핑의 실제 상한은 IP당 rate limit, 일일 가스 예산(`BOOTSTRAP_DAILY_WEI`),
-그리고 일부러 작게 유지하는 스폰서 잔액이다. 스폰서에는 위임 권한이 없어
-payer 자금·한도·정산에는 닿지 못한다. 검증은 `bun run test:e2e:bootstrap` —
-GIWA fork에서 15케이스(킬 스위치·승인 불일치·relayer 공유 거부·타인 서명·high-s·
-배포·late binding·가스 회계·faucet·중복·동시성·rate limit·예산 소진·체인 실패
-누출 가드) 15/15.
+그리핑의 실제 상한은 계정당 24시간 1회의 faucet 창, 일일 가스 예산
+(`BOOTSTRAP_DAILY_WEI`), 그리고 일부러 작게 유지하는 스폰서 잔액이다. IP당
+제한은 두지 않는다 — IP는 공유되고 키는 공짜라, 그리퍼는 못 막고 같은 사무실의
+두 사람은 막았다. faucet은 잔액이 1000 tUSDC(테스트넷, 실제 돈 아님) 미만인
+계정을 목표까지 채운다(`packages/delegation/src/faucet-policy.ts`). 스폰서에는
+위임 권한이 없어 payer 자금·한도·정산에는 닿지 못한다. 검증은
+`bun run test:e2e:bootstrap` — GIWA fork에서 15케이스(킬 스위치·승인 불일치·
+relayer 공유 거부·타인 서명·high-s·배포·late binding·가스 회계·faucet 목표
+보충·중복·동시성·faucet 24시간 창·예산 소진·체인 실패 누출 가드) 15/15.
 
 ### 에이전트 자동화 (MCP)
 
@@ -635,7 +638,7 @@ facilitator와 같은 공개 호스트는 `/bootstrap` 경로로 온보딩 스�
 | 중복 settle | canonical 결제 조건과 context 바이트의 `paymentIntentId`로 단일화, broadcast tx hash를 receipt보다 먼저 저장 |
 | 복잡한 delegation gas DoS | estimate 후 설정 gas cap 초과 거절 |
 | 비인가 relayer | leaf의 `RedeemerEnforcer`와 402 `facilitatorAddresses` 교집합 강제 |
-| 온보딩 그리핑 (배포 요청 반복) | IP당 rate limit + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
+| 온보딩 그리핑 (배포 요청 반복) | 계정당 24시간 1회 faucet 창 + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
 | 배포 대상 주소 지명 | 요청 본문은 `{permissionContext}`뿐 — owner는 서명에서 복원, 계정은 `CREATE2(owner)`이며 delegator와 일치해야 함 |
 | 비-canonical 서명 (high-s, `v ∉ {27,28}`) | 오프라인 canonical 검사 후에만 배포 — viem은 수락하지만 OZ `ECDSA`는 revert하므로, 검사 없이는 모든 grant가 revert하는 계정을 돈 내고 배포하게 된다 |
 | 취약 의존성 | `bun audit`을 게이트에서 실행. 모든 발견은 수정하거나, 재측정 가능한 증명을 붙여 수용 |

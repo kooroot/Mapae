@@ -138,12 +138,15 @@ OZ `ECDSA`가 revert하는 서명도 수락하므로, 이 검사가 없으면 �
 revert하는 계정을 돈 내고 배포하게 된다.
 
 계정 단위 중복방지는 예산이 아니라 신원이다 — 키페어는 오프라인에서 공짜이므로,
-그리핑의 실제 상한은 IP당 rate limit, 일일 가스 예산(`BOOTSTRAP_DAILY_WEI`),
-그리고 일부러 작게 유지하는 스폰서 잔액이다. 스폰서에는 위임 권한이 없어
-payer 자금·한도·정산에는 닿지 못한다. 검증은 `bun run test:e2e:bootstrap` —
-GIWA fork에서 15케이스(킬 스위치·승인 불일치·relayer 공유 거부·타인 서명·high-s·
-배포·late binding·가스 회계·faucet·중복·동시성·rate limit·예산 소진·체인 실패
-누출 가드) 15/15.
+그리핑의 실제 상한은 계정당 24시간 1회의 faucet 창, 일일 가스 예산
+(`BOOTSTRAP_DAILY_WEI`), 그리고 일부러 작게 유지하는 스폰서 잔액이다. IP당
+제한은 두지 않는다 — IP는 공유되고 키는 공짜라, 그리퍼는 못 막고 같은 사무실의
+두 사람은 막았다. faucet은 잔액이 1000 tUSDC(테스트넷, 실제 돈 아님) 미만인
+계정을 목표까지 채운다(`packages/delegation/src/faucet-policy.ts`). 스폰서에는
+위임 권한이 없어 payer 자금·한도·정산에는 닿지 못한다. 검증은
+`bun run test:e2e:bootstrap` — GIWA fork에서 15케이스(킬 스위치·승인 불일치·
+relayer 공유 거부·타인 서명·high-s·배포·late binding·가스 회계·faucet 목표
+보충·중복·동시성·faucet 24시간 창·예산 소진·체인 실패 누출 가드) 15/15.
 
 ## 에이전트 자동화 (MCP)
 
