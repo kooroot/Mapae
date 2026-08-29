@@ -158,8 +158,9 @@ Being explicit about the edges matters more than a longer list of green checks.
   this.
 - **The onboarding sponsor is a funded key answering unauthenticated internet
   requests.** Keypairs are free offline, so per-account idempotency is identity, not a
-  budget; the real bounds on a griefing run are the per-IP rate limit, the daily gas
-  budget, and the sponsor wallet's own deliberately small balance. Exhausting them
+  budget; the real bounds on a griefing run are the faucet window (one top-up per
+  account per 24 hours), the daily gas budget, and the sponsor wallet's own
+  deliberately small balance. Exhausting them
   stops onboarding for the day — it cannot reach payer funds, caps, or settlement,
   because the sponsor holds no delegation authority.
 - **Idempotency is in-process.** It is correct for a single replica and must move
