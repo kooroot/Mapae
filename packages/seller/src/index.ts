@@ -123,6 +123,8 @@ const VERIFY_TIMEOUT_MS = 15_000;
 const SETTLE_TIMEOUT_MS = 35_000;
 /** How long one `/supported` answer is trusted before it is re-fetched. */
 const SUPPORTED_TTL_MS = 5 * 60_000;
+/** How long a failed re-fetch keeps serving the last answer before asking again. */
+const SUPPORTED_RETRY_MS = 30_000;
 
 function parsePayTo(value: string): Address {
     const trimmed = value.trim();
@@ -147,6 +149,9 @@ function parseFacilitatorUrl(value: string): string {
     }
     if (url.protocol !== "https:" && !isLoopbackHost(url.hostname)) {
         throw new Error("facilitator must use HTTPS unless it is loopback");
+    }
+    if (url.search || url.hash) {
+        throw new Error("facilitator must be a base URL without query or fragment");
     }
     return url.toString().replace(/\/$/, "");
 }
@@ -208,8 +213,12 @@ class FacilitatorClient {
     ) {}
 
     /**
-     * `/supported`, cached and coalesced. A failure is not cached: the next request
-     * asks again, so a facilitator that was briefly down is not remembered as down.
+     * `/supported`, cached, coalesced and kept. A fresh answer is trusted for the TTL;
+     * when a re-fetch then fails, the last answer keeps serving — the addresses are
+     * advisory, and the facilitator enforces its own identity at `/verify`. Only a
+     * facilitator that has never answered yields `undefined`, and that is not cached:
+     * the next request asks again, so a facilitator that was briefly down at boot is
+     * not remembered as down.
      */
     kind(): Promise<FacilitatorKind | undefined> {
         if (this.#cached && this.#cached.expiresAt > Date.now()) {
@@ -224,8 +233,14 @@ class FacilitatorClient {
     async #discover(): Promise<FacilitatorKind | undefined> {
         const answer = await this.#call("/supported", undefined, VERIFY_TIMEOUT_MS);
         const kind = answer.reachable ? readSupportedKind(answer.body) : undefined;
-        if (kind) this.#cached = {kind, expiresAt: Date.now() + SUPPORTED_TTL_MS};
-        return kind;
+        if (kind) {
+            this.#cached = {kind, expiresAt: Date.now() + SUPPORTED_TTL_MS};
+            return kind;
+        }
+        // Space the retries out: a facilitator that hangs on /supported must not add
+        // its whole timeout to every request that follows.
+        if (this.#cached) this.#cached.expiresAt = Date.now() + SUPPORTED_RETRY_MS;
+        return this.#cached?.kind;
     }
 
     verify(request: Erc7710FacilitatorRequest): Promise<FacilitatorAnswer> {
@@ -331,6 +346,21 @@ export function mapaePaywall(options: MapaePaywallOptions): MiddlewareHandler<Ma
         // must not pay for one.
         if (c.req.routeIndex === c.req.matchedRoutes.length - 1) return c.notFound();
 
+        // Whatever is wrong with the header itself is answered before the facilitator
+        // is involved: a bad header costs nobody a network call.
+        const payment = readInboundPaymentHeader((name) => c.req.header(name));
+        let payload: Erc7710PaymentPayload | undefined;
+        if (payment) {
+            if (payment.value.length > MAX_PAYMENT_HEADER_LENGTH) {
+                return c.json({error: "malformed_payment", detail: "header too large"}, 400);
+            }
+            const decoded = readDelegatedPayment(payment.value);
+            if (!decoded.ok) {
+                return c.json({error: "malformed_payment", detail: decoded.detail}, 400);
+            }
+            payload = decoded.payload;
+        }
+
         const kind = await facilitator.kind();
         if (!kind) return c.json({error: "facilitator_unavailable"}, 503);
         // The facilitator's advertised kind is copied verbatim into the offer: the
@@ -344,8 +374,7 @@ export function mapaePaywall(options: MapaePaywallOptions): MiddlewareHandler<Ma
             delegationManager: kind.delegationManager,
         });
 
-        const payment = readInboundPaymentHeader((name) => c.req.header(name));
-        if (!payment) {
+        if (!payload) {
             const body: PaymentRequired<Erc7710PaymentRequirements> = {
                 x402Version: X402_VERSION,
                 resource: {url: c.req.url, description},
@@ -356,14 +385,6 @@ export function mapaePaywall(options: MapaePaywallOptions): MiddlewareHandler<Ma
             c.header(PAYMENT_REQUIRED_HEADER, encodePaymentRequiredHeader(body));
             return c.json(body, 402);
         }
-        if (payment.value.length > MAX_PAYMENT_HEADER_LENGTH) {
-            return c.json({error: "malformed_payment", detail: "header too large"}, 400);
-        }
-        const decoded = readDelegatedPayment(payment.value);
-        if (!decoded.ok) {
-            return c.json({error: "malformed_payment", detail: decoded.detail}, 400);
-        }
-        const {payload} = decoded;
         const request: Erc7710FacilitatorRequest = {
             x402Version: X402_VERSION,
             paymentPayload: payload,

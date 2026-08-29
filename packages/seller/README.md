@@ -93,7 +93,8 @@ price or address stops the process at boot rather than a buyer at runtime.
 (`/verify`), redeems the delegation and broadcasts the tUSDC transfer (`/settle`), and pays
 the gas. Per-settlement cap: 10.00 tUSDC. The middleware reads its signer addresses and
 DelegationManager from `GET /supported` and copies them into every offer, so your server
-needs no deployment files.
+needs no deployment files. The answer is cached for five minutes; if a re-fetch fails, the
+last answer keeps serving and `503` is only returned while nothing has ever been learned.
 
 ## Timeouts
 

@@ -202,6 +202,8 @@ describe("mapaePaywall — construction", () => {
             /credentials/,
         );
         expect(() => paywall({facilitator: "ftp://facilitator.mapae.io"})).toThrow(/HTTP\(S\)/);
+        expect(() => paywall({facilitator: "https://facilitator.mapae.io/?env=1"})).toThrow(/query/);
+        expect(() => paywall({facilitator: "https://facilitator.mapae.io/#x"})).toThrow(/fragment/);
         expect(() => paywall({facilitator: "not a url"})).toThrow();
     });
 
@@ -313,6 +315,37 @@ describe("mapaePaywall — the 402 offer", () => {
         }
     });
 
+    test("keeps serving the last advertised kind when a re-fetch fails after the TTL, and spaces the retries", async () => {
+        let attempts = 0;
+        const remote = facilitator({
+            "/supported": () => {
+                attempts += 1;
+                if (attempts > 1) throw new TypeError("fetch failed");
+                return Response.json(SUPPORTED);
+            },
+        });
+        const {app} = seller(paywall({fetch: remote.fetch}));
+        const start = Date.now();
+        const now = spyOn(Date, "now").mockReturnValue(start);
+        try {
+            expect((await app.request(RESOURCE)).status).toBe(402);
+            now.mockReturnValue(start + 6 * 60_000);
+            const response = await app.request(RESOURCE);
+            expect(response.status).toBe(402);
+            const body = await response.json();
+            expect(body.accepts[0].extra.facilitatorAddresses).toEqual([FACILITATOR]);
+            expect(remote.paths()).toEqual(["/supported", "/supported"]);
+            // Within the retry window the failed re-fetch is not repeated per request.
+            expect((await app.request(RESOURCE)).status).toBe(402);
+            expect(remote.paths()).toHaveLength(2);
+            now.mockReturnValue(start + 6 * 60_000 + 31_000);
+            expect((await app.request(RESOURCE)).status).toBe(402);
+            expect(remote.paths()).toHaveLength(3);
+        } finally {
+            now.mockRestore();
+        }
+    });
+
     test("discovery is cached across requests", async () => {
         const remote = facilitator();
         const {app} = seller(paywall({fetch: remote.fetch}));
@@ -337,7 +370,7 @@ describe("mapaePaywall — malformed payments", () => {
         const response = await pay(app, "A".repeat(150_001));
         expect(response.status).toBe(400);
         expect(await response.json()).toEqual({error: "malformed_payment", detail: "header too large"});
-        expect(remote.paths()).toEqual(["/supported"]);
+        expect(remote.calls).toEqual([]);
         expect(seen.served).toBe(0);
     });
 
@@ -361,7 +394,7 @@ describe("mapaePaywall — malformed payments", () => {
             const response = await pay(app, header);
             expect(response.status, detail).toBe(400);
             expect(await response.json()).toEqual({error: "malformed_payment", detail});
-            expect(remote.paths()).toEqual(["/supported"]);
+            expect(remote.calls).toEqual([]);
             expect(seen.served).toBe(0);
         }
     });
