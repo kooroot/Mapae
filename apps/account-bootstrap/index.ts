@@ -16,6 +16,7 @@ import {
     type ValidatedAccountBootstrap,
 } from "@mapae/delegation";
 import {FaucetGate, planTopUp, readFaucetConfig} from "@mapae/delegation/faucet-policy";
+import {openStore} from "@mapae/store";
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
@@ -226,6 +227,8 @@ if (PRIORITY_FEE_PER_GAS > MAX_FEE_PER_GAS) {
 const MIN_SPONSOR_BALANCE = readPositiveInteger("BOOTSTRAP_MIN_BALANCE_WEI", 1_000_000_000_000n);
 const DAILY_BUDGET = readPositiveInteger("BOOTSTRAP_DAILY_WEI", 500_000_000_000_000n);
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("BOOTSTRAP_RECEIPT_TIMEOUT_MS", 60_000n));
+/** `:memory:` is accepted for dry runs; anything else is a file whose directory is created. */
+const STORE_PATH = process.env.STORE_PATH?.trim() || "./data/bootstrap.sqlite";
 
 /**
  * The testnet faucet leg: on by default, and pinned to the testnet by the artifact.
@@ -254,7 +257,10 @@ const sponsorClient = createWalletClient({
 }).extend(publicActions);
 
 const faucetGate = new FaucetGate();
-const budget = new SpendBudget(DAILY_BUDGET, Date.now());
+// The day's charged gas lives in the store, so a redeploy resumes the budget instead of
+// resetting it — the one bound that is a real guarantee must not be a restart away.
+const store = openStore(STORE_PATH);
+const budget = new SpendBudget(DAILY_BUDGET, Date.now(), store.budget);
 const singleFlight = new PaymentIntentSingleFlight<BootstrapResponse>();
 
 const CORS_POLICY = {
@@ -628,5 +634,6 @@ console.log(`  enabled   ${ENABLED}`);
 console.log(`  sponsor   ${sponsor.address}`);
 console.log(`  faucet    ${FAUCET_ENABLED} (target ${FAUCET_TARGET} base, one top-up per account per day)`);
 console.log(`  daily     ${DAILY_BUDGET} wei`);
+console.log(`  store     ${STORE_PATH}`);
 
 export default {hostname: HOST, port: PORT, fetch: app.fetch};

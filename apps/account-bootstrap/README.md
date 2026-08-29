@@ -55,7 +55,8 @@ faucet이 맞추는 목표 잔액이다(faucet이 꺼져 있으면 `"0"`). 배�
 | `BOOTSTRAP_FAUCET_ENABLED` | `true` | `"false"`일 때만 끈다. 그 외 값은 부팅 거부 |
 | `BOOTSTRAP_FAUCET_TARGET_BASE` | `1000000000` (= 1000 tUSDC) | 목표 잔액, base 단위 양의 정수 |
 | `MAX_BOOTSTRAP_MINT_GAS` | `100000` | 민팅 1건의 가스 상한. 민팅 가스는 금액과 무관하다 |
-| `BOOTSTRAP_DAILY_WEI` | `500000000000000` | 배포와 민팅을 합친 하루 가스 예산 |
+| `BOOTSTRAP_DAILY_WEI` | `500000000000000` | 배포와 민팅을 합친 하루(UTC) 가스 예산 |
+| `STORE_PATH` | `./data/bootstrap.sqlite` | 그날 쓴 가스를 남기는 `@mapae/store` 파일. `:memory:`는 드라이런용 |
 
 나머지 변수(스폰서 키·승인 문구·RPC·바인드·오리진·수수료 상한)는
 `.env.example`에 있다.
@@ -75,7 +76,8 @@ bun run dev
 - faucet 스위치나 목표 잔액을 읽을 수 없을 때
 
 그리핑의 상한은 계정당 24시간 1회의 faucet 창, 일일 가스 예산
-(`BOOTSTRAP_DAILY_WEI`), 그리고 일부러 작게 유지하는 스폰서 잔액이다. IP당
+(`BOOTSTRAP_DAILY_WEI` — 그날 쓴 총액은 `STORE_PATH`에 남아 재시작해도
+이어진다), 그리고 일부러 작게 유지하는 스폰서 잔액이다. IP당
 제한은 두지 않는다 — 키페어는 공짜이고 IP는 공유되므로 그리퍼를 막지도,
 같은 사무실의 두 사람을 통과시키지도 못했다. 스폰서에는 위임 권한이 없어
 payer 자금·한도·정산에는 닿지 못한다.
