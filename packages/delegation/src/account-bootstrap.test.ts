@@ -29,6 +29,7 @@ import {
     SPONSORED_BOOTSTRAP_APPROVAL_PREFIX,
     SpendBudget,
     assertFundedKeySeparation,
+    budgetDay,
     buildSponsoredBootstrapApproval,
     costOfReceipt,
     isCanonicalSignature,
@@ -37,6 +38,7 @@ import {
     readReceiptFeeField,
     validateAccountBootstrap,
     type AccountBootstrapPolicy,
+    type BudgetStore,
 } from "./account-bootstrap.js";
 import {FRAMEWORK_COMPOSITION_ID} from "./composition.js";
 
@@ -521,6 +523,53 @@ describe("SpendBudget", () => {
 
     test("refuses a non-positive limit", () => {
         expect(() => new SpendBudget(0n, 0)).toThrow("dailyLimitWei");
+    });
+
+    test("budgetDay keys the window by UTC calendar day, not by elapsed time", () => {
+        expect(budgetDay(0)).toBe("1970-01-01");
+        expect(budgetDay(86_399_999)).toBe("1970-01-01");
+        expect(budgetDay(86_400_000)).toBe("1970-01-02");
+    });
+
+    /** A `Map` is the whole store: the class must not care what sits behind the interface. */
+    function mapStore(seed: Record<string, bigint> = {}): BudgetStore & {days: Map<string, bigint>} {
+        const days = new Map(Object.entries(seed));
+        return {
+            days,
+            load: (day) => days.get(day) ?? 0n,
+            save: (day, spentWei) => void days.set(day, spentWei),
+        };
+    }
+
+    test("resumes the day's charged total from the store instead of starting from zero", () => {
+        const store = mapStore({"1970-01-01": 70n});
+        const budget = new SpendBudget(100n, 3_600_000, store);
+        expect(budget.spentToday(3_600_000)).toBe(70n);
+        expect(budget.remaining(3_600_000)).toBe(30n);
+        expect(budget.reserve(31n, 3_600_000)).toBe(false);
+    });
+
+    test("persists every charge under its day key — including the fail-closed reservation charge", () => {
+        const store = mapStore();
+        const budget = new SpendBudget(100n, 0, store);
+        budget.reserve(60n, 0);
+        budget.settle(60n, 10n, 0);
+        expect(store.days.get("1970-01-01")).toBe(10n);
+        budget.reserve(20n, 0);
+        expect(() => budget.settle(20n, "0x1f" as unknown as bigint, 0)).toThrow("bigint");
+        expect(store.days.get("1970-01-01")).toBe(30n);
+    });
+
+    test("a new day starts from that day's stored total and leaves the old day's record alone", () => {
+        const store = mapStore({"1970-01-02": 5n});
+        const budget = new SpendBudget(100n, 0, store);
+        budget.reserve(100n, 0);
+        budget.settle(100n, 100n, 0);
+        expect(budget.remaining(86_400_000)).toBe(95n);
+        budget.reserve(1n, 86_400_000);
+        budget.settle(1n, 1n, 86_400_000);
+        expect(store.days.get("1970-01-01")).toBe(100n);
+        expect(store.days.get("1970-01-02")).toBe(6n);
     });
 
     /**

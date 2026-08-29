@@ -347,6 +347,24 @@ export function costOfReceipt(
 }
 
 /**
+ * Where a day's charged total lives between restarts.
+ *
+ * Structural on purpose: `@mapae/store` implements it over SQLite, tests implement it
+ * over a `Map`, and this package — which the browser bundle also imports — never learns
+ * that a database exists.
+ */
+export interface BudgetStore {
+    /** Wei charged on `day` (`YYYY-MM-DD`, UTC); `0n` when nothing was recorded. */
+    load(day: string): bigint;
+    save(day: string, spentWei: bigint): void;
+}
+
+/** The budget's window key: the UTC calendar day `now` falls in. */
+export function budgetDay(now: number): string {
+    return new Date(now).toISOString().slice(0, 10);
+}
+
+/**
  * The only bound that is a real guarantee rather than a speed bump.
  *
  * Per-account idempotency is not a budget: a counterfactual address is `CREATE2(owner)`
@@ -354,26 +372,40 @@ export function costOfReceipt(
  * unlimited deploys. The daily wei ceiling is what makes the worst case a number the
  * operator chose, and `reserve`/`settle` exist as a pair so an in-flight broadcast counts
  * against the budget *before* it lands rather than after.
+ *
+ * The window is the UTC calendar day rather than "24 hours since boot", because a budget
+ * that restarts from zero on every deploy is a budget a restart erases. Every charge is
+ * written to the {@link BudgetStore} under its day key and read back on construction, so
+ * a process that comes up at 23:50 resumes the day's total instead of granting a second
+ * one. Reservations are not persisted: a crash mid-broadcast under-counts by at most the
+ * one reservation that was in flight, which is the bound the operator already accepted
+ * by choosing a daily ceiling over a per-request one.
  */
 export class SpendBudget {
-    #spent = 0n;
+    #spent: bigint;
     #reserved = 0n;
-    #windowStart: number;
+    #day: string;
 
     constructor(
         private readonly dailyLimitWei: bigint,
-        startedAt: number,
-        private readonly windowMs = 86_400_000,
+        now: number,
+        private readonly store?: BudgetStore,
     ) {
         if (dailyLimitWei <= 0n) throw new Error("dailyLimitWei must be positive");
-        this.#windowStart = startedAt;
+        this.#day = budgetDay(now);
+        this.#spent = store?.load(this.#day) ?? 0n;
     }
 
     #roll(now: number): void {
-        if (now - this.#windowStart >= this.windowMs) {
-            this.#windowStart = now;
-            this.#spent = 0n;
+        const day = budgetDay(now);
+        if (day !== this.#day) {
+            this.#day = day;
+            this.#spent = this.store?.load(day) ?? 0n;
         }
+    }
+
+    #persist(): void {
+        this.store?.save(this.#day, this.#spent);
     }
 
     /** Hold `amount` against the budget, or refuse. Always paired with {@link settle}. */
@@ -409,12 +441,14 @@ export class SpendBudget {
             this.#reserved -= reserved;
             if (this.#reserved < 0n) this.#reserved = 0n;
             this.#spent += reserved;
+            this.#persist();
             throw new Error("settle requires a bigint charge");
         }
         this.#roll(now);
         this.#reserved -= reserved;
         if (this.#reserved < 0n) this.#reserved = 0n;
         this.#spent += actual;
+        this.#persist();
     }
 
     spentToday(now: number): bigint {
