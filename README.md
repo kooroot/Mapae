@@ -83,7 +83,7 @@ a strong result, but nothing was mined and there is no link to follow.
 | Agent automation | One MCP tool call completes the whole payment with no human in the loop | **GIWA** |
 | Sponsored onboarding | A payer smart account deployed by a sponsor from a root permission signed **before the account existed**; the new user holds zero ETH at every step | **GIWA** |
 | Studio | Studio (app.mapae.io) reads the cap, the remaining period balance and the settlement receipts straight from chain | **GIWA** |
-| Standing gates | Documentation, logging, advisory and test-count gates; 569 TypeScript + 14 Foundry tests; 23/23 negative paths on both chain targets; 15/15 onboarding cases on a GIWA fork | Local + read-only GIWA verification |
+| Standing gates | Documentation, logging, advisory and test-count gates (`check:counts` re-measures the badge and the breakdown below on every run); 23/23 negative paths on both chain targets; 15/15 onboarding cases on a GIWA fork | Local + read-only GIWA verification |
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
