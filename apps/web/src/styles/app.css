@@ -492,6 +492,36 @@
     line-height: 1.6;
 }
 
+.studio-topup {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 22px;
+}
+
+.studio-topup .studio-secondary-button {
+    gap: 7px;
+}
+
+.studio-topup .studio-amount-note {
+    margin-top: 0;
+}
+
+.studio-topup[data-tone="ok"] .studio-amount-note {
+    color: var(--studio-metal);
+}
+
+.studio-topup[data-tone="error"] .studio-amount-note {
+    color: var(--studio-red);
+}
+
+.studio-topup .studio-amount-note a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
 .studio-cap-track {
     position: relative;
     height: 7px;

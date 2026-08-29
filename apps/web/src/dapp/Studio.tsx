@@ -41,6 +41,7 @@ import {
     submitterAvailability,
 } from "../lib/config";
 import {RevokeButton} from "./RevokeButton";
+import {TestnetTopUp} from "./TestnetTopUp";
 import {awaitRevocationVisible} from "../lib/revoke";
 import {short, struckPercent} from "../lib/dial";
 import {
@@ -701,13 +702,14 @@ function StudioSidebar({
 }
 
 /**
- * The payer's token balance, refreshed alongside the delegation status.
+ * The payer's token balance, refreshed alongside the delegation status and again after a
+ * top-up (`refresh` is a counter the faucet button bumps).
  *
  * Deliberately separate from `readDelegationStatus`: that function reads the enforcers,
  * which know the cap and nothing about the balance. Folding a token read into it would put
  * an ERC-20 dependency inside the delegation package for the benefit of one screen.
  */
-function usePayerBalance(payer: `0x${string}` | undefined): bigint | undefined {
+function usePayerBalance(payer: `0x${string}` | undefined, refresh: number): bigint | undefined {
     const [balance, setBalance] = useState<bigint | undefined>(undefined);
     useEffect(() => {
         if (!payer) {
@@ -721,7 +723,7 @@ function usePayerBalance(payer: `0x${string}` | undefined): bigint | undefined {
         return () => {
             current = false;
         };
-    }, [payer]);
+    }, [payer, refresh]);
     return balance;
 }
 
@@ -734,7 +736,8 @@ function Overview({
 }) {
     const {locale} = useLocale();
     const t = COPY[locale];
-    const balance = usePayerBalance(permission.root.delegator as `0x${string}`);
+    const [topUps, setTopUps] = useState(0);
+    const balance = usePayerBalance(permission.root.delegator as `0x${string}`, topUps);
     const live = !status.revoked && !status.expired && !status.notYetActive;
     const started = (status.currentPeriod ?? 0n) > 0n;
     const cap = status.limit?.periodAmount;
@@ -812,6 +815,11 @@ function Overview({
                             <p>{t.noCapCaveat}</p>
                         </div>
                     )}
+                    <TestnetTopUp
+                        key={permission.context}
+                        root={permission.root}
+                        onMinted={() => setTopUps((n) => n + 1)}
+                    />
                 </div>
 
                 <div className="studio-authority-emblem" aria-hidden="true">
