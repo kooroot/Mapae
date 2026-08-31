@@ -638,3 +638,35 @@ describe("mapaeManifest", () => {
         );
     });
 });
+
+/**
+ * The published shape, guarded from the inside.
+ *
+ * `files` ships `dist` and nothing else, so an `exports` condition pointing anywhere else
+ * resolves to a path the tarball does not contain. A `"bun": "./src/index.ts"` condition
+ * did exactly that: convenient in this workspace, and a hard `Cannot find module` for every
+ * Bun consumer who installed the package. Node never noticed, because it never reads that
+ * condition — which is why this is a manifest assertion and not a smoke test.
+ */
+describe("published package shape", () => {
+    const manifest = require("../package.json") as {
+        files: string[];
+        exports: Record<string, Record<string, string>>;
+    };
+
+    function targets(node: unknown): string[] {
+        if (typeof node === "string") return [node];
+        if (node && typeof node === "object") return Object.values(node).flatMap(targets);
+        return [];
+    }
+
+    test("ships dist", () => {
+        expect(manifest.files).toContain("dist");
+    });
+
+    test("every exports target resolves inside the shipped dist", () => {
+        const all = targets(manifest.exports);
+        expect(all.length).toBeGreaterThan(0);
+        for (const target of all) expect(target.startsWith("./dist/")).toBe(true);
+    });
+});

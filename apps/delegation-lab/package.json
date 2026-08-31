@@ -21,7 +21,7 @@
     "preflight:giwa": "bun run giwa-preflight.ts",
     "run:giwa": "bun run giwa-mcp-run.ts",
     "test:negative": "bun run negative-path-suite.ts",
-    "test:e2e:mcp": "bun run mcp-e2e.ts",
+    "test:e2e:mcp": "bun run --filter @mapae/seller build && bun run mcp-e2e.ts",
     "test:e2e:revoke": "bun run revocation-submitter-e2e.ts",
     "test:e2e:bootstrap": "bun run bootstrap-e2e.ts"
   },

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --hot index.ts"
+    "dev": "bun run --filter @mapae/seller build && bun run --hot index.ts"
   },
   "dependencies": {
     "@mapae/seller": "workspace:*",
