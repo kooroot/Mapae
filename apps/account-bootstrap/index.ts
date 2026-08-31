@@ -458,7 +458,9 @@ async function planFaucet(account: Address, now: number): Promise<FaucetPlan> {
  *
  * Here the top-up *is* the request, so what the deploy branch reports as "0 minted" is
  * refused out loud: a closed window is a 429 the user can read as "tomorrow", and a budget
- * or sponsor that cannot pay is the same refusal a deploy would get.
+ * or sponsor that cannot pay is the same refusal a deploy would get. An onboarding retry
+ * lands here too and is unharmed by that: Studio judges a bootstrap by the account's code,
+ * not by this status.
  */
 async function topUp(account: Address): Promise<Funding> {
     const now = Date.now();

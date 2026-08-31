@@ -1,5 +1,11 @@
 import {describe, expect, test} from "bun:test";
-import {judgeSpendable, signedSessionGrant, validateGrantDraft, type GrantDraft} from "./grant";
+import {
+    judgeBootstrapOutcome,
+    judgeSpendable,
+    signedSessionGrant,
+    validateGrantDraft,
+    type GrantDraft,
+} from "./grant";
 
 /**
  * `DelegationManager.ANY_DELEGATE` — the framework sentinel that makes a delegation
@@ -209,5 +215,56 @@ describe("signedSessionGrant", () => {
     test("a grant for a user-supplied address has no agent key", () => {
         const grant = signedSessionGrant(artifact, value);
         expect(grant.agentKey).toBeUndefined();
+    });
+});
+
+/**
+ * The regression these cover: onboarding used to tolerate exactly one refusal reason
+ * (`faucet_recently_used`), so an already-deployed account whose *top-up* was refused for
+ * budget, sponsor or balance-read reasons failed an onboarding that had already succeeded.
+ */
+describe("bootstrap outcome", () => {
+    const REFUSALS = [
+        "faucet_recently_used",
+        "budget_exhausted",
+        "sponsor_unfunded",
+        "bootstrap_unavailable",
+        "bootstrap_disabled",
+        "fee_too_high",
+        "gas_estimate_rejected",
+        undefined,
+    ];
+
+    test("deployed code ends the call however the sponsor answered", () => {
+        for (const reason of REFUSALS) {
+            expect(judgeBootstrapOutcome({ok: false, reason, deployed: true})).toBeUndefined();
+        }
+        expect(judgeBootstrapOutcome({ok: true, deployed: true})).toBeUndefined();
+    });
+
+    test("a refusal with no code on chain fails with that refusal's message", () => {
+        const budget = judgeBootstrapOutcome({ok: false, reason: "budget_exhausted", deployed: false});
+        const fee = judgeBootstrapOutcome({ok: false, reason: "fee_too_high", deployed: false});
+        expect(budget).toBeTruthy();
+        expect(fee).toBeTruthy();
+        expect(budget).not.toBe(fee);
+    });
+
+    test("a success the chain does not confirm is reported as unconfirmed, not as a refusal", () => {
+        const unconfirmed = judgeBootstrapOutcome({ok: true, deployed: false});
+        const refused = judgeBootstrapOutcome({ok: false, reason: "budget_exhausted", deployed: false});
+        expect(unconfirmed).toBeTruthy();
+        expect(unconfirmed).not.toBe(refused);
+    });
+
+    test("an unknown refusal reason still yields a message", () => {
+        expect(judgeBootstrapOutcome({ok: false, reason: "who_knows", deployed: false})).toBeTruthy();
+    });
+
+    test("the failure message follows the locale", () => {
+        const en = judgeBootstrapOutcome({ok: true, deployed: false}, "en");
+        const ko = judgeBootstrapOutcome({ok: true, deployed: false}, "ko");
+        expect(en).toBeTruthy();
+        expect(ko).not.toBe(en);
     });
 });

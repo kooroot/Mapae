@@ -507,12 +507,34 @@ export async function postBootstrap(
 }
 
 /**
+ * What one bootstrap attempt means for onboarding, given what the chain says afterwards.
+ *
+ * Chain state is the verdict; the sponsor's answer only explains a failure. Deployed code
+ * ends the call successfully however the sponsor answered, because `/bootstrap` also serves
+ * Studio's top-up button: an already-deployed account can be refused for reasons that are
+ * about the faucet — a closed 24h window, an exhausted daily budget, a token balance the
+ * sponsor could not read — and none of those unmake the deploy this call exists for.
+ * Tolerating one named reason instead is what let `budget_exhausted` fail an onboarding
+ * whose account was already live.
+ *
+ * @returns the message to fail with, or `undefined` when the account is deployed.
+ */
+export function judgeBootstrapOutcome(
+    outcome: {ok: boolean; reason?: string; deployed: boolean},
+    locale: Locale = "en",
+): string | undefined {
+    if (outcome.deployed) return undefined;
+    if (!outcome.ok) return bootstrapRefusalMessage(outcome.reason, locale);
+    return MSG[locale].bootstrapNotConfirmed;
+}
+
+/**
  * Ask the sponsor to deploy the payer account, then confirm on chain.
  *
  * The post-deploy `getCode` read is not decoration: a success response is the sponsor's
- * claim, and the account either has code or it does not. `faucet_recently_used` is the one
- * refusal only an already-deployed account can receive — the deploy this call exists for
- * has happened, so that read is the verdict and the top-up refusal is not.
+ * claim, and the account either has code or it does not. A read that itself fails is not a
+ * deployment — "could not confirm" is the honest report, and it beats surfacing a raw RPC
+ * error where a refusal message belongs.
  */
 export async function requestSponsoredBootstrap(
     endpoint: string,
@@ -520,13 +542,14 @@ export async function requestSponsoredBootstrap(
     locale: Locale = "en",
 ): Promise<void> {
     const {ok, body} = await postBootstrap(endpoint, artifact.permissionContext, locale);
-    if (!ok && body.reason !== "faucet_recently_used") {
-        throw new Error(bootstrapRefusalMessage(body.reason, locale));
-    }
-    const code = await publicClient.getCode({address: artifact.delegator});
-    if (!code || code === "0x") {
-        throw new Error(MSG[locale].bootstrapNotConfirmed);
-    }
+    const code = await publicClient
+        .getCode({address: artifact.delegator})
+        .catch(() => undefined);
+    const failure = judgeBootstrapOutcome(
+        {ok, reason: body.reason, deployed: code !== undefined && code !== "0x"},
+        locale,
+    );
+    if (failure) throw new Error(failure);
 }
 
 function bootstrapRefusalMessage(reason: string | undefined, locale: Locale): string {
