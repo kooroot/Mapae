@@ -484,39 +484,43 @@ describe("FixedWindowLimiter", () => {
 });
 
 describe("SpendBudget", () => {
+    /** `reserve` returns the hold to settle with; every test that spends needs it. */
+    function held(budget: SpendBudget, amount: bigint, now: number) {
+        const hold = budget.reserve(amount, now);
+        if (!hold) throw new Error("expected the budget to admit the reservation");
+        return hold;
+    }
+
     test("reserves up to the daily limit and then refuses", () => {
         const budget = new SpendBudget(100n, 0);
-        expect(budget.reserve(60n, 0)).toBe(true);
-        expect(budget.reserve(60n, 0)).toBe(false);
+        expect(budget.reserve(60n, 0)).toEqual({day: "1970-01-01", amount: 60n});
+        expect(budget.reserve(60n, 0)).toBeUndefined();
         expect(budget.remaining(0)).toBe(40n);
     });
 
     test("settling less than reserved returns the difference to the budget", () => {
         const budget = new SpendBudget(100n, 0);
-        expect(budget.reserve(60n, 0)).toBe(true);
-        budget.settle(60n, 10n, 0);
+        budget.settle(held(budget, 60n, 0), 10n, 0);
         expect(budget.spentToday(0)).toBe(10n);
         expect(budget.remaining(0)).toBe(90n);
     });
 
     test("a reverted broadcast still charges — otherwise griefing is free", () => {
         const budget = new SpendBudget(100n, 0);
-        budget.reserve(60n, 0);
-        budget.settle(60n, 55n, 0);
+        budget.settle(held(budget, 60n, 0), 55n, 0);
         expect(budget.spentToday(0)).toBe(55n);
     });
 
     test("an in-flight reservation blocks a concurrent request before it lands", () => {
         const budget = new SpendBudget(100n, 0);
-        expect(budget.reserve(80n, 0)).toBe(true);
+        expect(budget.reserve(80n, 0)).toBeTruthy();
         // Nothing settled yet — the second request must still see the budget consumed.
-        expect(budget.reserve(80n, 0)).toBe(false);
+        expect(budget.reserve(80n, 0)).toBeUndefined();
     });
 
     test("the window rolls after a day", () => {
         const budget = new SpendBudget(100n, 0);
-        budget.reserve(100n, 0);
-        budget.settle(100n, 100n, 0);
+        budget.settle(held(budget, 100n, 0), 100n, 0);
         expect(budget.remaining(0)).toBe(0n);
         expect(budget.remaining(86_400_000)).toBe(100n);
     });
@@ -546,30 +550,66 @@ describe("SpendBudget", () => {
         const budget = new SpendBudget(100n, 3_600_000, store);
         expect(budget.spentToday(3_600_000)).toBe(70n);
         expect(budget.remaining(3_600_000)).toBe(30n);
-        expect(budget.reserve(31n, 3_600_000)).toBe(false);
+        expect(budget.reserve(31n, 3_600_000)).toBeUndefined();
     });
 
     test("persists every charge under its day key — including the fail-closed reservation charge", () => {
         const store = mapStore();
         const budget = new SpendBudget(100n, 0, store);
-        budget.reserve(60n, 0);
-        budget.settle(60n, 10n, 0);
+        budget.settle(held(budget, 60n, 0), 10n, 0);
         expect(store.days.get("1970-01-01")).toBe(10n);
-        budget.reserve(20n, 0);
-        expect(() => budget.settle(20n, "0x1f" as unknown as bigint, 0)).toThrow("bigint");
+        const second = held(budget, 20n, 0);
+        expect(() => budget.settle(second, "0x1f" as unknown as bigint, 0)).toThrow("bigint");
         expect(store.days.get("1970-01-01")).toBe(30n);
     });
 
     test("a new day starts from that day's stored total and leaves the old day's record alone", () => {
         const store = mapStore({"1970-01-02": 5n});
         const budget = new SpendBudget(100n, 0, store);
-        budget.reserve(100n, 0);
-        budget.settle(100n, 100n, 0);
+        budget.settle(held(budget, 100n, 0), 100n, 0);
         expect(budget.remaining(86_400_000)).toBe(95n);
-        budget.reserve(1n, 86_400_000);
-        budget.settle(1n, 1n, 86_400_000);
+        budget.settle(held(budget, 1n, 86_400_000), 1n, 86_400_000);
         expect(store.days.get("1970-01-01")).toBe(100n);
         expect(store.days.get("1970-01-02")).toBe(6n);
+    });
+
+    /**
+     * The window a request was measured against is the window that pays for it.
+     *
+     * A deploy admitted at 23:59:50 settles after midnight. Charging the clock's day meant
+     * the ceiling that authorised the spend never recorded it *and* the new day opened
+     * already spent — so a caller could park requests across the boundary and be billed
+     * against a budget nobody checked them against.
+     */
+    test("a charge settled after midnight lands on the day that admitted it", () => {
+        const store = mapStore();
+        const budget = new SpendBudget(100n, 0, store);
+        const hold = held(budget, 60n, 86_399_000);
+        budget.settle(hold, 60n, 86_400_500);
+        expect(store.days.get("1970-01-01")).toBe(60n);
+        expect(store.days.get("1970-01-02")).toBeUndefined();
+        // The new day is untouched and whole.
+        expect(budget.spentToday(86_400_500)).toBe(0n);
+        expect(budget.remaining(86_400_500)).toBe(100n);
+    });
+
+    test("a cross-midnight charge accumulates onto what that day already spent", () => {
+        const store = mapStore({"1970-01-01": 25n});
+        const budget = new SpendBudget(100n, 86_399_000, store);
+        budget.settle(held(budget, 40n, 86_399_000), 40n, 86_400_500);
+        expect(store.days.get("1970-01-01")).toBe(65n);
+    });
+
+    /**
+     * Without a store the closed window is simply gone — there is nowhere to put the
+     * charge. Losing it is the honest outcome; the alternative is billing the wrong day,
+     * which is the bug this whole handle exists to prevent.
+     */
+    test("a storeless budget drops a cross-midnight charge rather than misfiling it", () => {
+        const budget = new SpendBudget(100n, 0);
+        budget.settle(held(budget, 60n, 86_399_000), 60n, 86_400_500);
+        expect(budget.spentToday(86_400_500)).toBe(0n);
+        expect(budget.remaining(86_400_500)).toBe(100n);
     });
 
     /**
@@ -582,8 +622,8 @@ describe("SpendBudget", () => {
      */
     test("refuses a non-bigint charge instead of poisoning the running total", () => {
         const budget = new SpendBudget(100n, 0);
-        budget.reserve(60n, 0);
-        expect(() => budget.settle(60n, "0x1f" as unknown as bigint, 0)).toThrow("bigint");
+        const hold = held(budget, 60n, 0);
+        expect(() => budget.settle(hold, "0x1f" as unknown as bigint, 0)).toThrow("bigint");
         // Fails closed on the money: an unreadable charge is billed at the reservation,
         // never at zero. The hold is still released, so the window is not stranded.
         expect(budget.spentToday(0)).toBe(60n);

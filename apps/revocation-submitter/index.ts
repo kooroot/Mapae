@@ -585,7 +585,8 @@ async function submitSponsored(submission: ValidatedRevocationSubmission): Promi
         if (sponsorBalance < config.minBalance + reservation) {
             throw new SubmissionRefused("sponsor_unfunded", {}, 503);
         }
-        if (!budget!.reserve(reservation, now)) {
+        const hold = budget!.reserve(reservation, now);
+        if (!hold) {
             throw new SubmissionRefused("budget_exhausted", {}, 503);
         }
 
@@ -620,7 +621,7 @@ async function submitSponsored(submission: ValidatedRevocationSubmission): Promi
             }
             charged = prefund.shortfall + costOfReceipt(receipt, gasReservation);
         } finally {
-            budget!.settle(reservation, charged, Date.now());
+            budget!.settle(hold, charged, Date.now());
         }
     }
 

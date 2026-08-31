@@ -359,6 +359,17 @@ export interface BudgetStore {
     save(day: string, spentWei: bigint): void;
 }
 
+/**
+ * A live reservation: what is held, and the window that admitted it.
+ *
+ * The day travels with the hold because a settle can land in the next one, and the charge
+ * belongs to the ceiling the request was actually measured against.
+ */
+export interface BudgetHold {
+    readonly day: string;
+    readonly amount: bigint;
+}
+
 /** The budget's window key: the UTC calendar day `now` falls in. */
 export function budgetDay(now: number): string {
     return new Date(now).toISOString().slice(0, 10);
@@ -380,6 +391,11 @@ export function budgetDay(now: number): string {
  * one. Reservations are not persisted: a crash mid-broadcast under-counts by at most the
  * one reservation that was in flight, which is the bound the operator already accepted
  * by choosing a daily ceiling over a per-request one.
+ *
+ * Holds are counted against whatever day is current, not against the day that issued them,
+ * so a reservation left open across midnight briefly shrinks the new day's headroom. That
+ * error is conservative and clears itself on settle; charging the wrong day's *total* is
+ * the one that would not.
  */
 export class SpendBudget {
     #spent: bigint;
@@ -408,22 +424,55 @@ export class SpendBudget {
         this.store?.save(this.#day, this.#spent);
     }
 
-    /** Hold `amount` against the budget, or refuse. Always paired with {@link settle}. */
-    reserve(amount: bigint, now: number): boolean {
+    /**
+     * Hold `amount` against the budget, or refuse. Always paired with {@link settle}.
+     *
+     * @returns the hold to settle with, or `undefined` when the day has no room left.
+     */
+    reserve(amount: bigint, now: number): BudgetHold | undefined {
         this.#roll(now);
-        if (this.#spent + this.#reserved + amount > this.dailyLimitWei) return false;
+        if (this.#spent + this.#reserved + amount > this.dailyLimitWei) return undefined;
         this.#reserved += amount;
-        return true;
+        return {day: this.#day, amount};
+    }
+
+    #release(amount: bigint): void {
+        this.#reserved -= amount;
+        if (this.#reserved < 0n) this.#reserved = 0n;
     }
 
     /**
-     * Release a reservation, charging what was actually spent.
+     * Add `amount` to `day`'s total.
+     *
+     * Only the current day is in memory. A hold that outlived its window is charged
+     * straight through the store, where that day's total still lives; with no store the
+     * window is gone and there is nothing left to charge.
+     */
+    #charge(day: string, amount: bigint, now: number): void {
+        this.#roll(now);
+        if (day === this.#day) {
+            this.#spent += amount;
+            this.#persist();
+            return;
+        }
+        const store = this.store;
+        if (store) store.save(day, store.load(day) + amount);
+    }
+
+    /**
+     * Release a reservation, charging what was actually spent to the day that admitted it.
      *
      * A failed broadcast charges `0n` only when nothing was mined. A *reverted*
      * transaction still cost gas and must be charged, or a griefer whose deploys always
      * revert pays nothing and spends everything.
+     *
+     * The charge follows the hold's day, not the clock's. A deploy admitted at 23:59:50
+     * used to settle into the next day's total: the window that authorised the spend never
+     * recorded it, and the new day opened already spent. Both halves are wrong, and a
+     * caller who parks a request across midnight gets charged to a ceiling it was never
+     * measured against.
      */
-    settle(reserved: bigint, actual: bigint, now: number): void {
+    settle(hold: BudgetHold, actual: bigint, now: number): void {
         // Validate, never cast — and here the cast was two files away. `charged` was built
         // from a receipt field typed as bigint that arrives as a hex string, and
         // `bigint + string` concatenates, so one settle turned `#spent` into a string.
@@ -437,18 +486,12 @@ export class SpendBudget {
             // stranded for the rest of the window (`#roll` clears `#spent`, never
             // `#reserved`), and then be loud. A charge we cannot read is a charge we must
             // over-estimate, and a caller that produced one is a bug, not a request.
-            this.#roll(now);
-            this.#reserved -= reserved;
-            if (this.#reserved < 0n) this.#reserved = 0n;
-            this.#spent += reserved;
-            this.#persist();
+            this.#release(hold.amount);
+            this.#charge(hold.day, hold.amount, now);
             throw new Error("settle requires a bigint charge");
         }
-        this.#roll(now);
-        this.#reserved -= reserved;
-        if (this.#reserved < 0n) this.#reserved = 0n;
-        this.#spent += actual;
-        this.#persist();
+        this.#release(hold.amount);
+        this.#charge(hold.day, actual, now);
     }
 
     spentToday(now: number): bigint {

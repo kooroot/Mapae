@@ -671,7 +671,7 @@ async function main(): Promise<void> {
      * The faucet window and the daily budget were only ever exercised as classes. K repeats
      * a request at the target, which the window never sees, and two deploys run against a
      * budget that allows thousands, so `if (!faucetGate.allows(...)) throw` or
-     * `if (!budget.reserve(...)) throw` could become bare calls and nothing would notice —
+     * `if (!budget.reserve(...)) throw` could stop refusing and nothing would notice —
      * while the live griefing ceiling silently became the sponsor's whole balance. Both
      * cases below drive the service into the bound, which is the only way the wiring is
      * asserted at all.

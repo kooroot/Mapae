@@ -358,7 +358,8 @@ async function bootstrap(validated: ValidatedAccountBootstrap): Promise<Bootstra
     // where the gate passed and then every broadcast was refused by the node — the caller
     // got an opaque 502 instead of the `sponsor_unfunded` that tells the operator to top up.
     if (balance < MIN_SPONSOR_BALANCE + reservation) throw new Refused("sponsor_unfunded", 503);
-    if (!budget.reserve(reservation, Date.now())) throw new Refused("budget_exhausted", 503);
+    const hold = budget.reserve(reservation, Date.now());
+    if (!hold) throw new Refused("budget_exhausted", 503);
 
     let charged = 0n;
     try {
@@ -405,7 +406,7 @@ async function bootstrap(validated: ValidatedAccountBootstrap): Promise<Bootstra
             network: GIWA_SEPOLIA_CAIP2,
         };
     } finally {
-        budget.settle(reservation, charged, Date.now());
+        budget.settle(hold, charged, Date.now());
     }
 }
 
@@ -480,7 +481,8 @@ async function topUp(account: Address): Promise<Funding> {
     const reservation = MAX_MINT_GAS * MAX_FEE_PER_GAS;
     const sponsorBalance = await publicClient.getBalance({address: sponsor.address});
     if (sponsorBalance < MIN_SPONSOR_BALANCE + reservation) throw new Refused("sponsor_unfunded", 503);
-    if (!budget.reserve(reservation, now)) throw new Refused("budget_exhausted", 503);
+    const hold = budget.reserve(reservation, now);
+    if (!hold) throw new Refused("budget_exhausted", 503);
     let charged = 0n;
     try {
         const funded = await fund(account, plan.amount, reservation);
@@ -488,7 +490,7 @@ async function topUp(account: Address): Promise<Funding> {
         if (funded.hash === undefined) throw new Refused("bootstrap_unavailable", 502);
         return funded;
     } finally {
-        budget.settle(reservation, charged, Date.now());
+        budget.settle(hold, charged, Date.now());
     }
 }
 
