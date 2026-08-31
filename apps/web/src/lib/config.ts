@@ -2,7 +2,7 @@
 // runtime, which does not resolve in a browser bundle.
 import {parseActiveDeploymentArtifactJson} from "@mapae/delegation/config";
 import {explorerAddressUrl, explorerTxUrl, giwaSepolia} from "@mapae/shared";
-import {createPublicClient, http, type Address} from "viem";
+import {createPublicClient, http} from "viem";
 import frameworkArtifact from "../../../../deployments/giwa-sepolia.framework.json";
 import type {Locale} from "./i18n";
 

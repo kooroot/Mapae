@@ -1,8 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import {short, struckPercent} from "./dial";
 
-const START = 1_800_000_000n;
-
 describe("struckPercent", () => {
     test("nothing spent is zero, everything spent is a hundred", () => {
         expect(struckPercent(3_000_000n, 3_000_000n)).toBe(0);

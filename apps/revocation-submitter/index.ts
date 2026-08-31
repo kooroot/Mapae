@@ -633,7 +633,7 @@ async function carry(submission: ValidatedRevocationSubmission): Promise<RevokeR
     // Simulate before broadcasting. For a funded account this is where an
     // `AA24 signature error` surfaces; for the sponsored path the signature was already
     // answered by the account itself, and this still catches nonce reuse (`AA25`).
-    const simulation = await publicClient.simulateContract({
+    await publicClient.simulateContract({
         address: entryPoint,
         abi: EntryPointAbi,
         functionName: "handleOps",

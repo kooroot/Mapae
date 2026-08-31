@@ -1,4 +1,4 @@
-import {Link, createFileRoute} from "@tanstack/react-router";
+import {createFileRoute} from "@tanstack/react-router";
 import {Suspense, lazy, type ReactNode} from "react";
 import {InterfaceIcon, type InterfaceIconName} from "../brand/marks";
 import {Footer, Nav} from "../components/Shell";

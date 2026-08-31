@@ -57,12 +57,6 @@ const balanceOfAbi = [
     },
 ] as const;
 
-function readAddressEnv(name: string): Address {
-    const value = process.env[name]?.trim() ?? "";
-    if (!isAddress(value)) throw new Error(`${name} must be set to an address`);
-    return getAddress(value);
-}
-
 /** 정산 서명자의 전역 이름. RELAYER_ADDRESS는 폐기된 옛 철자로, 경고와 함께 읽힌다. */
 function readFacilitatorSignerEnv(): Address {
     const value =

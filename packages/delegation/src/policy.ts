@@ -5,7 +5,7 @@ import {
     type PermissionContext,
     type SmartAccountsEnvironment,
 } from "@metamask/smart-accounts-kit";
-import {createCaveatBuilder, encodeDelegations} from "@metamask/smart-accounts-kit/utils";
+import {createCaveatBuilder} from "@metamask/smart-accounts-kit/utils";
 import {getAddress, pad, type Address, type Hex} from "viem";
 import {MOCK_USDC, toTokenAmount} from "@mapae/shared";
 

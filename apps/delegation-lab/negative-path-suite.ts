@@ -65,7 +65,6 @@ import {
     parseEventLogs,
     publicActions,
     stringToHex,
-    toHex,
     zeroAddress,
     type Abi,
     type Account,
