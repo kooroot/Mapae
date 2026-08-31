@@ -151,10 +151,24 @@ export interface Orders {
     createOnce(order: OrderInput): Order;
 }
 
+/**
+ * The faucet's per-account windows on disk.
+ *
+ * Structurally the `FaucetWindowStore` that `@mapae/delegation`'s `FaucetGate` takes, so
+ * the gate keeps one code path and the service decides where its windows live.
+ */
+export interface FaucetWindows {
+    lastMintedAt(account: string): number | undefined;
+    record(account: string, at: number): void;
+    sweep(before: number): void;
+    count(): number;
+}
+
 export interface MapaeStore {
     readonly path: string;
     readonly ledger: Ledger;
     readonly budget: Budget;
+    readonly faucetWindows: FaucetWindows;
     readonly sellers: Sellers;
     readonly items: Items;
     readonly orders: Orders;
@@ -200,6 +214,20 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 function dayKey(value: unknown): string {
     if (typeof value !== "string" || !DAY.test(value)) {
         throw new TypeError("day must be YYYY-MM-DD");
+    }
+    return value;
+}
+
+const LOWER_ADDRESS = /^0x[0-9a-f]{40}$/;
+
+/**
+ * The faucet window's key. `FaucetGate` lowercases before it gets here, and the whole point
+ * of that is that one account cannot draw twice by re-casing its address — so a key that
+ * arrives mixed-case is a bug upstream, not a row to write.
+ */
+function accountKey(value: unknown): string {
+    if (typeof value !== "string" || !LOWER_ADDRESS.test(value)) {
+        throw new TypeError("account must be a lowercase 0x-prefixed address");
     }
     return value;
 }
@@ -322,6 +350,34 @@ function createBudget(db: Database): Budget {
         },
         save(day, spentWei) {
             upsert.run({day: dayKey(day), spentWei: amountText(spentWei, "spentWei")});
+        },
+    };
+}
+
+// ── Faucet windows ──────────────────────────────────────────────────────────────────
+
+function createFaucetWindows(db: Database): FaucetWindows {
+    const select = db.query<{minted_at: number}, Params>(
+        `SELECT minted_at FROM faucet_windows WHERE account = $account`,
+    );
+    const upsert = db.query<never, Params>(
+        `INSERT INTO faucet_windows (account, minted_at) VALUES ($account, $mintedAt)
+         ON CONFLICT (account) DO UPDATE SET minted_at = excluded.minted_at`,
+    );
+    const drop = db.query<never, Params>(`DELETE FROM faucet_windows WHERE minted_at <= $before`);
+    const total = db.query<{n: number}, []>(`SELECT COUNT(*) AS n FROM faucet_windows`);
+    return {
+        lastMintedAt(account) {
+            return select.get({account: accountKey(account)})?.minted_at;
+        },
+        record(account, at) {
+            upsert.run({account: accountKey(account), mintedAt: millis(at, "at")});
+        },
+        sweep(before) {
+            drop.run({before: millis(before, "before")});
+        },
+        count() {
+            return total.get()?.n ?? 0;
         },
     };
 }
@@ -495,6 +551,14 @@ function migrate(db: Database, path: string): void {
             `store ${path} is schema version ${current}; this build supports up to ${SCHEMA_VERSION}`,
         );
     }
+    if (current !== 0) {
+        // No ladder, by choice: this build creates the schema it knows and refuses the
+        // rest. Silently accepting an older file is worse — every query against a table
+        // it lacks fails later, one request at a time, far from the cause.
+        throw new Error(
+            `store ${path} is schema version ${current}; this build creates version ${SCHEMA_VERSION} and does not migrate — move the file aside`,
+        );
+    }
     // Version 0 is an empty file. Creation and the version stamp land together or not
     // at all, so a crash mid-way leaves a file the next start treats as fresh.
     db.transaction(() => {
@@ -529,6 +593,7 @@ export function openStore(path: string): MapaeStore {
         path,
         ledger: createLedger(db),
         budget: createBudget(db),
+        faucetWindows: createFaucetWindows(db),
         sellers: createSellers(db),
         items: createItems(db),
         orders: createOrders(db),

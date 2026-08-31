@@ -44,21 +44,68 @@ export function planTopUp(params: {balance: bigint; target: bigint}): bigint {
 }
 
 /**
+ * Where the per-account windows are kept.
+ *
+ * The gate holds no state of its own: an in-process `Map` and a SQLite table are the same
+ * four operations, so the service can persist windows without the gate growing a second
+ * code path. Keys arrive already lowercased — see {@link FaucetGate}.
+ */
+export interface FaucetWindowStore {
+    /** When `account` was last minted to, in epoch ms, or `undefined` if never. */
+    lastMintedAt(account: string): number | undefined;
+    /** Record a mint that landed. */
+    record(account: string, at: number): void;
+    /** Drop every window whose mint is at or before `before`. */
+    sweep(before: number): void;
+    /** How many windows are held. */
+    count(): number;
+}
+
+/** The default store: windows live as long as the process does. */
+export class InMemoryFaucetWindows implements FaucetWindowStore {
+    readonly #mintedAt = new Map<string, number>();
+
+    lastMintedAt(account: string): number | undefined {
+        return this.#mintedAt.get(account);
+    }
+
+    record(account: string, at: number): void {
+        this.#mintedAt.set(account, at);
+    }
+
+    sweep(before: number): void {
+        for (const [key, at] of this.#mintedAt) {
+            if (at <= before) this.#mintedAt.delete(key);
+        }
+    }
+
+    count(): number {
+        return this.#mintedAt.size;
+    }
+}
+
+/**
  * One successful top-up per account per rolling window.
  *
  * Deliberately two calls, `allows` then `record`, rather than a single try-consume: the
  * window must open from a mint that *landed*, not from an attempt. A gate consumed at
  * request time would lock an account out for a day after a reverted or unobserved mint,
  * which is the one outcome worse than minting twice on a testnet. Refusing consumes
- * nothing, so a stream of refused requests neither extends the window nor grows the map.
+ * nothing, so a stream of refused requests neither extends the window nor grows the store.
  *
  * Keys are lowercased so the same account cannot draw twice by varying the checksum
  * casing of its address.
+ *
+ * The windows belong in a {@link FaucetWindowStore} rather than in this object, because a
+ * bound that a restart clears is not a bound: an in-process map handed every account a
+ * fresh day on every deploy, and the operator's own restart was the cheapest way to drain
+ * the faucet. The default store keeps the old behaviour for callers that have no disk.
  */
 export class FaucetGate {
-    readonly #mintedAt = new Map<string, number>();
-
-    constructor(private readonly windowMs: number = FAUCET_WINDOW_MS) {
+    constructor(
+        private readonly windowMs: number = FAUCET_WINDOW_MS,
+        private readonly windows: FaucetWindowStore = new InMemoryFaucetWindows(),
+    ) {
         if (!Number.isInteger(windowMs) || windowMs < 1) {
             throw new Error("windowMs must be a positive integer");
         }
@@ -66,24 +113,22 @@ export class FaucetGate {
 
     /** True when `account` may be minted to at `now`. Never consumes. */
     allows(account: Address, now: number): boolean {
-        const last = this.#mintedAt.get(keyOf(account));
+        const last = this.windows.lastMintedAt(keyOf(account));
         return last === undefined || now - last >= this.windowMs;
     }
 
     /** Open a new window for `account`, dated from the mint that succeeded at `now`. */
     record(account: Address, now: number): void {
-        this.#mintedAt.set(keyOf(account), now);
+        this.windows.record(keyOf(account), now);
     }
 
-    /** Drop windows that have elapsed so a stream of distinct accounts cannot grow the map forever. */
+    /** Drop windows that have elapsed so a stream of distinct accounts cannot grow forever. */
     sweep(now: number): void {
-        for (const [key, at] of this.#mintedAt) {
-            if (now - at >= this.windowMs) this.#mintedAt.delete(key);
-        }
+        this.windows.sweep(now - this.windowMs);
     }
 
     get size(): number {
-        return this.#mintedAt.size;
+        return this.windows.count();
     }
 }
 

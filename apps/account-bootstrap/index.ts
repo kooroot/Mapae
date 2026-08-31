@@ -15,7 +15,12 @@ import {
     type AccountBootstrapPolicy,
     type ValidatedAccountBootstrap,
 } from "@mapae/delegation";
-import {FaucetGate, planTopUp, readFaucetConfig} from "@mapae/delegation/faucet-policy";
+import {
+    FAUCET_WINDOW_MS,
+    FaucetGate,
+    planTopUp,
+    readFaucetConfig,
+} from "@mapae/delegation/faucet-policy";
 import {openStore} from "@mapae/store";
 import {
     GIWA_SEPOLIA_CAIP2,
@@ -256,11 +261,12 @@ const sponsorClient = createWalletClient({
     transport: throttledHttp(RPC_URL),
 }).extend(publicActions);
 
-const faucetGate = new FaucetGate();
-// The day's charged gas lives in the store, so a redeploy resumes the budget instead of
-// resetting it — the one bound that is a real guarantee must not be a restart away.
+// The day's charged gas and the faucet's per-account windows live in the store, so a
+// redeploy resumes both instead of resetting them — a bound a restart clears is not a
+// bound, and the operator's own restart was the cheapest way to drain the faucet.
 const store = openStore(STORE_PATH);
 const budget = new SpendBudget(DAILY_BUDGET, Date.now(), store.budget);
+const faucetGate = new FaucetGate(FAUCET_WINDOW_MS, store.faucetWindows);
 const singleFlight = new PaymentIntentSingleFlight<BootstrapResponse>();
 
 const CORS_POLICY = {

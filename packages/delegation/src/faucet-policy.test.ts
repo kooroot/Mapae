@@ -4,6 +4,7 @@ import {
     FAUCET_TARGET_BASE,
     FAUCET_WINDOW_MS,
     FaucetGate,
+    InMemoryFaucetWindows,
     planTopUp,
     readFaucetConfig,
 } from "./faucet-policy.js";
@@ -81,6 +82,40 @@ describe("FaucetGate", () => {
         expect(gate.allows(ACCOUNT, T0 + FAUCET_WINDOW_MS)).toBe(true);
         expect(gate.allows(OTHER, T0 + FAUCET_WINDOW_MS)).toBe(false);
         gate.sweep(T0 + FAUCET_WINDOW_MS + 3_600_000);
+        expect(gate.size).toBe(0);
+    });
+
+    /**
+     * The bound has to outlive the process. While the windows were a field on the gate, a
+     * redeploy handed every account a fresh day, and the operator's own restart was the
+     * cheapest way to drain the faucet.
+     */
+    test("a gate rebuilt on the same store keeps every open window", () => {
+        const windows = new InMemoryFaucetWindows();
+        new FaucetGate(FAUCET_WINDOW_MS, windows).record(ACCOUNT, T0);
+
+        const restarted = new FaucetGate(FAUCET_WINDOW_MS, windows);
+        expect(restarted.allows(ACCOUNT, T0 + 1)).toBe(false);
+        expect(restarted.allows(ACCOUNT, T0 + FAUCET_WINDOW_MS)).toBe(true);
+        expect(restarted.allows(OTHER, T0 + 1)).toBe(true);
+        expect(restarted.size).toBe(1);
+    });
+
+    test("the store never sees a checksummed key, so re-casing cannot buy a second draw", () => {
+        const windows = new InMemoryFaucetWindows();
+        const gate = new FaucetGate(FAUCET_WINDOW_MS, windows);
+        gate.record(ACCOUNT, T0);
+        expect(windows.lastMintedAt(ACCOUNT.toLowerCase())).toBe(T0);
+        expect(windows.lastMintedAt(ACCOUNT)).toBeUndefined();
+    });
+
+    test("sweep hands the store a cutoff, not the clock", () => {
+        const windows = new InMemoryFaucetWindows();
+        const gate = new FaucetGate(FAUCET_WINDOW_MS, windows);
+        gate.record(ACCOUNT, T0);
+        gate.sweep(T0 + FAUCET_WINDOW_MS - 1);
+        expect(gate.size).toBe(1);
+        gate.sweep(T0 + FAUCET_WINDOW_MS);
         expect(gate.size).toBe(0);
     });
 

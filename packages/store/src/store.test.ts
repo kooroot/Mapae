@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe("openStore", () => {
-    test("creates schema version 1 on a fresh file and leaves it alone on reopen", () => {
+    test("creates the current schema version on a fresh file and leaves it alone on reopen", () => {
         const path = join(tempDir(), "store.sqlite");
         open(path).close();
         expect(rawUserVersion(path)).toBe(SCHEMA_VERSION);
@@ -59,6 +59,7 @@ describe("openStore", () => {
         db.close();
         expect(tables.map((row) => row.name)).toEqual([
             "budget_days",
+            "faucet_windows",
             "items",
             "orders",
             "sellers",
@@ -108,6 +109,19 @@ describe("openStore", () => {
         expect(second.sellers.get("cafe")).toEqual(seller);
         expect(second.items.listBySeller("cafe")).toEqual([item]);
         expect(second.orders.createOnce({...order, payer: CAROL})).toEqual(order);
+    });
+
+    test("refuses a store written by an older schema version rather than half-using it", () => {
+        const path = join(tempDir(), "stale.sqlite");
+        const db = new Database(path, {create: true, readwrite: true});
+        db.exec("CREATE TABLE budget_days (day TEXT PRIMARY KEY, spent_wei TEXT NOT NULL)");
+        db.exec(`PRAGMA user_version = ${SCHEMA_VERSION - 1}`);
+        db.close();
+
+        expect(() => openStore(path)).toThrow(
+            new RegExp(`schema version ${SCHEMA_VERSION - 1}.*does not migrate`),
+        );
+        expect(rawUserVersion(path)).toBe(SCHEMA_VERSION - 1);
     });
 
     test("refuses a store whose schema version is newer than this build", () => {
@@ -455,5 +469,62 @@ describe("orders", () => {
                 createdAt: T0,
             }),
         ).toThrow(TypeError);
+    });
+});
+
+describe("faucet windows", () => {
+    const LOWER = ALICE.toLowerCase();
+
+    test("round-trips a window and reports nothing for an account that never drew", () => {
+        const store = open();
+        expect(store.faucetWindows.lastMintedAt(LOWER)).toBeUndefined();
+
+        store.faucetWindows.record(LOWER, T0);
+        expect(store.faucetWindows.lastMintedAt(LOWER)).toBe(T0);
+        expect(store.faucetWindows.count()).toBe(1);
+
+        // A second mint moves the window rather than adding a row.
+        store.faucetWindows.record(LOWER, T0 + HOUR);
+        expect(store.faucetWindows.lastMintedAt(LOWER)).toBe(T0 + HOUR);
+        expect(store.faucetWindows.count()).toBe(1);
+    });
+
+    test("sweep drops windows at or before the cutoff and keeps the rest", () => {
+        const store = open();
+        store.faucetWindows.record(ALICE.toLowerCase(), T0);
+        store.faucetWindows.record(BOB.toLowerCase(), T0 + HOUR);
+        expect(store.faucetWindows.count()).toBe(2);
+
+        store.faucetWindows.sweep(T0);
+        expect(store.faucetWindows.count()).toBe(1);
+        expect(store.faucetWindows.lastMintedAt(ALICE.toLowerCase())).toBeUndefined();
+        expect(store.faucetWindows.lastMintedAt(BOB.toLowerCase())).toBe(T0 + HOUR);
+    });
+
+    /**
+     * The whole reason the windows are on disk: a restart used to hand every account a
+     * fresh day, which made the operator's own redeploy the cheapest way to drain the
+     * faucet.
+     */
+    test("a window survives closing and reopening the file", () => {
+        const path = join(tempDir(), "faucet.sqlite");
+        const first = open(path);
+        first.faucetWindows.record(LOWER, T0);
+        first.close();
+
+        expect(open(path).faucetWindows.lastMintedAt(LOWER)).toBe(T0);
+    });
+
+    test("refuses a key that is not a lowercase address, and a timestamp that is not epoch ms", () => {
+        const store = open();
+        // The gate lowercases before it gets here; a checksummed key means an upstream bug.
+        const mixed = "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa";
+        expect(() => store.faucetWindows.lastMintedAt(mixed)).toThrow(TypeError);
+        expect(() => store.faucetWindows.record(mixed, T0)).toThrow(TypeError);
+        expect(() => store.faucetWindows.record("0x1234", T0)).toThrow(TypeError);
+        expect(() => store.faucetWindows.record("alice", T0)).toThrow(TypeError);
+        expect(() => store.faucetWindows.record(LOWER, -1)).toThrow(TypeError);
+        expect(() => store.faucetWindows.record(LOWER, 1.5)).toThrow(TypeError);
+        expect(() => store.faucetWindows.sweep(-1)).toThrow(TypeError);
     });
 });

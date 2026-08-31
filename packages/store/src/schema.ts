@@ -1,5 +1,5 @@
 /**
- * Schema for `user_version` 1.
+ * Schema for `user_version` 2.
  *
  * The schema is the allowlist. Every column is something an operator may read back
  * later — identifiers, addresses, amounts, hashes, outcomes — and there is no column a
@@ -14,7 +14,7 @@
  * Constraints are named so the error a caller sees says which rule fired
  * (`CHECK constraint failed: items_kind`) instead of echoing the expression.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE settlement_events (
@@ -37,6 +37,14 @@ CREATE TABLE budget_days (
     day TEXT PRIMARY KEY,
     spent_wei TEXT NOT NULL
 );
+
+-- One row per account that drew from the faucet, dated from the mint that landed. The
+-- window has to outlive the process: a bound a restart clears is not a bound.
+CREATE TABLE faucet_windows (
+    account TEXT PRIMARY KEY,
+    minted_at INTEGER NOT NULL
+);
+CREATE INDEX faucet_windows_minted_at ON faucet_windows (minted_at);
 
 CREATE TABLE sellers (
     slug TEXT PRIMARY KEY,
