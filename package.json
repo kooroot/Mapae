@@ -25,6 +25,7 @@
     "check:mcp-stdio": "bun run scripts/check-mcp-stdio.ts",
     "check:advisories": "bun run scripts/check-advisories.ts",
     "check:counts": "bun run scripts/check-test-counts.ts",
+    "check:copy": "bun run scripts/check-copy-rules.ts",
     "verify:explorer": "bun run scripts/verify-explorer.ts",
     "test:web": "cd apps/web && bun test",
     "build:web": "cd apps/web && bun run build",
