@@ -48,7 +48,7 @@ Mapae는 실행 주체와 자금 소유자를 분리합니다.
 ```mermaid
 flowchart LR
     Owner["Account owner<br/>wallet"] -->|"pre-deployment<br/>signature"| Bootstrap["account-bootstrap<br/>sponsor gas"]
-    Bootstrap -->|"CREATE2 deploy<br/>+ mUSDC float"| Account["HybridDeleGator<br/>smart account"]
+    Bootstrap -->|"CREATE2 deploy<br/>+ tUSDC float"| Account["HybridDeleGator<br/>smart account"]
     Owner -->|"root delegation"| Account
     Account -->|"period / expiry / vendor caveats"| Session["Agent session key"]
     Session -->|"payment-specific ERC-7710 leaf"| Agent["AI agent"]
@@ -57,7 +57,7 @@ flowchart LR
     Agent -->|"Payment-Signature"| Seller
     Seller -->|"verify / settle"| Facilitator["ERC-7710 facilitator"]
     Facilitator -->|"redeemDelegations"| Manager["DelegationManager"]
-    Manager -->|"mUSDC.transfer"| Seller
+    Manager -->|"MockUSDC.transfer"| Seller
 ```
 
 Mapae에는 비교 가능한 두 결제 경로가 함께 있습니다.
@@ -86,16 +86,16 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
-- 위임 정산 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
-- 위임 정산 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
+- 위임 정산 1 tUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
+- 위임 정산 2.5 tUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - **에이전트 자율 정산**, MCP 1회 호출, 사람 개입 0:
   [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
-  — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer 가스 지출 0**.
+  — block 31634935, payer −1.00 tUSDC, vendor +1.00 tUSDC, **payer 가스 지출 0**.
   이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
   에이전트는 거절됐다는 답을 받았다. 아래 "settlement-unknown" 참조.
 - **스폰서드 온보딩**, 계정보다 먼저 만들어진 서명으로 계정 배포:
   배포 [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902),
-  mUSDC 민팅 [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
+  tUSDC 민팅 [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
   — 계정 [`0x1528…3301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301),
   배포 뒤 라이브 ERC-1271이 그 사전 서명에 `0x1626ba7e`를 답했다. 새 사용자의 가스
   지출은 0이고 ETH를 든 적도 없다.
@@ -321,7 +321,7 @@ bun run test:local
 이 시나리오는 공식 MetaMask Delegation Framework를 로컬 Anvil에 배포한 뒤
 다음을 실제 EVM에서 검증합니다.
 
-1. 3 mUSDC 주기 한도 안의 결제 3건 성공
+1. 3 tUSDC 주기 한도 안의 결제 3건 성공
 2. 같은 주기의 추가 결제 거절
 3. 고정 vendor가 아닌 수취인 거절
 
