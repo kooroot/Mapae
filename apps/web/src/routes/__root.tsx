@@ -58,8 +58,8 @@ export const Route = createRootRoute({
                   ko: "자산·금액·기간·수취인 경계를 지갑으로 승인하고, GIWA에서 에이전트 결제 권한과 정산 상태를 관리합니다.",
               })
             : pick(locale, {
-                  en: "Set the boundaries — asset, amount, period, recipient — and an AI agent pays within them over x402. The owner can revoke the authority at any time.",
-                  ko: "자산·금액·기간·수취인의 경계를 정하면 AI 에이전트가 그 안에서 x402로 결제합니다. 소유자는 언제든 권한을 회수할 수 있습니다.",
+                  en: "Accept x402 on GIWA with one line of Hono middleware, or a payment URL for a shop with no server. An AI agent pays within the boundaries its owner set — asset, amount, period, recipient — and the owner can revoke at any time.",
+                  ko: "Hono 미들웨어 한 줄로 GIWA에서 x402를 받고, 서버 없는 가게는 결제 URL 하나로 받습니다. AI 에이전트는 소유자가 정한 자산·금액·기간·수취인 경계 안에서 결제하고, 소유자는 언제든 권한을 회수할 수 있습니다.",
               });
 
         return {

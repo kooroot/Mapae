@@ -9,6 +9,7 @@ import {
     docsUrl,
     explorerTxUrl,
     refusalsFor,
+    sellerGuideUrl,
     settlements,
     siteSurface,
 } from "../lib/config";
@@ -78,7 +79,7 @@ const COPY: Record<
             titleLine2: string;
             sub: string;
             openStudio: string;
-            howItWorks: string;
+            sellerGuide: string;
         };
         authority: {
             titleA: string;
@@ -124,11 +125,11 @@ const COPY: Record<
     en: {
         studioLoadingAria: "Loading Mapae Studio",
         hero: {
-            titleLine1: "Don't hand over the authority.",
-            titleLine2: "Delegate its boundaries.",
-            sub: "Set the asset, amount, period, and recipient — the agent pays on its own within them. The owner can end it at any time.",
+            titleLine1: "Accept x402 on GIWA in one line.",
+            titleLine2: "No server? One form.",
+            sub: "Builders open a paid route with one line of Hono middleware; a shop with no server gets a payment URL instead. Customers order from a desktop agent and pick up in person. What arrives is tUSDC on GIWA Sepolia — testnet, not real money.",
             openStudio: "Open Studio",
-            howItWorks: "How it works",
+            sellerGuide: "Seller guide",
         },
         authority: {
             titleA: "What an agent needs",
@@ -174,11 +175,11 @@ const COPY: Record<
     ko: {
         studioLoadingAria: "Mapae Studio 불러오는 중",
         hero: {
-            titleLine1: "권한을 넘기지 말고,",
-            titleLine2: "경계를 위임하세요.",
-            sub: "자산·금액·기간·수취인을 정하면 에이전트가 그 안에서 스스로 결제합니다. 소유자는 언제든 끝낼 수 있습니다.",
+            titleLine1: "GIWA에서 x402 받기 = 마패 한 줄",
+            titleLine2: "서버가 없으면 폼 하나.",
+            sub: "빌더는 Hono 미들웨어 한 줄로 유료 경로를 열고, 서버 없는 가게는 결제 URL 하나를 받습니다. 손님은 데스크톱에서 시켜 두고 가게에서 찾습니다. 들어오는 것은 GIWA Sepolia의 tUSDC(테스트넷, 실제 돈 아님)입니다.",
             openStudio: "Studio 열기",
-            howItWorks: "작동 방식",
+            sellerGuide: "셀러 가이드",
         },
         authority: {
             titleA: "에이전트에게 필요한 건",
@@ -386,7 +387,7 @@ function Hero() {
         <section className="home-hero hero-action" aria-labelledby="hero-title">
             <div className="hero-action-sticky">
                 <div className="home-hero-copy">
-                    <span className="home-kicker">SCOPED PAYMENT AUTHORITY</span>
+                    <span className="home-kicker">AGENT PAYMENTS ON GIWA · TESTNET</span>
                     <h1 id="hero-title">
                         {t.titleLine1}
                         <strong>{t.titleLine2}</strong>
@@ -397,9 +398,14 @@ function Hero() {
                             {t.openStudio}
                             <span aria-hidden="true">↗</span>
                         </a>
-                        <a className="home-button home-button-secondary" href="#authority">
-                            {t.howItWorks}
-                            <span aria-hidden="true">↓</span>
+                        <a
+                            className="home-button home-button-secondary"
+                            href={sellerGuideUrl}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                        >
+                            {t.sellerGuide}
+                            <span aria-hidden="true">↗</span>
                         </a>
                     </div>
                 </div>

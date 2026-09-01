@@ -54,11 +54,11 @@
 .home-hero-copy h1 {
     display: grid;
     gap: 8px;
-    max-width: 11ch;
+    max-width: 17ch;
     margin-top: 24px;
     color: #f4f1eb;
     font-family: var(--sans);
-    font-size: clamp(54px, 5.8vw, 84px);
+    font-size: clamp(44px, 4.7vw, 68px);
     font-weight: 430;
     letter-spacing: -0.058em;
     line-height: 0.98;
@@ -984,7 +984,7 @@
     }
 
     .home-hero-copy h1 {
-        font-size: clamp(48px, 6vw, 68px);
+        font-size: clamp(38px, 5vw, 56px);
     }
 
     .home-section {
@@ -1041,10 +1041,10 @@
     }
 
     .home-hero-copy h1 {
-        max-width: 12ch;
+        max-width: 17ch;
         margin: 16px auto 0;
         gap: 3px;
-        font-size: clamp(34px, 10.4vw, 46px);
+        font-size: clamp(30px, 8.4vw, 40px);
         line-height: 1.06;
     }
 
@@ -1330,7 +1330,7 @@
     }
 
     .home-hero-copy h1 {
-        font-size: 34px;
+        font-size: 30px;
     }
 
     .home-hero-copy p {
