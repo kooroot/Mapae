@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-762%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-779%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -49,7 +49,7 @@ The current policy model supports:
 ```mermaid
 flowchart LR
     Owner["Account owner<br/>wallet"] -->|"pre-deployment<br/>signature"| Bootstrap["account-bootstrap<br/>sponsor gas"]
-    Bootstrap -->|"CREATE2 deploy<br/>+ tUSDC float"| Account["HybridDeleGator<br/>smart account"]
+    Bootstrap -->|"CREATE2 deploy<br/>+ mUSDC float"| Account["HybridDeleGator<br/>smart account"]
     Owner -->|"root delegation"| Account
     Account -->|"period / expiry / vendor caveats"| Session["Agent session key"]
     Session -->|"payment-specific ERC-7710 leaf"| Agent["AI agent"]
@@ -58,7 +58,7 @@ flowchart LR
     Agent -->|"Payment-Signature"| Seller
     Seller -->|"verify / settle"| Facilitator["ERC-7710 facilitator"]
     Facilitator -->|"redeemDelegations"| Manager["DelegationManager"]
-    Manager -->|"MockUSDC.transfer"| Seller
+    Manager -->|"mUSDC.transfer"| Seller
 ```
 
 The repository keeps two payment paths side by side:
@@ -87,17 +87,17 @@ a strong result, but nothing was mined and there is no link to follow.
 
 - MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
-- Delegated settlement, 1 tUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
-- Delegated settlement, 2.5 tUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
+- Delegated settlement, 1 mUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
+- Delegated settlement, 2.5 mUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
 - **Agent-driven settlement**, one MCP call, no human step:
   [`0x533c…9964c`](https://sepolia-explorer.giwa.io/tx/0x533c5cb2945b89c7a56abf681ef049124deb4daf141e1a52b280385cefd9964c)
-  — block 31634935, payer −1.00 tUSDC, vendor +1.00 tUSDC, **payer gas spend 0**.
+  — block 31634935, payer −1.00 mUSDC, vendor +1.00 mUSDC, **payer gas spend 0**.
   This run also surfaced a real defect and its fix is in the same tree: the answer the
   agent received said the payment had been rejected while it had in fact been mined. See
   "settlement-unknown" below.
 - **Sponsored onboarding**, account deployed from a signature that predates the account:
   deploy [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902),
-  tUSDC float mint [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
+  mUSDC float mint [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
   — account [`0x1528…3301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301),
   whose live ERC-1271 then answered `0x1626ba7e` for that pre-deployment signature.
   The new user paid no gas and never held ETH.
@@ -108,7 +108,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://docs.mapae.io).
-- Regression suite: **762 TypeScript tests (572 shared/delegation/seller/store/facilitator/scripts + 3 MCP + 154 web + 33 docs)
+- Regression suite: **779 TypeScript tests (589 shared/delegation/seller/store/facilitator/scripts + 3 MCP + 154 web + 33 docs)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
@@ -340,7 +340,7 @@ bun run test:local
 The scenario deploys the official MetaMask Delegation Framework to a disposable
 local Anvil chain and verifies:
 
-1. three successful 1 tUSDC payments under a 3 tUSDC period limit;
+1. three successful 1 mUSDC payments under a 3 mUSDC period limit;
 2. rejection of an additional payment in the same period; and
 3. rejection of a recipient outside the fixed-vendor policy.
 
