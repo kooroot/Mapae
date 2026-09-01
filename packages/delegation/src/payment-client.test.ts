@@ -19,7 +19,7 @@ const DELEGATOR = getAddress("0x5000000000000000000000000000000000000001");
 const PERMISSION_CONTEXT = `0x${"ab".repeat(64)}` as Hex;
 const TX = `0x${"cd".repeat(32)}` as Hex;
 
-const target = new URL("http://127.0.0.1:3001/delegated/deliverable/inv-001");
+const target = new URL("http://127.0.0.1:3001/s/demo-cafe/americano");
 
 function paymentRequired(facilitators: Address[] = [FACILITATOR]) {
     return {

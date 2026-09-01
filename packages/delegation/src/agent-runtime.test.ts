@@ -186,8 +186,8 @@ describe("judgePreflight", () => {
  */
 describe("resolveResourceTarget", () => {
     test("keeps an ordinary absolute path on the seller origin", () => {
-        const target = resolveResourceTarget(seller, "/delegated/deliverable/inv-001");
-        expect(target.toString()).toBe("http://127.0.0.1:3101/delegated/deliverable/inv-001");
+        const target = resolveResourceTarget(seller, "/s/demo-cafe/americano");
+        expect(target.toString()).toBe("http://127.0.0.1:3101/s/demo-cafe/americano");
     });
 
     test("preserves a query string", () => {

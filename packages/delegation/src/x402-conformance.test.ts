@@ -100,7 +100,7 @@ function sellerBody(): PaymentRequired<Erc7710PaymentRequirements> {
     return {
         x402Version: X402_VERSION,
         resource: {
-            url: "https://seller.mapae.io/delegated/deliverable/inv-001",
+            url: "https://seller.mapae.io/s/demo-cafe/americano",
             // Non-Latin-1 on purpose — the codec divergence a btoa-based encoder hides.
             description: "위임 결제 — 로고 시안",
             mimeType: "application/json",
@@ -241,7 +241,7 @@ describe("x402 conformance — full client loop against reference-built wire byt
             delegator: DELEGATOR,
         });
         const result = await payForDelegatedResource(
-            new URL("https://seller.mapae.io/delegated/deliverable/inv-001"),
+            new URL("https://seller.mapae.io/s/demo-cafe/americano"),
             {provider, delegationManager: MANAGER, trustedFacilitators: [FACILITATOR], fetchImpl: impl},
         );
 
