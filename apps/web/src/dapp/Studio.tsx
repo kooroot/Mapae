@@ -205,10 +205,10 @@ const COPY: Record<
             note: "This permission has not reached its start time. Payments made with it are rejected until then.",
         },
         balanceNote: (cap, balance) =>
-            `The cap is ${cap} mUSDC, but the payer account balance is ${balance} mUSDC. Fund the payer account with mUSDC to pay.`,
+            `The cap is ${cap} tUSDC, but the payer account balance is ${balance} tUSDC. Fund the payer account with tUSDC to pay.`,
         usageAria: "Current period usage",
-        spentLegend: (amount) => `Spent ${amount} mUSDC`,
-        capLegend: (amount) => `Cap ${amount} mUSDC`,
+        spentLegend: (amount) => `Spent ${amount} tUSDC`,
+        capLegend: (amount) => `Cap ${amount} tUSDC`,
         noCapCaveat: "This delegation has no period cap caveat.",
         metricsAria: "Key permission details",
         payerAccount: "Payer account",
@@ -236,7 +236,7 @@ const COPY: Record<
         emptyWindowTitle: "No settlements in this window.",
         emptyWindowNote: (fromBlock) =>
             `This does not necessarily mean no payment ever happened. The current window starts at block ${fromBlock}.`,
-        periodTotal: (amount) => `Period total ${amount} mUSDC`,
+        periodTotal: (amount) => `Period total ${amount} tUSDC`,
         revokedHeading: "This permission has already been revoked.",
         expiredHeading: "This permission has expired.",
         ownerOnlyHeading: "Only the owner can end this permission.",
@@ -316,10 +316,10 @@ const COPY: Record<
             note: "이 권한은 아직 시작 시각에 도달하지 않았습니다. 그때까지의 결제는 거부됩니다.",
         },
         balanceNote: (cap, balance) =>
-            `한도는 ${cap} mUSDC이지만 지불 계정 잔액이 ${balance} mUSDC입니다. 결제하려면 지불 계정에 mUSDC를 채워 주세요.`,
+            `한도는 ${cap} tUSDC이지만 지불 계정 잔액이 ${balance} tUSDC입니다. 결제하려면 지불 계정에 tUSDC를 채워 주세요.`,
         usageAria: "현재 주기 사용률",
-        spentLegend: (amount) => `사용 ${amount} mUSDC`,
-        capLegend: (amount) => `한도 ${amount} mUSDC`,
+        spentLegend: (amount) => `사용 ${amount} tUSDC`,
+        capLegend: (amount) => `한도 ${amount} tUSDC`,
         noCapCaveat: "이 위임에는 주기 한도 caveat이 없습니다.",
         metricsAria: "권한 핵심 정보",
         payerAccount: "지불 계정",
@@ -347,7 +347,7 @@ const COPY: Record<
         emptyWindowTitle: "이 조회 구간에는 정산이 없습니다.",
         emptyWindowNote: (fromBlock) =>
             `이는 결제가 한 번도 없었다는 뜻이 아닐 수 있습니다. 현재 창은 블록 ${fromBlock}부터 시작합니다.`,
-        periodTotal: (amount) => `주기 누적 ${amount} mUSDC`,
+        periodTotal: (amount) => `주기 누적 ${amount} tUSDC`,
         revokedHeading: "이 권한은 이미 회수되었습니다.",
         expiredHeading: "이 권한은 만료되었습니다.",
         ownerOnlyHeading: "소유자만 권한을 끝낼 수 있습니다.",
@@ -776,7 +776,7 @@ function Overview({
                             </p>
                             <div className="studio-amount" data-halted={!live}>
                                 <strong>{fromTokenAmount(verdict.spendable)}</strong>
-                                <span>mUSDC</span>
+                                <span>tUSDC</span>
                             </div>
                             {verdict.limitedBy === "halted" && halt ? (
                                 // Why the number is zero. Without it the card reads as an
@@ -1009,7 +1009,7 @@ function ActivityView({receipts}: {receipts: ReadState<ReceiptWindow>}) {
                                     <div>
                                         <strong>
                                             {receipt.amount !== undefined
-                                                ? `${fromTokenAmount(receipt.amount)} mUSDC`
+                                                ? `${fromTokenAmount(receipt.amount)} tUSDC`
                                                 : t.periodTotal(
                                                       fromTokenAmount(
                                                           receipt.transferredInCurrentPeriod,

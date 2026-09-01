@@ -590,7 +590,7 @@ export function GrantOnboarding({
                                         placeholder="25"
                                         onChange={(event) => update("amount", event.target.value)}
                                     />
-                                    <span>mUSDC</span>
+                                    <span>tUSDC</span>
                                 </div>
                             </Field>
                             <Field
@@ -950,7 +950,7 @@ function GrantPreview({
                 </div>
                 <div>
                     <dt>{t.previewPeriodCap}</dt>
-                    <dd>{amount === "—" ? amount : `${amount} mUSDC`}</dd>
+                    <dd>{amount === "—" ? amount : `${amount} tUSDC`}</dd>
                 </div>
                 <div>
                     <dt>{t.previewPeriod}</dt>

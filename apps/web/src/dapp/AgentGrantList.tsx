@@ -259,7 +259,7 @@ export function AgentGrantList({
                                         </dt>
                                         <dd>
                                             {grant.amount !== undefined
-                                                ? `${fromTokenAmount(grant.amount)} mUSDC`
+                                                ? `${fromTokenAmount(grant.amount)} tUSDC`
                                                 : t.readFromChain}
                                         </dd>
                                     </div>

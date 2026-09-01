@@ -70,13 +70,13 @@ export {explorerAddressUrl, explorerTxUrl};
 /** Settled payments, each linkable. Amounts are what the seller charged. */
 export const settlements = [
     {
-        label: "에이전트 결제 · 1 mUSDC",
-        labelEn: "Delegated payment · 1 mUSDC",
+        label: "에이전트 결제 · 1 tUSDC",
+        labelEn: "Delegated payment · 1 tUSDC",
         hash: "0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d",
     },
     {
-        label: "에이전트 결제 · 2.5 mUSDC",
-        labelEn: "Delegated payment · 2.5 mUSDC",
+        label: "에이전트 결제 · 2.5 tUSDC",
+        labelEn: "Delegated payment · 2.5 tUSDC",
         hash: "0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4",
     },
     {

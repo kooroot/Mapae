@@ -2522,7 +2522,7 @@ a.studio-metric:hover {
 }
 
 /* Delegate field: the generate action is inlaid in the input, mirroring the
-   mUSDC suffix pattern — one control, not a detached box beside the grid. */
+   tUSDC suffix pattern — one control, not a detached box beside the grid. */
 .studio-delegate-row {
     position: relative;
 }
