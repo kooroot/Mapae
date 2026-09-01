@@ -72,9 +72,10 @@ export interface MapaeOptions {
     fetch?: (input: string, init?: RequestInit) => Promise<Response>;
     /**
      * The origin buyers reach this server at — `https://shop.example`, with no path,
-     * query or trailing slash. When set, a 402's `resource.url` is `baseUrl + c.req.path`
-     * instead of the URL the request arrived on, so a server behind a tunnel or a reverse
-     * proxy advertises its public address rather than `http://127.0.0.1:3000/…`.
+     * query or trailing slash. When set, a 402's `resource.url` is `baseUrl` plus the
+     * request's path (query dropped) instead of the URL the request arrived on, so a
+     * server behind a tunnel or a reverse proxy advertises its public address rather
+     * than `http://127.0.0.1:3000/…`.
      */
     baseUrl?: string;
 }
@@ -228,7 +229,7 @@ function parseFacilitatorUrl(value: string): string {
     return url.toString().replace(/\/$/, "");
 }
 
-/** An origin and nothing else, so `baseUrl + c.req.path` is always a well-formed URL. */
+/** An origin and nothing else, so `baseUrl` plus a request path is always a well-formed URL. */
 function parseBaseUrl(value: string): string {
     const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {

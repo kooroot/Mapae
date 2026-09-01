@@ -11,7 +11,10 @@
 // `npm install <tgz> hono viem` → `node server.mjs` (node-smoke-server.mjs, copied in): a
 // node:http stub facilitator answering /supported with the GIWA ERC-7710 kind, a Hono app
 // with two paywalls (two different payTo) and the derived manifest, driven through
-// `app.request()`. Exit 0 only when every assertion in the server held.
+// `app.request()`. Asserted there: an unpaid request answers 402 with the erc7710 offer
+// and a `resource.url` built from `baseUrl`; `GET /.well-known/mapae.json` lists both
+// paywalls, each with its own payTo. The Node version is printed. Exit 0 only when every
+// assertion held.
 //
 // The children run with NODE_OPTIONS cleared: a preload or flag inherited from the caller's
 // shell must not shape what "runs under node" means here.
