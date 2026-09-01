@@ -1,9 +1,0 @@
-{
-  "name": "@mapae/agent",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@mapae/shared": "workspace:*",
-    "viem": "^2.55.8"
-  }
-}

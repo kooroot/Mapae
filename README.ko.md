@@ -436,11 +436,9 @@ contracts/                 MockUSDC + exact Framework Forge 배포
 facilitator/               x402-rs GIWA configuration
 packages/shared/           chain, token, x402 v2 types, error model
 packages/delegation/       policies, signing, revocation, ERC-7710 boundary
-apps/agent/                EIP-3009 payer agent
-apps/seller/               EIP-3009 x402 seller
 apps/delegation-lab/       policy scenarios and deployment previews
 apps/delegated-agent/      ERC-7710 payment agent
-apps/delegated-seller/     ERC-7710 resource seller
+apps/delegated-seller/     ERC-7710 호스티드 상점: 매니페스트·유료 티켓·주문
 apps/facilitator-erc7710/  delegated settlement adapter
 apps/agent-mcp/            요청 시 리소스를 결제하는 MCP 서버
 apps/revocation-submitter/ 서명된 회수를 실어 나르는 loopback 엔드포인트

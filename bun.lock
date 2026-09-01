@@ -22,13 +22,6 @@
         "viem": "^2.55.8",
       },
     },
-    "apps/agent": {
-      "name": "@mapae/agent",
-      "dependencies": {
-        "@mapae/shared": "workspace:*",
-        "viem": "^2.55.8",
-      },
-    },
     "apps/agent-mcp": {
       "name": "@mapae/agent-mcp",
       "dependencies": {
@@ -98,14 +91,6 @@
         "@mapae/delegation": "workspace:*",
         "@mapae/shared": "workspace:*",
         "@metamask/delegation-abis": "1.1.0",
-        "hono": "^4",
-        "viem": "^2.55.8",
-      },
-    },
-    "apps/seller": {
-      "name": "@mapae/seller-eip3009",
-      "dependencies": {
-        "@mapae/shared": "workspace:*",
         "hono": "^4",
         "viem": "^2.55.8",
       },
@@ -398,8 +383,6 @@
 
     "@mapae/account-bootstrap": ["@mapae/account-bootstrap@workspace:apps/account-bootstrap"],
 
-    "@mapae/agent": ["@mapae/agent@workspace:apps/agent"],
-
     "@mapae/agent-mcp": ["@mapae/agent-mcp@workspace:apps/agent-mcp"],
 
     "@mapae/delegated-agent": ["@mapae/delegated-agent@workspace:apps/delegated-agent"],
@@ -417,8 +400,6 @@
     "@mapae/revocation-submitter": ["@mapae/revocation-submitter@workspace:apps/revocation-submitter"],
 
     "@mapae/seller": ["@mapae/seller@workspace:packages/seller"],
-
-    "@mapae/seller-eip3009": ["@mapae/seller-eip3009@workspace:apps/seller"],
 
     "@mapae/shared": ["@mapae/shared@workspace:packages/shared"],
 
