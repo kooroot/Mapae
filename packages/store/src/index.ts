@@ -21,7 +21,8 @@ export const IN_MEMORY = ":memory:";
 
 export type HexString = `0x${string}`;
 export type SettlementOutcome = "settled" | "rejected" | "error";
-export type ItemKind = "hosted" | "external";
+/** Where a seller's items are served from: the hosted shop, or the seller's own `baseUrl`. */
+export type SellerKind = "hosted" | "external";
 
 export interface SettlementEventInput {
     /** Epoch milliseconds. */
@@ -76,32 +77,49 @@ export interface Budget {
 
 export interface SellerInput {
     slug: string;
+    kind: SellerKind;
     name: string;
     payTo: HexString;
+    /** Where an `external` seller serves from; must be absent for a `hosted` one (`sellers_base_url`). */
+    baseUrl?: string | null;
+    /** sha256 of the seller's manage token as lowercase hex; `null` while the seller has none. */
+    manageTokenHash?: string | null;
+    contact?: string | null;
+    /** The operator's own sellers, hidden from the public list on request. */
+    internal: boolean;
     createdAt: number;
 }
 
 export interface Seller {
     slug: string;
+    kind: SellerKind;
     name: string;
     payTo: HexString;
+    baseUrl: string | null;
+    manageTokenHash: string | null;
+    contact: string | null;
+    internal: boolean;
     createdAt: number;
 }
 
 export interface Sellers {
-    /** Insert, or update `name` and `payTo` of an existing slug — `createdAt` is kept. */
+    /** Insert, or update every column but `createdAt` of an existing slug. */
     upsert(seller: SellerInput): Seller;
     get(slug: string): Seller | null;
-    /** Oldest first, slug as the tiebreak. */
-    list(): Seller[];
+    /** The seller whose manage token hashes to `hash` (lowercase sha256 hex), if any. */
+    getByManageTokenHash(hash: string): Seller | null;
+    /** Oldest first, slug as the tiebreak; `includeInternal: false` hides the operator's own. */
+    list(options?: {includeInternal?: boolean}): Seller[];
 }
 
 export interface ItemInput {
     sellerSlug: string;
+    /** URL-safe and unique within the seller — the item's segment in the shop's routes. */
+    key: string;
     name: string;
+    description: string;
     priceBase: bigint;
-    kind: ItemKind;
-    /** Where an `external` item is served from; `null` for a hosted one. */
+    /** Where an external seller's item is served from; `null` for a hosted one. */
     resourceUrl?: string | null;
     createdAt: number;
 }
@@ -109,21 +127,28 @@ export interface ItemInput {
 export interface Item {
     id: number;
     sellerSlug: string;
+    key: string;
     name: string;
+    description: string;
     priceBase: bigint;
-    kind: ItemKind;
     resourceUrl: string | null;
     createdAt: number;
 }
 
 export interface Items {
-    create(item: ItemInput): Item;
+    /**
+     * Insert, or update name, description, price and resource URL of the seller's
+     * existing `key` — `id` and `createdAt` are kept.
+     */
+    upsert(item: ItemInput): Item;
+    get(sellerSlug: string, key: string): Item | null;
     /** In insertion order. */
     listBySeller(slug: string): Item[];
 }
 
 export interface OrderInput {
-    itemId: number;
+    sellerSlug: string;
+    itemKey: string;
     paymentIntentId: HexString;
     payer: HexString;
     amountBase: bigint;
@@ -134,7 +159,8 @@ export interface OrderInput {
 
 export interface Order {
     id: number;
-    itemId: number;
+    sellerSlug: string;
+    itemKey: string;
     paymentIntentId: HexString;
     payer: HexString;
     amountBase: bigint;
@@ -143,12 +169,22 @@ export interface Order {
     createdAt: number;
 }
 
+export interface OrderSummary {
+    total: number;
+    /** Order count per seller slug; only sellers with at least one order appear. */
+    bySeller: Record<string, number>;
+}
+
 export interface Orders {
     /**
      * Insert the order, or return the one already stored for this `paymentIntentId`.
      * The second delivery of one payment is the same ticket, never a new row.
      */
     createOnce(order: OrderInput): Order;
+    /** Newest first. */
+    listBySeller(slug: string, options?: {limit?: number}): Order[];
+    /** Orders with `createdAt >= sinceMs`; pass `0` for all time. */
+    summary(window: {sinceMs: number}): OrderSummary;
 }
 
 /**
@@ -209,6 +245,12 @@ function positiveInteger(value: unknown, name: string): number {
     return value;
 }
 
+/** A boolean as SQLite stores it — `sellers_internal` refuses anything but 0 and 1. */
+function flag(value: unknown, name: string): number {
+    if (typeof value !== "boolean") throw new TypeError(`${name} must be a boolean`);
+    return value ? 1 : 0;
+}
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function dayKey(value: unknown): string {
@@ -232,14 +274,33 @@ function accountKey(value: unknown): string {
     return value;
 }
 
-/** URL-safe: the slug is a route segment for the hosted shop. */
+/** URL-safe: a seller's slug and an item's key are both route segments of the hosted shop. */
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-function slugKey(value: unknown): string {
+function slugKey(value: unknown, name = "slug"): string {
     if (typeof value !== "string" || !SLUG.test(value)) {
-        throw new TypeError("slug must be 1–64 lowercase letters, digits or hyphens");
+        throw new TypeError(`${name} must be 1–64 lowercase letters, digits or hyphens`);
     }
     return value;
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * A manage token's sha256 as lowercase hex, checked on the write and on the lookup alike.
+ * The column is UNIQUE and the lookup is an equality, so a hash stored in another case
+ * or as bytes would simply never be found; refusing the shape here keeps that failure at
+ * the caller instead of a seller that silently cannot log in.
+ */
+function tokenHash(value: unknown): string {
+    if (typeof value !== "string" || !SHA256_HEX.test(value)) {
+        throw new TypeError("manageTokenHash must be 64 lowercase hex characters (sha256)");
+    }
+    return value;
+}
+
+function optionalTokenHash(value: string | null | undefined): string | null {
+    return value === null || value === undefined ? null : tokenHash(value);
 }
 
 // ── Ledger ──────────────────────────────────────────────────────────────────────────
@@ -386,35 +447,64 @@ function createFaucetWindows(db: Database): FaucetWindows {
 
 interface SellerRow {
     slug: string;
+    kind: string;
     name: string;
     pay_to: string;
+    base_url: string | null;
+    manage_token_hash: string | null;
+    contact: string | null;
+    internal: number;
     created_at: number;
 }
 
 function toSeller(row: SellerRow): Seller {
     return {
         slug: row.slug,
+        kind: row.kind as SellerKind,
         name: row.name,
         payTo: row.pay_to as HexString,
+        baseUrl: row.base_url,
+        manageTokenHash: row.manage_token_hash,
+        contact: row.contact,
+        internal: row.internal === 1,
         createdAt: row.created_at,
     };
 }
 
 function createSellers(db: Database): Sellers {
     const upsert = db.query<SellerRow, Params>(
-        `INSERT INTO sellers (slug, name, pay_to, created_at)
-         VALUES ($slug, $name, $payTo, $createdAt)
-         ON CONFLICT (slug) DO UPDATE SET name = excluded.name, pay_to = excluded.pay_to
+        `INSERT INTO sellers
+            (slug, kind, name, pay_to, base_url, manage_token_hash, contact, internal, created_at)
+         VALUES ($slug, $kind, $name, $payTo, $baseUrl, $manageTokenHash, $contact, $internal, $createdAt)
+         ON CONFLICT (slug) DO UPDATE SET
+            kind = excluded.kind,
+            name = excluded.name,
+            pay_to = excluded.pay_to,
+            base_url = excluded.base_url,
+            manage_token_hash = excluded.manage_token_hash,
+            contact = excluded.contact,
+            internal = excluded.internal
          RETURNING *`,
     );
     const select = db.query<SellerRow, Params>(`SELECT * FROM sellers WHERE slug = $slug`);
+    const byTokenHash = db.query<SellerRow, Params>(
+        `SELECT * FROM sellers WHERE manage_token_hash = $hash`,
+    );
     const all = db.query<SellerRow, []>(`SELECT * FROM sellers ORDER BY created_at, slug`);
+    const publicOnly = db.query<SellerRow, []>(
+        `SELECT * FROM sellers WHERE internal = 0 ORDER BY created_at, slug`,
+    );
     return {
         upsert(seller) {
             const row = upsert.get({
                 slug: slugKey(seller.slug),
+                kind: seller.kind,
                 name: seller.name,
                 payTo: seller.payTo,
+                baseUrl: seller.baseUrl ?? null,
+                manageTokenHash: optionalTokenHash(seller.manageTokenHash),
+                contact: seller.contact ?? null,
+                internal: flag(seller.internal, "internal"),
                 createdAt: millis(seller.createdAt, "createdAt"),
             });
             if (!row) throw new Error("sellers upsert returned no row");
@@ -424,8 +514,12 @@ function createSellers(db: Database): Sellers {
             const row = select.get({slug: slugKey(slug)});
             return row ? toSeller(row) : null;
         },
-        list() {
-            return all.all().map(toSeller);
+        getByManageTokenHash(hash) {
+            const row = byTokenHash.get({hash: tokenHash(hash)});
+            return row ? toSeller(row) : null;
+        },
+        list({includeInternal = true} = {}) {
+            return (includeInternal ? all : publicOnly).all().map(toSeller);
         },
     };
 }
@@ -435,9 +529,10 @@ function createSellers(db: Database): Sellers {
 interface ItemRow {
     id: number;
     seller_slug: string;
+    key: string;
     name: string;
+    description: string;
     price_base: string;
-    kind: string;
     resource_url: string | null;
     created_at: number;
 }
@@ -446,35 +541,52 @@ function toItem(row: ItemRow): Item {
     return {
         id: row.id,
         sellerSlug: row.seller_slug,
+        key: row.key,
         name: row.name,
+        description: row.description,
         priceBase: BigInt(row.price_base),
-        kind: row.kind as ItemKind,
         resourceUrl: row.resource_url,
         createdAt: row.created_at,
     };
 }
 
 function createItems(db: Database): Items {
-    const insert = db.query<ItemRow, Params>(
-        `INSERT INTO items (seller_slug, name, price_base, kind, resource_url, created_at)
-         VALUES ($sellerSlug, $name, $priceBase, $kind, $resourceUrl, $createdAt)
+    const upsert = db.query<ItemRow, Params>(
+        `INSERT INTO items (seller_slug, key, name, description, price_base, resource_url, created_at)
+         VALUES ($sellerSlug, $key, $name, $description, $priceBase, $resourceUrl, $createdAt)
+         ON CONFLICT (seller_slug, key) DO UPDATE SET
+            name = excluded.name,
+            description = excluded.description,
+            price_base = excluded.price_base,
+            resource_url = excluded.resource_url
          RETURNING *`,
+    );
+    const select = db.query<ItemRow, Params>(
+        `SELECT * FROM items WHERE seller_slug = $sellerSlug AND key = $key`,
     );
     const bySeller = db.query<ItemRow, Params>(
         `SELECT * FROM items WHERE seller_slug = $slug ORDER BY id`,
     );
     return {
-        create(item) {
-            const row = insert.get({
-                sellerSlug: slugKey(item.sellerSlug),
+        upsert(item) {
+            const row = upsert.get({
+                sellerSlug: slugKey(item.sellerSlug, "sellerSlug"),
+                key: slugKey(item.key, "key"),
                 name: item.name,
+                description: item.description,
                 priceBase: amountText(item.priceBase, "priceBase"),
-                kind: item.kind,
                 resourceUrl: item.resourceUrl ?? null,
                 createdAt: millis(item.createdAt, "createdAt"),
             });
-            if (!row) throw new Error("items insert returned no row");
+            if (!row) throw new Error("items upsert returned no row");
             return toItem(row);
+        },
+        get(sellerSlug, key) {
+            const row = select.get({
+                sellerSlug: slugKey(sellerSlug, "sellerSlug"),
+                key: slugKey(key, "key"),
+            });
+            return row ? toItem(row) : null;
         },
         listBySeller(slug) {
             return bySeller.all({slug: slugKey(slug)}).map(toItem);
@@ -486,7 +598,8 @@ function createItems(db: Database): Items {
 
 interface OrderRow {
     id: number;
-    item_id: number;
+    seller_slug: string;
+    item_key: string;
     payment_intent_id: string;
     payer: string;
     amount_base: string;
@@ -498,7 +611,8 @@ interface OrderRow {
 function toOrder(row: OrderRow): Order {
     return {
         id: row.id,
-        itemId: row.item_id,
+        sellerSlug: row.seller_slug,
+        itemKey: row.item_key,
         paymentIntentId: row.payment_intent_id as HexString,
         payer: row.payer as HexString,
         amountBase: BigInt(row.amount_base),
@@ -511,18 +625,27 @@ function toOrder(row: OrderRow): Order {
 function createOrders(db: Database): Orders {
     const insert = db.query<OrderRow, Params>(
         `INSERT INTO orders
-            (item_id, payment_intent_id, payer, amount_base, tx_hash, status, created_at)
-         VALUES ($itemId, $paymentIntentId, $payer, $amountBase, $txHash, $status, $createdAt)
+            (seller_slug, item_key, payment_intent_id, payer, amount_base, tx_hash, status, created_at)
+         VALUES ($sellerSlug, $itemKey, $paymentIntentId, $payer, $amountBase, $txHash, $status, $createdAt)
          ON CONFLICT (payment_intent_id) DO NOTHING
          RETURNING *`,
     );
     const byIntent = db.query<OrderRow, Params>(
         `SELECT * FROM orders WHERE payment_intent_id = $paymentIntentId`,
     );
+    const bySeller = db.query<OrderRow, Params>(
+        `SELECT * FROM orders WHERE seller_slug = $slug
+         ORDER BY created_at DESC, id DESC LIMIT $limit`,
+    );
+    const counts = db.query<{seller_slug: string; n: number}, Params>(
+        `SELECT seller_slug, COUNT(*) AS n FROM orders
+         WHERE created_at >= $since GROUP BY seller_slug ORDER BY seller_slug`,
+    );
     return {
         createOnce(order) {
             const inserted = insert.get({
-                itemId: positiveInteger(order.itemId, "itemId"),
+                sellerSlug: slugKey(order.sellerSlug, "sellerSlug"),
+                itemKey: slugKey(order.itemKey, "itemKey"),
                 paymentIntentId: order.paymentIntentId,
                 payer: order.payer,
                 amountBase: amountText(order.amountBase, "amountBase"),
@@ -536,6 +659,20 @@ function createOrders(db: Database): Orders {
             const existing = byIntent.get({paymentIntentId: order.paymentIntentId});
             if (!existing) throw new Error("orders: duplicate intent vanished before read");
             return toOrder(existing);
+        },
+        listBySeller(slug, {limit = 100} = {}) {
+            return bySeller
+                .all({slug: slugKey(slug), limit: positiveInteger(limit, "limit")})
+                .map(toOrder);
+        },
+        summary({sinceMs}) {
+            const bySeller: Record<string, number> = {};
+            let total = 0;
+            for (const {seller_slug, n} of counts.all({since: millis(sinceMs, "sinceMs")})) {
+                bySeller[seller_slug] = n;
+                total += n;
+            }
+            return {total, bySeller};
         },
     };
 }
