@@ -17,7 +17,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && bun build src/index.ts --outdir dist --target node --format esm --external hono --external viem",
-    "test": "bun test src"
+    "test": "bun test src",
+    "smoke:node": "bun scripts/node-smoke.mjs"
   },
   "peerDependencies": {
     "hono": ">=4.13.0",
