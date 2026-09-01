@@ -2,7 +2,9 @@ import {Hono, type Context} from "hono";
 import {DelegationManager} from "@metamask/smart-accounts-kit/contracts";
 import {
     PaymentIntentSingleFlight,
+    SpendBudget,
     buildDelegatedTransfer,
+    costOfReceipt,
     parseActiveDeploymentArtifactJson,
     readRenamedEnv,
     parseFrameworkDeploymentManifestJson,
@@ -85,7 +87,7 @@ function readRelayerAddress(): Address {
     return address;
 }
 
-function readPositiveInteger(name: string, fallback: number): bigint {
+function readPositiveInteger(name: string, fallback: bigint): bigint {
     const raw = process.env[name]?.trim() || String(fallback);
     if (!/^[1-9]\d*$/.test(raw)) throw new Error(`${name} must be a positive integer`);
     return BigInt(raw);
@@ -148,7 +150,7 @@ const METRICS_TOKEN = readMetricsToken(process.env.METRICS_TOKEN);
 // Measured on anvil, and one property of that measurement did not transfer: anvil's
 // `eth_estimateGas` returned the exact `gasUsed` on all twelve, so the broadcast below
 // carries no slack over the estimate. Whether GIWA's node is equally tight is unverified.
-const MAX_REDEMPTION_GAS = readPositiveInteger("MAX_REDEMPTION_GAS", 1_500_000);
+const MAX_REDEMPTION_GAS = readPositiveInteger("MAX_REDEMPTION_GAS", 1_500_000n);
 // Configurable like the other limits, and lowering it is how the broadcast-but-
 // unconfirmed path gets exercised without waiting a minute for a real stall.
 //
@@ -160,7 +162,14 @@ const MAX_REDEMPTION_GAS = readPositiveInteger("MAX_REDEMPTION_GAS", 1_500_000);
 // 25 s is not tight. GIWA Sepolia produces a block every 1.00 s (measured across
 // 31634888→31634935), and settlement waits for a single confirmation, so the real cost is
 // the throttled RPC round trips rather than the chain.
-const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOUT_MS", 25_000));
+const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOUT_MS", 25_000n));
+// The relayer's own money is the one thing the on-chain caveats do not bound: every
+// redemption is paid for in the relayer's gas, and a payer holding a valid grant can
+// ask for as many as the grant allows. The daily ceiling is the operator's number for
+// the worst day — the same default as the bootstrap sponsor, 0.0005 ETH, about 1,500
+// steady-state redemptions at 1 gwei. The day's total lives in the store, so a restart
+// resumes it instead of opening a second budget.
+const RELAYER_DAILY_WEI = readPositiveInteger("RELAYER_DAILY_WEI", 500_000_000_000_000n);
 // The nonce manager serializes nonce assignment per address. Without it, two concurrent
 // /settle calls for different payment intents each read eth_getTransactionCount(pending)
 // independently and can pick the same nonce — one broadcast then replaces the other in the
@@ -180,6 +189,7 @@ const manager = getAddress(deployment.environment.DelegationManager);
 // After the signer and the artifacts, so a misconfigured boot fails before a ledger
 // file is created for nothing.
 const store = openStore(STORE_PATH);
+const budget = new SpendBudget(RELAYER_DAILY_WEI, Date.now(), store.budget);
 
 const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
 const facilitatorClient = createWalletClient({
@@ -187,6 +197,8 @@ const facilitatorClient = createWalletClient({
     chain: giwaSepolia,
     transport: throttledHttp(RPC_URL),
 }).extend(publicActions);
+
+type Receipt = Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
 
 class FrameworkReadinessGate {
     #cachedUntil: number;
@@ -275,6 +287,19 @@ class SettlementNotCredited extends Error {
     }
 }
 
+/**
+ * Raised when the day's relayer gas budget has no room for this redemption. Nothing was
+ * broadcast and nobody was charged — a rejection like a simulation revert, but with its
+ * own code so the operator can tell "the payer's grant is bad" from "our wallet is done
+ * for the day" in the ledger and the seller can tell the buyer to try again later.
+ */
+class BudgetExhausted extends Error {
+    constructor() {
+        super("relayer daily gas budget exhausted");
+        this.name = "BudgetExhausted";
+    }
+}
+
 interface SettlementFailure {
     outcome: "rejected" | "error";
     errorCode: string;
@@ -285,12 +310,12 @@ interface SettlementFailure {
  * One classification for both consumers of a failed settlement — the wire response and
  * the ledger row — so the two can never disagree about what happened.
  *
- * `rejected`: nobody was charged (validation, simulation revert, gas cap). `error`: the
- * chain was touched and the answer is unknown (SETTLEMENT_UNCONFIRMED — broadcast,
- * receipt not seen) or wrong (`vendor_not_credited` — mined, allowance consumed, the
- * recipient not paid). Both send the seller's ladder to "failed" and withhold the
- * resource; both carry the hash when there is one, because an operator has to be able
- * to find a transaction that consumed allowance without paying anybody.
+ * `rejected`: nobody was charged (validation, simulation revert, gas cap, budget).
+ * `error`: the chain was touched and the answer is unknown (SETTLEMENT_UNCONFIRMED —
+ * broadcast, receipt not seen) or wrong (`vendor_not_credited` — mined, allowance
+ * consumed, the recipient not paid). Both send the seller's ladder to "failed" and
+ * withhold the resource; both carry the hash when there is one, because an operator has
+ * to be able to find a transaction that consumed allowance without paying anybody.
  */
 function describeFailure(error: unknown): SettlementFailure {
     if (error instanceof SettlementUnconfirmed) {
@@ -302,6 +327,9 @@ function describeFailure(error: unknown): SettlementFailure {
     }
     if (error instanceof SettlementNotCredited) {
         return {outcome: "error", errorCode: "vendor_not_credited", transaction: error.transaction};
+    }
+    if (error instanceof BudgetExhausted) {
+        return {outcome: "rejected", errorCode: "budget_exhausted", transaction: null};
     }
     return {outcome: "rejected", errorCode: "delegation_rejected", transaction: null};
 }
@@ -395,41 +423,13 @@ class SettlementCoordinator {
 
     /** Broadcast (or resume) the redemption and wait for a receipt that credited the vendor. */
     async #redeem(payment: ValidatedDelegatedPayment): Promise<{hash: Hex; gasUsed: bigint}> {
-        let hash = this.#broadcastTransactions.get(payment.paymentIntentId)?.hash;
-        if (!hash) {
-            const {request, gas} = await this.#prepareRedemption(payment);
-            // `#prepareRedemption` provably did not broadcast, so its throws are genuine
-            // rejections. `writeContract` is the one ambiguous step: it prepares, signs,
-            // and sends in a single call, so a lost response after the node accepted the
-            // transaction rejects here while the transfer will still mine. Reporting that
-            // as `delegation_rejected` would tell the payer they were not charged and
-            // invite a retry that signs a fresh leaf and pays twice — the exact
-            // unknown-vs-failed collapse SETTLEMENT_UNCONFIRMED exists to prevent, which
-            // was being enforced only one step later at the receipt wait. A same-intent
-            // retry is safe regardless: the leaf's one-shot ERC20TransferAmountEnforcer
-            // reverts a second redemption of the identical context.
-            try {
-                hash = await facilitatorClient.writeContract({...request, gas});
-            } catch {
-                throw new SettlementUnconfirmed();
-            }
-            // Save before waiting. A receipt timeout must never trigger a duplicate broadcast.
-            this.#rememberBroadcast(payment.paymentIntentId, hash);
-        }
-
-        let receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
-        try {
-            receipt = await publicClient.waitForTransactionReceipt({
-                hash,
-                confirmations: 1,
-                timeout: RECEIPT_TIMEOUT_MS,
-            });
-        } catch {
-            // The transaction is already on the network; only our wait gave up.
-            // Collapsing this into the generic rejection would tell the seller the
-            // payer was not charged, which is exactly what nobody knows yet.
-            throw new SettlementUnconfirmed(hash);
-        }
+        const remembered = this.#broadcastTransactions.get(payment.paymentIntentId)?.hash;
+        // A remembered hash was already charged to the budget by the attempt that
+        // broadcast it — its whole reservation, since no receipt was seen — so resuming
+        // it reserves nothing and charges nothing more.
+        const receipt = remembered
+            ? await this.#awaitReceipt(remembered)
+            : await this.#broadcast(payment);
         if (receipt.status !== "success") throw new Error("redemption transaction reverted");
         // Status "success" only says the call did not revert. The enforcers constrain
         // calldata and consume allowance but never prove the recipient was credited —
@@ -445,11 +445,91 @@ class SettlementCoordinator {
         });
         if (discrepancies.length > 0) {
             throw new SettlementNotCredited(
-                hash,
+                receipt.transactionHash,
                 discrepancies.map((problem) => problem.detail).join("; "),
             );
         }
-        return {hash, gasUsed: receipt.gasUsed};
+        return {hash: receipt.transactionHash, gasUsed: receipt.gasUsed};
+    }
+
+    /**
+     * Price the redemption, hold its worst case against the day's budget, broadcast, and
+     * settle what the receipt says it cost.
+     *
+     * Ordering as in account-bootstrap: everything that can refuse without spending runs
+     * before the reservation; the reservation lands before the broadcast so two
+     * concurrent intents cannot both spend the last of the day; and the settle is in a
+     * `finally`, so every exit returns the hold exactly once. What is charged depends on
+     * how far the broadcast got — nothing when no hash came back, the whole reservation
+     * when a hash did but its receipt did not, and the receipt's own cost when it did.
+     */
+    async #broadcast(payment: ValidatedDelegatedPayment): Promise<Receipt> {
+        const {request, gas} = await this.#prepareRedemption(payment);
+        const {maxFeePerGas, maxPriorityFeePerGas} = await publicClient.estimateFeesPerGas();
+        // The node's own upfront rule is `balance >= gas * maxFeePerGas`, and the same
+        // product is what the day is asked for. The fees go to the broadcast unchanged,
+        // so the reservation is the most that transaction can cost in execution gas.
+        const hold = budget.reserve(gas * maxFeePerGas, Date.now());
+        if (!hold) throw new BudgetExhausted();
+        let charged = 0n;
+        try {
+            let hash: Hex;
+            // `#prepareRedemption` provably did not broadcast, so its throws are genuine
+            // rejections. `writeContract` is the one ambiguous step: it prepares, signs,
+            // and sends in a single call, so a lost response after the node accepted the
+            // transaction rejects here while the transfer will still mine. Reporting that
+            // as `delegation_rejected` would tell the payer they were not charged and
+            // invite a retry that signs a fresh leaf and pays twice — the exact
+            // unknown-vs-failed collapse SETTLEMENT_UNCONFIRMED exists to prevent, which
+            // was being enforced only one step later at the receipt wait. A same-intent
+            // retry is safe regardless: the leaf's one-shot ERC20TransferAmountEnforcer
+            // reverts a second redemption of the identical context.
+            try {
+                // The call is the simulated one, field by field rather than spread: the
+                // simulated request is typed over every fee variant, and spreading it
+                // beside an EIP-1559 pair is a union the type checker cannot pick from.
+                hash = await facilitatorClient.writeContract({
+                    address: request.address,
+                    abi: request.abi,
+                    functionName: request.functionName,
+                    args: request.args,
+                    gas,
+                    maxFeePerGas,
+                    maxPriorityFeePerGas,
+                });
+            } catch {
+                throw new SettlementUnconfirmed();
+            }
+            // The relayer's gas is committed the moment the node returns a hash. Until a
+            // receipt says otherwise the charge is the whole reservation: a receipt
+            // timeout leaves the day over-counted, never under-counted, and settling 0
+            // for a broadcast we merely failed to observe is how a daily cap quietly
+            // stops bounding anything.
+            charged = hold.amount;
+            // Save before waiting. A receipt timeout must never trigger a duplicate broadcast.
+            this.#rememberBroadcast(payment.paymentIntentId, hash);
+            const receipt = await this.#awaitReceipt(hash);
+            // A reverted redemption still burned its gas and is charged like a mined one.
+            charged = costOfReceipt(receipt, hold.amount);
+            return receipt;
+        } finally {
+            budget.settle(hold, charged, Date.now());
+        }
+    }
+
+    async #awaitReceipt(hash: Hex): Promise<Receipt> {
+        try {
+            return await publicClient.waitForTransactionReceipt({
+                hash,
+                confirmations: 1,
+                timeout: RECEIPT_TIMEOUT_MS,
+            });
+        } catch {
+            // The transaction is already on the network; only our wait gave up.
+            // Collapsing this into the generic rejection would tell the seller the
+            // payer was not charged, which is exactly what nobody knows yet.
+            throw new SettlementUnconfirmed(hash);
+        }
     }
 }
 
@@ -481,6 +561,9 @@ app.get("/health", async (c) => {
     const relayerBalance = await publicClient
         .getBalance({address: relayer.address})
         .catch(() => undefined);
+    // The remaining budget is deliberately not here. /health is public through the
+    // proxy, and "how much gas is left today" is a targeting number for anyone deciding
+    // whether draining the day is worth it; it is reported behind /metrics' token.
     return c.json({
         ok: Boolean(framework) && relayerBalance !== undefined && relayerBalance > 0n,
         network: GIWA_SEPOLIA_CAIP2,
@@ -511,7 +594,7 @@ app.get("/metrics", (c) => {
         c.header("WWW-Authenticate", 'Bearer realm="metrics"');
         return c.json({error: "unauthorized"}, 401);
     }
-    return c.json(metricsReport(store.ledger, Date.now()));
+    return c.json(metricsReport(store.ledger, Date.now(), budget, RELAYER_DAILY_WEI));
 });
 
 app.post("/verify", async (c) => {
@@ -535,6 +618,10 @@ app.post("/verify", async (c) => {
     }
 });
 
+// Every failure, budget exhaustion included, is a 200 with `success: false` and an
+// `errorReason`. The seller's client treats any non-2xx as "the answer was lost" and
+// tells the buyer the payment is *unknown* — the one thing a refusal that broadcast
+// nothing must never be called. The status code is transport here; the body is the claim.
 app.post("/settle", async (c) => {
     try {
         await readiness.verify();
@@ -592,6 +679,7 @@ console.log(`  network ${GIWA_SEPOLIA_CAIP2}`);
 console.log(`  manager ${manager}`);
 console.log(`  signer  ${relayer.address}`);
 console.log(`  store   ${STORE_PATH}`);
+console.log(`  budget  ${RELAYER_DAILY_WEI} wei/day (RELAYER_DAILY_WEI)`);
 console.log(`  metrics ${METRICS_TOKEN === undefined ? "disabled (METRICS_TOKEN unset)" : "enabled"}`);
 
 export default {hostname: HOST, port: PORT, fetch: app.fetch};

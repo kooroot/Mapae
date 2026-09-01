@@ -1,11 +1,13 @@
 /**
- * `/metrics` — the operator's view of the settlement ledger, and the guard in front of it.
+ * `/metrics` — the operator's view of the settlement ledger and the relayer's gas budget,
+ * and the guard in front of it.
  *
  * Pure, so it is provable without booting the facilitator (which needs a signer, a
  * deployment artifact and a reachable RPC). `index.ts` owns the HTTP wiring and the
  * status codes; this module owns the decisions.
  */
 import {createHash, timingSafeEqual} from "node:crypto";
+import {budgetDay, type SpendBudget} from "@mapae/delegation";
 import type {Ledger, LedgerSummary} from "@mapae/store";
 
 const DAY_MS = 86_400_000;
@@ -61,14 +63,49 @@ export function summaryJson(summary: LedgerSummary): SummaryJson {
     };
 }
 
+/**
+ * The relayer's daily gas budget as three independent readings, in wei as decimal
+ * strings. `remainingWei` also subtracts reservations still in flight, which
+ * `spentWei` does not yet include, so `limit - spent` and `remaining` differ while a
+ * settlement is mid-broadcast; and `spentWei` can exceed `limitWei` when the last
+ * receipt cost more than its reservation (the OP-Stack L1 fee is not in the estimate),
+ * in which case `remainingWei` is `"0"`.
+ */
+export interface BudgetJson {
+    /** The UTC calendar day the figures belong to, `YYYY-MM-DD`. */
+    day: string;
+    limitWei: string;
+    spentWei: string;
+    remainingWei: string;
+}
+
 export interface MetricsReport {
     last24h: SummaryJson;
     allTime: SummaryJson;
+    budget: BudgetJson;
 }
 
-export function metricsReport(ledger: Pick<Ledger, "summary">, now: number): MetricsReport {
+/** The two readings `/metrics` takes from the relayer's `SpendBudget`. */
+export type BudgetGauge = Pick<SpendBudget, "spentToday" | "remaining">;
+
+/**
+ * `limitWei` is the ceiling `budget` was constructed with; the budget does not expose
+ * it, and the report has to state it so the two other figures can be read.
+ */
+export function metricsReport(
+    ledger: Pick<Ledger, "summary">,
+    now: number,
+    budget: BudgetGauge,
+    limitWei: bigint,
+): MetricsReport {
     return {
         last24h: summaryJson(ledger.summary({sinceMs: Math.max(0, now - DAY_MS)})),
         allTime: summaryJson(ledger.summary({sinceMs: 0})),
+        budget: {
+            day: budgetDay(now),
+            limitWei: limitWei.toString(),
+            spentWei: budget.spentToday(now).toString(),
+            remainingWei: budget.remaining(now).toString(),
+        },
     };
 }
