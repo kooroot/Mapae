@@ -74,7 +74,7 @@ delegated seller listening on 127.0.0.1:3001
 ## 3. 사전점검 — 읽기 전용
 
 ```bash
-cd apps/delegation-lab && bun run preflight:giwa inv-001
+cd apps/delegation-lab && bun run preflight:giwa /s/demo-cafe/americano
 ```
 
 조건이 **전부** ✅ 여야 다음으로 간다. 조건 개수는 스크립트가 스스로 세어

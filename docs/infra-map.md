@@ -189,7 +189,7 @@ sequenceDiagram
     participant F as facilitator-erc7710
     participant D as DelegationManager
 
-    A->>S: GET /deliverable
+    A->>S: GET /s/:slug/:key
     S-->>A: 402 + Payment-Required 헤더
     A->>A: 부모 permission에서 결제 전용 leaf 서명
     A->>S: Payment-Signature
