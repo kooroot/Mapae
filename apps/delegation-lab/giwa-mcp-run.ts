@@ -43,9 +43,9 @@ import type {Address, Hex, PublicClient} from "viem";
 const REPO = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
 
 const BROADCAST = process.argv.includes("--broadcast");
-const INVOICE = process.argv.find((a) => /^inv-\d+$/.test(a)) ?? "inv-001";
-const RESOURCE = `/delegated/deliverable/${INVOICE}`;
-const PRICES: Record<string, string> = {"inv-001": "1.00", "inv-002": "2.50"};
+const RESOURCE = process.argv.find((a) => a.startsWith("/s/")) ?? "/s/demo-cafe/americano";
+/** 시드된 상점의 가격표(`apps/delegated-seller/seed.ts`). */
+const PRICES: Record<string, string> = {"/s/demo-cafe/americano": "1.00", "/s/demo-cafe/croissant": "2.50"};
 
 /** 이 스크립트가 한 번에 정산해도 되는 절대 상한. caveat이 진짜 통제지만, 사고는 여기서도 막는다. */
 const HARD_CEILING = toTokenAmount("3.00");
@@ -107,8 +107,8 @@ function report(label: string, before: bigint, after: bigint, fmt: (v: bigint) =
 }
 
 async function main(): Promise<void> {
-    const price = PRICES[INVOICE];
-    if (!price) throw new Error(`unknown invoice ${INVOICE}`);
+    const price = PRICES[RESOURCE];
+    if (!price) throw new Error(`unknown resource ${RESOURCE}`);
     const amount = toTokenAmount(price);
     if (amount > HARD_CEILING) {
         throw new Error(`${price} exceeds this script's ${fromTokenAmount(HARD_CEILING)} ceiling`);
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
 
     console.log(`\n[run] GIWA Sepolia · ${new URL(rpcUrl).host}`);
     console.log(`[run] ${BROADCAST ? "⚠️  실제 브로드캐스트" : "드라이런 (--broadcast 없음)"}`);
-    console.log(`[run] ${INVOICE} = ${price} mUSDC · ${payer.slice(0, 10)}… → ${vendor.slice(0, 10)}…\n`);
+    console.log(`[run] ${RESOURCE} = ${price} mUSDC · ${payer.slice(0, 10)}… → ${vendor.slice(0, 10)}…\n`);
 
     const before = await snapshot(publicClient, payer, vendor, relayer, readRemaining);
     console.log(`[run] before  block ${before.block} · 주기 잔량 ${before.remaining === undefined ? "n/a" : fromTokenAmount(before.remaining)} mUSDC`);
@@ -259,7 +259,7 @@ async function main(): Promise<void> {
 
     const evidence = {
         network: "eip155:91342",
-        invoice: INVOICE,
+        resource: RESOURCE,
         amount: price,
         payer, vendor, relayer,
         transaction: txHash,

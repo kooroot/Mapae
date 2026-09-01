@@ -11,7 +11,7 @@
  * 각자 자기 스크립트가 잘못된 대상에 붙는 것을 막는다.
  *
  * 사용:
- *   cd apps/delegation-lab && bun run preflight:giwa [inv-001]
+ *   cd apps/delegation-lab && bun run preflight:giwa [/s/demo-cafe/americano]
  */
 import {
     parseActiveDeploymentArtifactJson,
@@ -37,9 +37,9 @@ import type {Address, Hex, PublicClient} from "viem";
 
 const REPO = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
 
-/** 판매자가 붙여둔 가격표. 사전점검은 이 금액이 통과하는지를 묻는다. */
-const PRICES: Record<string, string> = {"inv-001": "1.00", "inv-002": "2.50"};
-const INVOICE = process.argv[2] ?? "inv-001";
+/** 시드된 상점의 가격표(`apps/delegated-seller/seed.ts`). 사전점검은 이 금액이 통과하는지를 묻는다. */
+const PRICES: Record<string, string> = {"/s/demo-cafe/americano": "1.00", "/s/demo-cafe/croissant": "2.50"};
+const RESOURCE = process.argv[2] ?? "/s/demo-cafe/americano";
 
 /** 브로드캐스트에 드는 가스의 상한 추정 — relayer 잔고 판정에만 쓴다. */
 const REDEMPTION_GAS_CEILING = 1_500_000n;
@@ -74,8 +74,8 @@ async function probe(url: URL): Promise<Response | undefined> {
 }
 
 async function main(): Promise<void> {
-    const price = PRICES[INVOICE];
-    if (!price) throw new Error(`unknown invoice ${INVOICE} — expected one of ${Object.keys(PRICES).join(", ")}`);
+    const price = PRICES[RESOURCE];
+    if (!price) throw new Error(`unknown resource ${RESOURCE} — expected one of ${Object.keys(PRICES).join(", ")}`);
     const amount = toTokenAmount(price);
 
     const rpcUrl = assertRpcTarget(
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     }) as PublicClient;
 
     console.log(`\n[preflight] GIWA Sepolia · ${new URL(rpcUrl).host} · 읽기 전용`);
-    console.log(`[preflight] 대상 결제: ${INVOICE} = ${price} mUSDC\n`);
+    console.log(`[preflight] 대상 결제: ${RESOURCE} = ${price} mUSDC\n`);
 
     const [block, deployment, manifest, permission] = await Promise.all([
         publicClient.getBlock(),
@@ -245,7 +245,7 @@ async function main(): Promise<void> {
     }
 
     const sellerUrl = new URL(process.env.SELLER_URL?.trim() || "http://127.0.0.1:3001");
-    const offer = await probe(new URL(`/delegated/deliverable/${INVOICE}`, sellerUrl));
+    const offer = await probe(new URL(RESOURCE, sellerUrl));
     if (!offer) {
         record(false, "seller", `${sellerUrl.host} 응답 없음 — 실행 전에 띄울 것`);
     } else if (offer.status !== 402) {
