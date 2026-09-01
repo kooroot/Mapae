@@ -324,7 +324,7 @@ export function validateGrantDraft(draft: GrantDraft, locale: Locale = "en"): Gr
  *   the answer needs no balance read and no period arithmetic.
  * - the balance — the enforcer caps how much may leave the account; it says nothing about
  *   how much is in it. Showing the cap alone is how a freshly bootstrapped account displays
- *   "3 mUSDC available" over a zero balance: the first payment then dies inside the token
+ *   "3 tUSDC available" over a zero balance: the first payment then dies inside the token
  *   transfer rather than at the enforcer, and the user reads "settlement failed" when the
  *   true answer is "you have not funded this account".
  * - the cap itself, once neither of the above binds.

@@ -14,7 +14,7 @@ import type {Locale} from "./i18n";
  * is an outcome, not an error — it is the policy working, and a person who reads it as a
  * failure will retry until it is one.
  *
- * Copy rule: the token is always "tUSDC (testnet, not real money)", never bare "USDC".
+ * Copy rule: the token is always "tUSDC (testnet, not real money)", never the bare ticker.
  * The wallet shows a dollar sign, and nobody reading fast should have to wonder.
  */
 export type TopUpOutcome =
