@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --filter @mapae/seller build && bun run --hot index.ts"
+    "dev": "bun run --filter @mapae/seller build && bun run --hot index.ts",
+    "seed": "bun run seed.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@mapae/seller": "workspace:*",
     "@mapae/shared": "workspace:*",
+    "@mapae/store": "workspace:*",
     "hono": "^4",
     "viem": "^2.55.8"
   }
