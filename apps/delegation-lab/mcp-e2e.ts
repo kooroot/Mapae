@@ -1,7 +1,11 @@
 /**
  * D5 완료판정 증명 — MCP tool 한 번 호출로 사람 개입 0으로 완주.
  *
- *   402 → 한도 안에서 leaf 서명 → facilitator 정산 → 리소스 + tx
+ *   402 → 한도 안에서 leaf 서명 → facilitator 정산 → 티켓 + tx
+ *
+ * 판매자는 호스티드 상점이다: 임시 STORE_PATH에 데모 상점을 시드하고, 아메리카노를
+ * 두 번, 같은 값의 로고 시안을 한 번 산 뒤 주문 장부를 상점 파일에서 직접 읽어
+ * 세 주문이 서로 다른 intent로 적혔는지 확인한다.
  *
  * GIWA Sepolia를 fork한 로컬 Anvil에서 실행한다. fork는 chainId 91342를 유지하므로
  * 실제 Framework/MockUSDC 바이트코드와 이미 서명된 root permission이 그대로 유효하다.
@@ -31,6 +35,10 @@ import {startForkSourceProxy} from "./fork-source-proxy";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
 import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
+import {Database} from "bun:sqlite";
+import {mkdtempSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {
     createPublicClient,
     defineChain,
@@ -54,8 +62,18 @@ const SELLER_PORT = 3101;
 const FORK_RPC = `http://127.0.0.1:${ANVIL_PORT}`;
 const FACILITATOR_URL = `http://127.0.0.1:${FACILITATOR_PORT}`;
 const SELLER_URL = `http://127.0.0.1:${SELLER_PORT}`;
-const RESOURCE = process.argv[2] ?? "/delegated/deliverable/inv-001";
 const REPO = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
+
+/**
+ * The seeded shops (`apps/delegated-seller/seed.ts`). The cap arithmetic below is
+ * written against these prices: three 1.00 payments fill a 3.0/60s cap exactly, and
+ * the 2.50 croissant is the request that cannot fit afterwards.
+ */
+const AMERICANO = "/s/demo-cafe/americano";
+/** Same price and same payTo as the americano — the intent differs only by the leaf. */
+const LOGO = "/s/demo-studio/logo";
+const CROISSANT = "/s/demo-cafe/croissant";
+const ONE_TUSDC_BASE = "1000000";
 
 /** Refuse to run at all unless every child will be pinned to a local node. */
 const assertLoopbackRpc = (value: string): string =>
@@ -94,6 +112,12 @@ async function waitFor(
 const children: {name: string; proc: Bun.Subprocess}[] = [];
 /** Loopback listeners this run owns — closed alongside the children on any exit path. */
 const listeners: {stop(): void}[] = [];
+/** The temp directory holding this run's store file — removed with the children. */
+let storeDir: string | undefined;
+
+function childEnv(overrides: Record<string, string>): Record<string, string> {
+    return {PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...overrides};
+}
 
 function spawnApp(
     name: string,
@@ -104,7 +128,7 @@ function spawnApp(
     // The child loads its own .env for addresses and keys; these overrides win.
     const proc = Bun.spawn([process.execPath, "run", entry], {
         cwd,
-        env: {PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env},
+        env: childEnv(env),
         stdout: "pipe",
         stderr: "pipe",
     });
@@ -146,6 +170,7 @@ function shutdown(): void {
             /* already closed */
         }
     }
+    if (storeDir) rmSync(storeDir, {recursive: true, force: true});
 }
 
 // Without this an interrupted run leaves anvil, the facilitator and the seller
@@ -227,14 +252,16 @@ async function loadForkContext(forkRpc: string) {
 }
 
 /**
- * Hold until a cap period has enough life left for both payments below.
+ * Seconds until the root permission's current cap period ends, or `undefined` when
+ * the permission carries no period cap (or it has not started).
  *
- * The over-cap proof assumes the 1.0 payment and the later 2.5 request fall in the
- * same 60s window. Wall-clock seconds pass between them, so a run that starts near
- * a boundary would see the allowance reset, settle the payment that was supposed to
- * be refused, and fail on an assertion that was never about the code under test.
+ * A fork mines only when something is sent, so the head block's timestamp — the clock
+ * the enforcer reads — lags wall time by however long the run has idled. An empty
+ * block pins it to now before the arithmetic; otherwise a reading taken after the
+ * services booted would overstate what is left by the boot time.
  */
-async function awaitFreshPeriod(forkRpc: string, marginSeconds: number): Promise<void> {
+async function periodSecondsLeft(forkRpc: string): Promise<number | undefined> {
+    await rpc(forkRpc, "evm_mine");
     const {publicClient, deployment, root} = await loadForkContext(forkRpc);
     const status = await readDelegationStatus({
         publicClient,
@@ -242,15 +269,41 @@ async function awaitFreshPeriod(forkRpc: string, marginSeconds: number): Promise
         delegation: root,
     });
     const limit = status.limit;
-    if (!limit || limit.periodDuration === 0n) return;
+    if (!limit || limit.periodDuration === 0n) return undefined;
 
     const {timestamp} = await publicClient.getBlock();
-    if (timestamp < limit.startDate) return;
+    if (timestamp < limit.startDate) return undefined;
     const elapsed = (timestamp - limit.startDate) % limit.periodDuration;
-    const left = Number(limit.periodDuration - elapsed);
-    if (left > marginSeconds) return;
+    return Number(limit.periodDuration - elapsed);
+}
 
+/**
+ * Hold until a cap period has at least `neededSeconds` of life left.
+ *
+ * The over-cap proof assumes the three 1.0 payments and the later 2.5 request fall in
+ * the same 60s window. Wall-clock seconds pass between them, so a run that starts near
+ * a boundary would see the allowance reset, settle the payment that was supposed to
+ * be refused, and fail on an assertion that was never about the code under test.
+ */
+async function awaitFreshPeriod(forkRpc: string, neededSeconds: number): Promise<void> {
+    const left = await periodSecondsLeft(forkRpc);
+    if (left === undefined || left > neededSeconds) return;
     console.log(`[e2e] ${left}s left in this cap period — waiting it out so the over-cap proof is deterministic`);
+    await Bun.sleep((left + 1) * 1_000);
+}
+
+/**
+ * Hold until the next cap period begins, whatever is left of this one.
+ *
+ * Once the cap is spent, every later payment is refused by pre-flight as
+ * `LIMIT_EXCEEDED` before it reaches the seller — and a kill-switch proof that sees
+ * that refusal has proven nothing about the switch. The two proofs below need a
+ * payment the cap would otherwise allow.
+ */
+async function awaitNextPeriod(forkRpc: string): Promise<void> {
+    const left = await periodSecondsLeft(forkRpc);
+    if (left === undefined) return;
+    console.log(`[e2e] cap spent — waiting ${left}s for the next period so the kill-switch proofs are not the cap's`);
     await Bun.sleep((left + 1) * 1_000);
 }
 
@@ -271,7 +324,7 @@ async function reportConsoleState(forkRpc: string, fromBlock: bigint): Promise<v
         publicClient,
         environment: deployment.environment,
         delegationHash: status.delegationHash,
-        // Only the fork's own blocks: the settlement we just made lives there, and
+        // Only the fork's own blocks: the settlements we just made live there, and
         // the upstream RPC rejects wider spans.
         fromBlock,
     });
@@ -312,29 +365,155 @@ async function reportConsoleState(forkRpc: string, fromBlock: bigint): Promise<v
         );
     }
     if (receipts.length === 0) {
-        throw new Error("expected the settlement to emit a TransferredInPeriod receipt");
+        throw new Error("expected the settlements to emit TransferredInPeriod receipts");
+    }
+}
+
+/** What `mapae_pay_for_resource` answers, as the agent's JSON text. */
+type ToolBody = Record<string, unknown>;
+
+async function pay(client: Client, resource: string): Promise<ToolBody> {
+    const call = await client.callTool({
+        name: "mapae_pay_for_resource",
+        arguments: {resource},
+    });
+    const text = (call as {content?: {type: string; text?: string}[]}).content?.[0]?.text ?? "{}";
+    return JSON.parse(text) as ToolBody;
+}
+
+/** The shop's answer, as the agent relays it inside a successful result. */
+interface Ticket {
+    ticket: {order: number; shop: {slug: string}; item: {key: string}};
+    receipt: {intent: string; transaction?: string};
+}
+
+function ticketOf(body: ToolBody, resource: string): Ticket {
+    if (body.ok !== true) {
+        console.error("[e2e] FAILED —", JSON.stringify(body, null, 2));
+        throw new Error(`payment for ${resource} did not complete: ${String(body.code)}`);
+    }
+    const answer = body.resource as Partial<Ticket> | undefined;
+    if (
+        typeof answer?.ticket?.order !== "number" ||
+        typeof answer.ticket.shop?.slug !== "string" ||
+        typeof answer.ticket.item?.key !== "string" ||
+        typeof answer.receipt?.intent !== "string"
+    ) {
+        throw new Error(`${resource} answered something other than a ticket: ${JSON.stringify(body.resource)}`);
+    }
+    return answer as Ticket;
+}
+
+async function payForTicket(client: Client, resource: string): Promise<Ticket> {
+    console.log(`[e2e] calling mapae_pay_for_resource ${resource} — no human in the loop`);
+    const body = await pay(client, resource);
+    const ticket = ticketOf(body, resource);
+    console.log(
+        `[e2e] ticket #${ticket.ticket.order}  ${ticket.ticket.shop.slug}/${ticket.ticket.item.key}  ${String(body.amount)} → ${String(body.payTo)}  tx ${String(body.transaction)}`,
+    );
+    return ticket;
+}
+
+/**
+ * The seed is the operator's command, run exactly as the runbook runs it: the seller's
+ * own directory, so `PAY_TO` comes from that app's .env — the address the shop will
+ * quote — and only the store path is this run's.
+ */
+async function seedStore(storePath: string): Promise<void> {
+    const proc = Bun.spawn([process.execPath, "run", "seed.ts"], {
+        cwd: `${REPO}/apps/delegated-seller`,
+        env: childEnv({STORE_PATH: storePath}),
+        stdout: "inherit",
+        stderr: "inherit",
+    });
+    const code = await proc.exited;
+    if (code !== 0) throw new Error(`seed exited with ${code}`);
+}
+
+interface OrderRow {
+    id: number;
+    seller_slug: string;
+    item_key: string;
+    payment_intent_id: string;
+    payer: string;
+    amount_base: string;
+    tx_hash: string | null;
+    status: string;
+}
+
+/**
+ * A second, read-only connection to the file the seller is writing — what a
+ * reconciliation script on the operator's machine would open, not what the running
+ * app reports about itself.
+ */
+function readOrders(storePath: string): OrderRow[] {
+    const db = new Database(storePath, {readonly: true});
+    try {
+        return db
+            .query<OrderRow, []>(
+                "SELECT id, seller_slug, item_key, payment_intent_id, payer, amount_base, tx_hash, status " +
+                    "FROM orders ORDER BY id",
+            )
+            .all();
+    } finally {
+        db.close();
     }
 }
 
 /**
- * Prove the safety mechanism, not just the happy path: revoke the root permission
- * and confirm the agent is stopped on-chain.
- *
- * `DeleGatorCore.disableDelegation` is `onlyEntryPointOrSelf`, so in production the
- * owner submits it as an EntryPoint UserOperation signed in their wallet. That
- * owner key is deliberately not on this machine, so the fork exercises the *Self*
- * branch by impersonating the smart account. What is being proven here is the
- * consequence — revoked delegations stop settling — not the wallet signature path.
+ * The orders table is the double-delivery guard, so its rows are the claim: one row
+ * per settlement, keyed by an intent the leaf made unique — including for the logo,
+ * whose price and payee are the americano's.
  */
-/**
- * Prove the Framework kill switch actually stops payments.
- *
- * Two layers should refuse a redemption while the manager is paused: our own
- * `verifyFrameworkOperationalState` gate, and the `whenNotPaused` modifier on
- * `redeemDelegations`. This exercises the first — the readiness cache is waited out
- * so the refusal is the gate's, not a lucky on-chain revert — and restores the
- * framework afterwards so the revocation proof that follows stays independent.
- */
+function proveOrdersLedger(storePath: string, tickets: Ticket[]): void {
+    const rows = readOrders(storePath);
+    console.log("");
+    console.log(`[orders] ${storePath}`);
+    for (const row of rows) {
+        console.log(
+            `[orders] #${row.id}  ${row.seller_slug}/${row.item_key}  ${row.amount_base}  ${row.status}  intent ${row.payment_intent_id.slice(0, 12)}…  tx ${row.tx_hash}`,
+        );
+    }
+    const expected = [
+        {slug: "demo-cafe", key: "americano"},
+        {slug: "demo-cafe", key: "americano"},
+        {slug: "demo-studio", key: "logo"},
+    ];
+    if (rows.length !== expected.length) {
+        throw new Error(`expected ${expected.length} orders rows, found ${rows.length}`);
+    }
+    rows.forEach((row, index) => {
+        const want = expected[index];
+        const ticket = tickets[index];
+        if (!want || !ticket) throw new Error("orders assertion table is shorter than the rows");
+        if (row.seller_slug !== want.slug || row.item_key !== want.key) {
+            throw new Error(`row #${row.id} is ${row.seller_slug}/${row.item_key}, expected ${want.slug}/${want.key}`);
+        }
+        if (row.id !== ticket.ticket.order) {
+            throw new Error(`row #${row.id} was served as ticket #${ticket.ticket.order}`);
+        }
+        if (row.payment_intent_id !== ticket.receipt.intent) {
+            throw new Error(`row #${row.id} intent differs from the ticket's receipt`);
+        }
+        if (row.tx_hash !== (ticket.receipt.transaction ?? null)) {
+            throw new Error(`row #${row.id} tx differs from the ticket's receipt`);
+        }
+        if (row.amount_base !== ONE_TUSDC_BASE || row.status !== "paid") {
+            throw new Error(`row #${row.id} is ${row.amount_base} ${row.status}, expected ${ONE_TUSDC_BASE} paid`);
+        }
+    });
+    if (new Set(rows.map((row) => row.payment_intent_id)).size !== rows.length) {
+        throw new Error("two orders share a payment intent — a replay was recorded as a sale");
+    }
+    if (new Set(rows.map((row) => row.tx_hash)).size !== rows.length) {
+        throw new Error("two orders share a settlement transaction");
+    }
+    if (new Set(rows.map((row) => row.payer)).size !== 1) {
+        throw new Error("the three orders name different payers, but one delegator paid");
+    }
+    console.log("[orders] PASS — three settlements, three intents, the same-price logo included ✅");
+}
+
 /**
  * Set `SETTLEMENT_RECEIPT_TIMEOUT_MS=1` and the facilitator gives up on the receipt of a
  * transaction it has already broadcast. That is the one case where the payer is charged
@@ -342,17 +521,19 @@ async function reportConsoleState(forkRpc: string, fromBlock: bigint): Promise<v
  * 422, which asserts a balance nobody checked.
  *
  * The knob existed before this function and only forwarded the variable. Setting it made
- * the run *fail* at the `body.ok !== true` guard above, so the escape hatch that was
- * documented as the way to exercise this path could not be used to exercise it.
+ * the run *fail* at the `body.ok !== true` guard, so the escape hatch that was documented
+ * as the way to exercise this path could not be used to exercise it.
  *
  * The status code alone would be a weak assertion — a seller that answered 504 for
  * everything would pass it. So this also reads the enforcer's own event from the fork:
- * the money really moved, and the answer was still honest about not knowing.
+ * the money really moved, and the answer was still honest about not knowing. And the
+ * store must hold no order: a ticket for a payment nobody confirmed is a free item.
  */
 async function proveUnconfirmedIsNotRejected(
-    body: Record<string, unknown>,
+    body: ToolBody,
     forkRpc: string,
     fromBlock: bigint,
+    storePath: string,
 ): Promise<void> {
     console.log("");
     console.log("[unconfirmed] SETTLEMENT_RECEIPT_TIMEOUT_MS is set — receipt wait forced to give up");
@@ -386,9 +567,23 @@ async function proveUnconfirmedIsNotRejected(
     console.log(
         `[unconfirmed] on-chain         ${settled?.amount !== undefined ? fromTokenAmount(settled.amount) : "?"} mUSDC moved anyway`,
     );
+    const rows = readOrders(storePath);
+    if (rows.length !== 0) {
+        throw new Error(`the shop recorded ${rows.length} order(s) for a settlement it answered 504 to`);
+    }
+    console.log("[unconfirmed] orders rows      0 — no ticket for a payment nobody confirmed");
     console.log("[unconfirmed] PASS — payer was charged and the answer said so ✅");
 }
 
+/**
+ * Prove the Framework kill switch actually stops payments.
+ *
+ * Two layers should refuse a redemption while the manager is paused: our own
+ * `verifyFrameworkOperationalState` gate, and the `whenNotPaused` modifier on
+ * `redeemDelegations`. This exercises the first — the readiness cache is waited out
+ * so the refusal is the gate's, not a lucky on-chain revert — and restores the
+ * framework afterwards so the revocation proof that follows stays independent.
+ */
 async function provePauseStops(forkRpc: string, client: Client): Promise<void> {
     const {publicClient, deployment} = await loadForkContext(forkRpc);
     const manager = getAddress(deployment.environment.DelegationManager);
@@ -454,14 +649,13 @@ async function provePauseStops(forkRpc: string, client: Client): Promise<void> {
         throw new Error(`health did not explain the pause: ${String(health.frameworkError)}`);
     }
 
-    const attempt = await client.callTool({
-        name: "mapae_pay_for_resource",
-        arguments: {resource: RESOURCE},
-    });
-    const body = JSON.parse(
-        (attempt as {content?: {type: string; text?: string}[]}).content?.[0]?.text ?? "{}",
-    ) as Record<string, unknown>;
+    const body = await pay(client, AMERICANO);
     if (body.ok === true) throw new Error("payment succeeded while the Framework was paused");
+    // Pre-flight knows nothing of the pause, so a refusal it would give — the cap, the
+    // permission — means the request never reached the paused facilitator.
+    if (["LIMIT_EXCEEDED", "PERMISSION_INACTIVE", "PERMISSION_EMPTY"].includes(String(body.code))) {
+        throw new Error(`refused by pre-flight (${String(body.code)}), not by the paused Framework`);
+    }
     console.log(`[pause] refused                ${String(body.code)} ${String(body.status ?? "")}`);
     console.log("[pause] PASS — a paused Framework stops the agent ✅");
 
@@ -470,27 +664,18 @@ async function provePauseStops(forkRpc: string, client: Client): Promise<void> {
     console.log("[pause] unpaused — restored for the revocation proof");
 }
 
-async function proveRevocationStops(
-    forkRpc: string,
-    client: Client,
-): Promise<void> {
-    const permissionPath =
-        process.env.PARENT_PERMISSION_CONTEXT_PATH ??
-        `${REPO}/apps/delegation-lab/open-agent.permission.json`;
-    const permission = (await Bun.file(permissionPath).json()) as {permissionContext: Hex};
-    const deployment = parseActiveDeploymentArtifactJson(
-        await Bun.file(`${REPO}/deployments/giwa-sepolia.framework.json`).text(),
-    );
-    const chain = defineChain({
-        id: giwaSepolia.id,
-        name: "giwa-fork",
-        nativeCurrency: giwaSepolia.nativeCurrency,
-        rpcUrls: {default: {http: [forkRpc]}},
-    });
-    const publicClient = createPublicClient({chain, transport: http(forkRpc)}) as PublicClient;
-
-    const root = decodeDelegations(permission.permissionContext).at(-1);
-    if (!root) throw new Error("permission context has no root delegation");
+/**
+ * Prove the safety mechanism, not just the happy path: revoke the root permission
+ * and confirm the agent is stopped on-chain.
+ *
+ * `DeleGatorCore.disableDelegation` is `onlyEntryPointOrSelf`, so in production the
+ * owner submits it as an EntryPoint UserOperation signed in their wallet. That
+ * owner key is deliberately not on this machine, so the fork exercises the *Self*
+ * branch by impersonating the smart account. What is being proven here is the
+ * consequence — revoked delegations stop settling — not the wallet signature path.
+ */
+async function proveRevocationStops(forkRpc: string, client: Client): Promise<void> {
+    const {publicClient, deployment, root} = await loadForkContext(forkRpc);
     const delegationManager = getAddress(deployment.environment.DelegationManager);
 
     const before = await isDelegationRevoked({publicClient, delegationManager, delegation: root});
@@ -522,20 +707,17 @@ async function proveRevocationStops(
     console.log("[revoke] console status        회수됨");
 
     console.log("[revoke] retrying the same MCP payment — it must now be refused");
-    const retry = await client.callTool({
-        name: "mapae_pay_for_resource",
-        arguments: {resource: RESOURCE},
-    });
-    const retryText =
-        (retry as {content?: {type: string; text?: string}[]}).content?.[0]?.text ?? "";
-    const retryBody = JSON.parse(retryText) as Record<string, unknown>;
-    if (retryBody.ok !== false) {
+    const retry = await pay(client, AMERICANO);
+    if (retry.ok !== false) {
         throw new Error("a revoked permission still settled — the safety model is broken");
     }
-    console.log(
-        `[revoke] refused               ${String(retryBody.code)} ${String(retryBody.status ?? "")}`,
-    );
-    console.log(`[revoke] reason                ${String(retryBody.detail)}`);
+    // The agent reads the same revocation flag the console just did, before signing
+    // anything — so the refusal has to be pre-flight's, by name.
+    if (retry.code !== "PERMISSION_INACTIVE") {
+        throw new Error(`expected PERMISSION_INACTIVE from pre-flight, got ${String(retry.code)}`);
+    }
+    console.log(`[revoke] refused               ${String(retry.code)} ${String(retry.status ?? "")}`);
+    console.log(`[revoke] reason                ${String(retry.detail)}`);
     console.log("[revoke] PASS — revocation stops the agent on-chain ✅");
 }
 
@@ -651,15 +833,20 @@ async function main(): Promise<void> {
         `[e2e] facilitator up on ${FACILITATOR_URL} — health ok, framework paused ${health.frameworkPaused}`,
     );
 
+    // A store this run owns: seeded by the operator's command, read back as a file.
+    storeDir = mkdtempSync(join(tmpdir(), "mapae-e2e-"));
+    const storePath = join(storeDir, "seller.sqlite");
+    await seedStore(storePath);
     spawnApp("seller", `${REPO}/apps/delegated-seller`, "index.ts", {
         HOST: "127.0.0.1",
         PORT: String(SELLER_PORT),
         FACILITATOR_URL,
+        STORE_PATH: storePath,
     });
     await waitFor("seller", async () =>
         (await fetch(`${SELLER_URL}/health`, {signal: AbortSignal.timeout(5_000)})).ok,
     );
-    console.log(`[e2e] seller up on ${SELLER_URL}`);
+    console.log(`[e2e] seller up on ${SELLER_URL} — store ${storePath}`);
 
     // The MCP server runs with the delegated agent's cwd so it inherits that
     // app's .env (session key, artifact paths, parent permission) unchanged.
@@ -668,33 +855,19 @@ async function main(): Promise<void> {
         command: process.execPath,
         args: [`${REPO}/apps/agent-mcp/index.ts`],
         cwd: `${REPO}/apps/delegated-agent`,
-        env: {
-            PATH: process.env.PATH ?? "",
-            HOME: process.env.HOME ?? "",
-            GIWA_SEPOLIA_RPC_URL: forkRpc,
-            SELLER_URL,
-            FACILITATOR_URL,
-        },
+        env: childEnv({GIWA_SEPOLIA_RPC_URL: forkRpc, SELLER_URL, FACILITATOR_URL}),
         stderr: "inherit",
     });
     await client.connect(transport);
     console.log("[e2e] MCP server connected");
 
-    // Both payments have to share one cap period for the over-cap proof to mean
-    // anything; 30s of the 60s window is ample for the two calls.
-    await awaitFreshPeriod(forkRpc, 30);
+    // The three payments and the over-cap request have to share one cap period for
+    // the over-cap proof to mean anything; 50s of the 60s window is ample for them.
+    await awaitFreshPeriod(forkRpc, 50);
 
-    console.log(`[e2e] calling mapae_pay_for_resource ${RESOURCE} — no human in the loop`);
-    const call = await client.callTool({
-        name: "mapae_pay_for_resource",
-        arguments: {resource: RESOURCE},
-    });
-    const content = (call as {content?: {type: string; text?: string}[]}).content ?? [];
-    const text = content[0]?.text ?? "";
-
-    const body = JSON.parse(text) as Record<string, unknown>;
+    const firstBody = await pay(client, AMERICANO);
     if (FORCED_UNCONFIRMED) {
-        await proveUnconfirmedIsNotRejected(body, forkRpc, forkBaseBlock);
+        await proveUnconfirmedIsNotRejected(firstBody, forkRpc, forkBaseBlock, storePath);
         await transport.close();
         // Everything below needs a payment that was *answered*. This run deliberately
         // has none, and the cap it consumed is real, so continuing would report
@@ -703,35 +876,36 @@ async function main(): Promise<void> {
         console.log("[e2e] PASS — a broadcast-but-unconfirmed settlement answers 504");
         return;
     }
-    if (body.ok !== true) {
-        await transport.close();
-        console.error("[e2e] FAILED —", JSON.stringify(body, null, 2));
-        throw new Error(`payment did not complete: ${String(body.code)}`);
-    }
+    const first = ticketOf(firstBody, AMERICANO);
+    console.log(`[e2e] ticket #${first.ticket.order}  ${first.ticket.shop.slug}/${first.ticket.item.key}  tx ${String(firstBody.transaction)}`);
+    // The same item again: a fresh leaf, so a fresh intent and a second ticket — not
+    // the first one replayed.
+    const second = await payForTicket(client, AMERICANO);
+    // Another shop's item at the americano's price and payee. The intent is bound to
+    // the amount and payTo, not the item, so only the leaf tells these apart.
+    const third = await payForTicket(client, LOGO);
 
-    // D6 data layer: the console's two screens, read from the state this payment
+    // D6 data layer: the console's two screens, read from the state these payments
     // just produced. Nothing here is stored off-chain.
     await reportConsoleState(forkRpc, forkBaseBlock);
 
-    // D5 pre-flight: 1.0 is already spent against a 3.0/60s cap, so a 2.5 payment
+    // The shop's own ledger, read from the file.
+    proveOrdersLedger(storePath, [first, second, third]);
+
+    // D5 pre-flight: 3.0 is already spent against a 3.0/60s cap, so a 2.5 payment
     // cannot fit. The agent must say so from the chain's own accounting instead of
     // walking into the seller and reporting a status code.
     console.log("");
-    console.log("[preflight] requesting inv-002 (2.5) — 1.0 already spent of a 3.0 cap");
-    const overCap = await client.callTool({
-        name: "mapae_pay_for_resource",
-        arguments: {resource: "/delegated/deliverable/inv-002"},
-    });
-    const overCapBody = JSON.parse(
-        (overCap as {content?: {type: string; text?: string}[]}).content?.[0]?.text ?? "{}",
-    ) as Record<string, unknown>;
-    if (overCapBody.code !== "LIMIT_EXCEEDED") {
-        throw new Error(
-            `expected LIMIT_EXCEEDED before payment, got ${String(overCapBody.code)}`,
-        );
+    console.log(`[preflight] requesting ${CROISSANT} (2.5) — 3.0 already spent of a 3.0 cap`);
+    const overCap = await pay(client, CROISSANT);
+    if (overCap.code !== "LIMIT_EXCEEDED") {
+        throw new Error(`expected LIMIT_EXCEEDED before payment, got ${String(overCap.code)}`);
     }
-    console.log(`[preflight] refused            ${String(overCapBody.code)}`);
-    console.log(`[preflight] reason             ${String(overCapBody.detail)}`);
+    console.log(`[preflight] refused            ${String(overCap.code)}`);
+    console.log(`[preflight] reason             ${String(overCap.detail)}`);
+
+    // Both kill-switch proofs pay again, so they need a period the cap allows.
+    await awaitNextPeriod(forkRpc);
 
     // Framework-level kill switch, then the per-delegation one.
     await provePauseStops(forkRpc, client);
@@ -742,16 +916,15 @@ async function main(): Promise<void> {
 
     const nonceAfter = await giwaNonce(relayer);
     console.log("");
-    console.log(`[e2e] resource     ${JSON.stringify(body.resource)}`);
-    console.log(`[e2e] amount       ${String(body.amount)} → ${String(body.payTo)}`);
-    console.log(`[e2e] transaction  ${String(body.transaction)} (fork)`);
+    console.log(`[e2e] tickets      #${first.ticket.order} #${second.ticket.order} #${third.ticket.order} (${AMERICANO} ×2, ${LOGO})`);
+    console.log(`[e2e] amount       ${String(firstBody.amount)} → ${String(firstBody.payTo)} each`);
     console.log(`[e2e] relayer GIWA nonce after   ${BigInt(nonceAfter)}`);
     if (BigInt(nonceAfter) !== BigInt(nonceBefore)) {
         throw new Error("GIWA relayer nonce moved — a real broadcast escaped the fork");
     }
     console.log("[e2e] GIWA nonce unchanged → nothing was broadcast to GIWA ✅");
     console.log("");
-    console.log("[e2e] PASS — one MCP call completed 402 → sign → settle → resource");
+    console.log("[e2e] PASS — three MCP calls completed 402 → sign → settle → ticket");
 }
 
 try {
