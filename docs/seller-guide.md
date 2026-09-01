@@ -5,7 +5,7 @@
 서버가 있는 빌더가 자기 API 경로 하나를 에이전트에게 유료로 여는 절차다.
 필요한 것은 Hono 앱, 받을 주소 하나, 그리고 `@mapae/seller` 한 줄이다.
 검증·정산·가스는 마패가 운영하는 공개 facilitator가 들고, 결제 자산은
-GIWA Sepolia의 테스트넷 USDC(tUSDC)다 — 실제 돈이 아니다.
+GIWA Sepolia의 테스트넷 자산 tUSDC다 — 실제 돈이 아니다.
 
 에이전트 쪽(사는 쪽)의 절차는 [MCP 연결 가이드](mcp-guide.md)에 있다.
 이 문서는 파는 쪽만 다룬다.
@@ -15,11 +15,12 @@ GIWA Sepolia의 테스트넷 USDC(tUSDC)다 — 실제 돈이 아니다.
 ## 1. 설치
 
 ```bash
-bun add @mapae/seller        # 또는 npm i @mapae/seller
+npm i @mapae/seller hono viem        # 또는 bun add @mapae/seller hono viem
 ```
 
-peer 의존성은 `hono >=4.13`과 `viem >=2.55`뿐이다. Node 20 이상 또는 Bun에서
-돈다 — 패키지는 Bun 전용 API를 쓰지 않는다.
+peer 의존성은 `hono >=4.13`과 `viem >=2.55`뿐이다. Node 18 이상 또는 Bun에서
+돈다 — 패키지는 Bun 전용 API를 쓰지 않고, Node 경로는 포장된 tarball을 npm으로
+설치해 node로 돌리는 `bun run smoke:node`가 검증한다.
 
 ## 2. 한 줄
 
@@ -35,14 +36,8 @@ app.get(
     mapaePaywall({payTo: PAY_TO, price: "0.01", description: "일일 리포트"}),
     (c) => c.json({report: "…"}),
 );
-app.get(
-    MAPAE_MANIFEST_PATH,
-    mapaeManifest({
-        name: "내 리포트 API",
-        payTo: PAY_TO,
-        endpoints: [{path: "/api/report", price: "0.01", description: "일일 리포트"}],
-    }),
-);
+// 매니페스트는 손으로 적지 않는다 — 앱에 올린 페이월에서 나온다(§4).
+app.get(MAPAE_MANIFEST_PATH, mapaeManifest({name: "내 리포트 API", app}));
 
 export default {fetch: app.fetch, port: 3000, idleTimeout: 45}; // Bun
 ```
@@ -57,9 +52,32 @@ Node라면 마지막 줄 대신 `@hono/node-server`의 `serve({fetch: app.fetch,
 |---|---|
 | `payTo` | tUSDC를 받을 GIWA 주소. 정산은 이 주소로 **직접** 간다 — 마패는 자금을 거치지 않는다 |
 | `price` | tUSDC 십진 문자열. 0보다 크고 소수점 아래 6자리까지. `"0.01"`, `"1.00"` |
-| `description` | 에이전트가 402 오퍼에서 읽는 한 줄 설명 |
+| `description` | 에이전트가 402 오퍼와 매니페스트에서 읽는 한 줄 설명 |
 
-`facilitator`(기본 `https://facilitator.mapae.io`)와 `onSettled`(정산 콜백, §6)는 선택이다.
+`facilitator`(기본 `https://facilitator.mapae.io`), `onSettled`(정산 콜백, §6),
+`extensions`(402 본문의 `extensions` 칸에 실을 객체 — 헤더에도 같이 실리니 작게),
+`baseUrl`(§2-1)은 선택이다.
+
+### 2-1. 경로가 여럿이면 — `createMapae`
+
+페이월마다 facilitator 클라이언트를 따로 만들 이유가 없다. `createMapae`는
+`/supported` 캐시 하나를 모든 페이월이 나눠 쓰게 하고, 같은 facilitator에 묶인
+매니페스트를 낸다.
+
+```ts
+import {MAPAE_MANIFEST_PATH, createMapae} from "@mapae/seller";
+
+const mapae = createMapae({baseUrl: process.env.BASE_URL}); // 예: https://shop.example
+app.get("/reports/daily", mapae.paywall({payTo: PAY_TO, price: "0.01", description: "일일 리포트"}), daily);
+app.get("/reports/:id", mapae.paywall({payTo: PAY_TO, price: "1.00", description: "리포트 한 건"}), one);
+app.get(MAPAE_MANIFEST_PATH, mapae.manifest({name: "내 리포트 API", app}));
+```
+
+`baseUrl`은 손님이 실제로 닿는 주소다 — 스킴과 호스트(포트)만, 경로·쿼리·끝 슬래시
+없이. 두면 402의 `resource.url`이 요청이 들어온 URL 대신 `baseUrl + 경로`가 된다.
+cloudflared·ngrok 같은 터널이나 리버스 프록시 뒤에서 돌 때 `http://127.0.0.1:3000/…`이
+아니라 공개 주소를 내보내는 방법이다. `mapaePaywall(options)`는
+`createMapae(options).paywall(options)`와 같다 — 세 옵션을 그대로 받는다.
 
 ## 3. `curl`로 402 확인
 
@@ -79,7 +97,8 @@ Payment-Required: eyJ4NDAyVmVyc2lvbiI6Miwi…
 사람과 `curl`에게 402는 정상이다. `network`는 GIWA Sepolia(`eip155:91342`),
 `amount`는 최소 단위(tUSDC는 6자리라 `0.01` = `10000`), `asset`은 tUSDC 컨트랙트다.
 `facilitatorAddresses`와 `delegationManager`는 미들웨어가 facilitator의 `/supported`에서
-읽어 그대로 복사한다 — 로컬 배포 파일이 필요 없는 이유다.
+읽어 그대로 복사한다 — 로컬 배포 파일이 필요 없는 이유다. `resource.url`은 요청이
+들어온 URL이고, `baseUrl`을 두었다면 그 주소 + 경로다.
 
 ## 4. 매니페스트 — `/.well-known/mapae.json`
 
@@ -88,12 +107,21 @@ Payment-Required: eyJ4NDAyVmVyc2lvbiI6Miwi…
 
 ```json
 {"version":1,"name":"내 리포트 API","chain":"eip155:91342",
- "asset":"0xcfeb694719A09caeb80798e2011298F29CDa4e92","payTo":"0x…",
+ "asset":"0xcfeb694719A09caeb80798e2011298F29CDa4e92",
  "facilitator":"https://facilitator.mapae.io",
- "endpoints":[{"path":"/api/report","price":"0.01","description":"일일 리포트"}]}
+ "endpoints":[
+   {"method":"GET","path":"/reports/:id","price":"1.00","description":"리포트 한 건","payTo":"0x…"},
+   {"method":"GET","path":"/reports/daily","price":"0.01","description":"일일 리포트","payTo":"0x…"}]}
 ```
 
-`price`와 `payTo`는 부팅 시점에 검사한다 — 틀린 값은 손님이 아니라 프로세스를 멈춘다.
+`endpoints`는 앱에 올린 페이월에서 나온다 — 직접 올렸든, `app.basePath()` 아래든,
+`app.route()`로 붙인 하위 앱 안이든, `app.use("/api/*", …)`로 올렸든(이때는
+`method`가 `ALL`, `path`가 그 패턴). 항목마다 자기 `payTo`가 있으니 한 서버가 여러
+받을 주소를 둘 수 있다. 페이월이 없는 경로는 실리지 않고, 페이월이 있는 경로는
+빠지지 않는다. 경로, 그다음 메서드 순으로 정렬된다. 문서는 매니페스트에 첫 요청이
+왔을 때 한 번 읽어 두고 그대로 낸다 — Hono는 첫 요청이 매칭된 뒤로는 라우트 추가를
+거부하므로, 그때 본 것이 서버가 가진 전부다. `price`·`payTo`·`description`은
+페이월을 만드는 시점에 검사한다 — 틀린 값은 손님이 아니라 프로세스를 멈춘다.
 디렉토리 등록 절차는 디렉토리가 열릴 때 이 문서에 덧붙인다.
 
 ## 5. 에이전트가 보는 것
@@ -130,9 +158,9 @@ mapaePaywall({
 받는다 — 던진 오류는 로그로만 남는다. 장부는 여기서 쓴다. 같은 영수증은 핸들러 안에서
 `c.get("mapaeReceipt")`로도 읽을 수 있다.
 
-**같은 가격의 경로 둘을 두지 않는다.** 오퍼에는 경로가 들어 있지 않아, 한 경로에서 산
-헤더가 같은 가격의 다른 경로도 연다. 경로마다 가격을 다르게 하거나, `receipt.intent`를
-장부와 대조해 한 번 쓴 결제를 거절한다.
+**같은 가격·같은 `payTo`의 경로 둘을 두지 않는다.** 오퍼에는 경로가 들어 있지 않아,
+한 경로에서 산 헤더가 같은 오퍼의 다른 경로도 연다. 경로마다 가격을 다르게 하거나,
+`receipt.intent`를 장부와 대조해 한 번 쓴 결제를 거절한다.
 
 ## 7. 공개 facilitator — `https://facilitator.mapae.io`
 
@@ -170,8 +198,10 @@ curl -s https://facilitator.mapae.io/supported
 | `422 settlement_failed` | 이전이 일어나지 않았다. 청구된 것은 없다 | 다시 시도 |
 | `404` | 페이월 뒤에 핸들러가 없다 | 미들웨어는 아무도 안 받는 경로에 값을 매기지 않는다. 라우트를 확인 |
 
-부팅이 `payTo must be…`, `price must be…`, `facilitator must use HTTPS…`로 멈추면
-옵션 값의 문제다. facilitator URL은 루프백이 아닌 한 HTTPS여야 한다.
+부팅이 `payTo must be…`, `price must be…`, `description must not be empty`,
+`facilitator must use HTTPS…`, `baseUrl must be an origin…`으로 멈추면 옵션 값의
+문제다. facilitator URL은 루프백이 아닌 한 HTTPS여야 하고, `baseUrl`은 경로·쿼리 없는
+origin이어야 한다.
 
 ## 10. 참고
 
