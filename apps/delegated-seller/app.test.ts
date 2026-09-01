@@ -1,15 +1,10 @@
 import {describe, expect, spyOn, test} from "bun:test";
-import {getAddress, type Address, type Hex} from "viem";
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
     PAYMENT_REQUIRED_HEADER,
     PAYMENT_SIGNATURE_HEADER,
-    buildErc7710PaymentPayload,
-    buildErc7710PaymentRequirements,
-    buildErc7710SupportedPayload,
     decodePaymentRequiredHeader,
-    encodePaymentHeader,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
 } from "@mapae/shared";
@@ -25,6 +20,17 @@ import {
     type TicketResponse,
 } from "./app.js";
 import {DEMO_SHOPS, seedShops} from "./seed.js";
+import {
+    FACILITATOR_ROUTES,
+    LEAF_A,
+    LEAF_B,
+    PAY_TO,
+    PAYER,
+    TX,
+    paymentHeader,
+    type FacilitatorPath,
+    type FacilitatorRoute,
+} from "./test-support.js";
 
 /**
  * Hermetic: an in-memory store seeded with the demo shops and a facilitator made of
@@ -33,64 +39,22 @@ import {DEMO_SHOPS, seedShops} from "./seed.js";
  * it — lookup before pricing, the order written once, the replay paths.
  */
 
-const address = (suffix: number): Address =>
-    getAddress(`0x${suffix.toString(16).padStart(40, "0")}`);
-const PAY_TO = address(0x2001);
-const FACILITATOR = address(0x3001);
-const MANAGER = address(0x4001);
-const PAYER = address(0x5001);
-const TX = `0x${"ab".repeat(32)}` as Hex;
-/** Two leaves: distinct permission contexts, hence distinct intents for one offer. */
-const LEAF_A = `0x${"a1".repeat(40)}` as Hex;
-const LEAF_B = `0x${"b2".repeat(40)}` as Hex;
 const BASE_URL = "http://shop.test";
 const METRICS_TOKEN = "metrics-token-sixteen+";
 const NOW = 1_800_000_000_000;
 
-const SUPPORTED = buildErc7710SupportedPayload({
-    facilitatorAddresses: [FACILITATOR],
-    delegationManager: MANAGER,
-});
-const SETTLED = {success: true, network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX};
-
-type Route = () => Response;
-type Path = "/supported" | "/verify" | "/settle";
-
-/** A facilitator made of routes; a path without one is a refused connection. */
-function facilitator(routes: Partial<Record<Path, Route>> = {}) {
+/** A facilitator made of routes behind the injected fetch; a path without one is a refused connection. */
+function facilitator(routes: Partial<Record<FacilitatorPath, FacilitatorRoute>> = {}) {
     const paths: string[] = [];
-    const table: Record<Path, Route> = {
-        "/supported": () => Response.json(SUPPORTED),
-        "/verify": () => Response.json({isValid: true, payer: PAYER}),
-        "/settle": () => Response.json(SETTLED),
-        ...routes,
-    };
+    const table: Record<FacilitatorPath, FacilitatorRoute> = {...FACILITATOR_ROUTES, ...routes};
     const fetch: NonNullable<MapaeOptions["fetch"]> = async (input) => {
         const path = new URL(input).pathname;
         paths.push(path);
-        const route = table[path as Path];
+        const route = table[path as FacilitatorPath];
         if (!route) throw new TypeError("fetch failed");
         return route();
     };
     return {fetch, paths};
-}
-
-/** A signed-looking payment for `amountBase` to `payTo`, under `context`. */
-function paymentHeader(amountBase: bigint, context: Hex, payTo: Address = PAY_TO): string {
-    const accepted = buildErc7710PaymentRequirements({
-        payTo,
-        amount: amountBase,
-        facilitatorAddresses: [FACILITATOR],
-        delegationManager: MANAGER,
-    });
-    return encodePaymentHeader(
-        buildErc7710PaymentPayload({
-            accepted,
-            delegationManager: MANAGER,
-            permissionContext: context,
-            delegator: PAYER,
-        }),
-    );
 }
 
 const ONE = 1_000_000n;
