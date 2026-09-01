@@ -84,7 +84,7 @@ server.registerTool(
                 .string()
                 .min(1)
                 .describe(
-                    "Absolute path on the seller origin, e.g. /delegated/deliverable/inv-001",
+                    "Absolute path on the seller origin, e.g. /s/demo-cafe/americano",
                 ),
         },
     },

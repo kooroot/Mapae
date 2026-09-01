@@ -13,7 +13,7 @@ async function main(): Promise<void> {
     const runtime = await loadDelegatedAgentRuntime();
     const target = resolveResourceTarget(
         runtime.sellerUrl,
-        process.argv[2] ?? "/delegated/deliverable/inv-001",
+        process.argv[2] ?? "/s/demo-cafe/americano",
     );
 
     console.log(`delegated agent ${runtime.account.address}`);

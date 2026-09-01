@@ -64,7 +64,7 @@ test("an unconfigured runtime returns a reason instead of killing the server", a
 test("the server survives a failed call and still answers the next one", async () => {
     const result = await client.callTool({
         name: "mapae_pay_for_resource",
-        arguments: {resource: "/delegated/deliverable/inv-001"},
+        arguments: {resource: "/s/demo-cafe/americano"},
     });
     expect(result.isError).toBe(true);
     expect(parseToolText(result).code).toBe("RUNTIME_UNAVAILABLE");

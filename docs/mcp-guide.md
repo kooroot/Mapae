@@ -15,7 +15,7 @@ facilitator의 relayer가 담당하고, 지출 한도는 온체인 caveat이 강
 
 | tool | 입력 | 반환 |
 |---|---|---|
-| `mapae_pay_for_resource` | `resource` — 판매자 origin의 절대 경로 (예: `/delegated/deliverable/inv-001`) | 성공: `resourceUrl`·`amount`·`payTo`·`resource`, 그리고 판매자 응답에 있을 때 `transaction`(tx 해시). 실패: `code`·`detail`, 해당 시 `status` |
+| `mapae_pay_for_resource` | `resource` — 판매자 origin의 절대 경로 (예: `/s/demo-cafe/americano`) | 성공: `resourceUrl`·`amount`·`payTo`·`resource`, 그리고 판매자 응답에 있을 때 `transaction`(tx 해시). 실패: `code`·`detail`, 해당 시 `status` |
 | `mapae_status` | 없음 | 네트워크, 세션키 주소, seller/facilitator 엔드포인트, DelegationManager, 신뢰 signer 목록, 한도 강제 주체(`limit`) |
 
 `mapae_status`는 키 원문과 서명된 permission context를 반환하지 않는다 — 둘 다
