@@ -462,9 +462,13 @@ function buildPaywall(
         });
 
         if (!payload) {
+            // Behind `baseUrl` the resource is the public origin plus the path exactly as
+            // it arrived — still percent-encoded, query dropped — so it stays a URL a
+            // buyer can call, not the decoded form `c.req.path` carries.
+            const url = baseUrl ? `${baseUrl}${new URL(c.req.url).pathname}` : c.req.url;
             const body: PaymentRequired<Erc7710PaymentRequirements> = {
                 x402Version: X402_VERSION,
-                resource: {url: baseUrl ? `${baseUrl}${c.req.path}` : c.req.url, description},
+                resource: {url, description},
                 accepts: [requirements],
                 ...(extensions === undefined ? {} : {extensions}),
             };

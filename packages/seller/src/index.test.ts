@@ -393,6 +393,14 @@ describe("mapaePaywall — the 402 offer", () => {
         const body = await response.json();
         expect(body.resource).toEqual({url: "https://shop.example/paid", description: "Logo — final SVG"});
         expect(decodePaymentRequiredHeader(response.headers.get(PAYMENT_REQUIRED_HEADER) ?? "")).toEqual(body);
+
+        // The path is taken as it arrived, still percent-encoded: the result is a URL.
+        const shop = new Hono();
+        shop.get("/s/:slug", paywall({fetch: remote.fetch, baseUrl: "https://shop.example"}), (c) => c.text("ok"));
+        const encoded = await shop.request("http://127.0.0.1:3000/s/%EC%B9%B4%ED%8E%98");
+        expect(((await encoded.json()) as {resource: {url: string}}).resource.url).toBe(
+            "https://shop.example/s/%EC%B9%B4%ED%8E%98",
+        );
     });
 
     test("carries extensions in the body and the Payment-Required header alike; absent, the slot is absent", async () => {
