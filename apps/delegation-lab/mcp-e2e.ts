@@ -381,6 +381,12 @@ async function pay(client: Client, resource: string): Promise<ToolBody> {
     return JSON.parse(text) as ToolBody;
 }
 
+/** A payment the run expects to be answered — announced, since no human is in the loop. */
+async function payFor(client: Client, resource: string): Promise<ToolBody> {
+    console.log(`[e2e] calling mapae_pay_for_resource ${resource} — no human in the loop`);
+    return pay(client, resource);
+}
+
 /** The shop's answer, as the agent relays it inside a successful result. */
 interface Ticket {
     ticket: {order: number; shop: {slug: string}; item: {key: string}};
@@ -401,13 +407,7 @@ function ticketOf(body: ToolBody, resource: string): Ticket {
     ) {
         throw new Error(`${resource} answered something other than a ticket: ${JSON.stringify(body.resource)}`);
     }
-    return answer as Ticket;
-}
-
-async function payForTicket(client: Client, resource: string): Promise<Ticket> {
-    console.log(`[e2e] calling mapae_pay_for_resource ${resource} — no human in the loop`);
-    const body = await pay(client, resource);
-    const ticket = ticketOf(body, resource);
+    const ticket = answer as Ticket;
     console.log(
         `[e2e] ticket #${ticket.ticket.order}  ${ticket.ticket.shop.slug}/${ticket.ticket.item.key}  ${String(body.amount)} → ${String(body.payTo)}  tx ${String(body.transaction)}`,
     );
@@ -865,7 +865,7 @@ async function main(): Promise<void> {
     // the over-cap proof to mean anything; 50s of the 60s window is ample for them.
     await awaitFreshPeriod(forkRpc, 50);
 
-    const firstBody = await pay(client, AMERICANO);
+    const firstBody = await payFor(client, AMERICANO);
     if (FORCED_UNCONFIRMED) {
         await proveUnconfirmedIsNotRejected(firstBody, forkRpc, forkBaseBlock, storePath);
         await transport.close();
@@ -877,13 +877,12 @@ async function main(): Promise<void> {
         return;
     }
     const first = ticketOf(firstBody, AMERICANO);
-    console.log(`[e2e] ticket #${first.ticket.order}  ${first.ticket.shop.slug}/${first.ticket.item.key}  tx ${String(firstBody.transaction)}`);
     // The same item again: a fresh leaf, so a fresh intent and a second ticket — not
     // the first one replayed.
-    const second = await payForTicket(client, AMERICANO);
+    const second = ticketOf(await payFor(client, AMERICANO), AMERICANO);
     // Another shop's item at the americano's price and payee. The intent is bound to
     // the amount and payTo, not the item, so only the leaf tells these apart.
-    const third = await payForTicket(client, LOGO);
+    const third = ticketOf(await payFor(client, LOGO), LOGO);
 
     // D6 data layer: the console's two screens, read from the state these payments
     // just produced. Nothing here is stored off-chain.
