@@ -31,8 +31,10 @@ import {validateDelegatedPayment} from "@mapae/delegation/x402";
 import {
     DEFAULT_FACILITATOR_URL,
     MAPAE_MANIFEST_PATH,
+    createMapae,
     mapaeManifest,
     mapaePaywall,
+    type MapaeManifest,
     type MapaePaywallOptions,
     type SettlementReceipt,
 } from "./index.js";
@@ -207,6 +209,27 @@ describe("mapaePaywall — construction", () => {
         expect(() => paywall({facilitator: "not a url"})).toThrow();
     });
 
+    test("rejects a blank description — the offer and the manifest both show it", () => {
+        expect(() => paywall({description: " "})).toThrow(/description/);
+    });
+
+    test("rejects a baseUrl that is not a bare http(s) origin", () => {
+        expect(() => paywall({baseUrl: "https://user:pw@shop.example"})).toThrow(/credentials/);
+        expect(() => paywall({baseUrl: "ftp://shop.example"})).toThrow(/HTTP\(S\)/);
+        for (const baseUrl of ["https://shop.example/api", "https://shop.example/?env=1", "https://shop.example/#x"]) {
+            expect(() => paywall({baseUrl}), baseUrl).toThrow(/origin/);
+        }
+        expect(() => paywall({baseUrl: "shop.example"})).toThrow();
+        for (const baseUrl of ["https://shop.example", "https://shop.example/", "http://127.0.0.1:3000"]) {
+            expect(() => paywall({baseUrl}), baseUrl).not.toThrow();
+        }
+    });
+
+    test("rejects extensions JSON cannot carry — at boot, not in a buyer's 402", () => {
+        expect(() => paywall({extensions: {budget: 1n}})).toThrow();
+        expect(() => paywall({extensions: {mapae: {seller: "demo-cafe"}}})).not.toThrow();
+    });
+
     test("defaults to the public facilitator, and strips a trailing slash from a custom one", async () => {
         const remote = facilitator();
         await seller(paywall({facilitator: undefined, fetch: remote.fetch})).app.request(RESOURCE);
@@ -360,6 +383,28 @@ describe("mapaePaywall — the 402 offer", () => {
         const response = await pay(app, paymentHeader(), LEGACY_PAYMENT_HEADER);
         expect(response.status).toBe(200);
         expect(seen.served).toBe(1);
+    });
+
+    test("advertises baseUrl + path as the resource, so a server behind a tunnel names its public URL", async () => {
+        const remote = facilitator();
+        const {app} = seller(paywall({fetch: remote.fetch, baseUrl: "https://shop.example/"}));
+        const response = await app.request("http://127.0.0.1:3000/paid?table=4");
+        expect(response.status).toBe(402);
+        const body = await response.json();
+        expect(body.resource).toEqual({url: "https://shop.example/paid", description: "Logo — final SVG"});
+        expect(decodePaymentRequiredHeader(response.headers.get(PAYMENT_REQUIRED_HEADER) ?? "")).toEqual(body);
+    });
+
+    test("carries extensions in the body and the Payment-Required header alike; absent, the slot is absent", async () => {
+        const extensions = {mapae: {seller: "demo-cafe", manifest: "https://shop.example/s/demo-cafe"}};
+        const withThem = await seller(paywall({fetch: facilitator().fetch, extensions})).app.request(RESOURCE);
+        expect(withThem.status).toBe(402);
+        const body = await withThem.json();
+        expect(body.extensions).toEqual(extensions);
+        expect(decodePaymentRequiredHeader(withThem.headers.get(PAYMENT_REQUIRED_HEADER) ?? "")).toEqual(body);
+
+        const without = await seller(paywall({fetch: facilitator().fetch})).app.request(RESOURCE);
+        expect(await without.json()).not.toHaveProperty("extensions");
     });
 });
 
@@ -598,44 +643,173 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
     });
 });
 
-describe("mapaeManifest", () => {
-    test("serves the manifest a buyer's agent reads at /.well-known/mapae.json", async () => {
-        expect(MAPAE_MANIFEST_PATH).toBe("/.well-known/mapae.json");
+const LOCAL_FACILITATOR = "http://127.0.0.1:8081";
+const OTHER_PAY_TO = getAddress("0x2000000000000000000000000000000000000002");
+
+describe("createMapae", () => {
+    test("shares one facilitator client across its paywalls: two routes, one /supported fetch", async () => {
+        const remote = facilitator();
+        const mapae = createMapae({facilitator: `${LOCAL_FACILITATOR}/`, fetch: remote.fetch});
+        expect(mapae.facilitator).toBe(LOCAL_FACILITATOR);
         const app = new Hono();
         app.get(
-            MAPAE_MANIFEST_PATH,
-            mapaeManifest({
-                name: "  Logo shop ",
-                payTo: PAY_TO.toLowerCase(),
-                endpoints: [{path: "/paid", price: " 1.00 ", description: "Logo — final SVG"}],
-            }),
+            "/logo",
+            mapae.paywall({payTo: PAY_TO, price: "1.00", description: "Logo"}),
+            (c) => c.text("logo"),
         );
+        app.get(
+            "/spec",
+            mapae.paywall({payTo: PAY_TO, price: "2.50", description: "Spec"}),
+            (c) => c.text("spec"),
+        );
+        expect((await app.request("http://seller.test/logo")).status).toBe(402);
+        expect((await app.request("http://seller.test/spec")).status).toBe(402);
+        expect(remote.paths()).toEqual(["/supported"]);
+
+        const paid = await app.request("http://seller.test/logo", {
+            headers: {[PAYMENT_SIGNATURE_HEADER]: paymentHeader()},
+        });
+        expect(paid.status).toBe(200);
+        expect(await paid.text()).toBe("logo");
+        expect(remote.paths()).toEqual(["/supported", "/verify", "/settle"]);
+    });
+
+    test("a createMapae paywall never prices or charges a route nothing serves", async () => {
+        const remote = facilitator();
+        const mapae = createMapae({facilitator: LOCAL_FACILITATOR, fetch: remote.fetch});
+        const app = new Hono();
+        app.use("/api/*", mapae.paywall({payTo: PAY_TO, price: "1.00", description: "API"}));
+        app.get("/api/thing", (c) => c.text("thing"));
+        expect((await app.request("http://seller.test/api/nothing")).status).toBe(404);
+        expect(
+            (await app.request("http://seller.test/api/nothing", {
+                headers: {[PAYMENT_SIGNATURE_HEADER]: paymentHeader()},
+            })).status,
+        ).toBe(404);
+        expect(remote.calls).toEqual([]);
+        expect((await app.request("http://seller.test/api/thing")).status).toBe(402);
+    });
+});
+
+describe("mapaeManifest — derived from the mounted paywalls", () => {
+    async function manifest(app: Hono): Promise<MapaeManifest> {
         const response = await app.request(`http://seller.test${MAPAE_MANIFEST_PATH}`);
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({
+        return (await response.json()) as MapaeManifest;
+    }
+
+    test("lists each paywall's method, path, price, description and own payTo, sorted by path then method; other routes are ignored", async () => {
+        expect(MAPAE_MANIFEST_PATH).toBe("/.well-known/mapae.json");
+        const mapae = createMapae({facilitator: LOCAL_FACILITATOR, fetch: facilitator().fetch});
+        const app = new Hono();
+        app.use("*", async (_c, next) => {
+            await next();
+        });
+        app.get("/health", (c) => c.json({ok: true}));
+        // Mounted before the paywalls on purpose: the app is read on the first request, not here.
+        app.get(MAPAE_MANIFEST_PATH, mapae.manifest({name: "  Logo shop ", app}));
+        app.post(
+            "/reports",
+            mapae.paywall({payTo: OTHER_PAY_TO, price: "2.50", description: "Custom report"}),
+            (c) => c.text("made"),
+        );
+        app.get(
+            "/reports/:id",
+            mapae.paywall({payTo: PAY_TO.toLowerCase(), price: " 1.00 ", description: "One report"}),
+            (c) => c.text("one"),
+        );
+        app.get(
+            "/reports",
+            mapae.paywall({payTo: PAY_TO, price: "0.10", description: "Report index"}),
+            (c) => c.text("index"),
+        );
+        expect(await manifest(app)).toEqual({
             version: 1,
             name: "Logo shop",
             chain: "eip155:91342",
             asset: MOCK_USDC.address,
-            payTo: PAY_TO,
-            facilitator: DEFAULT_FACILITATOR_URL,
-            endpoints: [{path: "/paid", price: "1.00", description: "Logo — final SVG"}],
+            facilitator: LOCAL_FACILITATOR,
+            endpoints: [
+                {method: "GET", path: "/reports", price: "0.10", description: "Report index", payTo: PAY_TO},
+                {method: "POST", path: "/reports", price: "2.50", description: "Custom report", payTo: OTHER_PAY_TO},
+                {method: "GET", path: "/reports/:id", price: "1.00", description: "One report", payTo: PAY_TO},
+            ],
         });
     });
 
-    test("refuses at construction a manifest nobody could pay against", () => {
-        const endpoint = {path: "/paid", price: "1.00", description: "Logo"};
-        const valid = {name: "Shop", payTo: PAY_TO, endpoints: [endpoint]};
-        expect(() => mapaeManifest(valid)).not.toThrow();
-        expect(() => mapaeManifest({...valid, name: " "})).toThrow(/name/);
-        expect(() => mapaeManifest({...valid, payTo: "0x1"})).toThrow(/payTo/);
-        expect(() => mapaeManifest({...valid, facilitator: "http://remote.example"})).toThrow(/HTTPS/);
-        expect(() => mapaeManifest({...valid, endpoints: [{...endpoint, price: "0"}]})).toThrow(/positive/);
-        expect(() => mapaeManifest({...valid, endpoints: [{...endpoint, price: "1.1234567"}]})).toThrow();
-        expect(() => mapaeManifest({...valid, endpoints: [{...endpoint, path: "paid"}]})).toThrow(/start with/);
-        expect(() => mapaeManifest({...valid, endpoints: [{...endpoint, description: ""}]})).toThrow(
-            /description/,
+    test("reads the app once, on the first request, and keeps the result", async () => {
+        const mapae = createMapae({facilitator: LOCAL_FACILITATOR, fetch: facilitator().fetch});
+        const app = new Hono();
+        app.get(
+            "/early",
+            mapae.paywall({payTo: PAY_TO, price: "1.00", description: "Early"}),
+            (c) => c.text("early"),
         );
+        // A stand-in for `app` whose route list can be swapped between requests — Hono
+        // itself refuses a new route once the first request has been matched, so this is
+        // the only way to show the second request never looks again.
+        let routes = app.routes;
+        let reads = 0;
+        const catalogue = {
+            get routes() {
+                reads += 1;
+                return routes;
+            },
+        };
+        app.get(MAPAE_MANIFEST_PATH, mapaeManifest({name: "Shop", app: catalogue}));
+        expect(reads).toBe(0);
+        const first = await manifest(app);
+        expect(first.facilitator).toBe(DEFAULT_FACILITATOR_URL);
+        expect(first.endpoints.map((endpoint) => endpoint.path)).toEqual(["/early"]);
+        routes = [];
+        expect((await manifest(app)).endpoints.map((endpoint) => endpoint.path)).toEqual(["/early"]);
+        expect(reads).toBe(1);
+    });
+
+    test("sees paywalls behind basePath() and app.route() under their mounted prefix — also when the sub-app has its own onError", async () => {
+        const mapae = createMapae({facilitator: LOCAL_FACILITATOR, fetch: facilitator().fetch});
+        const plain = new Hono();
+        plain.get(
+            "/logo",
+            mapae.paywall({payTo: PAY_TO, price: "1.00", description: "Logo"}),
+            (c) => c.text("logo"),
+        );
+        const guarded = new Hono().onError((_error, c) => c.text("guarded", 500));
+        guarded.get(
+            "/spec",
+            mapae.paywall({payTo: PAY_TO, price: "2.00", description: "Spec"}),
+            (c) => c.text("spec"),
+        );
+        const app = new Hono();
+        const v1 = app.basePath("/v1");
+        v1.route("/design", plain);
+        v1.route("/docs", guarded);
+        app.get(MAPAE_MANIFEST_PATH, mapaeManifest({name: "Shop", app}));
+        expect((await manifest(app)).endpoints.map((e) => [e.method, e.path, e.price])).toEqual([
+            ["GET", "/v1/design/logo", "1.00"],
+            ["GET", "/v1/docs/spec", "2.00"],
+        ]);
+        // The wrapped paywall is still the paywall.
+        expect((await app.request("http://seller.test/v1/docs/spec")).status).toBe(402);
+    });
+
+    test("lists a paywall mounted with app.use on a wildcard as ALL on its pattern", async () => {
+        const mapae = createMapae({facilitator: LOCAL_FACILITATOR, fetch: facilitator().fetch});
+        const app = new Hono();
+        app.use("/api/*", mapae.paywall({payTo: PAY_TO, price: "0.01", description: "Any API call"}));
+        app.get("/api/thing", (c) => c.text("thing"));
+        app.get(MAPAE_MANIFEST_PATH, mapaeManifest({name: "Shop", app}));
+        expect((await manifest(app)).endpoints).toEqual([
+            {method: "ALL", path: "/api/*", price: "0.01", description: "Any API call", payTo: PAY_TO},
+        ]);
+    });
+
+    test("refuses at construction a manifest without a name, or advertising a facilitator nobody should trust", () => {
+        const app = new Hono();
+        expect(() => mapaeManifest({name: "Shop", app})).not.toThrow();
+        expect(() => mapaeManifest({name: " ", app})).toThrow(/name/);
+        expect(() => mapaeManifest({name: "Shop", app, facilitator: "http://remote.example"})).toThrow(/HTTPS/);
+        expect(() => createMapae().manifest({name: " ", app})).toThrow(/name/);
     });
 });
 

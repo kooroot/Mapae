@@ -136,18 +136,11 @@ for (const [id, item] of Object.entries(DELIVERABLES)) {
 }
 app.get("/delegated/deliverable/:id", (c) => c.json({error: "unknown deliverable"}, 404));
 
+// Derived from the paywalls mounted above: the manifest cannot list a deliverable this
+// server does not guard, nor leave out one it does.
 app.get(
     MAPAE_MANIFEST_PATH,
-    mapaeManifest({
-        name: "Mapae reference seller",
-        payTo: PAY_TO,
-        facilitator: FACILITATOR_URL,
-        endpoints: Object.entries(DELIVERABLES).map(([id, item]) => ({
-            path: `/delegated/deliverable/${id}`,
-            price: item.price,
-            description: item.description,
-        })),
-    }),
+    mapaeManifest({name: "Mapae reference seller", app, facilitator: FACILITATOR_URL}),
 );
 
 console.log(`delegated seller listening on ${HOST}:${PORT}`);

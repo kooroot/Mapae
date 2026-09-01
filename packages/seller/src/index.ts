@@ -1,4 +1,7 @@
 import type {Context, MiddlewareHandler} from "hono";
+import {matchedRoutes} from "hono/route";
+import type {RouterRoute} from "hono/types";
+import {COMPOSED_HANDLER} from "hono/utils/constants";
 import type {Address, Hex} from "viem";
 import {getAddress, isAddress, isHex, zeroAddress} from "viem";
 import {
@@ -61,33 +64,59 @@ export interface SettlementReceipt {
     transaction?: Hex;
 }
 
-export interface MapaePaywallOptions {
+/** What every paywall made by one {@link createMapae} shares. */
+export interface MapaeOptions {
+    /** Facilitator base URL. Defaults to {@link DEFAULT_FACILITATOR_URL}; HTTPS unless loopback. */
+    facilitator?: string;
+    /** Injected transport, for tests. Defaults to the global `fetch`. */
+    fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+    /**
+     * The origin buyers reach this server at — `https://shop.example`, with no path,
+     * query or trailing slash. When set, a 402's `resource.url` is `baseUrl + c.req.path`
+     * instead of the URL the request arrived on, so a server behind a tunnel or a reverse
+     * proxy advertises its public address rather than `http://127.0.0.1:3000/…`.
+     */
+    baseUrl?: string;
+}
+
+/** One paywall: one price, one receiving address. */
+export interface PaywallOptions {
     /** Your receiving address. Public — never a private key. */
     payTo: string;
     /** Price in tUSDC as a decimal string, e.g. `"0.01"`. Positive, at most 6 fractional digits. */
     price: string;
-    /** Human-readable label the buyer's agent sees in the 402 offer. */
+    /** Human-readable label the buyer's agent sees in the 402 offer and in the manifest. */
     description: string;
-    /** Facilitator base URL. Defaults to {@link DEFAULT_FACILITATOR_URL}; HTTPS unless loopback. */
-    facilitator?: string;
     /**
      * Runs once per settled payment, before the protected handler. Money has moved by
      * then, so a throw is logged and the buyer is still served — write your ledger here.
      */
     onSettled?: (receipt: SettlementReceipt) => void | Promise<void>;
-    /** Injected transport, for tests. Defaults to the global `fetch`. */
-    fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+    /**
+     * Placed in the 402 body's `extensions` slot — and therefore in the `Payment-Required`
+     * header too, which encodes the same document. Absent, the slot stays absent. It
+     * travels in a header on every unpaid request, so keep it small.
+     */
+    extensions?: Record<string, unknown>;
 }
+
+/** Options of the one-liner {@link mapaePaywall}: a paywall plus the settings it is made with. */
+export interface MapaePaywallOptions extends MapaeOptions, PaywallOptions {}
 
 /** Hono environment the paywall populates: `c.get("mapaeReceipt")` is set once payment settled. */
 export type MapaeEnv = {Variables: {mapaeReceipt: SettlementReceipt}};
 
+/** One paywalled route, as the manifest reads it off the app. */
 export interface MapaeManifestEndpoint {
-    /** Route path, starting with `/`. */
+    /** Hono's method name — `GET`, `POST`, …, or `ALL` for a paywall mounted with `app.use`. */
+    method: string;
+    /** The route pattern as mounted, e.g. `/reports/:id` or `/api/*`, base path included. */
     path: string;
     /** Price in tUSDC as a decimal string. */
     price: string;
     description: string;
+    /** Checksummed receiving address of this endpoint. */
+    payTo: Address;
 }
 
 /** The document served at {@link MAPAE_MANIFEST_PATH}. */
@@ -96,16 +125,59 @@ export interface MapaeManifest {
     name: string;
     chain: "eip155:91342";
     asset: Address;
-    payTo: Address;
     facilitator: string;
+    /** Sorted by path, then method. */
     endpoints: MapaeManifestEndpoint[];
 }
 
-export interface MapaeManifestOptions {
+export interface ManifestOptions {
     name: string;
-    payTo: string;
+    /** The app whose mounted paywalls the manifest lists — a Hono instance. */
+    app: {routes: readonly RouterRoute[]};
+}
+
+/** Options of {@link mapaeManifest}: the manifest plus the facilitator it advertises. */
+export interface MapaeManifestOptions extends ManifestOptions {
+    /** Facilitator base URL. Defaults to {@link DEFAULT_FACILITATOR_URL}; HTTPS unless loopback. */
     facilitator?: string;
-    endpoints: MapaeManifestEndpoint[];
+}
+
+/** What {@link createMapae} returns: paywalls and a manifest bound to one facilitator. */
+export interface MapaeSeller {
+    /** The facilitator every paywall from this instance talks to, normalised. */
+    readonly facilitator: string;
+    /**
+     * Settle-before-serve paywall for one price.
+     *
+     * Without a payment header the request is answered with a 402 carrying the x402 v2
+     * offer (header and body). With one, the facilitator is asked to `/verify` and then
+     * `/settle`, and only a confirmed settlement lets the next handler run:
+     *
+     * - 503 `facilitator_unavailable` — `/supported` or `/verify` could not be reached.
+     *   Nothing was charged; the buyer may retry.
+     * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment.
+     * - 403 `delegation_rejected` — the facilitator examined the delegation and refused it.
+     * - 504 `settlement_unknown` — the facilitator broadcast but no receipt was seen, or
+     *   the answer was lost. The buyer may have been charged and must not re-sign blindly.
+     * - 422 `settlement_failed` — the facilitator reports the transfer did not happen.
+     *
+     * On success the receipt rides in `Payment-Response` (and the legacy
+     * `X-PAYMENT-RESPONSE`), `c.get("mapaeReceipt")` holds it, and `onSettled` has run.
+     *
+     * Mount it as a middleware in front of a handler. When it is the last matched route
+     * it answers 404 without pricing anything — a buyer never pays for a route nothing
+     * serves.
+     */
+    paywall(options: PaywallOptions): MiddlewareHandler<MapaeEnv>;
+    /**
+     * Handler for `GET /.well-known/mapae.json`, listing every paywall mounted on `app`
+     * with its method, path, price, description and receiving address. The app is read
+     * once, on the first request — after every route has been mounted, whichever order
+     * they were written in — and the result is kept: Hono's router refuses a new route
+     * once the first request has been matched, so what that request saw is what the
+     * server has.
+     */
+    manifest(options: ManifestOptions): (c: Context) => Response;
 }
 
 const NETWORK: MapaeManifest["chain"] = GIWA_SEPOLIA_CAIP2;
@@ -154,6 +226,18 @@ function parseFacilitatorUrl(value: string): string {
         throw new Error("facilitator must be a base URL without query or fragment");
     }
     return url.toString().replace(/\/$/, "");
+}
+
+/** An origin and nothing else, so `baseUrl + c.req.path` is always a well-formed URL. */
+function parseBaseUrl(value: string): string {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+        throw new Error("baseUrl must be an absolute HTTP(S) origin without credentials");
+    }
+    if (url.pathname !== "/" || url.search || url.hash) {
+        throw new Error("baseUrl must be an origin — scheme://host[:port] — with no path, query or fragment");
+    }
+    return url.origin;
 }
 
 /** The GIWA ERC-7710 kind a facilitator advertises — copied verbatim into every offer. */
@@ -209,7 +293,7 @@ class FacilitatorClient {
 
     constructor(
         readonly baseUrl: string,
-        readonly fetchImpl: NonNullable<MapaePaywallOptions["fetch"]>,
+        readonly fetchImpl: NonNullable<MapaeOptions["fetch"]>,
     ) {}
 
     /**
@@ -314,37 +398,40 @@ function readDelegatedPayment(header: string): DecodedPayment {
 }
 
 /**
- * Settle-before-serve paywall for one price.
- *
- * Without a payment header the request is answered with a 402 carrying the x402 v2
- * offer (header and body). With one, the facilitator is asked to `/verify` and then
- * `/settle`, and only a confirmed settlement lets the next handler run:
- *
- * - 503 `facilitator_unavailable` — `/supported` or `/verify` could not be reached.
- *   Nothing was charged; the buyer may retry.
- * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment.
- * - 403 `delegation_rejected` — the facilitator examined the delegation and refused it.
- * - 504 `settlement_unknown` — the facilitator broadcast but no receipt was seen, or
- *   the answer was lost. The buyer may have been charged and must not re-sign blindly.
- * - 422 `settlement_failed` — the facilitator reports the transfer did not happen.
- *
- * On success the receipt rides in `Payment-Response` (and the legacy
- * `X-PAYMENT-RESPONSE`), `c.get("mapaeReceipt")` holds it, and `onSettled` has run.
+ * What a paywall middleware says about itself. The manifest reads it off `app.routes`, so
+ * the list of what a server sells is the list of what it actually guards — a route that
+ * was never mounted cannot be advertised, and one that was cannot be left out.
  */
-export function mapaePaywall(options: MapaePaywallOptions): MiddlewareHandler<MapaeEnv> {
+type PaywallDescriptor = Pick<MapaeManifestEndpoint, "price" | "description" | "payTo">;
+
+const PAYWALL = Symbol("mapae.paywall");
+
+function paywallDescriptor(handler: unknown): PaywallDescriptor | undefined {
+    if (typeof handler !== "function") return undefined;
+    const own = (handler as {[PAYWALL]?: PaywallDescriptor})[PAYWALL];
+    if (own) return own;
+    // `app.route()` wraps a sub-app's handlers in that sub-app's own `onError` when it
+    // has one, and keeps the original where Hono's own tooling looks for it.
+    return paywallDescriptor((handler as {[COMPOSED_HANDLER]?: unknown})[COMPOSED_HANDLER]);
+}
+
+function buildPaywall(
+    facilitator: FacilitatorClient,
+    baseUrl: string | undefined,
+    options: PaywallOptions,
+): MiddlewareHandler<MapaeEnv> {
     const payTo = parsePayTo(options.payTo);
     const amount = parsePrice(options.price);
-    const facilitator = new FacilitatorClient(
-        parseFacilitatorUrl(options.facilitator ?? DEFAULT_FACILITATOR_URL),
-        options.fetch ?? ((input, init) => fetch(input, init)),
-    );
-    const {description, onSettled} = options;
+    const {description, onSettled, extensions} = options;
+    if (!description.trim()) throw new Error("description must not be empty");
+    // Serialised once here, so a value JSON cannot carry fails the boot, not a buyer's 402.
+    if (extensions !== undefined) JSON.stringify(extensions);
 
-    return async (c, next) => {
+    const paywall: MiddlewareHandler<MapaeEnv> = async (c, next) => {
         // Never price, let alone settle, a route nothing will serve. When this
         // middleware is the last matched route, `next()` would be a 404 — a buyer
         // must not pay for one.
-        if (c.req.routeIndex === c.req.matchedRoutes.length - 1) return c.notFound();
+        if (c.req.routeIndex === matchedRoutes(c).length - 1) return c.notFound();
 
         // Whatever is wrong with the header itself is answered before the facilitator
         // is involved: a bad header costs nobody a network call.
@@ -377,8 +464,9 @@ export function mapaePaywall(options: MapaePaywallOptions): MiddlewareHandler<Ma
         if (!payload) {
             const body: PaymentRequired<Erc7710PaymentRequirements> = {
                 x402Version: X402_VERSION,
-                resource: {url: c.req.url, description},
+                resource: {url: baseUrl ? `${baseUrl}${c.req.path}` : c.req.url, description},
                 accepts: [requirements],
+                ...(extensions === undefined ? {} : {extensions}),
             };
             // v2 transport puts the offer in a Payment-Required header; the JSON body
             // stays as well, and a client honours whichever of the two it understands.
@@ -456,37 +544,75 @@ export function mapaePaywall(options: MapaePaywallOptions): MiddlewareHandler<Ma
         c.header(PAYMENT_RESPONSE_HEADER, receiptHeader);
         c.header(LEGACY_PAYMENT_RESPONSE_HEADER, receiptHeader);
     };
+    const descriptor: PaywallDescriptor = {price: options.price.trim(), description, payTo};
+    return Object.assign(paywall, {[PAYWALL]: descriptor});
+}
+
+function compareEndpoints(a: MapaeManifestEndpoint, b: MapaeManifestEndpoint): number {
+    if (a.path !== b.path) return a.path < b.path ? -1 : 1;
+    if (a.method !== b.method) return a.method < b.method ? -1 : 1;
+    return 0;
+}
+
+function describeRoutes(routes: readonly RouterRoute[]): MapaeManifestEndpoint[] {
+    const endpoints: MapaeManifestEndpoint[] = [];
+    for (const route of routes) {
+        const paywall = paywallDescriptor(route.handler);
+        if (paywall) endpoints.push({method: route.method, path: route.path, ...paywall});
+    }
+    return endpoints.sort(compareEndpoints);
+}
+
+function buildManifest(options: ManifestOptions, facilitator: string): (c: Context) => Response {
+    const name = options.name.trim();
+    if (!name) throw new Error("manifest name must not be empty");
+    const {app} = options;
+    let document: MapaeManifest | undefined;
+    return (c) => {
+        document ??= {
+            version: 1,
+            name,
+            chain: NETWORK,
+            asset: MOCK_USDC.address,
+            facilitator,
+            endpoints: describeRoutes(app.routes),
+        };
+        return c.json(document);
+    };
 }
 
 /**
- * Handler for `GET /.well-known/mapae.json`. Everything is validated once, at
- * construction, so a bad price or address fails the process at boot rather than a
- * buyer at runtime.
+ * One facilitator client — one `/supported` cache, one set of timeouts — for every
+ * paywall and the manifest of a server. Everything is validated here, so a bad
+ * facilitator or `baseUrl` fails the process at boot rather than a buyer at runtime.
+ */
+export function createMapae(options: MapaeOptions = {}): MapaeSeller {
+    const facilitator = parseFacilitatorUrl(options.facilitator ?? DEFAULT_FACILITATOR_URL);
+    const client = new FacilitatorClient(
+        facilitator,
+        options.fetch ?? ((input, init) => fetch(input, init)),
+    );
+    const baseUrl = options.baseUrl === undefined ? undefined : parseBaseUrl(options.baseUrl);
+    return {
+        facilitator,
+        paywall: (paywall) => buildPaywall(client, baseUrl, paywall),
+        manifest: (manifest) => buildManifest(manifest, facilitator),
+    };
+}
+
+/**
+ * The one-liner: `createMapae(options).paywall(options)`. Each call makes its own
+ * facilitator client; a server with several paywalls shares one through
+ * {@link createMapae}. See {@link MapaeSeller.paywall} for the responses.
+ */
+export function mapaePaywall(options: MapaePaywallOptions): MiddlewareHandler<MapaeEnv> {
+    return createMapae(options).paywall(options);
+}
+
+/**
+ * Handler for `GET /.well-known/mapae.json`, derived from the paywalls mounted on `app`.
+ * See {@link MapaeSeller.manifest}.
  */
 export function mapaeManifest(options: MapaeManifestOptions): (c: Context) => Response {
-    const name = options.name.trim();
-    if (!name) throw new Error("manifest name must not be empty");
-    const manifest: MapaeManifest = {
-        version: 1,
-        name,
-        chain: NETWORK,
-        asset: MOCK_USDC.address,
-        payTo: parsePayTo(options.payTo),
-        facilitator: parseFacilitatorUrl(options.facilitator ?? DEFAULT_FACILITATOR_URL),
-        endpoints: options.endpoints.map((endpoint) => {
-            if (!endpoint.path.startsWith("/")) {
-                throw new Error(`manifest endpoint path must start with "/": ${endpoint.path}`);
-            }
-            if (!endpoint.description.trim()) {
-                throw new Error(`manifest endpoint ${endpoint.path} needs a description`);
-            }
-            parsePrice(endpoint.price);
-            return {
-                path: endpoint.path,
-                price: endpoint.price.trim(),
-                description: endpoint.description,
-            };
-        }),
-    };
-    return (c) => c.json(manifest);
+    return buildManifest(options, parseFacilitatorUrl(options.facilitator ?? DEFAULT_FACILITATOR_URL));
 }
