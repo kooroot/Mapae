@@ -19,10 +19,11 @@ common failure in an x402 integration, and if it goes out as a generic 500 the
 cause cannot be pinpointed.
 
 **The two paths have different response policies (deliberately).** It is the
-EIP-3009 direct payment path (`apps/seller`) that carries the tag union verbatim
-in the response body. The ERC-7710 delegated path behaves differently.
+EIP-3009 direct payment's error model (`SettlementError` in `packages/shared`) that
+carries the tag union verbatim in the response body. The app that issued that path is
+gone; the model and its tests remain. The ERC-7710 delegated path behaves differently.
 
-| | Direct payment (`apps/seller`) | Delegated payment (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
+| | Direct payment (`packages/shared` error model) | Delegated payment (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
 | External response | `SettlementError._tag` + `describe()` cause | **Opaque reasons** such as `delegation_rejected` / `settlement_unknown` |
 | Status code | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |

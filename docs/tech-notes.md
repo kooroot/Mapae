@@ -17,13 +17,11 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 |---|---|---|
 | `contracts/` | MockUSDC (EIP-3009) | Solidity 0.8.28 / Foundry |
 | `facilitator/` | x402 결제 검증·정산 브로드캐스트 | x402-rs (Rust, 컨테이너 운영) |
-| `apps/seller` | 402 발행 (유료 리소스) | Bun + Hono |
-| `apps/agent` | 402 수신 → 서명 → 재요청 | Bun (→ MCP 클라이언트) |
 | `packages/shared` | 체인·토큰·x402 타입·에러 모델 | TypeScript |
 | `packages/delegation` | Framework 환경·caveat·서명·재위임·취소·ERC-7710 | Smart Accounts Kit 1.7 |
 | `apps/facilitator-erc7710` | ERC-7710 verify/settle 어댑터 | Bun + viem |
 | `apps/delegated-agent` | parent 위임에서 결제별 leaf 생성 | Bun |
-| `apps/delegated-seller` | ERC-7710 402 발행·리소스 게이트 | Bun + Hono |
+| `apps/delegated-seller` | ERC-7710 호스티드 상점 — 가게 매니페스트·유료 티켓·주문 장부 | Bun + Hono |
 | `apps/agent-mcp` | 결제 루프를 MCP tool로 노출 | Bun + MCP SDK (stdio) |
 | `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` — 핀(단일 payer·loopback) / 스폰서드(공개, 예치금 대납) 두 모드 | Bun + Hono |
 | `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 + mUSDC 민팅 | Bun + Hono |
@@ -40,21 +38,20 @@ Accounts Kit(구 Delegation Toolkit)에 의존하고 이는 TypeScript 전용이
 
 ## 2. 결제 흐름
 
-Mapae는 회귀 가능한 두 경로를 병렬 유지한다.
+Mapae의 결제 경로는 ERC-7710 위임 결제다. 첫 회귀 경로였던 EIP-3009 직접
+결제는 앱(판매자·에이전트)을 지우고 원시 요소만 남겼다.
 
-### EIP-3009 직접 결제
+### EIP-3009 직접 결제 — 남은 것
 
-```
-에이전트 → 리소스 요청
-        ← 402 Payment Required (금액·수취인·asset·EIP-712 도메인)
-        → 한도 확인 후 EIP-3009 authorization 서명 (오프체인)
-facilitator → 서명 검증 → GIWA에 정산 트랜잭션 브로드캐스트
-        ← 리소스 + 영수증
-```
+`contracts/`의 MockUSDC는 `transferWithAuthorization`을 구현하고, `packages/shared`는
+그 authorization의 타입·EIP-712 도메인·정산 오류 모델(`SettlementError`)을 들고
+있으며, `facilitator/`는 x402-rs 컨테이너 설정이다. 이 경로를 내고 받던 두 앱은
+호스티드 상점이 들어오면서 지웠다 — 위임 경로가 같은 402 → 서명 → 정산 루프를
+더 좁은 권한으로 닫기 때문이다.
 
-지불자는 가스를 내지 않는다. 트랜잭션을 브로드캐스트하는 것은 facilitator의
-릴레이어 서명자이며, authorization에 `from`·`to`·`value`가 서명으로 고정되어
-있어 릴레이어는 브로드캐스터 이상의 권한을 갖지 못한다.
+남긴 성질 하나가 위임 경로의 출발점이다: authorization에 `from`·`to`·`value`가
+서명으로 고정되어 있어, 이를 브로드캐스트하는 릴레이어는 브로드캐스터 이상의
+권한을 갖지 못한다. 지불자는 가스를 내지 않는다.
 
 ### ERC-7710 위임 결제
 
@@ -96,7 +93,7 @@ sequenceDiagram
 
     rect rgb(232,245,233)
     Note over Agent,USDC: ① 정상 경로 — 누적 2.5 ≤ 3.0
-    Agent->>Seller: GET /delegated/deliverable/inv-002
+    Agent->>Seller: GET /s/demo-cafe/croissant
     Seller-->>Agent: 402 (amount 2.5, erc7710)
     Agent->>Agent: 결제별 leaf 서명 (세션키)
     Agent->>Seller: Payment-Signature (leaf context)
@@ -107,12 +104,12 @@ sequenceDiagram
     DM->>USDC: transfer(payTo, 2.5)
     DM-->>Fac: OK
     Fac-->>Seller: tx 0x71d71442…
-    Seller-->>Agent: 200 + 리소스 (payer 가스 0)
+    Seller-->>Agent: 200 + 티켓 (payer 가스 0)
     end
 
     rect rgb(255,235,235)
     Note over Agent,DM: ② 한도 초과 — 같은 주기 재시도, 누적 5.0 > 3.0
-    Agent->>Seller: GET inv-002 (재시도)
+    Agent->>Seller: GET /s/demo-cafe/croissant (재시도)
     Seller->>Fac: /verify → simulate
     Fac->>DM: simulate redeemDelegations
     DM-->>Fac: revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded
@@ -435,10 +432,11 @@ root permission 아티팩트를 요구하므로, 배포된 계정을 소유한 �
 흔한 실패이며, generic 500으로 나가면 원인을 특정할 수 없다.
 
 **두 경로는 응답 정책이 다르다 (의도적).** 태그 유니온을 응답 본문에 그대로
-싣는 것은 EIP-3009 직접 결제 경로(`apps/seller`)다. ERC-7710 위임 경로는 다르게
-동작한다.
+싣는 것은 EIP-3009 직접 결제의 오류 모델(`packages/shared`의 `SettlementError`)이다.
+그 경로를 내던 앱은 지웠지만 모델과 테스트는 남아 있다. ERC-7710 위임 경로는
+다르게 동작한다.
 
-| | 직접 결제 (`apps/seller`) | 위임 결제 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
+| | 직접 결제 (`packages/shared` 오류 모델) | 위임 결제 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
 | 외부 응답 | `SettlementError._tag` + `describe()` 원인 | `delegation_rejected` / `settlement_unknown` 등 **불투명한 사유** |
 | 상태 코드 | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |

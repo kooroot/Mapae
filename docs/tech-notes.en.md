@@ -17,13 +17,11 @@ gate in `bun run check` refuses any mismatch between the generated output and th
 |---|---|---|
 | `contracts/` | MockUSDC (EIP-3009) | Solidity 0.8.28 / Foundry |
 | `facilitator/` | x402 payment verification and settlement broadcast | x402-rs (Rust, operated as a container) |
-| `apps/seller` | Issues the 402 (paid resource) | Bun + Hono |
-| `apps/agent` | Receives the 402 → signs → retries | Bun (→ MCP client) |
 | `packages/shared` | Chain, token, x402 types, error model | TypeScript |
 | `packages/delegation` | Framework environment, caveats, signing, re-delegation, revocation, ERC-7710 | Smart Accounts Kit 1.7 |
 | `apps/facilitator-erc7710` | ERC-7710 verify/settle adapter | Bun + viem |
 | `apps/delegated-agent` | Builds a payment-specific leaf from a parent delegation | Bun |
-| `apps/delegated-seller` | Issues the ERC-7710 402, gates the resource | Bun + Hono |
+| `apps/delegated-seller` | ERC-7710 hosted shop — shop manifests, paywalled tickets, the orders ledger | Bun + Hono |
 | `apps/agent-mcp` | Exposes the payment loop as an MCP tool | Bun + MCP SDK (stdio) |
 | `apps/revocation-submitter` | Receives an owner-signed revocation UserOp → `handleOps` — two modes: pinned (single payer, loopback) / sponsored (public, sponsor-funded deposit) | Bun + Hono |
 | `apps/account-bootstrap` | Recovers the owner from a pre-deployment signature → sponsored CREATE2 deploy of the payer account + mUSDC mint | Bun + Hono |
@@ -41,21 +39,21 @@ implement its own.
 
 ## 2. Payment flows
 
-Mapae maintains two regression-testable paths in parallel.
+Mapae's payment path is the ERC-7710 delegated payment. EIP-3009 direct payment, the
+first regression path, has lost its apps (a seller and an agent) and kept only its
+primitives.
 
-### EIP-3009 direct payment
+### EIP-3009 direct payment — what remains
 
-```
-agent → resource request
-      ← 402 Payment Required (amount · recipient · asset · EIP-712 domain)
-      → check the limit, sign an EIP-3009 authorization (off-chain)
-facilitator → verify the signature → broadcast the settlement transaction to GIWA
-      ← resource + receipt
-```
+MockUSDC in `contracts/` implements `transferWithAuthorization`; `packages/shared`
+holds the authorization's types, its EIP-712 domain and the settlement error model
+(`SettlementError`); `facilitator/` is the x402-rs container configuration. The two
+apps that issued and paid this path were removed when the hosted shop arrived — the
+delegated path closes the same 402 → sign → settle loop under narrower authority.
 
-The payer pays no gas. It is the facilitator's relayer signer that broadcasts the
-transaction, and because the authorization pins `from`, `to`, and `value` under the
-signature, the relayer holds no authority beyond that of a broadcaster.
+One property was kept as the delegated path's starting point: the authorization
+pins `from`, `to`, and `value` under the signature, so the relayer that broadcasts it
+holds no authority beyond that of a broadcaster. The payer pays no gas.
 
 ### ERC-7710 delegated payment
 
@@ -99,7 +97,7 @@ sequenceDiagram
 
     rect rgb(232,245,233)
     Note over Agent,USDC: ① normal path — cumulative 2.5 ≤ 3.0
-    Agent->>Seller: GET /delegated/deliverable/inv-002
+    Agent->>Seller: GET /s/demo-cafe/croissant
     Seller-->>Agent: 402 (amount 2.5, erc7710)
     Agent->>Agent: sign payment-specific leaf (session key)
     Agent->>Seller: Payment-Signature (leaf context)
@@ -110,12 +108,12 @@ sequenceDiagram
     DM->>USDC: transfer(payTo, 2.5)
     DM-->>Fac: OK
     Fac-->>Seller: tx 0x71d71442…
-    Seller-->>Agent: 200 + resource (payer gas 0)
+    Seller-->>Agent: 200 + ticket (payer gas 0)
     end
 
     rect rgb(255,235,235)
     Note over Agent,DM: ② over cap — retry in the same period, cumulative 5.0 > 3.0
-    Agent->>Seller: GET inv-002 (retry)
+    Agent->>Seller: GET /s/demo-cafe/croissant (retry)
     Seller->>Fac: /verify → simulate
     Fac->>DM: simulate redeemDelegations
     DM-->>Fac: revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded
@@ -468,10 +466,11 @@ common failure in an x402 integration, and if it goes out as a generic 500 the
 cause cannot be pinpointed.
 
 **The two paths have different response policies (deliberately).** It is the
-EIP-3009 direct payment path (`apps/seller`) that carries the tag union verbatim
-in the response body. The ERC-7710 delegated path behaves differently.
+EIP-3009 direct payment's error model (`SettlementError` in `packages/shared`) that
+carries the tag union verbatim in the response body. The app that issued that path is
+gone; the model and its tests remain. The ERC-7710 delegated path behaves differently.
 
-| | Direct payment (`apps/seller`) | Delegated payment (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
+| | Direct payment (`packages/shared` error model) | Delegated payment (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
 | External response | `SettlementError._tag` + `describe()` cause | **Opaque reasons** such as `delegation_rejected` / `settlement_unknown` |
 | Status code | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |

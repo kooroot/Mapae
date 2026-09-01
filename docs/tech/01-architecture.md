@@ -6,13 +6,11 @@
 |---|---|---|
 | `contracts/` | MockUSDC (EIP-3009) | Solidity 0.8.28 / Foundry |
 | `facilitator/` | x402 결제 검증·정산 브로드캐스트 | x402-rs (Rust, 컨테이너 운영) |
-| `apps/seller` | 402 발행 (유료 리소스) | Bun + Hono |
-| `apps/agent` | 402 수신 → 서명 → 재요청 | Bun (→ MCP 클라이언트) |
 | `packages/shared` | 체인·토큰·x402 타입·에러 모델 | TypeScript |
 | `packages/delegation` | Framework 환경·caveat·서명·재위임·취소·ERC-7710 | Smart Accounts Kit 1.7 |
 | `apps/facilitator-erc7710` | ERC-7710 verify/settle 어댑터 | Bun + viem |
 | `apps/delegated-agent` | parent 위임에서 결제별 leaf 생성 | Bun |
-| `apps/delegated-seller` | ERC-7710 402 발행·리소스 게이트 | Bun + Hono |
+| `apps/delegated-seller` | ERC-7710 호스티드 상점 — 가게 매니페스트·유료 티켓·주문 장부 | Bun + Hono |
 | `apps/agent-mcp` | 결제 루프를 MCP tool로 노출 | Bun + MCP SDK (stdio) |
 | `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` — 핀(단일 payer·loopback) / 스폰서드(공개, 예치금 대납) 두 모드 | Bun + Hono |
 | `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 + mUSDC 민팅 | Bun + Hono |

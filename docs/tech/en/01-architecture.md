@@ -6,13 +6,11 @@
 |---|---|---|
 | `contracts/` | MockUSDC (EIP-3009) | Solidity 0.8.28 / Foundry |
 | `facilitator/` | x402 payment verification and settlement broadcast | x402-rs (Rust, operated as a container) |
-| `apps/seller` | Issues the 402 (paid resource) | Bun + Hono |
-| `apps/agent` | Receives the 402 → signs → retries | Bun (→ MCP client) |
 | `packages/shared` | Chain, token, x402 types, error model | TypeScript |
 | `packages/delegation` | Framework environment, caveats, signing, re-delegation, revocation, ERC-7710 | Smart Accounts Kit 1.7 |
 | `apps/facilitator-erc7710` | ERC-7710 verify/settle adapter | Bun + viem |
 | `apps/delegated-agent` | Builds a payment-specific leaf from a parent delegation | Bun |
-| `apps/delegated-seller` | Issues the ERC-7710 402, gates the resource | Bun + Hono |
+| `apps/delegated-seller` | ERC-7710 hosted shop — shop manifests, paywalled tickets, the orders ledger | Bun + Hono |
 | `apps/agent-mcp` | Exposes the payment loop as an MCP tool | Bun + MCP SDK (stdio) |
 | `apps/revocation-submitter` | Receives an owner-signed revocation UserOp → `handleOps` — two modes: pinned (single payer, loopback) / sponsored (public, sponsor-funded deposit) | Bun + Hono |
 | `apps/account-bootstrap` | Recovers the owner from a pre-deployment signature → sponsored CREATE2 deploy of the payer account + mUSDC mint | Bun + Hono |

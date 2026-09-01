@@ -2,21 +2,21 @@
 
 # 2. Payment flows
 
-Mapae maintains two regression-testable paths in parallel.
+Mapae's payment path is the ERC-7710 delegated payment. EIP-3009 direct payment, the
+first regression path, has lost its apps (a seller and an agent) and kept only its
+primitives.
 
-## EIP-3009 direct payment
+## EIP-3009 direct payment — what remains
 
-```
-agent → resource request
-      ← 402 Payment Required (amount · recipient · asset · EIP-712 domain)
-      → check the limit, sign an EIP-3009 authorization (off-chain)
-facilitator → verify the signature → broadcast the settlement transaction to GIWA
-      ← resource + receipt
-```
+MockUSDC in `contracts/` implements `transferWithAuthorization`; `packages/shared`
+holds the authorization's types, its EIP-712 domain and the settlement error model
+(`SettlementError`); `facilitator/` is the x402-rs container configuration. The two
+apps that issued and paid this path were removed when the hosted shop arrived — the
+delegated path closes the same 402 → sign → settle loop under narrower authority.
 
-The payer pays no gas. It is the facilitator's relayer signer that broadcasts the
-transaction, and because the authorization pins `from`, `to`, and `value` under the
-signature, the relayer holds no authority beyond that of a broadcaster.
+One property was kept as the delegated path's starting point: the authorization
+pins `from`, `to`, and `value` under the signature, so the relayer that broadcasts it
+holds no authority beyond that of a broadcaster. The payer pays no gas.
 
 ## ERC-7710 delegated payment
 
@@ -60,7 +60,7 @@ sequenceDiagram
 
     rect rgb(232,245,233)
     Note over Agent,USDC: ① normal path — cumulative 2.5 ≤ 3.0
-    Agent->>Seller: GET /delegated/deliverable/inv-002
+    Agent->>Seller: GET /s/demo-cafe/croissant
     Seller-->>Agent: 402 (amount 2.5, erc7710)
     Agent->>Agent: sign payment-specific leaf (session key)
     Agent->>Seller: Payment-Signature (leaf context)
@@ -71,12 +71,12 @@ sequenceDiagram
     DM->>USDC: transfer(payTo, 2.5)
     DM-->>Fac: OK
     Fac-->>Seller: tx 0x71d71442…
-    Seller-->>Agent: 200 + resource (payer gas 0)
+    Seller-->>Agent: 200 + ticket (payer gas 0)
     end
 
     rect rgb(255,235,235)
     Note over Agent,DM: ② over cap — retry in the same period, cumulative 5.0 > 3.0
-    Agent->>Seller: GET inv-002 (retry)
+    Agent->>Seller: GET /s/demo-cafe/croissant (retry)
     Seller->>Fac: /verify → simulate
     Fac->>DM: simulate redeemDelegations
     DM-->>Fac: revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded

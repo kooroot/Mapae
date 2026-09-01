@@ -17,10 +17,11 @@
 흔한 실패이며, generic 500으로 나가면 원인을 특정할 수 없다.
 
 **두 경로는 응답 정책이 다르다 (의도적).** 태그 유니온을 응답 본문에 그대로
-싣는 것은 EIP-3009 직접 결제 경로(`apps/seller`)다. ERC-7710 위임 경로는 다르게
-동작한다.
+싣는 것은 EIP-3009 직접 결제의 오류 모델(`packages/shared`의 `SettlementError`)이다.
+그 경로를 내던 앱은 지웠지만 모델과 테스트는 남아 있다. ERC-7710 위임 경로는
+다르게 동작한다.
 
-| | 직접 결제 (`apps/seller`) | 위임 결제 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
+| | 직접 결제 (`packages/shared` 오류 모델) | 위임 결제 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
 | 외부 응답 | `SettlementError._tag` + `describe()` 원인 | `delegation_rejected` / `settlement_unknown` 등 **불투명한 사유** |
 | 상태 코드 | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |

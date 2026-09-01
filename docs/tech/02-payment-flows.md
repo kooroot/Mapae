@@ -2,21 +2,20 @@
 
 # 2. 결제 흐름
 
-Mapae는 회귀 가능한 두 경로를 병렬 유지한다.
+Mapae의 결제 경로는 ERC-7710 위임 결제다. 첫 회귀 경로였던 EIP-3009 직접
+결제는 앱(판매자·에이전트)을 지우고 원시 요소만 남겼다.
 
-## EIP-3009 직접 결제
+## EIP-3009 직접 결제 — 남은 것
 
-```
-에이전트 → 리소스 요청
-        ← 402 Payment Required (금액·수취인·asset·EIP-712 도메인)
-        → 한도 확인 후 EIP-3009 authorization 서명 (오프체인)
-facilitator → 서명 검증 → GIWA에 정산 트랜잭션 브로드캐스트
-        ← 리소스 + 영수증
-```
+`contracts/`의 MockUSDC는 `transferWithAuthorization`을 구현하고, `packages/shared`는
+그 authorization의 타입·EIP-712 도메인·정산 오류 모델(`SettlementError`)을 들고
+있으며, `facilitator/`는 x402-rs 컨테이너 설정이다. 이 경로를 내고 받던 두 앱은
+호스티드 상점이 들어오면서 지웠다 — 위임 경로가 같은 402 → 서명 → 정산 루프를
+더 좁은 권한으로 닫기 때문이다.
 
-지불자는 가스를 내지 않는다. 트랜잭션을 브로드캐스트하는 것은 facilitator의
-릴레이어 서명자이며, authorization에 `from`·`to`·`value`가 서명으로 고정되어
-있어 릴레이어는 브로드캐스터 이상의 권한을 갖지 못한다.
+남긴 성질 하나가 위임 경로의 출발점이다: authorization에 `from`·`to`·`value`가
+서명으로 고정되어 있어, 이를 브로드캐스트하는 릴레이어는 브로드캐스터 이상의
+권한을 갖지 못한다. 지불자는 가스를 내지 않는다.
 
 ## ERC-7710 위임 결제
 
@@ -58,7 +57,7 @@ sequenceDiagram
 
     rect rgb(232,245,233)
     Note over Agent,USDC: ① 정상 경로 — 누적 2.5 ≤ 3.0
-    Agent->>Seller: GET /delegated/deliverable/inv-002
+    Agent->>Seller: GET /s/demo-cafe/croissant
     Seller-->>Agent: 402 (amount 2.5, erc7710)
     Agent->>Agent: 결제별 leaf 서명 (세션키)
     Agent->>Seller: Payment-Signature (leaf context)
@@ -69,12 +68,12 @@ sequenceDiagram
     DM->>USDC: transfer(payTo, 2.5)
     DM-->>Fac: OK
     Fac-->>Seller: tx 0x71d71442…
-    Seller-->>Agent: 200 + 리소스 (payer 가스 0)
+    Seller-->>Agent: 200 + 티켓 (payer 가스 0)
     end
 
     rect rgb(255,235,235)
     Note over Agent,DM: ② 한도 초과 — 같은 주기 재시도, 누적 5.0 > 3.0
-    Agent->>Seller: GET inv-002 (재시도)
+    Agent->>Seller: GET /s/demo-cafe/croissant (재시도)
     Seller->>Fac: /verify → simulate
     Fac->>DM: simulate redeemDelegations
     DM-->>Fac: revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded
