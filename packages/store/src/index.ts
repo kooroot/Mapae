@@ -5,9 +5,9 @@
  * synchronous and every statement is parameterised; the only SQL assembled at runtime is
  * `PRAGMA user_version = <SCHEMA_VERSION>`, from a module constant.
  *
- * Time is always the caller's: events carry `at`, rows carry `createdAt`, and summaries
- * take a `sinceMs`. The store never reads the clock, which is what makes the summary
- * math and the reopen tests exact.
+ * Time is always the caller's: events carry `at`, rows carry `createdAt`, summaries take
+ * a `sinceMs` and a prune takes its cutoff. The store never reads the clock, which is
+ * what makes the summary math and the reopen tests exact.
  */
 import {Database} from "bun:sqlite";
 import {randomBytes} from "node:crypto";
@@ -62,12 +62,31 @@ export interface LedgerSummary {
     uniquePayers: number;
 }
 
+/**
+ * How far back `rejected` events are kept. Both bounds apply: rows before the cutoff go,
+ * and of what remains only the newest `keepRejected` stay. The cutoff is the caller's —
+ * the store never reads the clock.
+ */
+export interface LedgerRetention {
+    /** Epoch milliseconds; a `rejected` event with `at` before this is dropped. */
+    rejectedBefore: number;
+    /** The most `rejected` events left on file, newest first as `list` orders them. */
+    keepRejected: number;
+}
+
 export interface Ledger {
     record(event: SettlementEventInput): SettlementEvent;
     /** Newest first. */
     list(options?: {limit?: number}): SettlementEvent[];
     /** Events with `at >= sinceMs`; pass `0` for all time. */
     summary(window: {sinceMs: number}): LedgerSummary;
+    /**
+     * Drop `rejected` events beyond the retention and return how many went. A refusal
+     * charged nobody, so it is the one outcome whose count something outside the store
+     * can bound; `settled` and `error` rows are never touched — money moved, or may
+     * have, and the ledger is the only record of it.
+     */
+    prune(retention: LedgerRetention): number;
 }
 
 /** One series of daily totals — structurally the `BudgetStore` a `SpendBudget` persists through. */
@@ -386,6 +405,24 @@ function createLedger(db: Database): Ledger {
         `SELECT pay_to, amount_base FROM settlement_events
          WHERE outcome = 'settled' AND at >= $since`,
     );
+    const dropRejectedBefore = db.query<never, Params>(
+        `DELETE FROM settlement_events WHERE outcome = 'rejected' AND at < $before`,
+    );
+    // The survivors are the newest by the order `list` shows them, so what stays is
+    // what an operator would have seen at the top.
+    const dropRejectedBeyond = db.query<never, Params>(
+        `DELETE FROM settlement_events
+         WHERE outcome = 'rejected' AND id NOT IN (
+            SELECT id FROM settlement_events WHERE outcome = 'rejected'
+            ORDER BY at DESC, id DESC LIMIT $keep
+         )`,
+    );
+    // One transaction, so the count is of one consistent pass and a crash between the
+    // two deletes leaves the file as it was.
+    const prune = db.transaction(
+        (before: number, keep: number) =>
+            dropRejectedBefore.run({before}).changes + dropRejectedBeyond.run({keep}).changes,
+    );
 
     return {
         record(event) {
@@ -420,6 +457,12 @@ function createLedger(db: Database): Ledger {
                 volumeByPayTo,
                 uniquePayers: tally.payers,
             };
+        },
+        prune({rejectedBefore, keepRejected}) {
+            return prune(
+                millis(rejectedBefore, "rejectedBefore"),
+                positiveInteger(keepRejected, "keepRejected"),
+            );
         },
     };
 }

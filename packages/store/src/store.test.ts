@@ -401,6 +401,68 @@ describe("ledger", () => {
             uniquePayers: 0,
         });
     });
+
+    const ATTEMPT = {kind: "settle", payer: ALICE, payTo: SHOP, amountBase: 1n} as const;
+
+    test("prune drops rejected events before the cutoff, and never a settled or error one", () => {
+        const store = open();
+        const settled = store.ledger.record({...ATTEMPT, at: T0 - 3 * HOUR, outcome: "settled", txHash: TX});
+        const errored = store.ledger.record({...ATTEMPT, at: T0 - 3 * HOUR, outcome: "error", txHash: TX});
+        store.ledger.record({...ATTEMPT, at: T0 - 3 * HOUR, outcome: "rejected"});
+        store.ledger.record({...ATTEMPT, at: T0 - 1, outcome: "rejected"});
+        const atCutoff = store.ledger.record({...ATTEMPT, at: T0, outcome: "rejected"});
+
+        expect(store.ledger.prune({rejectedBefore: T0, keepRejected: 100})).toBe(2);
+        // Strictly before: the event at the cutoff is inside the window.
+        expect(store.ledger.list()).toEqual([atCutoff, errored, settled]);
+        expect(store.ledger.summary({sinceMs: 0})).toMatchObject({total: 3, succeeded: 1, failed: 2});
+    });
+
+    test("prune keeps only the newest keepRejected rejected events — by at, then id, as list orders them", () => {
+        const store = open();
+        store.ledger.record({...ATTEMPT, at: T0, outcome: "rejected"});
+        const second = store.ledger.record({...ATTEMPT, at: T0 + 2 * HOUR, outcome: "rejected"});
+        store.ledger.record({...ATTEMPT, at: T0 + HOUR, outcome: "rejected"});
+        const fourth = store.ledger.record({...ATTEMPT, at: T0 + 2 * HOUR, outcome: "rejected"});
+        // Older than every rejected event and still on file afterwards: the cap counts
+        // refusals only.
+        const settled = store.ledger.record({...ATTEMPT, at: T0 - HOUR, outcome: "settled", txHash: TX});
+        const errored = store.ledger.record({...ATTEMPT, at: T0 - HOUR, outcome: "error", txHash: TX});
+
+        expect(store.ledger.prune({rejectedBefore: 0, keepRejected: 2})).toBe(2);
+        expect(store.ledger.list()).toEqual([fourth, second, errored, settled]);
+    });
+
+    test("prune applies both bounds in one pass and returns the total; a second pass drops nothing", () => {
+        const store = open();
+        for (let i = 0; i < 3; i += 1) store.ledger.record({...ATTEMPT, at: T0 - HOUR, outcome: "rejected"});
+        for (let i = 0; i < 5; i += 1) store.ledger.record({...ATTEMPT, at: T0 + i, outcome: "rejected"});
+        store.ledger.record({...ATTEMPT, at: T0 - HOUR, outcome: "settled", txHash: TX});
+
+        // Three fall before the cutoff; of the five inside it, two stay.
+        expect(store.ledger.prune({rejectedBefore: T0, keepRejected: 2})).toBe(6);
+        expect(store.ledger.list().map((event) => [event.at, event.outcome])).toEqual([
+            [T0 + 4, "rejected"],
+            [T0 + 3, "rejected"],
+            [T0 - HOUR, "settled"],
+        ]);
+        expect(store.ledger.prune({rejectedBefore: T0, keepRejected: 2})).toBe(0);
+        expect(open().ledger.prune({rejectedBefore: T0, keepRejected: 1})).toBe(0);
+    });
+
+    test("prune refuses a cutoff that is not epoch ms and a keep that is not a positive integer, touching nothing", () => {
+        const store = open();
+        store.ledger.record({...ATTEMPT, at: T0 - HOUR, outcome: "rejected"});
+        store.ledger.record({...ATTEMPT, at: T0, outcome: "rejected"});
+
+        expect(() => store.ledger.prune({rejectedBefore: -1, keepRejected: 1})).toThrow(TypeError);
+        expect(() => store.ledger.prune({rejectedBefore: 1.5, keepRejected: 1})).toThrow(TypeError);
+        expect(() => store.ledger.prune({rejectedBefore: "0" as never, keepRejected: 1})).toThrow(TypeError);
+        expect(() => store.ledger.prune({rejectedBefore: T0, keepRejected: 0})).toThrow(TypeError);
+        expect(() => store.ledger.prune({rejectedBefore: T0, keepRejected: 1.5})).toThrow(TypeError);
+        expect(() => store.ledger.prune({rejectedBefore: T0, keepRejected: "5" as never})).toThrow(TypeError);
+        expect(store.ledger.summary({sinceMs: 0}).total).toBe(2);
+    });
 });
 
 describe("budget", () => {
