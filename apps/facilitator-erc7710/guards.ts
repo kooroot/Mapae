@@ -12,6 +12,7 @@ import {
     FixedWindowLimiter,
     RATE_LIMITED,
     SpendBudget,
+    ipBucket,
     isRateLimitError,
     type Erc7710SettleResponse,
     type Erc7710VerifyResponse,
@@ -52,26 +53,6 @@ export const SETTLE_RATE_LIMITED: Erc7710SettleResponse = {
 };
 
 /**
- * The window a client address is counted in. An IPv6 client is counted on its /64:
- * Cloudflare forwards the full 128-bit address, the smallest allocation a residential or
- * VPS line gets is a /64, and rotating through its 2^64 addresses would make every
- * request a fresh key that never reaches the limit. An IPv4 address is one client and is
- * kept whole — as is the IPv4-mapped spelling (`::ffff:a.b.c.d`), whose "/64" would be
- * the same four zero groups for every IPv4 client there is.
- */
-export function limiterKey(ip: string): string {
-    if (!ip.includes(":") || ip.includes(".")) return `ip:${ip}`;
-    const [head = "", tail = ""] = ip.split("::");
-    const leading = head === "" ? [] : head.split(":");
-    const trailing = tail === "" ? [] : tail.split(":");
-    const zeros = Math.max(0, 8 - leading.length - trailing.length);
-    const prefix = [...leading, ...new Array<string>(zeros).fill("0"), ...trailing]
-        .slice(0, 4)
-        .map((group) => Number.parseInt(group, 16).toString(16));
-    return `ip:${prefix.join(":")}::/64`;
-}
-
-/**
  * Refuse the (limit + 1)th request from one address within the window, before the body
  * is read and before anything is enqueued toward the RPC — so a flood costs a Map lookup
  * and nothing else. Until this existed the only bound on an anonymous caller was the
@@ -85,6 +66,9 @@ export function limiterKey(ip: string): string {
  * buyer in {@link CLIENT_IP_HEADER} and that buyer is counted. Without the forwarded
  * name the shop was an unlimited path to `/verify`'s simulation for anyone who could
  * spell a delegation.
+ *
+ * The window is the client's network as `ipBucket` names it — the address for IPv4,
+ * the /64 for IPv6 — the same key the sponsored services count on.
  */
 export function rateLimitByIp(
     limiter: FixedWindowLimiter,
@@ -98,7 +82,7 @@ export function rateLimitByIp(
         const now = clock();
         counted += 1;
         if (counted % SWEEP_EVERY === 0) limiter.sweep(now);
-        if (!limiter.tryConsume(limiterKey(ip), now)) return c.json(refusal);
+        if (!limiter.tryConsume(`ip:${ipBucket(ip)}`, now)) return c.json(refusal);
         return next();
     };
 }

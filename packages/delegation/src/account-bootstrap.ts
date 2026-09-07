@@ -305,9 +305,13 @@ export class FixedWindowLimiter {
  * normalised (case, leading zeros, `::`) so the bucket does not depend on spelling; a
  * value that is not an address yields a stable garbage bucket, which is all a header
  * we did not set deserves.
+ *
+ * An IPv4 address in its IPv6-mapped spelling (`::ffff:a.b.c.d`) is one client too and
+ * is kept whole: its "/64" would be the same four zero groups for every IPv4 client
+ * there is, and folding it would put all of them in one window.
  */
 export function ipBucket(address: string): string {
-    if (!address.includes(":")) return address;
+    if (!address.includes(":") || address.includes(".")) return address;
     const [head = "", tail] = address.split("::", 2);
     const headGroups = head === "" ? [] : head.split(":");
     const tailGroups = tail === undefined || tail === "" ? [] : tail.split(":");

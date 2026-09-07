@@ -27,7 +27,6 @@ import {
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     classifyFrameworkError,
-    limiterKey,
     rateLimitByIp,
     requireReadiness,
 } from "./guards.js";
@@ -278,23 +277,6 @@ describe("requireReadiness", () => {
         await Promise.all([gate.post("/verify"), gate.post("/settle"), gate.post("/verify")]);
         expect(probes).toBe(1);
         expect(gate.reached()).toBe(3);
-    });
-});
-
-describe("limiterKey", () => {
-    test("an IPv4 address is one client", () => {
-        expect(limiterKey("203.0.113.5")).toBe("ip:203.0.113.5");
-        expect(limiterKey("::ffff:203.0.113.5")).toBe("ip:::ffff:203.0.113.5");
-    });
-
-    test("an IPv6 address is its /64, however it was spelled", () => {
-        expect(limiterKey("2001:0db8:0001:0002:0003:0004:0005:0006")).toBe("ip:2001:db8:1:2::/64");
-        expect(limiterKey("2001:db8:1:2::1")).toBe("ip:2001:db8:1:2::/64");
-        expect(limiterKey("2001:db8:1:2:ffff:ffff:ffff:ffff")).toBe("ip:2001:db8:1:2::/64");
-        expect(limiterKey("2001:db8::1")).toBe("ip:2001:db8:0:0::/64");
-        expect(limiterKey("::1")).toBe("ip:0:0:0:0::/64");
-        expect(limiterKey("2001:db8:1:2:3::")).toBe("ip:2001:db8:1:2::/64");
-        expect(limiterKey("2001:db8:1:3::1")).not.toBe(limiterKey("2001:db8:1:2::1"));
     });
 });
 

@@ -489,6 +489,14 @@ describe("ipBucket", () => {
         expect(ipBucket("203.0.113.7")).toBe("203.0.113.7");
     });
 
+    test("an IPv4-mapped IPv6 address is that IPv4 client, not the all-zero /64", () => {
+        // Folding `::ffff:a.b.c.d` to its first four groups gives `0:0:0:0::/64` for
+        // every IPv4 client there is — one shared window for all of them.
+        expect(ipBucket("::ffff:203.0.113.5")).toBe("::ffff:203.0.113.5");
+        expect(ipBucket("::ffff:203.0.113.5")).not.toBe(ipBucket("::ffff:198.51.100.7"));
+        expect(ipBucket("::ffff:203.0.113.5")).not.toBe(ipBucket("::1"));
+    });
+
     test("every address in one IPv6 /64 shares a bucket, so hopping addresses buys nothing", () => {
         const limiter = new FixedWindowLimiter(1, 1_000);
         expect(limiter.tryConsume(ipBucket("2001:db8:1:2::1"), 0)).toBe(true);
@@ -502,11 +510,15 @@ describe("ipBucket", () => {
 
     test("the bucket does not depend on how the address was spelled", () => {
         expect(ipBucket("2001:0DB8:0001:0002:0000:0000:0000:0001")).toBe(ipBucket("2001:db8:1:2::1"));
+        expect(ipBucket("2001:0db8:0001:0002:0003:0004:0005:0006")).toBe("2001:db8:1:2::/64");
+        expect(ipBucket("2001:db8:1:2:ffff:ffff:ffff:ffff")).toBe("2001:db8:1:2::/64");
     });
 
     test("a leading or trailing `::` expands from the right end", () => {
         expect(ipBucket("::1")).toBe("0:0:0:0::/64");
         expect(ipBucket("2001:db8::")).toBe("2001:db8:0:0::/64");
+        expect(ipBucket("2001:db8::1")).toBe("2001:db8:0:0::/64");
+        expect(ipBucket("2001:db8:1:2:3::")).toBe("2001:db8:1:2::/64");
         expect(ipBucket("2001:db8::1:2:3:4:5")).toBe("2001:db8:0:1::/64");
     });
 });
