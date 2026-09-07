@@ -1,6 +1,7 @@
 import {Hono, type Context} from "hono";
 import {
     FRAMEWORK_COMPOSITION_ID,
+    FixedWindowLimiter,
     PaymentIntentSingleFlight,
     SpendBudget,
     assertFundedKeySeparation,
@@ -65,6 +66,7 @@ type BootstrapRefusal =
     | "origin_refused"
     | "bootstrap_disabled"
     | "malformed_request"
+    | "rate_limited"
     | "faucet_recently_used"
     | "budget_exhausted"
     | "sponsor_unfunded"
@@ -231,6 +233,22 @@ if (PRIORITY_FEE_PER_GAS > MAX_FEE_PER_GAS) {
 }
 const MIN_SPONSOR_BALANCE = readPositiveInteger("BOOTSTRAP_MIN_BALANCE_WEI", 1_000_000_000_000n);
 const DAILY_BUDGET = readPositiveInteger("BOOTSTRAP_DAILY_WEI", 500_000_000_000_000n);
+/**
+ * A per-IP cap, generous on purpose.
+ *
+ * The first gate here was 20/hour and was removed because it bounded the wrong thing:
+ * keypairs are free, so a griefer with a block of addresses was never slowed, while a
+ * shared office NAT was refused — the commit that removed it records two people in one
+ * office being blocked. That was right about what a per-IP gate cannot do and wrong
+ * about what it can. With no gate, one machine behind one address posts fresh keypairs
+ * until `BOOTSTRAP_DAILY_WEI` is gone — a deploy plus its mint settles at roughly 2.4e11
+ * wei (189,374 measured deploy gas, a quarter-size mint, 1,000,266 wei/gas), so the
+ * 5e14 default is ~2,000 accounts, and nothing in the path ever asked that machine to
+ * wait: the drain fits in well under an hour. Thirty an hour is a speed bump for exactly
+ * that single-machine drain — the same address now needs ~70 hours — while the daily
+ * budget remains the bound, and an office of thirty still gets through.
+ */
+const RATE_PER_HOUR = Number(readPositiveInteger("BOOTSTRAP_RATE_PER_HOUR", 30n));
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("BOOTSTRAP_RECEIPT_TIMEOUT_MS", 60_000n));
 /** `:memory:` is accepted for dry runs; anything else is a file whose directory is created. */
 const STORE_PATH = process.env.STORE_PATH?.trim() || "./data/bootstrap.sqlite";
@@ -267,6 +285,7 @@ const sponsorClient = createWalletClient({
 const store = openStore(STORE_PATH);
 const budget = new SpendBudget(DAILY_BUDGET, Date.now(), store.budget);
 const faucetGate = new FaucetGate(FAUCET_WINDOW_MS, store.faucetWindows);
+const limiter = new FixedWindowLimiter(RATE_PER_HOUR, 3_600_000);
 const singleFlight = new PaymentIntentSingleFlight<BootstrapResponse>();
 
 const CORS_POLICY = {
@@ -576,6 +595,7 @@ app.options("/bootstrap", (c) => {
 app.get("/health", (c) => {
     const now = Date.now();
     faucetGate.sweep(now);
+    limiter.sweep(now);
     return c.json({
         ok: ENABLED,
         enabled: ENABLED,
@@ -584,6 +604,7 @@ app.get("/health", (c) => {
         faucet: FAUCET_ENABLED,
         faucetTargetBase: String(FAUCET_TARGET),
         faucetAccountsInWindow: faucetGate.size,
+        rateLimiterKeys: limiter.size,
         budgetRemainingWei: String(budget.remaining(now)),
         spentTodayWei: String(budget.spentToday(now)),
     });
@@ -592,11 +613,19 @@ app.get("/health", (c) => {
 app.post("/bootstrap", async (c) => {
     if (!ENABLED) return refuse(c, "bootstrap_disabled", 503);
 
-    // No per-IP gate: it bounded the wrong thing. Keypairs are free and IPs are shared, so
-    // it neither stopped a griefer nor let a shared office onboard twice in an hour. The
-    // request costs nothing on chain until it proves it owns an account, and after that
-    // the per-account faucet window and the daily gas budget are the bounds.
-    faucetGate.sweep(Date.now());
+    // Before the body is read, so a flood costs a header lookup. Cloudflare sets
+    // `CF-Connecting-IP` on everything that crosses the tunnel, and the tunnel is the only
+    // public path, so a request without it came over loopback — the operator's own curl or
+    // the fork e2e, which the cap must not trip — and is not counted. The cap is sized in
+    // the comment on `RATE_PER_HOUR`; the per-account faucet window and the daily budget
+    // are still the bounds once a request proves it owns an account.
+    const requester = c.req.header("cf-connecting-ip");
+    const now = Date.now();
+    limiter.sweep(now);
+    faucetGate.sweep(now);
+    if (requester !== undefined && !limiter.tryConsume(`ip:${requester}`, now)) {
+        return refuse(c, "rate_limited", 429);
+    }
 
     let validated: ValidatedAccountBootstrap;
     try {
@@ -644,6 +673,7 @@ console.log(`  enabled   ${ENABLED}`);
 console.log(`  sponsor   ${sponsor.address}`);
 console.log(`  faucet    ${FAUCET_ENABLED} (target ${FAUCET_TARGET} base, one top-up per account per day)`);
 console.log(`  daily     ${DAILY_BUDGET} wei`);
+console.log(`  rate      ${RATE_PER_HOUR}/hour per IP (loopback exempt)`);
 console.log(`  store     ${STORE_PATH}`);
 
 export default {hostname: HOST, port: PORT, fetch: app.fetch};

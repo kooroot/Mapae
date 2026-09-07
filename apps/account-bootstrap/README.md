@@ -41,6 +41,7 @@ delegator와 일치할 때만 스폰서 가스로 계정을 배포한 뒤 테스
 | 이미 배포됨, 부족분 민팅 | `200 {status: "already_deployed", fundingTransaction, mintedBase, targetBase}` |
 | 이미 배포됨, 잔액이 목표 이상 | `200 {status: "already_deployed", mintedBase: "0", targetBase}` |
 | 이미 배포됨, 부족하지만 24시간 안에 이미 받음 | `429 {reason: "faucet_recently_used"}` |
+| 같은 IP에서 한 시간에 30번을 넘김(본문을 읽기 전) | `429 {reason: "rate_limited"}` |
 
 `mintedBase`는 이 요청이 민팅한 base 단위(6 decimals) 문자열이고, `targetBase`는
 faucet이 맞추는 목표 잔액이다(faucet이 꺼져 있으면 `"0"`). 배포 경로에서는
@@ -56,6 +57,7 @@ faucet이 맞추는 목표 잔액이다(faucet이 꺼져 있으면 `"0"`). 배�
 | `BOOTSTRAP_FAUCET_TARGET_BASE` | `1000000000` (= 1000 tUSDC) | 목표 잔액, base 단위 양의 정수 |
 | `MAX_BOOTSTRAP_MINT_GAS` | `100000` | 민팅 1건의 가스 상한. 민팅 가스는 금액과 무관하다 |
 | `BOOTSTRAP_DAILY_WEI` | `500000000000000` | 배포와 민팅을 합친 하루(UTC) 가스 예산 |
+| `BOOTSTRAP_RATE_PER_HOUR` | `30` | IP당 한 시간에 받는 요청 수. `CF-Connecting-IP`가 없는(loopback) 요청은 세지 않는다 |
 | `STORE_PATH` | `./data/bootstrap.sqlite` | 그날 쓴 가스를 남기는 `@mapae/store` 파일. `:memory:`는 드라이런용 |
 
 나머지 변수(스폰서 키·승인 문구·RPC·바인드·오리진·수수료 상한)는
@@ -77,10 +79,15 @@ bun run dev
 
 그리핑의 상한은 계정당 24시간 1회의 faucet 창, 일일 가스 예산
 (`BOOTSTRAP_DAILY_WEI` — 그날 쓴 총액은 `STORE_PATH`에 남아 재시작해도
-이어진다), 그리고 일부러 작게 유지하는 스폰서 잔액이다. IP당
-제한은 두지 않는다 — 키페어는 공짜이고 IP는 공유되므로 그리퍼를 막지도,
-같은 사무실의 두 사람을 통과시키지도 못했다. 스폰서에는 위임 권한이 없어
-payer 자금·한도·정산에는 닿지 못한다.
+이어진다), 그리고 일부러 작게 유지하는 스폰서 잔액이다. IP당 상한
+(`BOOTSTRAP_RATE_PER_HOUR`, 기본 30/시간)은 그 위에 얹은 과속방지턱이다.
+처음의 빡빡한 IP 제한은 키페어가 공짜라 그리퍼를 막지 못하면서 같은 사무실의
+두 사람은 막았기에 뺐는데, 상한이 아예 없으면 한 대의 기계가 한 주소에서 새
+키페어를 계속 보내 하루 예산을 한 시간 안에 비울 수 있었다(배포+민팅 약
+2.4e11 wei, 기본 예산으로 약 2,000계정). 30/시간이면 같은 주소가 그 일에
+70시간 가까이 걸리고, 사무실 하나는 여전히 통과한다. `CF-Connecting-IP`가
+없는 요청은 터널을 거치지 않은 loopback이라 세지 않는다. 스폰서에는 위임
+권한이 없어 payer 자금·한도·정산에는 닿지 못한다.
 
 ## 검증
 
