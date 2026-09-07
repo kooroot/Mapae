@@ -15,6 +15,7 @@ import {
     withDelegationSignature,
 } from "./policy.js";
 import {
+    RATE_LIMITED,
     SETTLEMENT_UNCONFIRMED,
     decideSettlement,
     decideVerification,
@@ -315,6 +316,15 @@ describe("D5 settlement outcome ladder", () => {
         }
     });
 
+    test("verify: a rate-limited answer is 'unavailable' — the delegation was never examined", () => {
+        // The limiter refuses before the body is read. Reading that as `rejected` would
+        // send the buyer to re-sign a delegation nothing refused, and a flood from one
+        // address would turn every honest buyer behind it into a 403.
+        expect(
+            decideVerification({reachable: true, body: {isValid: false, invalidReason: RATE_LIMITED}}, PAYER),
+        ).toEqual({kind: "unavailable"});
+    });
+
     test("verify: a reachable body that fails the payer cross-check is 'rejected'", () => {
         expect(
             decideVerification({reachable: true, body: {isValid: false}}, PAYER).kind,
@@ -385,6 +395,23 @@ describe("D5 settlement outcome ladder", () => {
         // asserts a balance nobody checked. Pinning the value is what makes the
         // facilitator and the seller provably agree without running either.
         expect(SETTLEMENT_UNCONFIRMED).toBe("settlement_unconfirmed");
+    });
+
+    test("a rate-limited settle is unavailable: nothing was charged and nothing is in doubt", () => {
+        // The limiter answers before the body is read, so neither `failed` (a verdict on
+        // the transfer) nor `unknown` (money may have moved) is true. The buyer may hand
+        // the same payment back later. Pinned like the sentinel above: drifting to
+        // `failed` would tell a throttled buyer their payment was refused.
+        expect(RATE_LIMITED).toBe("rate_limited");
+        expect(
+            decideSettlement(
+                {
+                    reachable: true,
+                    body: {success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: RATE_LIMITED},
+                },
+                PAYER,
+            ),
+        ).toEqual({kind: "unavailable"});
     });
 
     test("a clean refusal is failed — money did not move", () => {

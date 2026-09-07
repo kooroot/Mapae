@@ -9,6 +9,7 @@
 import {
     CLIENT_IP_HEADER,
     FixedWindowLimiter,
+    RATE_LIMITED,
     SpendBudget,
     isRateLimitError,
     type Erc7710SettleResponse,
@@ -21,7 +22,6 @@ import {HttpRequestError, TimeoutError, type Address} from "viem";
 
 // ── Per-IP rate limit ──────────────────────────────────────────────────────────────
 
-const RATE_LIMITED = "rate_limited";
 export const RATE_WINDOW_MS = 3_600_000;
 /**
  * Expired windows are dropped from the limiter's map every this-many limited requests
@@ -36,9 +36,9 @@ export const SWEEP_EVERY = 256;
  * What a rate-limited request is answered with: a 200 with a refusal body, exactly like
  * every other refusal from these routes. The seller's client reads any non-2xx as "the
  * answer was lost" and tells the buyer the payment is *unknown*; a request that was
- * never read, let alone broadcast, must not be called that. `rate_limited` is not a code
- * the seller enumerates — `isValid !== true` and `success !== true` are the generic
- * "refused" readings on that side, and an unknown code degrades to them.
+ * never read, let alone broadcast, must not be called that. The seller reads
+ * `RATE_LIMITED` itself as *unavailable* on both routes — 503, retry later — so the
+ * refusal is neither a rejected delegation nor a payment in doubt.
  */
 export const VERIFY_RATE_LIMITED: Erc7710VerifyResponse = {
     isValid: false,

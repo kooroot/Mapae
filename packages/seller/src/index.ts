@@ -155,8 +155,9 @@ export interface MapaeSeller {
      * offer (header and body). With one, the facilitator is asked to `/verify` and then
      * `/settle`, and only a confirmed settlement lets the next handler run:
      *
-     * - 503 `facilitator_unavailable` — `/supported` or `/verify` could not be reached.
-     *   Nothing was charged; the buyer may retry.
+     * - 503 `facilitator_unavailable` — `/supported` or `/verify` could not be reached,
+     *   or the facilitator refused to look at the payment (its per-address rate limit).
+     *   Nothing was charged; the buyer may retry later with the same payment.
      * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment.
      * - 403 `delegation_rejected` — the facilitator examined the delegation and refused it.
      * - 504 `settlement_unknown` — the facilitator broadcast but no receipt was seen, or
@@ -529,6 +530,7 @@ function buildPaywall(
         // too. A transport failure, or a facilitator that broadcast without seeing a
         // receipt, leaves the payer possibly charged — 422 would assert they were not.
         const outcome = decideSettlement(await facilitator.settle(request, buyer), payer);
+        if (outcome.kind === "unavailable") return c.json({error: "facilitator_unavailable"}, 503);
         if (outcome.kind === "unknown") return c.json({error: "settlement_unknown"}, 504);
         if (outcome.kind === "failed") return c.json({error: "settlement_failed"}, 422);
 

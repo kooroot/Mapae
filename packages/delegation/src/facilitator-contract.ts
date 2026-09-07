@@ -50,6 +50,15 @@ export const SETTLEMENT_UNCONFIRMED = "settlement_unconfirmed";
  */
 export const CLIENT_IP_HEADER = "x-mapae-client-ip";
 
+/**
+ * The facilitator's per-address limit refused the request before reading it. Both
+ * routes answer it as a 200 carrying this reason — a non-2xx from `/settle` reads as
+ * "the answer was lost" on the seller side, and a request that was never read cannot
+ * have charged anybody. The seller reads it as `unavailable`: retry later, on both
+ * routes, never a rejected delegation and never a possibly-charged payment.
+ */
+export const RATE_LIMITED = "rate_limited";
+
 export interface Erc7710VerifyResponse {
     isValid: boolean;
     payer?: Address;
@@ -68,15 +77,19 @@ export interface Erc7710SettleResponse {
 /**
  * What the seller learned by asking the facilitator to settle.
  *
- * Deliberately three cases, not a boolean. `failed` and `unknown` are opposite claims
- * about the payer's balance, and collapsing them is the whole failure this type exists
- * to prevent — a rejection invites a retry, and retrying an `unknown` can pay twice.
+ * Deliberately not a boolean. `failed` and `unknown` are opposite claims about the
+ * payer's balance, and collapsing them is the whole failure this type exists to prevent
+ * — a rejection invites a retry, and retrying an `unknown` can pay twice. `unavailable`
+ * is the facilitator refusing to look at the request at all — its rate limit fired
+ * before the body was read — so nothing was charged and nothing is in doubt: the buyer
+ * may present the same payment again later, which neither of the other two may say.
  *
  * Verification refusal is not one of them. It is a boolean answered before settlement is
  * ever attempted, so giving this union a `rejected` variant would add a case no producer
  * can reach and no test can reach either.
  */
 export type SettlementOutcome =
+    | {kind: "unavailable"}
     | {kind: "unknown"; transaction?: Hex}
     | {kind: "failed"}
     | {kind: "settled"; transaction?: Hex};
@@ -121,13 +134,18 @@ export type VerificationOutcome =
 /**
  * Map a `/verify` call onto the three outcomes. `reachable: false` — connection refused,
  * non-2xx, unparseable JSON, timeout — is `unavailable`, never `rejected`: the seller
- * could not obtain a verdict, which is not the same as obtaining a "no".
+ * could not obtain a verdict, which is not the same as obtaining a "no". So is a body
+ * saying the facilitator refused to form one ({@link RATE_LIMITED}): the delegation was
+ * not examined, and blaming it would send the buyer to re-sign what nothing refused.
  */
 export function decideVerification(
     response: {reachable: boolean; body?: unknown},
     expectedPayer: Address,
 ): VerificationOutcome {
     if (!response.reachable || !response.body || typeof response.body !== "object") {
+        return {kind: "unavailable"};
+    }
+    if ((response.body as Erc7710VerifyResponse).invalidReason === RATE_LIMITED) {
         return {kind: "unavailable"};
     }
     if (!isVerificationAccepted(response.body, expectedPayer)) {
@@ -142,7 +160,9 @@ export function decideVerification(
  * `reachable: false` covers every way the call did not produce a body we can read —
  * connection refused, non-2xx, unparseable JSON. All of them are `unknown` rather than
  * `failed`, because none of them distinguishes "the request never landed" from "it
- * landed, broadcast, and the answer was lost on the way back".
+ * landed, broadcast, and the answer was lost on the way back". A body that says the
+ * request was refused unread ({@link RATE_LIMITED}) is the one answer that rules both
+ * out, and is `unavailable`.
  */
 export function decideSettlement(
     response: {reachable: boolean; body?: unknown},
@@ -152,6 +172,7 @@ export function decideSettlement(
         return {kind: "unknown"};
     }
     const body = response.body as Erc7710SettleResponse;
+    if (body.errorReason === RATE_LIMITED) return {kind: "unavailable"};
     if (body.errorReason === SETTLEMENT_UNCONFIRMED) {
         return {kind: "unknown", transaction: readTransaction(body.transaction)};
     }

@@ -21,7 +21,7 @@ import {
     type Erc7710DelegationPayload,
 } from "@mapae/shared";
 import {ENTRY_POINT_V07} from "@mapae/delegation/config";
-import {CLIENT_IP_HEADER, SETTLEMENT_UNCONFIRMED} from "@mapae/delegation/facilitator-contract";
+import {CLIENT_IP_HEADER, RATE_LIMITED, SETTLEMENT_UNCONFIRMED} from "@mapae/delegation/facilitator-contract";
 import {
     buildD3Policies,
     preparePeriodDelegation,
@@ -467,6 +467,28 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
             expect(remote.paths()).toEqual(["/supported", "/verify"]);
             expect(seen.served).toBe(0);
         }
+    });
+
+    test("503 facilitator_unavailable when the facilitator rate-limits either call — never 403 or 422", async () => {
+        const throttledVerify = facilitator({
+            "/verify": json({isValid: false, invalidReason: RATE_LIMITED}),
+        });
+        const verify = seller(paywall({fetch: throttledVerify.fetch}));
+        const refusedAtVerify = await pay(verify.app);
+        expect(refusedAtVerify.status).toBe(503);
+        expect(await refusedAtVerify.json()).toEqual({error: "facilitator_unavailable"});
+        expect(throttledVerify.paths()).toEqual(["/supported", "/verify"]);
+        expect(verify.seen.served).toBe(0);
+
+        const throttledSettle = facilitator({
+            "/settle": json({success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: RATE_LIMITED}),
+        });
+        const settle = seller(paywall({fetch: throttledSettle.fetch}));
+        const refusedAtSettle = await pay(settle.app);
+        expect(refusedAtSettle.status).toBe(503);
+        expect(await refusedAtSettle.json()).toEqual({error: "facilitator_unavailable"});
+        expect(throttledSettle.paths()).toEqual(["/supported", "/verify", "/settle"]);
+        expect(settle.seen.served).toBe(0);
     });
 
     test("403 delegation_rejected when the facilitator refuses, or names a payer we did not send", async () => {
