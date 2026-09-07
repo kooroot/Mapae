@@ -248,9 +248,11 @@ const SPONSORED = PINNED_PAYER === undefined;
  * is (300,000 + 300,000 + 100,000) × 10,000,000 = 7e12 wei (0.000007 ETH) per request,
  * and whatever `handleOps` does not consume of it stays in the requester's deposit —
  * most of it, since the operation uses a fraction of its limits. That gift is accepted:
- * it is bounded at 7e12 wei per request and at `REVOCATION_DAILY_WEI` (7e14 wei, 70
- * requests) per day, and the requester still had to produce their own account's
- * ERC-1271 signature to collect it.
+ * it is bounded at 7e12 wei per request and by `REVOCATION_DAILY_WEI` (7e14 wei) per
+ * day — 70 requests while each holds its 1e13 reservation, the prefund plus 60,000 × 5e7
+ * of `depositTo` gas (see `ratePerHour`), roughly 99 once each settles at the measured
+ * ~7.04e12 — and the requester still had to produce their own account's ERC-1271
+ * signature to collect it.
  */
 const policy: RevocationSubmissionPolicy = {
     ...(PINNED_PAYER === undefined ? {} : {payer: PINNED_PAYER}),
