@@ -166,8 +166,9 @@ const NOTE_COPY: Record<
                     ? "To deploy it yourself now, open the ‘Authority’ tab and press ‘Get testnet balance’ — that request deploys the account first — then revoke it here."
                     : "Revoke it here as soon as the account exists."
             }`,
-        ownerUnreadable:
-            "The payer account's owner could not be read. Check the network connection and reload the page to try again.",
+        // No cause named: the read can fail for reasons on either end, and "check the
+        // network" sends a person with a fine connection to the wrong place.
+        ownerUnreadable: "The payer account's owner could not be read. Reload the page to try again.",
         ready: "Gas is sponsored — this wallet needs no GIWA ETH.",
     },
     ko: {
@@ -181,8 +182,7 @@ const NOTE_COPY: Record<
                     ? "지금 직접 배포하려면 ‘권한’ 탭에서 ‘테스트넷 잔액 받기’를 누르세요. 그 요청이 계정을 먼저 배포하니, 그런 다음 여기서 회수하면 됩니다."
                     : "계정이 생기는 대로 여기서 회수해 주세요."
             }`,
-        ownerUnreadable:
-            "지불 계정의 소유자를 읽지 못했습니다. 네트워크 연결을 확인하고 페이지를 새로고침해 다시 시도해 주세요.",
+        ownerUnreadable: "지불 계정의 소유자를 읽지 못했습니다. 페이지를 새로고침해 다시 시도해 주세요.",
         ready: "가스는 스폰서가 대납합니다 — 이 지갑에는 GIWA ETH가 필요 없습니다.",
     },
 };

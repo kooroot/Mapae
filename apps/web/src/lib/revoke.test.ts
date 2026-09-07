@@ -282,6 +282,17 @@ describe("studioRevokeGateNote", () => {
         );
     });
 
+    test("a failed read says so and how to retry, and names no cause", () => {
+        // The read fails for reasons on either end; "check the network connection" sent a
+        // person with a fine connection to the wrong place.
+        expect(studioRevokeGateNote({kind: "owner-unreadable"}, "en", withTopUp)).toBe(
+            "The payer account's owner could not be read. Reload the page to try again.",
+        );
+        expect(studioRevokeGateNote({kind: "owner-unreadable"}, "ko", withTopUp)).toBe(
+            "지불 계정의 소유자를 읽지 못했습니다. 페이지를 새로고침해 다시 시도해 주세요.",
+        );
+    });
+
     test("the other gates keep their notes, and the silent ones stay silent", () => {
         const chainNote = studioRevokeGateNote(
             {kind: "wrong-chain", connected: 1, expected: 91_342},
@@ -297,9 +308,6 @@ describe("studioRevokeGateNote", () => {
         );
         expect(walletNote).toContain("0x0000…0001");
         expect(walletNote).toContain("0x0000…0002");
-        expect(studioRevokeGateNote({kind: "owner-unreadable"}, "en", withTopUp)).toContain(
-            "could not be read",
-        );
         expect(studioRevokeGateNote({kind: "ready", owner: OWNER}, "en", withTopUp)).toContain(
             "sponsored",
         );
