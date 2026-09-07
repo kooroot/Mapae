@@ -1,16 +1,27 @@
 /**
  * The guards, proven without booting the facilitator: a Hono app around the limiter, an
- * in-memory store for the ledger, and a clock the test moves by hand wherever a window
- * matters.
+ * in-memory store under the payer budgets, and a clock the test moves by hand wherever
+ * a window matters.
  */
 import {afterEach, describe, expect, test} from "bun:test";
-import {FixedWindowLimiter} from "@mapae/delegation";
+import {FixedWindowLimiter, SpendBudget, budgetDay} from "@mapae/delegation";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
 import {Hono} from "hono";
 import type {Address} from "viem";
-import {RATE_WINDOW_MS, SETTLE_RATE_LIMITED, VERIFY_RATE_LIMITED, rateLimitByIp} from "./guards.js";
+import {
+    BudgetExhausted,
+    GasBudgets,
+    PAYER_IDLE_MS,
+    PayerBudgets,
+    RATE_WINDOW_MS,
+    SETTLE_RATE_LIMITED,
+    VERIFY_RATE_LIMITED,
+    rateLimitByIp,
+} from "./guards.js";
 
 const ALICE = "0x1111111111111111111111111111111111111111" as Address;
+const BOB = "0x2222222222222222222222222222222222222222" as Address;
+const CAROL = "0x3333333333333333333333333333333333333333" as Address;
 const SHOP = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Address;
 // A UTC midnight, so a clock moved by a whole day lands exactly on the next window.
 const NOW = 20 * 86_400_000;
@@ -148,6 +159,142 @@ describe("rateLimitByIp", () => {
         expect((await settle(app, PUBLIC)).body).toEqual(SETTLE_RATE_LIMITED);
         expect(reached).toBe(1);
         expect(store.ledger.summary({sinceMs: 0}).total).toBe(1);
+    });
+});
+
+describe("PayerBudgets", () => {
+    test("each payer gets its own share of the day", () => {
+        const payers = new PayerBudgets(100n, memoryStore().budget);
+        expect(payers.for(ALICE, NOW).reserve(100n, NOW)).toBeDefined();
+        expect(payers.for(ALICE, NOW).reserve(1n, NOW)).toBeUndefined();
+        expect(payers.for(BOB, NOW).reserve(100n, NOW)).toBeDefined();
+        expect(payers.size).toBe(2);
+    });
+
+    test("the share is keyed on the address, whichever case it was spelled in", () => {
+        const payers = new PayerBudgets(100n, memoryStore().budget);
+        const upper = ALICE.toUpperCase().replace("0X", "0x") as Address;
+        expect(payers.for(upper, NOW)).toBe(payers.for(ALICE, NOW));
+        expect(payers.size).toBe(1);
+    });
+
+    test("a share survives a re-created registry over the same store, in its own series", () => {
+        const store = memoryStore();
+        const first = new PayerBudgets(100n, store.budget);
+        const budget = first.for(ALICE, NOW);
+        const hold = budget.reserve(60n, NOW);
+        if (!hold) throw new Error("expected a hold");
+        budget.settle(hold, 60n, NOW);
+
+        const second = new PayerBudgets(100n, store.budget);
+        expect(second.for(ALICE, NOW).spentToday(NOW)).toBe(60n);
+        expect(second.for(ALICE, NOW).remaining(NOW)).toBe(40n);
+        expect(second.for(ALICE, NOW).reserve(41n, NOW)).toBeUndefined();
+        // Another payer starts the day whole, and the day's total series was never touched.
+        expect(second.for(BOB, NOW).remaining(NOW)).toBe(100n);
+        expect(store.budget.load(budgetDay(NOW))).toBe(0n);
+        expect(store.budget.scoped(`payer:${ALICE}`).load(budgetDay(NOW))).toBe(60n);
+    });
+
+    test("a payer idle for a day is evicted, and its next sight reloads the share from the store", () => {
+        const store = memoryStore();
+        const payers = new PayerBudgets(100n, store.budget);
+        const budget = payers.for(ALICE, NOW);
+        const hold = budget.reserve(60n, NOW);
+        if (!hold) throw new Error("expected a hold");
+        budget.settle(hold, 60n, NOW);
+        payers.for(BOB, NOW + 1);
+
+        payers.sweep(NOW + PAYER_IDLE_MS - 1);
+        expect(payers.size).toBe(2);
+        payers.sweep(NOW + PAYER_IDLE_MS);
+        expect(payers.size).toBe(1);
+        payers.sweep(NOW + PAYER_IDLE_MS + 1);
+        expect(payers.size).toBe(0);
+
+        const revived = payers.for(ALICE, NOW);
+        expect(revived).not.toBe(budget);
+        expect(revived.spentToday(NOW)).toBe(60n);
+    });
+
+    test("refuses a share that could admit nothing", () => {
+        expect(() => new PayerBudgets(0n, memoryStore().budget)).toThrow("positive");
+    });
+});
+
+describe("GasBudgets", () => {
+    function gasBudgets(totalWei: bigint, shareWei: bigint) {
+        const store = memoryStore();
+        const total = new SpendBudget(totalWei, NOW, store.budget);
+        const payers = new PayerBudgets(shareWei, store.budget);
+        return {total, payers, gas: new GasBudgets(total, payers)};
+    }
+
+    function refusal(run: () => unknown): BudgetExhausted {
+        try {
+            run();
+        } catch (error) {
+            if (error instanceof BudgetExhausted) return error;
+            throw error;
+        }
+        throw new Error("expected BudgetExhausted");
+    }
+
+    test("the payer's share refuses first, and the day is left untouched", () => {
+        const {total, payers, gas} = gasBudgets(1_000n, 100n);
+        const refused = refusal(() => gas.reserve(ALICE, 101n, NOW));
+        expect(refused.errorCode).toBe("payer_budget_exhausted");
+        expect(refused.message).toContain("share");
+        expect(total.remaining(NOW)).toBe(1_000n);
+        expect(payers.for(ALICE, NOW).remaining(NOW)).toBe(100n);
+    });
+
+    test("when the day refuses after the share admitted, the share's hold is released uncharged", () => {
+        const {total, payers, gas} = gasBudgets(150n, 100n);
+        const alice = gas.reserve(ALICE, 100n, NOW);
+        expect(alice.amount).toBe(100n);
+        const refused = refusal(() => gas.reserve(BOB, 100n, NOW));
+        expect(refused.errorCode).toBe("budget_exhausted");
+        expect(refused.message).toContain("relayer");
+        expect(payers.for(BOB, NOW).remaining(NOW)).toBe(100n);
+        expect(payers.for(BOB, NOW).spentToday(NOW)).toBe(0n);
+        expect(total.remaining(NOW)).toBe(50n);
+    });
+
+    test("settle charges both budgets the same amount and releases both holds", () => {
+        const {total, payers, gas} = gasBudgets(1_000n, 100n);
+        const hold = gas.reserve(ALICE, 100n, NOW);
+        expect(total.remaining(NOW)).toBe(900n);
+        expect(payers.for(ALICE, NOW).remaining(NOW)).toBe(0n);
+        hold.settle(70n, NOW);
+        expect(total.spentToday(NOW)).toBe(70n);
+        expect(total.remaining(NOW)).toBe(930n);
+        expect(payers.for(ALICE, NOW).spentToday(NOW)).toBe(70n);
+        expect(payers.for(ALICE, NOW).remaining(NOW)).toBe(30n);
+    });
+
+    test("a settle of 0n is a rejection that shrinks neither day", () => {
+        const {total, payers, gas} = gasBudgets(1_000n, 100n);
+        gas.reserve(ALICE, 100n, NOW).settle(0n, NOW);
+        expect(total.remaining(NOW)).toBe(1_000n);
+        expect(payers.for(ALICE, NOW).remaining(NOW)).toBe(100n);
+    });
+
+    test("one payer cannot spend the day; the day still binds across payers", () => {
+        const {gas} = gasBudgets(250n, 100n);
+        gas.reserve(ALICE, 100n, NOW).settle(100n, NOW);
+        expect(refusal(() => gas.reserve(ALICE, 1n, NOW)).errorCode).toBe("payer_budget_exhausted");
+        gas.reserve(BOB, 100n, NOW).settle(100n, NOW);
+        expect(refusal(() => gas.reserve(CAROL, 100n, NOW)).errorCode).toBe("budget_exhausted");
+        expect(gas.reserve(CAROL, 50n, NOW).amount).toBe(50n);
+    });
+
+    test("reserving sweeps payers idle for a day", () => {
+        const {payers, gas} = gasBudgets(1_000n, 100n);
+        gas.reserve(ALICE, 1n, NOW).settle(1n, NOW);
+        expect(payers.size).toBe(1);
+        gas.reserve(BOB, 1n, NOW + PAYER_IDLE_MS).settle(1n, NOW + PAYER_IDLE_MS);
+        expect(payers.size).toBe(1);
     });
 });
 

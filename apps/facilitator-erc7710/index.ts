@@ -41,7 +41,15 @@ import {
     type Hex,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
-import {RATE_WINDOW_MS, SETTLE_RATE_LIMITED, VERIFY_RATE_LIMITED, rateLimitByIp} from "./guards.js";
+import {
+    BudgetExhausted,
+    GasBudgets,
+    PayerBudgets,
+    RATE_WINDOW_MS,
+    SETTLE_RATE_LIMITED,
+    VERIFY_RATE_LIMITED,
+    rateLimitByIp,
+} from "./guards.js";
 import {bearerTokenMatches, metricsReport, readMetricsToken} from "./metrics.js";
 
 const MAX_BODY_CHARACTERS = 150_000;
@@ -172,6 +180,21 @@ const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOU
 // steady-state redemptions at 1 gwei. The day's total lives in the store, so a restart
 // resumes it instead of opening a second budget.
 const RELAYER_DAILY_WEI = readPositiveInteger("RELAYER_DAILY_WEI", 500_000_000_000_000n);
+// The day's ceiling bounds the operator's loss; it does not bound who causes it. Every
+// redemption used to be charged to that one figure, and /settle takes any payTo and any
+// amount from anyone holding a grant, so a payer who paid themselves with free testnet
+// tUSDC could spend the whole day — about 1,500 calls — at zero cost, and every other
+// seller got `budget_exhausted` until UTC midnight. A tenth of the day per payer means
+// draining it takes ten funded grants, and nine of them leave room for everyone else.
+// Larger than the day is refused rather than clamped: a share above the ceiling is a
+// configuration that says one thing and does another.
+const RELAYER_PAYER_DAILY_WEI = readPositiveInteger(
+    "RELAYER_PAYER_DAILY_WEI",
+    RELAYER_DAILY_WEI / 10n,
+);
+if (RELAYER_PAYER_DAILY_WEI > RELAYER_DAILY_WEI) {
+    throw new Error("RELAYER_PAYER_DAILY_WEI must not exceed RELAYER_DAILY_WEI");
+}
 // Requests per address per hour on /verify and /settle together, refused before the body
 // is read. A real seller's payment is one /verify and one /settle, so the default admits
 // 300 payments an hour from one address — more than the day's gas budget can settle —
@@ -198,6 +221,7 @@ const manager = getAddress(deployment.environment.DelegationManager);
 // file is created for nothing.
 const store = openStore(STORE_PATH);
 const budget = new SpendBudget(RELAYER_DAILY_WEI, Date.now(), store.budget);
+const gasBudgets = new GasBudgets(budget, new PayerBudgets(RELAYER_PAYER_DAILY_WEI, store.budget));
 const limiter = new FixedWindowLimiter(FACILITATOR_RATE_PER_HOUR, RATE_WINDOW_MS);
 
 const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
@@ -296,19 +320,6 @@ class SettlementNotCredited extends Error {
     }
 }
 
-/**
- * Raised when the day's relayer gas budget has no room for this redemption. Nothing was
- * broadcast and nobody was charged — a rejection like a simulation revert, but with its
- * own code so the operator can tell "the payer's grant is bad" from "our wallet is done
- * for the day" in the ledger and the seller can tell the buyer to try again later.
- */
-class BudgetExhausted extends Error {
-    constructor() {
-        super("relayer daily gas budget exhausted");
-        this.name = "BudgetExhausted";
-    }
-}
-
 interface SettlementFailure {
     outcome: "rejected" | "error";
     errorCode: string;
@@ -319,7 +330,7 @@ interface SettlementFailure {
  * One classification for both consumers of a failed settlement — the wire response and
  * the ledger row — so the two can never disagree about what happened.
  *
- * `rejected`: nobody was charged (validation, simulation revert, gas cap, budget).
+ * `rejected`: nobody was charged (validation, simulation revert, gas cap, either budget).
  * `error`: the chain was touched and the answer is unknown (SETTLEMENT_UNCONFIRMED —
  * broadcast, receipt not seen) or wrong (`vendor_not_credited` — mined, allowance
  * consumed, the recipient not paid). Both send the seller's ladder to "failed" and
@@ -338,7 +349,7 @@ function describeFailure(error: unknown): SettlementFailure {
         return {outcome: "error", errorCode: "vendor_not_credited", transaction: error.transaction};
     }
     if (error instanceof BudgetExhausted) {
-        return {outcome: "rejected", errorCode: "budget_exhausted", transaction: null};
+        return {outcome: "rejected", errorCode: error.errorCode, transaction: null};
     }
     return {outcome: "rejected", errorCode: "delegation_rejected", transaction: null};
 }
@@ -462,15 +473,16 @@ class SettlementCoordinator {
     }
 
     /**
-     * Price the redemption, hold its worst case against the day's budget, broadcast, and
-     * settle what the receipt says it cost.
+     * Price the redemption, hold its worst case against the payer's share and the day's
+     * budget, broadcast, and settle what the receipt says it cost.
      *
      * Ordering as in account-bootstrap: everything that can refuse without spending runs
      * before the reservation; the reservation lands before the broadcast so two
      * concurrent intents cannot both spend the last of the day; and the settle is in a
-     * `finally`, so every exit returns the hold exactly once. What is charged depends on
-     * how far the broadcast got — nothing when no hash came back, the whole reservation
-     * when a hash did but its receipt did not, and the receipt's own cost when it did.
+     * `finally`, so every exit returns both holds exactly once. What is charged depends
+     * on how far the broadcast got — nothing when no hash came back, the whole
+     * reservation when a hash did but its receipt did not, and the receipt's own cost
+     * when it did. The same figure lands on both budgets; the ledger sees one attempt.
      */
     async #broadcast(payment: ValidatedDelegatedPayment): Promise<Receipt> {
         const {request, gas} = await this.#prepareRedemption(payment);
@@ -478,8 +490,7 @@ class SettlementCoordinator {
         // The node's own upfront rule is `balance >= gas * maxFeePerGas`, and the same
         // product is what the day is asked for. The fees go to the broadcast unchanged,
         // so the reservation is the most that transaction can cost in execution gas.
-        const hold = budget.reserve(gas * maxFeePerGas, Date.now());
-        if (!hold) throw new BudgetExhausted();
+        const hold = gasBudgets.reserve(payment.payer, gas * maxFeePerGas, Date.now());
         let charged = 0n;
         try {
             let hash: Hex;
@@ -522,7 +533,7 @@ class SettlementCoordinator {
             charged = costOfReceipt(receipt, hold.amount);
             return receipt;
         } finally {
-            budget.settle(hold, charged, Date.now());
+            hold.settle(charged, Date.now());
         }
     }
 
@@ -695,6 +706,7 @@ console.log(`  manager ${manager}`);
 console.log(`  signer  ${relayer.address}`);
 console.log(`  store   ${STORE_PATH}`);
 console.log(`  budget  ${RELAYER_DAILY_WEI} wei/day (RELAYER_DAILY_WEI)`);
+console.log(`  payer   ${RELAYER_PAYER_DAILY_WEI} wei/day per payer (RELAYER_PAYER_DAILY_WEI)`);
 console.log(`  rate    ${FACILITATOR_RATE_PER_HOUR}/hour per IP (FACILITATOR_RATE_PER_HOUR)`);
 console.log(`  metrics ${METRICS_TOKEN === undefined ? "disabled (METRICS_TOKEN unset)" : "enabled"}`);
 
