@@ -11,7 +11,6 @@ import {
     LEAF_B,
     LEAF_C,
     PAY_TO,
-    TICKET_CODE,
     paymentHeader,
     type FacilitatorPath,
 } from "./test-support.js";
@@ -175,7 +174,6 @@ describe("the booted shop", () => {
         // only the leaf tells the two intents apart.
         const third = await pay(LOGO, LEAF_C);
         const codes = [first, second, third].map((t) => t.ticket.code);
-        for (const code of codes) expect(code).toMatch(TICKET_CODE);
         expect(new Set(codes).size).toBe(3);
         expect(third.ticket.shop.slug).toBe("demo-studio");
         expect(new Set([first, second, third].map((t) => t.receipt.intent)).size).toBe(3);

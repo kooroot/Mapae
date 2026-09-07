@@ -28,7 +28,6 @@ import {
     LEAF_B,
     PAY_TO,
     PAYER,
-    TICKET_CODE,
     TX,
     paymentHeader,
     type FacilitatorPath,
@@ -186,7 +185,7 @@ describe("ticket — one payment, one ticket", () => {
         const {store, pay, stub} = shop();
         const {ticket, receipt} = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
         expect(ticket).toEqual({
-            code: expect.stringMatching(TICKET_CODE),
+            code: expect.any(String),
             shop: {slug: "demo-cafe", name: "데모 카페"},
             item: {key: "americano", name: "아메리카노"},
             amount: "1.00 tUSDC",
@@ -200,18 +199,20 @@ describe("ticket — one payment, one ticket", () => {
         expect(receipt.payTo).toBe(PAY_TO);
         expect(stub.paths).toEqual(SETTLED_ONCE);
 
-        const orders = store.orders.listBySeller("demo-cafe");
-        expect(orders).toHaveLength(1);
-        expect(orders[0]).toMatchObject({
+        // The code is the store's own: its lookup, which throws at any other shape,
+        // finds this payment's row behind it — and the row's id is not what was told.
+        const order = store.orders.getByTicket("demo-cafe", ticket.code);
+        expect(order).toMatchObject({
             sellerSlug: "demo-cafe",
             itemKey: "americano",
             paymentIntentId: receipt.intent,
-            ticket: ticket.code,
             payer: PAYER,
             amountBase: ONE,
             txHash: TX,
             status: "paid",
         });
+        expect(ticket.code).not.toBe(String(order?.id));
+        expect(store.orders.listBySeller("demo-cafe")).toHaveLength(1);
     });
 
     test("same-intent replay is the same answer, from the ledger, with no facilitator call", async () => {
@@ -232,7 +233,6 @@ describe("ticket — one payment, one ticket", () => {
         const first = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
         const second = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_B)));
         expect(second.receipt.intent).not.toBe(first.receipt.intent);
-        expect(second.ticket.code).toMatch(TICKET_CODE);
         expect(second.ticket.code).not.toBe(first.ticket.code);
         // Newest first, so the second payment's row is the first listed.
         expect(store.orders.listBySeller("demo-cafe").map((order) => [order.itemKey, order.ticket])).toEqual([
