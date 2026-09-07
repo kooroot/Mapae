@@ -13,6 +13,7 @@ import {LOCALES} from "./i18n";
 const OWNER = "0x0000000000000000000000000000000000000a11" as Address;
 const AGENT = "0x0000000000000000000000000000000000000b22" as Address;
 const TARGET = "1000000000";
+const FUNDING_HASH = `0x${"ab".repeat(32)}` as Hex;
 
 const root = {
     delegate: AGENT,
@@ -29,12 +30,42 @@ describe("interpretTopUp (the sponsor's reply as an outcome)", () => {
             ok: true,
             body: {
                 status: "already_deployed",
-                fundingTransaction: "0xabc",
+                fundingTransaction: FUNDING_HASH,
                 mintedBase: "250000000",
                 targetBase: TARGET,
             },
         });
-        expect(outcome).toEqual({kind: "minted", amount: 250_000_000n, transaction: "0xabc"});
+        expect(outcome).toEqual({
+            kind: "minted",
+            amount: 250_000_000n,
+            transaction: FUNDING_HASH,
+        });
+    });
+
+    test("a mint with a malformed hash is still a mint, just without a link", () => {
+        // The hash is interpolated into an explorer href. Before this the reply's string
+        // went into the URL verbatim, while `RevokeButton` gated the same field on
+        // `isHash` — and dropping the whole outcome over a bad receipt field would tell
+        // the user nothing was minted when the amounts say it was.
+        for (const fundingTransaction of ["0xabc", "javascript:alert(1)", 42, null]) {
+            expect(
+                interpretTopUp({
+                    ok: true,
+                    body: {fundingTransaction, mintedBase: "250000000", targetBase: TARGET},
+                }),
+            ).toStrictEqual({kind: "minted", amount: 250_000_000n});
+        }
+    });
+
+    test("a body that is not an object is read as empty, not cast", () => {
+        for (const body of [null, "minted", 7, ["250000000"]]) {
+            expect(interpretTopUp({ok: true, body})).toEqual({kind: "refused"});
+            expect(interpretTopUp({ok: false, body})).toEqual({kind: "refused"});
+        }
+        expect(interpretTopUp({ok: false, body: {reason: 500}})).toStrictEqual({
+            kind: "refused",
+            reason: undefined,
+        });
     });
 
     test("nothing minted at a live target means the account is already full", () => {

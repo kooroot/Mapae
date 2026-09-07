@@ -1,6 +1,7 @@
 import type {Delegation} from "@metamask/smart-accounts-kit";
 import {Droplets} from "lucide-react";
 import {useMemo, useState} from "react";
+import {isHash} from "viem";
 import {bootstrapAvailability, explorerTxUrl} from "../lib/config";
 import {FAUCET_COPY, requestTestnetTopUp, topUpMessage, type TopUpOutcome} from "../lib/faucet";
 import {useLocale} from "../lib/locale";
@@ -69,7 +70,11 @@ export function TestnetTopUp({root, onMinted}: {root: Delegation; onMinted: () =
                 role={state.kind === "failed" ? "alert" : state.kind === "done" ? "status" : undefined}
             >
                 {message}
-                {transaction ? (
+                {/* Validated, not cast: the hash comes from the sponsor's response body,
+                    and it is about to be interpolated into a URL. `interpretTopUp` already
+                    refuses a malformed one; the gate sits at the sink too, as it does in
+                    `RevokeButton`, so a change upstream cannot reopen it. */}
+                {transaction && isHash(transaction) ? (
                     <>
                         {" "}
                         <a href={explorerTxUrl(transaction)} target="_blank" rel="noreferrer">

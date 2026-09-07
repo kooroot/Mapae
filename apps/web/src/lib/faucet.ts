@@ -2,7 +2,8 @@ import {FAUCET_TARGET_BASE} from "@mapae/delegation/faucet-policy";
 import {fromTokenAmount} from "@mapae/shared";
 import type {Delegation} from "@metamask/smart-accounts-kit";
 import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
-import {postBootstrap, type BootstrapReply} from "./grant";
+import {isHash, type Hash} from "viem";
+import {postBootstrap} from "./grant";
 import type {Locale} from "./i18n";
 
 /**
@@ -18,7 +19,7 @@ import type {Locale} from "./i18n";
  * The wallet shows a dollar sign, and nobody reading fast should have to wonder.
  */
 export type TopUpOutcome =
-    | {kind: "minted"; amount: bigint; transaction?: string}
+    | {kind: "minted"; amount: bigint; transaction?: Hash}
     | {kind: "at_target"; target: bigint}
     | {kind: "faucet_off"}
     | {kind: "recently_used"}
@@ -31,15 +32,25 @@ export function topUpPermissionContext(root: Delegation): `0x${string}` {
 
 const BASE_UNITS = /^(0|[1-9]\d*)$/;
 
-export function interpretTopUp(reply: {ok: boolean; body: BootstrapReply}): TopUpOutcome {
+/**
+ * Validate, never cast. The body is whatever the sponsor's JSON parsed to — `postBootstrap`
+ * only labels it — and two of its fields land somewhere that trusts them: the amounts in
+ * `BigInt`, the funding hash in an explorer href. A field that is not a string is absent.
+ */
+function stringField(body: unknown, key: string): string | undefined {
+    if (typeof body !== "object" || body === null) return undefined;
+    const value = (body as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : undefined;
+}
+
+export function interpretTopUp(reply: {ok: boolean; body: unknown}): TopUpOutcome {
     const {ok, body} = reply;
+    const reason = stringField(body, "reason");
     if (!ok) {
-        return body.reason === "faucet_recently_used"
-            ? {kind: "recently_used"}
-            : {kind: "refused", reason: body.reason};
+        return reason === "faucet_recently_used" ? {kind: "recently_used"} : {kind: "refused", reason};
     }
-    const mintedBase = body.mintedBase ?? "";
-    const targetBase = body.targetBase ?? "";
+    const mintedBase = stringField(body, "mintedBase") ?? "";
+    const targetBase = stringField(body, "targetBase") ?? "";
     if (!BASE_UNITS.test(mintedBase) || !BASE_UNITS.test(targetBase)) {
         // A success without the amounts is a reply this client was not written against.
         return {kind: "refused"};
@@ -48,9 +59,13 @@ export function interpretTopUp(reply: {ok: boolean; body: BootstrapReply}): TopU
     const target = BigInt(targetBase);
     if (target === 0n) return {kind: "faucet_off"};
     if (minted > 0n) {
-        return body.fundingTransaction === undefined
-            ? {kind: "minted", amount: minted}
-            : {kind: "minted", amount: minted, transaction: body.fundingTransaction};
+        // The mint happened whatever the receipt field looks like — the amounts say so —
+        // so a malformed hash costs the "View transaction" link, not the outcome. The same
+        // `isHash` gate `RevokeButton` puts in front of its own explorer href.
+        const transaction = stringField(body, "fundingTransaction");
+        return transaction !== undefined && isHash(transaction)
+            ? {kind: "minted", amount: minted, transaction}
+            : {kind: "minted", amount: minted};
     }
     return {kind: "at_target", target};
 }
