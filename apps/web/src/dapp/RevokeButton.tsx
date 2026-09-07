@@ -98,8 +98,9 @@ export function RevokeButton({
     const {locale} = useLocale();
     const t = COPY[locale];
     const endpoint = publicSubmitterAvailability();
-    // Whether the ‘Authority’ tab shows ‘Get testnet balance’ — `TestnetTopUp` renders only
-    // with a configured sponsor — so the account-missing note can point there honestly.
+    // Whether the overview tab (`STUDIO_SECTIONS`) shows the top-up button
+    // (`FAUCET_COPY.action`) — `TestnetTopUp` renders only with a configured sponsor — so
+    // the account-missing note can point there honestly.
     const sponsor = useMemo(() => bootstrapAvailability(), []);
     const payer = getAddress(delegation.delegator);
     // `useAccount().chainId` rather than `useChainId()`: the latter falls back to the
