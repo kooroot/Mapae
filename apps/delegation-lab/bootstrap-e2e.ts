@@ -53,6 +53,9 @@ import {
     type PublicClient,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
+import {mkdtempSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {startForkSourceProxy} from "./fork-source-proxy";
 
 const ANVIL_PORT = 8548;
@@ -81,6 +84,8 @@ const signerKey = (label: string) =>
 
 const children: {name: string; proc: Bun.Subprocess}[] = [];
 const listeners: {stop(): void}[] = [];
+/** The temp directory holding this run's store file — removed with the children. */
+let storeDir: string | undefined;
 const cases: string[] = [];
 
 function passed(letter: string, detail: string): void {
@@ -103,6 +108,7 @@ function shutdown(): void {
             /* already closed */
         }
     }
+    if (storeDir) rmSync(storeDir, {recursive: true, force: true});
 }
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
@@ -213,6 +219,16 @@ async function main(): Promise<void> {
     assertPortFree("anvil", ANVIL_PORT);
     assertPortFree("bootstrap", BOOTSTRAP_PORT);
 
+    // A store this run owns. The service's default is `./data/bootstrap.sqlite` under its
+    // own directory — the operator's live file on a machine that runs the service — and
+    // what it keeps is exactly what the cases below drive into: the day's charged gas,
+    // and a 24-hour faucet window per account whose keys are the same on every run. On a
+    // shared file a rerun inside a day found G's account inside its window and J saw no
+    // mint; a file from an older schema stops the child at boot. Every restart in this
+    // run reopens the one file, as a restart of the real service would.
+    storeDir = mkdtempSync(join(tmpdir(), "mapae-bootstrap-e2e-"));
+    const storePath = join(storeDir, "bootstrap.sqlite");
+
     const sponsorKey = signerKey("sponsor");
     const sponsor = privateKeyToAccount(sponsorKey);
     const nonceBefore = BigInt(
@@ -313,6 +329,7 @@ async function main(): Promise<void> {
         BOOTSTRAP_PRIVATE_KEY: sponsorKey,
         BOOTSTRAP_ADDRESS: sponsor.address,
         DELEGATION_DEPLOYMENT_PATH: `${REPO}/deployments/giwa-sepolia.framework.json`,
+        STORE_PATH: storePath,
         ...overrides,
     });
 
