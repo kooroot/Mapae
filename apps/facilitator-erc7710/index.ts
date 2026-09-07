@@ -52,6 +52,7 @@ import {
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     classifyFrameworkError,
+    frameworkPausedFrom,
     rateLimitByIp,
     requireReadiness,
     type FrameworkHealthError,
@@ -609,9 +610,11 @@ app.get("/health", async (c) => {
     let framework: FrameworkLiveVerification | undefined;
     // Why it is unhealthy, not just that it is. Verification throws for a paused
     // manager, an unexpected owner, and an unreachable RPC alike, so without this
-    // every one of them looks identical: ok=false, frameworkPaused=null. As one of four
-    // words, so the reason never becomes an oracle for a caller — the redacted text
-    // said which RPC host was down and which viem was talking to it.
+    // every one of them looks identical: ok=false. As one of four words, so the reason
+    // never becomes an oracle for a caller — the redacted text said which RPC host was
+    // down and which viem was talking to it. `frameworkPaused` is read off the same
+    // word: a verification that threw returned no flag, so the pause is only ever known
+    // through its classification.
     let frameworkError: FrameworkHealthError | null = null;
     try {
         framework = await readiness.read();
@@ -631,7 +634,7 @@ app.get("/health", async (c) => {
         composition: deployment.compositionId,
         delegationManager: manager,
         frameworkOwner: framework?.owner ?? null,
-        frameworkPaused: framework?.paused ?? null,
+        frameworkPaused: frameworkPausedFrom(frameworkError),
         frameworkError,
         facilitator: relayer.address,
         relayerFunded: balance === undefined ? null : balance > 0n,

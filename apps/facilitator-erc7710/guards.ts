@@ -307,6 +307,19 @@ export function classifyFrameworkError(error: unknown): FrameworkHealthError {
     return "verification_failed";
 }
 
+/**
+ * `/health`'s `frameworkPaused`, from the classified failure rather than a live flag.
+ * The verifier throws on the pause, so a check that passed proves `false` and a check
+ * that failed returned no flag to read: the pause is known only through
+ * {@link classifyFrameworkError}, and every other failure says nothing about it — `null`.
+ * Before this the field was `null` for every failure, the pause included, and the one
+ * state an operator pulls on purpose was the one the boolean never showed.
+ */
+export function frameworkPausedFrom(error: FrameworkHealthError | null): boolean | null {
+    if (error === null) return false;
+    return error === "framework_paused" ? true : null;
+}
+
 export interface CachedProbeOptions {
     ttlMs: number;
     /**

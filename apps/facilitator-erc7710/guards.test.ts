@@ -28,6 +28,7 @@ import {
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     classifyFrameworkError,
+    frameworkPausedFrom,
     rateLimitByIp,
     requireReadiness,
 } from "./guards.js";
@@ -502,6 +503,22 @@ describe("classifyFrameworkError", () => {
         );
         expect(answer).not.toContain("rpc.example");
         expect(answer).not.toContain("viem");
+    });
+});
+
+describe("frameworkPausedFrom", () => {
+    test("a check that passed proves the manager is not paused — the verifier throws on the pause", () => {
+        expect(frameworkPausedFrom(null)).toBe(false);
+    });
+
+    test("the pause is known through its classification, since the check returned no flag", () => {
+        expect(frameworkPausedFrom("framework_paused")).toBe(true);
+    });
+
+    test("a failure that says nothing about the pause leaves it unknown", () => {
+        for (const error of ["rpc_unreachable", "owner_mismatch", "verification_failed"] as const) {
+            expect(frameworkPausedFrom(error)).toBeNull();
+        }
     });
 });
 
