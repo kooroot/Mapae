@@ -47,16 +47,19 @@ import {privateKeyToAccount, nonceManager} from "viem/accounts";
 /**
  * Two body bounds, in two units, because they are enforced at two different layers.
  *
- * `MAX_BODY_BYTES` goes to Bun as `maxRequestBodySize`: the runtime answers 413 and drops
- * the connection before `fetch` runs, for a `Content-Length` body and a chunked one
- * alike — verified against bun 1.4.0. Before it, `readJson` was the only bound, and it
- * could refuse a chunked body only after buffering all of it. `MAX_BODY_CHARACTERS` is
- * the second guard, on the decoded string inside the route, and stays because it is the
- * one that answers with this service's own closed enum and log line. It is the smaller
- * number so that any body the runtime lets through and the route still refuses gets
- * that answer rather than a bare 413; UTF-8 never has fewer bytes than characters, so
- * nothing between the two slips past both. A legitimate submission is a few kB — the
- * ~2 kB permission context, once as itself and once inside `callData`.
+ * `MAX_BODY_BYTES` goes to Bun as `maxRequestBodySize`. Measured on bun 1.4.0: a
+ * `Content-Length` body over the cap is answered 413 without `fetch` ever running; a
+ * chunked body does reach the route, and `c.req.text()` rejects with "Request body
+ * exceeded maxRequestBodySize" once the stream passes the cap — the route's catch logs
+ * it, but the 400 it builds is discarded and the client still sees the runtime's 413.
+ * Either way nothing buffers past `MAX_BODY_BYTES`; before it, `readJson` was the only
+ * bound and could refuse a chunked body only after buffering all of it.
+ * `MAX_BODY_CHARACTERS` is the second guard, on the decoded string inside the route, and
+ * stays because it is the one that answers with this service's own closed enum and log
+ * line. It is the smaller number so that a body the runtime lets through and the route
+ * still refuses gets that answer rather than a bare 413; UTF-8 never has fewer bytes
+ * than characters, so nothing between the two slips past both. A legitimate submission
+ * is a few kB — the ~2 kB permission context, once as itself and once inside `callData`.
  */
 const MAX_BODY_BYTES = 200_000;
 const MAX_BODY_CHARACTERS = 150_000;
@@ -888,8 +891,10 @@ function refuse(c: Context, reason: RevokeRefusal, status: number) {
 }
 
 /**
- * The body has already been bounded by `maxRequestBodySize` when this runs, so the read
- * below buffers at most `MAX_BODY_BYTES`; the character check is the second guard.
+ * `maxRequestBodySize` bounds what the read below can buffer at `MAX_BODY_BYTES` — by
+ * refusing a `Content-Length` body before the route, by rejecting the read for a chunked
+ * one (the throw lands in the route's catch; the client sees 413 either way). The
+ * character check is the second guard.
  */
 async function readJson(c: Context): Promise<unknown> {
     const contentType = c.req.header("content-type")?.toLowerCase() ?? "";
