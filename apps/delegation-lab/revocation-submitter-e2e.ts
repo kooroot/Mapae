@@ -808,7 +808,7 @@ async function main(): Promise<void> {
      */
     const belowFloor = [
         {signed: "cap and tip 300 wei", gas: {...SPONSORED_REVOCATION_GAS, maxFeePerGas: 300n, maxPriorityFeePerGas: 300n}},
-        {signed: "cap at the floor, tip 300 wei", gas: {...SPONSORED_REVOCATION_GAS, maxPriorityFeePerGas: 300n}},
+        {signed: "cap at the floor with tip 300 wei", gas: {...SPONSORED_REVOCATION_GAS, maxPriorityFeePerGas: 300n}},
     ];
     const sponsorNonceBeforeP = BigInt(
         (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
@@ -841,7 +841,10 @@ async function main(): Promise<void> {
     if (sponsorNonceAfterP !== sponsorNonceBeforeP) {
         throw new Error("a below-floor submission still cost the sponsor a deposit");
     }
-    passed("P", "fee floor      cap 300 wei and tip 300 wei → 400 invalid_submission, relayer fronts neither");
+    passed(
+        "P",
+        `fee floor      ${belowFloor.map(({signed}) => signed).join(" · ")} → 400 invalid_submission each, sponsor nonce unchanged`,
+    );
 
     // ── M. the daily budget is a real bound, not a speed bump ─────────────────────────
     await restartSponsored({REVOCATION_DAILY_WEI: "1"});
