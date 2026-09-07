@@ -1,6 +1,7 @@
 import {Hono, type Context} from "hono";
 import {DelegationManager} from "@metamask/smart-accounts-kit/contracts";
 import {
+    FixedWindowLimiter,
     PaymentIntentSingleFlight,
     SpendBudget,
     buildDelegatedTransfer,
@@ -40,6 +41,7 @@ import {
     type Hex,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
+import {RATE_WINDOW_MS, SETTLE_RATE_LIMITED, VERIFY_RATE_LIMITED, rateLimitByIp} from "./guards.js";
 import {bearerTokenMatches, metricsReport, readMetricsToken} from "./metrics.js";
 
 const MAX_BODY_CHARACTERS = 150_000;
@@ -170,6 +172,12 @@ const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOU
 // steady-state redemptions at 1 gwei. The day's total lives in the store, so a restart
 // resumes it instead of opening a second budget.
 const RELAYER_DAILY_WEI = readPositiveInteger("RELAYER_DAILY_WEI", 500_000_000_000_000n);
+// Requests per address per hour on /verify and /settle together, refused before the body
+// is read. A real seller's payment is one /verify and one /settle, so the default admits
+// 300 payments an hour from one address — more than the day's gas budget can settle —
+// while a flood from one address stops costing RPC after its first 600 requests. Bounded
+// to a number so the limiter's integer check sees an integer, as the receipt timeout is.
+const FACILITATOR_RATE_PER_HOUR = Number(readPositiveInteger("FACILITATOR_RATE_PER_HOUR", 600n));
 // The nonce manager serializes nonce assignment per address. Without it, two concurrent
 // /settle calls for different payment intents each read eth_getTransactionCount(pending)
 // independently and can pick the same nonce — one broadcast then replaces the other in the
@@ -190,6 +198,7 @@ const manager = getAddress(deployment.environment.DelegationManager);
 // file is created for nothing.
 const store = openStore(STORE_PATH);
 const budget = new SpendBudget(RELAYER_DAILY_WEI, Date.now(), store.budget);
+const limiter = new FixedWindowLimiter(FACILITATOR_RATE_PER_HOUR, RATE_WINDOW_MS);
 
 const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
 const facilitatorClient = createWalletClient({
@@ -597,6 +606,12 @@ app.get("/metrics", (c) => {
     return c.json(metricsReport(store.ledger, Date.now(), budget, RELAYER_DAILY_WEI));
 });
 
+// One window for both routes: a payment is one /verify and one /settle, and a flood is a
+// flood whichever of the two it picks. The limiter runs before the readiness probe and
+// before the body is read, so a refused request costs a Map lookup and no RPC.
+app.use("/verify", rateLimitByIp(limiter, VERIFY_RATE_LIMITED));
+app.use("/settle", rateLimitByIp(limiter, SETTLE_RATE_LIMITED));
+
 app.post("/verify", async (c) => {
     try {
         await readiness.verify();
@@ -680,6 +695,7 @@ console.log(`  manager ${manager}`);
 console.log(`  signer  ${relayer.address}`);
 console.log(`  store   ${STORE_PATH}`);
 console.log(`  budget  ${RELAYER_DAILY_WEI} wei/day (RELAYER_DAILY_WEI)`);
+console.log(`  rate    ${FACILITATOR_RATE_PER_HOUR}/hour per IP (FACILITATOR_RATE_PER_HOUR)`);
 console.log(`  metrics ${METRICS_TOKEN === undefined ? "disabled (METRICS_TOKEN unset)" : "enabled"}`);
 
 export default {hostname: HOST, port: PORT, fetch: app.fetch};

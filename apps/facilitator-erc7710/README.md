@@ -11,6 +11,7 @@ ERC-7710 위임 결제의 검증·정산 서비스. 판매자가 `/verify`로 �
 | `STORE_PATH` | `./data/facilitator.sqlite` | 정산 원장과 그날 쓴 가스를 남기는 `@mapae/store` 파일. `:memory:`는 드라이런용 — 재시작하면 아무것도 남지 않는다 |
 | `METRICS_TOKEN` | (없음) | 없으면 `GET /metrics`는 `503 metrics_disabled`. 16자 이상으로 두면 `Authorization: Bearer <token>`에 답한다 |
 | `RELAYER_DAILY_WEI` | `500000000000000` (0.0005 ETH) | 정산 서명자가 하루(UTC)에 쓸 수 있는 가스 상한, wei |
+| `FACILITATOR_RATE_PER_HOUR` | `600` | 한 IP가 한 시간에 `/verify`와 `/settle`을 합쳐 부를 수 있는 횟수 |
 | `MAX_SETTLEMENT_AMOUNT` | `10.00` | 한 번에 정산하는 결제 금액 상한(tUSDC). 온체인 caveat이 본 통제고, 이것은 백스톱이다 |
 
 나머지 변수(서명자 키·주소, RPC, 바인드, 가스 상한, 영수증 타임아웃)는
@@ -35,6 +36,21 @@ payer는 위임이 허락하는 만큼 정산을 요구할 수 있다. 그래서
 
 그날 쓴 총액은 `STORE_PATH`에 남아 재시작해도 이어진다. 죽였다 살린 뒤 `/metrics`가
 같은 값을 내는지는 `restart.test.ts`가 파일 스토어를 닫고 다시 열어 확인한다.
+
+## 요청 제한
+
+`POST /verify`와 `POST /settle`은 본문을 읽기 전, 프레임워크 검증보다 먼저 IP별 고정
+창(한 시간, `FACILITATOR_RATE_PER_HOUR`회)을 센다. 키는 `CF-Connecting-IP` 헤더 —
+터널이 유일한 공개 경로고 cloudflared가 늘 붙이므로, 헤더 없는 요청은 루프백에서 온
+것(같은 머신의 호스티드 상점)이라 세지 않는다. 결제 하나는 `/verify` 한 번과 `/settle`
+한 번이라 기본값은 IP당 시간 300건 — 그날 가스 예산이 정산할 수 있는 수보다 많다.
+
+넘친 요청은 RPC 큐에 아무것도 넣지 않고 원장에도 남지 않으며, 다른 거절처럼 200으로 답한다.
+
+| 경로 | 응답 |
+| --- | --- |
+| `/verify` | `200 {isValid: false, invalidReason: "rate_limited"}` |
+| `/settle` | `200 {success: false, network, errorReason: "rate_limited"}` |
 
 ## `/metrics`
 
@@ -66,5 +82,5 @@ bun run dev
 ## 검증
 
 ```bash
-bun test apps/facilitator-erc7710   # /metrics 순수 함수 + 재시작 증명
+bun test apps/facilitator-erc7710   # 요청 제한 + /metrics 순수 함수 + 재시작 증명
 ```
