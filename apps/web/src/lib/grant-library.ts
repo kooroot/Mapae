@@ -15,6 +15,43 @@ interface GrantLibrary {
 }
 
 /**
+ * The next in-memory list after the store was written, without losing what only memory
+ * holds.
+ *
+ * The store never persists `agentKey` (see `grant-store.ts`), so a list read back from it
+ * has no key on any entry. Replacing React state with that list — which every mutation
+ * used to do — destroyed the only copy of every *other* grant's session key: sign a second
+ * agent, forget any grant, or recover from chain, and the first agent's bundle button was
+ * gone before the tab closed. The store decides *which* grants exist (so a second tab's
+ * writes are honoured and a forgotten grant disappears); memory decides *what object*
+ * stands for each one, matched on the permission context, which is the identity the store
+ * dedupes on. A grant persisted by another tab has no in-memory object and enters without
+ * a key, which is the truth — this tab never held it. A freshly signed grant goes to the
+ * head, the position `appendGrant` gave it, carrying the key the form generated.
+ */
+export function mergeGrants(params: {
+    current: SessionGrant[];
+    persisted: SessionGrant[];
+    incoming?: SessionGrant;
+}): SessionGrant[] {
+    const {current, persisted, incoming} = params;
+    const kept = persisted
+        .filter(
+            (record) =>
+                incoming === undefined ||
+                record.artifact.permissionContext !== incoming.artifact.permissionContext,
+        )
+        .map(
+            (record) =>
+                current.find(
+                    (item) =>
+                        item.artifact.permissionContext === record.artifact.permissionContext,
+                ) ?? record,
+        );
+    return incoming ? [incoming, ...kept] : kept;
+}
+
+/**
  * The Studio's grant list, owned here rather than in the component.
  *
  * `/app` is server-rendered and `localStorage` does not exist there, so the server always
@@ -35,26 +72,23 @@ export function useGrantLibrary(): GrantLibrary {
         setState({hydrated: true, grants: loadGrants()});
     }, []);
 
+    // Functional updates, because `recoverFromChain` calls `add` several times in one
+    // tick: each merge must start from the list the previous one produced, not from the
+    // render that enqueued them all.
     const add = useCallback((grant: SessionGrant) => {
-        // The store's read-modify-write is the source of the next list, so a second tab's
-        // grants survive this one's write instead of being overwritten by a stale snapshot.
-        // The returned list has no `agentKey` on the restored entries, so the freshly signed
-        // grant — which may carry one — is put back at the head.
         const persisted = appendGrant(grant);
-        setState({
+        setState(({grants}) => ({
             hydrated: true,
-            grants: [
-                grant,
-                ...persisted.filter(
-                    (item) =>
-                        item.artifact.permissionContext !== grant.artifact.permissionContext,
-                ),
-            ],
-        });
+            grants: mergeGrants({current: grants, persisted, incoming: grant}),
+        }));
     }, []);
 
     const forget = useCallback((permissionContext: `0x${string}`) => {
-        setState({hydrated: true, grants: forgetGrant(permissionContext)});
+        const persisted = forgetGrant(permissionContext);
+        setState(({grants}) => ({
+            hydrated: true,
+            grants: mergeGrants({current: grants, persisted}),
+        }));
     }, []);
 
     return {hydrated: state.hydrated, grants: state.grants, add, forget};
