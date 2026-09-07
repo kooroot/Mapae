@@ -800,31 +800,40 @@ async function main(): Promise<void> {
      * GIWA. An operation signed just above the base fee therefore passes
      * `fee_below_basefee` and reimburses a fraction of what was fronted, and because its
      * prefund shrinks with the fee, the daily budget barely counts it. This case pins the
-     * floor that closes it.
+     * floor that closes it — on both fee fields. `maxFeePerGas` is only the cap on what
+     * the EntryPoint reimburses; the tip is what that figure is computed from, so an
+     * operation signed with the cap at the floor and a 300 wei tip was accepted, priced
+     * at the floor for its prefund and the budget, and reimbursed at the bare base fee.
+     * The second submission here is exactly that operation.
      */
-    const cheapGas = {...SPONSORED_REVOCATION_GAS, maxFeePerGas: 300n, maxPriorityFeePerGas: 300n};
-    const cheapBuilt = buildRevocationUserOperation({
-        delegation: delegation3,
-        entryPoint,
-        chainId: chain.id,
-        nonce: await readRevocationNonce({publicClient, entryPoint, sender: account2.address}),
-        gas: cheapGas,
-    });
-    const cheapBody = buildRevocationSubmissionBody({
-        permissionContext: context3,
-        packed: finalizeRevocationUserOperation(
-            cheapBuilt,
-            await owner2.signTypedData(cheapBuilt.typedData),
-        ).packed,
-    });
+    const belowFloor = [
+        {signed: "cap and tip 300 wei", gas: {...SPONSORED_REVOCATION_GAS, maxFeePerGas: 300n, maxPriorityFeePerGas: 300n}},
+        {signed: "cap at the floor, tip 300 wei", gas: {...SPONSORED_REVOCATION_GAS, maxPriorityFeePerGas: 300n}},
+    ];
     const sponsorNonceBeforeP = BigInt(
         (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
     );
-    const cheap = await postRevoke(cheapBody);
-    if (cheap.status !== 400 || cheap.body.reason !== "invalid_submission") {
-        throw new Error(
-            `expected 400 invalid_submission for a below-floor fee, got ${cheap.status} ${JSON.stringify(cheap.body)}`,
-        );
+    for (const {signed, gas} of belowFloor) {
+        const cheapBuilt = buildRevocationUserOperation({
+            delegation: delegation3,
+            entryPoint,
+            chainId: chain.id,
+            nonce: await readRevocationNonce({publicClient, entryPoint, sender: account2.address}),
+            gas,
+        });
+        const cheapBody = buildRevocationSubmissionBody({
+            permissionContext: context3,
+            packed: finalizeRevocationUserOperation(
+                cheapBuilt,
+                await owner2.signTypedData(cheapBuilt.typedData),
+            ).packed,
+        });
+        const cheap = await postRevoke(cheapBody);
+        if (cheap.status !== 400 || cheap.body.reason !== "invalid_submission") {
+            throw new Error(
+                `expected 400 invalid_submission for ${signed}, got ${cheap.status} ${JSON.stringify(cheap.body)}`,
+            );
+        }
     }
     const sponsorNonceAfterP = BigInt(
         (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
@@ -832,7 +841,7 @@ async function main(): Promise<void> {
     if (sponsorNonceAfterP !== sponsorNonceBeforeP) {
         throw new Error("a below-floor submission still cost the sponsor a deposit");
     }
-    passed("P", "fee 300 wei    400 invalid_submission, relayer never fronts it");
+    passed("P", "fee floor      cap 300 wei and tip 300 wei → 400 invalid_submission, relayer fronts neither");
 
     // ── M. the daily budget is a real bound, not a speed bump ─────────────────────────
     await restartSponsored({REVOCATION_DAILY_WEI: "1"});
