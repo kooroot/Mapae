@@ -1,7 +1,9 @@
-import {describe, expect, test} from "bun:test";
+import {describe, expect, mock, test} from "bun:test";
 import {createPublicClient, custom, getAddress, type Address} from "viem";
+import * as faucet from "./faucet";
 import {FAUCET_COPY} from "./faucet";
 import {LOCALES} from "./i18n";
+import * as studioSections from "./studio-sections";
 import {STUDIO_SECTIONS} from "./studio-sections";
 import {
     awaitRevocationVisible,
@@ -450,5 +452,63 @@ describe("awaitRevocationVisible", () => {
         });
         expect(result).toBe(true);
         expect(reads).toBe(3);
+    });
+});
+
+/*
+ * The export sets as they were before any mock below, captured at load: a module mock is
+ * process-wide and rewrites the live bindings of everything that imported the module —
+ * this file's own `STUDIO_SECTIONS` included — so the namespace objects cannot be read
+ * back for the restore once the probe is in.
+ */
+const REAL_STUDIO_SECTIONS = {...studioSections};
+const REAL_FAUCET = {...faucet};
+
+describe("the account-missing note reads the Studio's copy rather than spelling it", () => {
+    test("swapping the exported labels swaps the words in the note", async () => {
+        // The byte pins above pass for a note that spells ‘Authority’ itself, because that
+        // is what the label reads today. Only a label the source never carried can tell
+        // "reads the module" from "happens to match it" — so the two modules are swapped
+        // for probes and the same note asked for again. Restored in `finally`, whatever the
+        // assertions say: every later test in this process sees the real words.
+        mock.module("./studio-sections", () => ({
+            ...REAL_STUDIO_SECTIONS,
+            STUDIO_SECTIONS: {
+                en: {
+                    ...STUDIO_SECTIONS.en,
+                    overview: {...STUDIO_SECTIONS.en.overview, label: "PROBE-TAB"},
+                },
+                ko: {
+                    ...STUDIO_SECTIONS.ko,
+                    overview: {...STUDIO_SECTIONS.ko.overview, label: "탐침-탭"},
+                },
+            },
+        }));
+        mock.module("./faucet", () => ({
+            ...REAL_FAUCET,
+            FAUCET_COPY: {
+                en: {...FAUCET_COPY.en, action: "PROBE-BUTTON"},
+                ko: {...FAUCET_COPY.ko, action: "탐침-버튼"},
+            },
+        }));
+        try {
+            const probed = await import("./revoke");
+            const missing = {kind: "account-missing"} as const;
+
+            expect(probed.studioRevokeGateNote(missing, "en", {topUpOffered: true})).toContain(
+                "open the ‘PROBE-TAB’ tab and press ‘PROBE-BUTTON’",
+            );
+            expect(probed.studioRevokeGateNote(missing, "ko", {topUpOffered: true})).toContain(
+                "‘탐침-탭’ 탭에서 ‘탐침-버튼’를 누르세요",
+            );
+        } finally {
+            mock.module("./studio-sections", () => REAL_STUDIO_SECTIONS);
+            mock.module("./faucet", () => REAL_FAUCET);
+        }
+
+        // The restore took: the real words are back for whoever runs next.
+        expect(
+            studioRevokeGateNote({kind: "account-missing"}, "en", {topUpOffered: true}),
+        ).toContain("open the ‘Authority’ tab and press ‘Get testnet balance’");
     });
 });
