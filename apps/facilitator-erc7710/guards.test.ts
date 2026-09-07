@@ -8,13 +8,15 @@ import {
     CLIENT_IP_HEADER,
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
+    SETTLEMENT_UNCONFIRMED,
     SpendBudget,
     assertFrameworkAdminActive,
     budgetDay,
 } from "@mapae/delegation";
+import {GIWA_SEPOLIA_CAIP2, redactForLog} from "@mapae/shared";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
 import {Hono} from "hono";
-import {HttpRequestError, TimeoutError, getAddress, type Address} from "viem";
+import {BaseError, HttpRequestError, TimeoutError, getAddress, type Address, type Hex} from "viem";
 import {
     BudgetExhausted,
     CachedProbe,
@@ -22,12 +24,17 @@ import {
     PAYER_IDLE_MS,
     PayerBudgets,
     RATE_WINDOW_MS,
+    RpcUnreachableBeforeBroadcast,
     SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
     SWEEP_EVERY,
+    SettlementNotCredited,
+    SettlementUnconfirmed,
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
+    beforeBroadcast,
     classifyFrameworkError,
+    describeFailure,
     isRpcUnreachable,
     frameworkPausedFrom,
     rateLimitByIp,
@@ -445,6 +452,145 @@ describe("isRpcUnreachable", () => {
         const transport = new HttpRequestError({url: "https://rpc.example/key", details: "fetch failed"});
         expect(isRpcUnreachable(new Error("simulation failed", {cause: transport}))).toBe(true);
         expect(isRpcUnreachable(new Error("execution reverted: caveat"))).toBe(false);
+    });
+});
+
+describe("beforeBroadcast", () => {
+    const RPC = "https://rpc.example/very-secret-key";
+
+    /** What the step's promise rejected with, or `undefined` when it resolved. */
+    async function raised(step: () => Promise<unknown>): Promise<unknown> {
+        return beforeBroadcast(step).then(
+            () => undefined,
+            (error: unknown) => error,
+        );
+    }
+
+    test("a transport death inside the stage is raised as RpcUnreachableBeforeBroadcast, cause kept", async () => {
+        const transport = new HttpRequestError({url: RPC, details: "fetch failed"});
+        // As viem raises it from a contract simulation: its own error over the transport
+        // one, composing the cause's details into its message.
+        const simulation = new BaseError("simulation failed", {cause: transport});
+        const error = await raised(async () => {
+            throw simulation;
+        });
+        expect(error).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
+        expect((error as Error).cause).toBe(simulation);
+        // The operator's line says what died, already redacted.
+        expect((error as Error).message).toContain(redactForLog(simulation));
+        expect((error as Error).message).toContain("fetch failed");
+    });
+
+    test("a bare transport error — the fee estimate's shape — keeps the host and drops the key", async () => {
+        const error = await raised(async () => {
+            throw new HttpRequestError({url: RPC, details: "fetch failed"});
+        });
+        expect(error).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
+        expect((error as Error).message).toContain("https://rpc.example");
+        expect((error as Error).message).not.toContain("very-secret-key");
+    });
+
+    test("a timeout and a rate limit that outlived the retries are the same non-answer", async () => {
+        const timeout = await raised(async () => {
+            throw new TimeoutError({body: {}, url: RPC});
+        });
+        expect(timeout).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
+        const limited = await raised(async () => {
+            throw new Error("over rate limit");
+        });
+        expect(limited).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
+    });
+
+    test("a revert or the gas cap from the same stage passes through untouched — it is the verdict", async () => {
+        const revert = new Error("execution reverted: ERC20TransferAmountEnforcer:allowance-exceeded");
+        await expect(
+            beforeBroadcast(async () => {
+                throw revert;
+            }),
+        ).rejects.toBe(revert);
+        const capped = new Error("redemption gas 2000000 exceeds configured cap");
+        await expect(
+            beforeBroadcast(async () => {
+                throw capped;
+            }),
+        ).rejects.toBe(capped);
+    });
+
+    test("a step that answers is returned as is", async () => {
+        expect(await beforeBroadcast(async () => ({gas: 333_523n}))).toEqual({gas: 333_523n});
+    });
+});
+
+describe("describeFailure", () => {
+    const RPC = "https://rpc.example/very-secret-key";
+    const HASH = `0x${"c".repeat(64)}` as Hex;
+
+    test("the RPC dying before the broadcast is no verdict: the not-ready answer, and no ledger row", () => {
+        const transport = new HttpRequestError({url: RPC, details: "fetch failed"});
+        const failure = describeFailure(
+            new RpcUnreachableBeforeBroadcast(new Error("simulation failed", {cause: transport})),
+        );
+        expect(failure).toEqual({outcome: "not_ready"});
+        // The route answers exactly what the readiness middleware answers.
+        expect(SETTLE_NOT_READY).toEqual({
+            status: 200,
+            body: {success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: FACILITATOR_NOT_READY},
+        });
+        // And there is nothing to record: the store refuses a row with that outcome, so
+        // the coordinator's skip is the only way it can be honoured.
+        expect(() =>
+            memoryStore().ledger.record({
+                kind: "settle",
+                at: NOW,
+                payer: ALICE,
+                payTo: SHOP,
+                amountBase: 1n,
+                outcome: failure.outcome as never,
+            }),
+        ).toThrow(/settlement_events_outcome/);
+    });
+
+    test("a revert from the same stage is a rejection, with a rejected row", () => {
+        expect(describeFailure(new Error("execution reverted: caveat"))).toEqual({
+            outcome: "rejected",
+            errorCode: "delegation_rejected",
+            transaction: null,
+        });
+    });
+
+    test("a broadcast whose receipt was not seen is still settlement_unconfirmed, with an error row", () => {
+        expect(describeFailure(new SettlementUnconfirmed(HASH))).toEqual({
+            outcome: "error",
+            errorCode: SETTLEMENT_UNCONFIRMED,
+            transaction: HASH,
+        });
+        // A throw from writeContract itself has no hash to carry, and is unknown all the same.
+        expect(describeFailure(new SettlementUnconfirmed())).toEqual({
+            outcome: "error",
+            errorCode: SETTLEMENT_UNCONFIRMED,
+            transaction: null,
+        });
+    });
+
+    test("a redemption that mined without paying the vendor is vendor_not_credited, hash kept", () => {
+        expect(describeFailure(new SettlementNotCredited(HASH, "no Transfer log"))).toEqual({
+            outcome: "error",
+            errorCode: "vendor_not_credited",
+            transaction: HASH,
+        });
+    });
+
+    test("a budget refusal keeps its own code, as a rejection", () => {
+        expect(describeFailure(new BudgetExhausted("payer_budget_exhausted"))).toEqual({
+            outcome: "rejected",
+            errorCode: "payer_budget_exhausted",
+            transaction: null,
+        });
+        expect(describeFailure(new BudgetExhausted("budget_exhausted"))).toEqual({
+            outcome: "rejected",
+            errorCode: "budget_exhausted",
+            transaction: null,
+        });
     });
 });
 

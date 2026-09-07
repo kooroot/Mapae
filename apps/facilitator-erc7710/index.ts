@@ -14,7 +14,6 @@ import {
     verifyActiveFrameworkDeployment,
     verifyFrameworkOperationalState,
     throttledHttp,
-    SETTLEMENT_UNCONFIRMED,
     type Erc7710SettleResponse,
     type Erc7710VerifyResponse,
     type FrameworkLiveVerification,
@@ -42,18 +41,21 @@ import {
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
 import {
-    BudgetExhausted,
     CachedProbe,
     GasBudgets,
     PayerBudgets,
     RATE_WINDOW_MS,
+    RpcUnreachableBeforeBroadcast,
     SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
+    SettlementNotCredited,
+    SettlementUnconfirmed,
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
+    beforeBroadcast,
     classifyFrameworkError,
+    describeFailure,
     frameworkPausedFrom,
-    isRpcUnreachable,
     rateLimitByIp,
     requireReadiness,
     type FrameworkHealthError,
@@ -324,79 +326,6 @@ const relayerBalance = new CachedProbe(
 const INTENT_MEMORY_MS = 60 * 60 * 1_000;
 
 /**
- * Raised when a redemption was broadcast but its receipt did not arrive in time.
- *
- * Distinct from every other settlement failure because the payer may well have been
- * charged. The caller needs the hash to find out, and must not be told the payment
- * was rejected.
- */
-class SettlementUnconfirmed extends Error {
-    /**
-     * `transaction` is optional because the ambiguity has two shapes. A receipt-wait
-     * timeout knows the hash (the broadcast returned it); a throw from the broadcast
-     * call itself does not — `writeContract` prepares, signs, and sends in one step, so
-     * a lost response after the node accepted the transaction rejects without ever
-     * handing back a hash. Both are "unknown, may be charged", and both must reach the
-     * seller as SETTLEMENT_UNCONFIRMED so the client is told not to re-sign.
-     */
-    constructor(readonly transaction?: Hex) {
-        super("redemption broadcast but not confirmed");
-        this.name = "SettlementUnconfirmed";
-    }
-}
-
-/**
- * Raised when the redemption mined with status "success" but its own receipt carries
- * no `Transfer(payer → payTo, amount)` on the asset — the false-return-token shape.
- * Distinct from a rejection on both sides of the ledger: the vendor was NOT paid, so
- * the resource must not be served, and yet the payer's period allowance WAS consumed,
- * so the transaction hash has to reach the operator instead of being swallowed.
- */
-class SettlementNotCredited extends Error {
-    constructor(
-        readonly transaction: Hex,
-        detail: string,
-    ) {
-        super(`settlement mined without crediting the vendor: ${detail}`);
-        this.name = "SettlementNotCredited";
-    }
-}
-
-interface SettlementFailure {
-    outcome: "rejected" | "error";
-    errorCode: string;
-    transaction: Hex | null;
-}
-
-/**
- * One classification for both consumers of a failed settlement — the wire response and
- * the ledger row — so the two can never disagree about what happened.
- *
- * `rejected`: nobody was charged (validation, simulation revert, gas cap, either budget).
- * `error`: the chain was touched and the answer is unknown (SETTLEMENT_UNCONFIRMED —
- * broadcast, receipt not seen) or wrong (`vendor_not_credited` — mined, allowance
- * consumed, the recipient not paid). Both send the seller's ladder to "failed" and
- * withhold the resource; both carry the hash when there is one, because an operator has
- * to be able to find a transaction that consumed allowance without paying anybody.
- */
-function describeFailure(error: unknown): SettlementFailure {
-    if (error instanceof SettlementUnconfirmed) {
-        return {
-            outcome: "error",
-            errorCode: SETTLEMENT_UNCONFIRMED,
-            transaction: error.transaction ?? null,
-        };
-    }
-    if (error instanceof SettlementNotCredited) {
-        return {outcome: "error", errorCode: "vendor_not_credited", transaction: error.transaction};
-    }
-    if (error instanceof BudgetExhausted) {
-        return {outcome: "rejected", errorCode: error.errorCode, transaction: null};
-    }
-    return {outcome: "rejected", errorCode: "delegation_rejected", transaction: null};
-}
-
-/**
  * One ledger row per settle attempt. Called from inside the single-flight, so a
  * coalesced duplicate request is not counted twice — and never allowed to throw. A
  * ledger that cannot be written is an operator problem; letting it surface here would
@@ -424,11 +353,12 @@ class SettlementCoordinator {
     }
 
     /**
-     * Simulate the redemption against live state and price it. Nothing in here can
+     * Simulate the redemption against live state and price its gas. Nothing in here can
      * broadcast — a simulation revert or a gas-cap refusal charges nobody — so a throw
-     * from this method is a genuine rejection on `/verify` and `/settle` alike, unless
-     * it is the RPC failing to answer: `/verify` tells that apart (`isRpcUnreachable`)
-     * and answers not-ready instead.
+     * from this method is a genuine rejection on `/verify` and `/settle` alike, with one
+     * exception both callers make: the RPC failing to answer is no verdict, and each
+     * wraps this stage in `beforeBroadcast` so that failure reaches its route as
+     * `RpcUnreachableBeforeBroadcast` — answered not-ready, recorded nowhere.
      */
     async #prepareRedemption(payment: ValidatedDelegatedPayment) {
         const transfer = buildDelegatedTransfer(payment);
@@ -447,7 +377,7 @@ class SettlementCoordinator {
     }
 
     async simulate(payment: ValidatedDelegatedPayment): Promise<void> {
-        await this.#prepareRedemption(payment);
+        await beforeBroadcast(() => this.#prepareRedemption(payment));
     }
 
     async settle(payment: ValidatedDelegatedPayment): Promise<Erc7710SettleResponse> {
@@ -474,13 +404,17 @@ class SettlementCoordinator {
             };
         } catch (error) {
             const failure = describeFailure(error);
-            recordSettlement({
-                ...event,
-                at: Date.now(),
-                outcome: failure.outcome,
-                txHash: failure.transaction,
-                errorCode: failure.errorCode,
-            });
+            // No verdict, no row — the readiness middleware writes none for the same
+            // answer, and a row here would count a refusal nobody made.
+            if (failure.outcome !== "not_ready") {
+                recordSettlement({
+                    ...event,
+                    at: Date.now(),
+                    outcome: failure.outcome,
+                    txHash: failure.transaction,
+                    errorCode: failure.errorCode,
+                });
+            }
             throw error;
         }
     }
@@ -529,8 +463,15 @@ class SettlementCoordinator {
      * when it did. The same figure lands on both budgets; the ledger sees one attempt.
      */
     async #broadcast(payment: ValidatedDelegatedPayment): Promise<Receipt> {
-        const {request, gas} = await this.#prepareRedemption(payment);
-        const {maxFeePerGas, maxPriorityFeePerGas} = await publicClient.estimateFeesPerGas();
+        // Simulation, gas estimate and fee estimate are the stage that cannot have
+        // broadcast: the RPC dying anywhere in it is answered not-ready, never as a
+        // verdict on the delegation.
+        const {request, gas, maxFeePerGas, maxPriorityFeePerGas} = await beforeBroadcast(
+            async () => ({
+                ...(await this.#prepareRedemption(payment)),
+                ...(await publicClient.estimateFeesPerGas()),
+            }),
+        );
         // The node's own upfront rule is `balance >= gas * maxFeePerGas`, and the same
         // product is what the day is asked for. The fees go to the broadcast unchanged,
         // so the reservation is the most that transaction can cost in execution gas.
@@ -538,16 +479,18 @@ class SettlementCoordinator {
         let charged = 0n;
         try {
             let hash: Hex;
-            // `#prepareRedemption` provably did not broadcast, so its throws are genuine
-            // rejections. `writeContract` is the one ambiguous step: it prepares, signs,
-            // and sends in a single call, so a lost response after the node accepted the
-            // transaction rejects here while the transfer will still mine. Reporting that
-            // as `delegation_rejected` would tell the payer they were not charged and
-            // invite a retry that signs a fresh leaf and pays twice — the exact
-            // unknown-vs-failed collapse SETTLEMENT_UNCONFIRMED exists to prevent, which
-            // was being enforced only one step later at the receipt wait. A same-intent
-            // retry is safe regardless: the leaf's one-shot ERC20TransferAmountEnforcer
-            // reverts a second redemption of the identical context.
+            // The stage above provably did not broadcast, so its throws are genuine
+            // rejections or, through `beforeBroadcast`, the RPC not answering — and the
+            // reservation is local. `writeContract` is the one ambiguous step: it
+            // prepares, signs, and sends in a single call, so a lost response after the
+            // node accepted the transaction rejects here while the transfer will still
+            // mine. Reporting that as `delegation_rejected` would tell the payer they
+            // were not charged and invite a retry that signs a fresh leaf and pays twice
+            // — the exact unknown-vs-failed collapse SETTLEMENT_UNCONFIRMED exists to
+            // prevent, which was being enforced only one step later at the receipt wait.
+            // A same-intent retry is safe regardless: the leaf's one-shot
+            // ERC20TransferAmountEnforcer reverts a second redemption of the identical
+            // context.
             try {
                 // The call is the simulated one, field by field rather than spread: the
                 // simulated request is typed over every fee variant, and spreading it
@@ -692,7 +635,9 @@ app.post("/verify", async (c) => {
         // The RPC dying inside the simulation is no verdict either — the readiness probe
         // passed up to 5 s ago and the delegation was never judged. Same answer as a
         // failed probe: the seller reads the 503 as unavailable and the buyer retries.
-        if (isRpcUnreachable(error)) return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
+        if (error instanceof RpcUnreachableBeforeBroadcast) {
+            return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
+        }
         const response: Erc7710VerifyResponse = {isValid: false, invalidReason: "delegation_rejected"};
         return c.json(response);
     }
@@ -717,6 +662,13 @@ app.post("/settle", async (c) => {
     } catch (error) {
         logSafeFailure("settle", error);
         const failure = describeFailure(error);
+        // The RPC dying before the broadcast is the readiness middleware's answer, not a
+        // verdict: nothing was charged, so the seller's ladder reads it as unavailable and
+        // the buyer may present the same payment again. Every coalesced caller of the
+        // intent shares the throw, so every one of them is told the same.
+        if (failure.outcome === "not_ready") {
+            return c.json(SETTLE_NOT_READY.body, SETTLE_NOT_READY.status);
+        }
         const response: Erc7710SettleResponse = {
             success: false,
             network: GIWA_SEPOLIA_CAIP2,
@@ -746,8 +698,10 @@ function logSafeFailure(path: string, error: unknown): void {
     // about why its payment failed. The operator is not untrusted, and logging only
     // the error name left them with "Error: request rejected" for an on-chain
     // caveat rejection. `redactForLog` keeps the revert reason and strips the
-    // bearer-length hex that viem embeds in its errors.
-    console.error(`[${path}] rejected — ${redactForLog(error)}`);
+    // bearer-length hex that viem embeds in its errors. The RPC dying before the
+    // broadcast is logged as what it is: not a rejection, on either route.
+    const what = error instanceof RpcUnreachableBeforeBroadcast ? "not ready" : "rejected";
+    console.error(`[${path}] ${what} — ${redactForLog(error)}`);
 }
 
 // `manager` is already `getAddress(...)`-checked at construction, which throws on

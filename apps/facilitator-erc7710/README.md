@@ -34,11 +34,14 @@ payer별 몫도 `STORE_PATH`의 `payer:<주소>` 시리즈에 남아 재시작�
 
 | 상황 | 예산 처리 | 응답 |
 | --- | --- | --- |
+| 시뮬레이션·가스 견적·수수료 견적 중 RPC가 답하지 않음 | 예약 전, 브로드캐스트 없음 | `200 {success: false, errorReason: "facilitator_not_ready"}`, 원장에 행 없음 — 판정이 없었다 |
+| 시뮬레이션이 revert하거나 가스 상한을 넘음 | 예약 전, 브로드캐스트 없음 | `200 {success: false, errorReason: "delegation_rejected"}`, 원장에 `rejected` |
 | payer 몫이 모자람 | 아무것도 잡지 않음, 브로드캐스트 없음 | `200 {success: false, errorReason: "payer_budget_exhausted"}`, 원장에 `rejected` |
 | 그날 총액이 모자람 | payer 몫의 예약을 `0`으로 풀고 브로드캐스트 없음 | `200 {success: false, errorReason: "budget_exhausted"}`, 원장에 `rejected` |
 | 영수증 도착 | 영수증의 실제 비용(L1 데이터 수수료 포함)을 두 예산에 같이 정산 | 정상 흐름 |
-| 브로드캐스트가 해시를 못 냄 | 두 예산 모두 `0` 정산(예약 해제) | `settlement_unconfirmed` |
-| 해시는 있는데 영수증이 없음 | 예약 전액을 두 예산에 그대로 청구 | `settlement_unconfirmed` |
+| 브로드캐스트가 해시를 못 냄 | 두 예산 모두 `0` 정산(예약 해제) | `settlement_unconfirmed`, 원장에 `error` |
+| 해시는 있는데 영수증이 없음 | 예약 전액을 두 예산에 그대로 청구 | `settlement_unconfirmed`, 원장에 `error` |
+| 채굴됐는데 영수증에 판매자 앞 `Transfer`가 없음 | 영수증의 실제 비용을 청구 | `vendor_not_credited`, 원장에 `error` |
 
 거절은 다른 정산 실패와 같은 모양(200 + `success: false`)으로 나간다. 판매자
 클라이언트는 2xx가 아닌 응답을 "답을 잃었다"로 읽고 구매자에게 결제 상태를 *unknown*으로
@@ -127,6 +130,14 @@ viem 버전 문구가 그대로 새어 나갔다.
 | `/verify` | `503 {isValid: false, invalidReason: "facilitator_not_ready"}` — 2xx가 아니면 판매자는 unavailable로 읽는다 |
 | `/settle` | `200 {success: false, network, errorReason: "facilitator_not_ready"}` — 2xx가 아니면 "답을 잃었다"가 되므로 본문으로 말한다 |
 
+프로브를 통과한 뒤 시뮬레이션·가스 견적·수수료 견적 중에 RPC가 죽어도 같은 답이다
+(`beforeBroadcast`가 그 단계의 전송 실패를 `RpcUnreachableBeforeBroadcast`로 올린다).
+브로드캐스트 전이라 청구된 것이 없고 판정도 없으므로 두 경로 모두 위 표대로 답하고,
+`/settle`은 원장에 아무 행도 남기지 않는다 — 준비 프로브가 막은 요청과 똑같이. 전에는
+`/settle`이 이것을 `delegation_rejected`와 `rejected` 행으로 답해, 아무도 거절하지 않은
+위임을 구매자가 다시 서명하러 갔다. `writeContract`부터는 다르다: 노드가 트랜잭션을
+받았을 수 있으므로 거기서의 전송 실패는 `settlement_unconfirmed`로 남는다.
+
 예산은 내보내지 않는다 — "오늘 얼마나 남았나"는 하루를 말리는 게 남는 장사인지 재는
 숫자라 `/metrics` 토큰 뒤에 둔다.
 
@@ -140,5 +151,5 @@ bun run dev
 ## 검증
 
 ```bash
-bun test apps/facilitator-erc7710   # 요청 제한·payer 몫·/health 분류 + /metrics 순수 함수 + 재시작 증명
+bun test apps/facilitator-erc7710   # 요청 제한·payer 몫·정산 실패 분류·/health 분류 + /metrics 순수 함수 + 재시작 증명
 ```

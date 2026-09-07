@@ -1,6 +1,8 @@
 /**
  * The guards in front of the facilitator's routes — every decision about a request that
- * is taken *before* the chain is touched, or that decides whether it is touched at all.
+ * is taken *before* the chain is touched, or that decides whether it is touched at all —
+ * and, once a settlement has failed, the one classification that tells the wire and the
+ * ledger what happened.
  *
  * `index.ts` boots against a signer, two artifacts and a live RPC, so no test can import
  * it. The decisions live here, where they are provable with a `Map` and a clock, and
@@ -11,16 +13,17 @@ import {
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
     RATE_LIMITED,
+    SETTLEMENT_UNCONFIRMED,
     SpendBudget,
     ipBucket,
     isRateLimitError,
     type Erc7710SettleResponse,
     type Erc7710VerifyResponse,
 } from "@mapae/delegation";
-import {GIWA_SEPOLIA_CAIP2} from "@mapae/shared";
+import {GIWA_SEPOLIA_CAIP2, redactForLog} from "@mapae/shared";
 import type {Budget} from "@mapae/store";
 import type {MiddlewareHandler} from "hono";
-import {HttpRequestError, TimeoutError, type Address} from "viem";
+import {HttpRequestError, TimeoutError, type Address, type Hex} from "viem";
 
 // ── Per-IP rate limit ──────────────────────────────────────────────────────────────
 
@@ -258,6 +261,122 @@ export class GasBudgets {
     }
 }
 
+// ── Settlement failures ─────────────────────────────────────────────────────────────
+
+/**
+ * Raised when the RPC stopped answering while the redemption was being simulated and
+ * priced — before the reservation, before the broadcast. Nothing was charged and no
+ * verdict on the delegation was formed: the readiness probe passed up to 5 s earlier,
+ * and the transport dying one call later is the same non-answer. Both routes answer it
+ * as they answer a failed probe, and `/settle` writes no ledger row for it, exactly as
+ * the readiness middleware writes none. Until this existed `/settle` fell through to
+ * `delegation_rejected` with a `rejected` row — a verdict nobody had formed, sending the
+ * buyer to re-sign a grant nothing had refused.
+ *
+ * Only {@link beforeBroadcast} raises it, and only around the pre-broadcast stage. From
+ * `writeContract` on, a transport failure is ambiguous — the node may have accepted the
+ * transaction — and is {@link SettlementUnconfirmed}, never this.
+ *
+ * The message carries the cause, already redacted: the operator's log line has to say
+ * which transport died and how, and the wrapper would otherwise hide it.
+ */
+export class RpcUnreachableBeforeBroadcast extends Error {
+    constructor(cause: unknown) {
+        super(`RPC stopped answering before the redemption was broadcast — ${redactForLog(cause)}`, {
+            cause,
+        });
+        this.name = "RpcUnreachableBeforeBroadcast";
+    }
+}
+
+/**
+ * Run one step of the stage before the broadcast — the simulation, the gas estimate, the
+ * fee estimate — and raise a transport death inside it as
+ * {@link RpcUnreachableBeforeBroadcast}. Every other throw (a revert, the gas cap) is a
+ * verdict and passes through unchanged.
+ */
+export async function beforeBroadcast<T>(step: () => Promise<T>): Promise<T> {
+    try {
+        return await step();
+    } catch (error) {
+        throw isRpcUnreachable(error) ? new RpcUnreachableBeforeBroadcast(error) : error;
+    }
+}
+
+/**
+ * Raised when a redemption was broadcast but its receipt did not arrive in time.
+ *
+ * Distinct from every other settlement failure because the payer may well have been
+ * charged. The caller needs the hash to find out, and must not be told the payment
+ * was rejected.
+ */
+export class SettlementUnconfirmed extends Error {
+    /**
+     * `transaction` is optional because the ambiguity has two shapes. A receipt-wait
+     * timeout knows the hash (the broadcast returned it); a throw from the broadcast
+     * call itself does not — `writeContract` prepares, signs, and sends in one step, so
+     * a lost response after the node accepted the transaction rejects without ever
+     * handing back a hash. Both are "unknown, may be charged", and both must reach the
+     * seller as SETTLEMENT_UNCONFIRMED so the client is told not to re-sign.
+     */
+    constructor(readonly transaction?: Hex) {
+        super("redemption broadcast but not confirmed");
+        this.name = "SettlementUnconfirmed";
+    }
+}
+
+/**
+ * Raised when the redemption mined with status "success" but its own receipt carries
+ * no `Transfer(payer → payTo, amount)` on the asset — the false-return-token shape.
+ * Distinct from a rejection on both sides of the ledger: the vendor was NOT paid, so
+ * the resource must not be served, and yet the payer's period allowance WAS consumed,
+ * so the transaction hash has to reach the operator instead of being swallowed.
+ */
+export class SettlementNotCredited extends Error {
+    constructor(
+        readonly transaction: Hex,
+        detail: string,
+    ) {
+        super(`settlement mined without crediting the vendor: ${detail}`);
+        this.name = "SettlementNotCredited";
+    }
+}
+
+/**
+ * What a failed settle attempt says to the wire and to the ledger — one classification
+ * for both consumers, so the two can never disagree about what happened.
+ *
+ * `rejected`: nobody was charged (validation, simulation revert, gas cap, either budget).
+ * `error`: the chain was touched and the answer is unknown (SETTLEMENT_UNCONFIRMED —
+ * broadcast, receipt not seen) or wrong (`vendor_not_credited` — mined, allowance
+ * consumed, the recipient not paid). Both send the seller's ladder to "failed" and
+ * withhold the resource; both carry the hash when there is one, because an operator has
+ * to be able to find a transaction that consumed allowance without paying anybody.
+ * `not_ready`: no verdict at all ({@link RpcUnreachableBeforeBroadcast}) — the answer is
+ * {@link SETTLE_NOT_READY} and there is no row, because a row records a verdict.
+ */
+export type SettlementFailure =
+    | {outcome: "not_ready"}
+    | {outcome: "rejected" | "error"; errorCode: string; transaction: Hex | null};
+
+export function describeFailure(error: unknown): SettlementFailure {
+    if (error instanceof RpcUnreachableBeforeBroadcast) return {outcome: "not_ready"};
+    if (error instanceof SettlementUnconfirmed) {
+        return {
+            outcome: "error",
+            errorCode: SETTLEMENT_UNCONFIRMED,
+            transaction: error.transaction ?? null,
+        };
+    }
+    if (error instanceof SettlementNotCredited) {
+        return {outcome: "error", errorCode: "vendor_not_credited", transaction: error.transaction};
+    }
+    if (error instanceof BudgetExhausted) {
+        return {outcome: "rejected", errorCode: error.errorCode, transaction: null};
+    }
+    return {outcome: "rejected", errorCode: "delegation_rejected", transaction: null};
+}
+
 // ── /health ─────────────────────────────────────────────────────────────────────────
 
 /**
@@ -276,8 +395,9 @@ export type FrameworkHealthError =
  * viem wraps a transport failure in `HttpRequestError` (or `TimeoutError`) and nests it
  * as the `cause` of whatever action was running, so the chain is walked. A rate-limit
  * answer that outlived the throttled transport's retries is the RPC refusing to answer,
- * which is the same thing from here. `/verify` asks the same question of a failed
- * simulation: a transport death in there is no verdict on the delegation either.
+ * which is the same thing from here. {@link beforeBroadcast} asks the same question of
+ * the stage before the broadcast on both routes: a transport death in there is no
+ * verdict on the delegation either.
  */
 export function isRpcUnreachable(error: unknown): boolean {
     if (isRateLimitError(error)) return true;
