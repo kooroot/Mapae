@@ -774,11 +774,15 @@ function Overview({
                                 aria-valuenow={Math.round(usedPercent)}
                             >
                                 <i
-                                    // Through the CSSOM, not a `style` attribute: the
+                                    // Through the CSSOM, not a `style` attribute. The
                                     // document's `style-src` carries no `'unsafe-inline'`,
-                                    // so a rendered attribute is refused, while a property
-                                    // write is not policed. The callback runs on every
-                                    // commit, so a remounted bar starts at its width too.
+                                    // and `security.test.ts` holds the whole tree to "no
+                                    // `style` attribute" so that stays provable: this
+                                    // screen renders only on the client today, where React
+                                    // would write the prop through the CSSOM anyway, but a
+                                    // server render of it would ship an attribute the policy
+                                    // refuses. The callback runs on every commit, so a
+                                    // remounted bar starts at its width too.
                                     ref={(fill) => {
                                         if (fill) fill.style.width = `${usedPercent}%`;
                                     }}
