@@ -109,9 +109,11 @@ payer별 몫도 `STORE_PATH`의 `payer:<주소>` 시리즈에 남아 재시작�
 ```
 
 - `last24h` / `allTime` — 원장 요약. `volumeByPayTo`는 정산된 금액(base 단위)을 수취인별로 합한 것.
-  `allTime`의 `succeeded`·`volumeByPayTo`·`uniquePayers`는 말 그대로 전체 기간이지만,
-  `failed`와 `total`은 `rejected` 행을 보존 범위(아래 "원장 보존": 7일, 최대 50,000건)
-  안에서만 센다 — 그보다 오래된 거절은 두 수에서 빠진다.
+  `succeeded`·`volumeByPayTo`·`uniquePayers`는 두 창 모두 빠짐없이 세지만, `failed`와
+  `total`은 `rejected` 행을 보존 범위(위 "원장 보존": 7일, 최대 50,000건) 안에서만 센다 —
+  두 창 다 그렇다. 일주일보다 오래된 거절은 `allTime`에서 빠지고, 지속되는 홍수 아래서는
+  개수가 먼저 묶인다: 600회/시 한도의 IP 넷이면 하루에 57,600행이라 매시간 지우기가
+  하루도 안 된 행을 잘라 `last24h`도 실제보다 적게 센다.
 - `budget.day` — 수치가 속한 UTC 날짜. `spentWei`는 영수증이 청구한 합, `remainingWei`는
   진행 중인 예약까지 뺀 값이라 브로드캐스트 도중에는 `limit - spent`와 다르다. 마지막
   영수증이 예약보다 비싸면 `spentWei`가 `limitWei`를 넘고 `remainingWei`는 `"0"`이다.

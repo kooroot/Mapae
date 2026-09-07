@@ -118,6 +118,21 @@ describe("rejectedRetention", () => {
         // rejected count can never exceed it for long.
         expect(rejectedRetention(now).keepRejected).toBe(REJECTED_SETTLEMENTS_KEPT);
     });
+
+    test("the count cap cuts inside the day too: past it, last24h under-counts refusals like allTime", () => {
+        const store = open();
+        const now = 30 * DAY_MS;
+        const budget = new SpendBudget(LIMIT, now, store.budget);
+        const base = {kind: "settle", payTo: SHOP, amountBase: 100n, payer: BOB} as const;
+        for (let i = 0; i < 3; i += 1) store.ledger.record({...base, at: now - i, outcome: "rejected"});
+        store.ledger.record({...base, at: now - 3, payer: ALICE, outcome: "settled"});
+
+        // The policy's cutoff with a cap this test can fill; the shape is the same at 50,000.
+        expect(store.ledger.prune({...rejectedRetention(now), keepRejected: 2})).toBe(1);
+        const report = metricsReport(store.ledger, now, budget, LIMIT);
+        expect(report.last24h).toMatchObject({total: 3, succeeded: 1, failed: 2});
+        expect(report.allTime).toEqual(report.last24h);
+    });
 });
 
 describe("metricsReport", () => {

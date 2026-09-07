@@ -105,14 +105,17 @@ export interface BudgetJson {
     remainingWei: string;
 }
 
+/**
+ * `succeeded`, `volumeByPayTo` and `uniquePayers` are complete in both windows: settled
+ * rows are never pruned, and neither are error rows. `failed` and `total` count rejected
+ * rows only as far back as {@link rejectedRetention} keeps them — a week, and never more
+ * than 50,000 — in `last24h` and `allTime` alike. A refusal older than the week has left
+ * `allTime`; under a sustained flood the count binds first — four IPs at the 600/h limit
+ * put 57,600 rejected rows on file in a day — and then the hourly prune trims rows younger
+ * than a day, so `last24h` under-counts too.
+ */
 export interface MetricsReport {
     last24h: SummaryJson;
-    /**
-     * All time for `succeeded`, `volumeByPayTo` and `uniquePayers`: settled rows are never
-     * pruned, and neither are error rows. `failed` and `total` count rejected rows only as
-     * far back as {@link rejectedRetention} keeps them — a week, at most 50,000 — so a
-     * refusal older than that has left both figures.
-     */
     allTime: SummaryJson;
     budget: BudgetJson;
 }
