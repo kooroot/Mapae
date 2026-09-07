@@ -1,7 +1,14 @@
 import {describe, expect, test} from "bun:test";
 import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import type {Address, Hex} from "viem";
-import {parseStoredGrants, serializeGrants, STORAGE_KEY} from "./grant-store";
+import {
+    appendGrant,
+    forgetGrant,
+    loadGrants,
+    parseStoredGrants,
+    serializeGrants,
+    STORAGE_KEY,
+} from "./grant-store";
 import type {SessionGrant} from "./grant";
 
 const OWNER = "0x0000000000000000000000000000000000000a11" as Address;
@@ -121,5 +128,94 @@ describe("parseStoredGrants", () => {
 
     test("the storage key carries its version so a shape change needs no migration reader", () => {
         expect(STORAGE_KEY).toBe("mapae.grants.v1");
+    });
+});
+
+/** Only the two calls the store makes. */
+interface ScriptedStorage {
+    getItem: (key: string) => string | null;
+    setItem: (key: string, value: string) => void;
+}
+
+/**
+ * The store reaches storage as `window.localStorage`, and bun test has no window: each
+ * test installs a scripted one for the duration of one call and removes it after, so a
+ * throwing `getItem` (a blocked storage) or `setItem` (a full one, Safari's private mode)
+ * is exactly what the store sees in the browser it was written for.
+ */
+function withStorage<T>(storage: ScriptedStorage, run: () => T): T {
+    const scope = globalThis as {window?: unknown};
+    const previous = scope.window;
+    scope.window = {localStorage: storage};
+    try {
+        return run();
+    } finally {
+        if (previous === undefined) delete scope.window;
+        else scope.window = previous;
+    }
+}
+
+const blocked = (): never => {
+    throw new Error("SecurityError: the operation is insecure");
+};
+
+describe("appendGrant / forgetGrant when storage fails", () => {
+    // The regression these pin: a throwing storage used to read as an empty document, so
+    // `appendGrant` answered `[grant]` and `forgetGrant` answered `[]` — and the library,
+    // merging memory against those, dropped every other grant on add and all on forget.
+    test("an unreadable store answers undefined, and is not written over", () => {
+        const writes: string[] = [];
+        const result = withStorage(
+            {getItem: blocked, setItem: (_key, value) => void writes.push(value)},
+            () => appendGrant(grant()),
+        );
+        expect(result).toBeUndefined();
+        // A write on top of a document nobody could read would replace another tab's
+        // grants with this tab's guess.
+        expect(writes).toEqual([]);
+    });
+
+    test("a failed write answers undefined, not the list it could not keep", () => {
+        const result = withStorage({getItem: () => null, setItem: blocked}, () =>
+            appendGrant(grant()),
+        );
+        expect(result).toBeUndefined();
+    });
+
+    test("forgetting under an unreadable or unwritable store answers undefined too", () => {
+        const stored = serializeGrants([grant()]);
+        expect(
+            withStorage({getItem: blocked, setItem: () => {}}, () => forgetGrant(context())),
+        ).toBeUndefined();
+        expect(
+            withStorage({getItem: () => stored, setItem: blocked}, () => forgetGrant(context())),
+        ).toBeUndefined();
+    });
+
+    test("hydrating from a blocked store is an empty list, not a throw", () => {
+        expect(withStorage({getItem: blocked, setItem: blocked}, loadGrants)).toEqual([]);
+    });
+
+    test("a working store answers the list it wrote — the control the failures are measured against", () => {
+        const OTHER = "0x0000000000000000000000000000000000000c33" as Address;
+        const older = grant({
+            name: "Older",
+            artifact: {...grant().artifact, delegate: OTHER, permissionContext: context(OTHER)},
+        });
+        let document: string | null = serializeGrants([older]);
+        const storage: ScriptedStorage = {
+            getItem: () => document,
+            setItem: (_key, value) => {
+                document = value;
+            },
+        };
+
+        const added = withStorage(storage, () => appendGrant(grant({name: "Newer"})));
+        expect(added?.map((item) => item.name)).toEqual(["Newer", "Older"]);
+        expect(parseStoredGrants(document).map((item) => item.name)).toEqual(["Newer", "Older"]);
+
+        const forgotten = withStorage(storage, () => forgetGrant(context()));
+        expect(forgotten?.map((item) => item.name)).toEqual(["Older"]);
+        expect(parseStoredGrants(document).map((item) => item.name)).toEqual(["Older"]);
     });
 });

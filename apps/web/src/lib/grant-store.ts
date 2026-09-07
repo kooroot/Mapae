@@ -135,44 +135,58 @@ function restoreGrant(record: unknown): SessionGrant | undefined {
 
 /**
  * Every mutation is a read-modify-write of the document rather than a whole-list overwrite,
- * so two open tabs cannot clobber each other's grants. Writes are guarded because Safari's
- * private mode throws `QuotaExceededError`, and a failed persist must never break the live
- * session — the in-memory list is still correct for this tab.
+ * so two open tabs cannot clobber each other's grants. Both halves are guarded because
+ * Safari's private mode throws `QuotaExceededError` and a blocked storage throws on
+ * `getItem`, and a failed persist must never break the live session — the in-memory list
+ * is still correct for this tab. Which is exactly why a failure is reported as `undefined`
+ * and not as an empty list: the library merges memory against what the store holds, so an
+ * empty answer would drop every other grant on add and all of them on forget. "The store
+ * did not answer" and "the store is empty" are different facts.
  */
-function readDocument(): SessionGrant[] {
+function readDocument(): SessionGrant[] | undefined {
     try {
         return parseStoredGrants(window.localStorage.getItem(STORAGE_KEY));
     } catch {
-        return [];
+        return undefined;
     }
 }
 
-function writeDocument(grants: SessionGrant[]): void {
+function writeDocument(grants: SessionGrant[]): boolean {
     try {
         window.localStorage.setItem(STORAGE_KEY, serializeGrants(grants));
+        return true;
     } catch {
-        // Storage is unavailable or full. The session continues from memory.
+        return false;
     }
 }
 
+/** An unreadable store hydrates as empty: this tab has nothing else to show yet. */
 export function loadGrants(): SessionGrant[] {
-    return readDocument();
+    return readDocument() ?? [];
 }
 
-/** Newest first, deduped on the context — the same identity `addGrant` used in Studio. */
-export function appendGrant(grant: SessionGrant): SessionGrant[] {
-    const rest = readDocument().filter(
-        (item) => item.artifact.permissionContext !== grant.artifact.permissionContext,
-    );
-    const next = [grant, ...rest];
-    writeDocument(next);
-    return next;
+/**
+ * Newest first, deduped on the context — the same identity `addGrant` used in Studio.
+ * `undefined` when the store could not be read or the write failed: nothing was persisted,
+ * and the caller's in-memory list is the only list there is. Not written when the read
+ * failed, because a write on top of a document nobody could read would overwrite another
+ * tab's grants with this tab's guess.
+ */
+export function appendGrant(grant: SessionGrant): SessionGrant[] | undefined {
+    const stored = readDocument();
+    if (stored === undefined) return undefined;
+    const next = [
+        grant,
+        ...stored.filter(
+            (item) => item.artifact.permissionContext !== grant.artifact.permissionContext,
+        ),
+    ];
+    return writeDocument(next) ? next : undefined;
 }
 
-export function forgetGrant(permissionContext: `0x${string}`): SessionGrant[] {
-    const next = readDocument().filter(
-        (item) => item.artifact.permissionContext !== permissionContext,
-    );
-    writeDocument(next);
-    return next;
+export function forgetGrant(permissionContext: `0x${string}`): SessionGrant[] | undefined {
+    const stored = readDocument();
+    if (stored === undefined) return undefined;
+    const next = stored.filter((item) => item.artifact.permissionContext !== permissionContext);
+    return writeDocument(next) ? next : undefined;
 }

@@ -52,6 +52,37 @@ export function mergeGrants(params: {
 }
 
 /**
+ * The list after an add or a forget, given the store's answer — or none.
+ *
+ * `appendGrant`/`forgetGrant` return `undefined` when storage could not be read or
+ * written (blocked, full, private mode). Nothing was persisted then, and merging memory
+ * against an empty answer was the bug: every other grant vanished on add, all of them on
+ * forget. With no store to defer to, memory is the only list and the change applies to it
+ * directly, on the same context identity the store dedupes on.
+ */
+export function grantsAfterAdd(
+    current: SessionGrant[],
+    persisted: SessionGrant[] | undefined,
+    grant: SessionGrant,
+): SessionGrant[] {
+    if (persisted) return mergeGrants({current, persisted, incoming: grant});
+    return [grant, ...without(current, grant.artifact.permissionContext)];
+}
+
+export function grantsAfterForget(
+    current: SessionGrant[],
+    persisted: SessionGrant[] | undefined,
+    permissionContext: `0x${string}`,
+): SessionGrant[] {
+    if (persisted) return mergeGrants({current, persisted});
+    return without(current, permissionContext);
+}
+
+function without(grants: SessionGrant[], permissionContext: `0x${string}`): SessionGrant[] {
+    return grants.filter((item) => item.artifact.permissionContext !== permissionContext);
+}
+
+/**
  * The Studio's grant list, owned here rather than in the component.
  *
  * `/app` is server-rendered and `localStorage` does not exist there, so the server always
@@ -79,7 +110,7 @@ export function useGrantLibrary(): GrantLibrary {
         const persisted = appendGrant(grant);
         setState(({grants}) => ({
             hydrated: true,
-            grants: mergeGrants({current: grants, persisted, incoming: grant}),
+            grants: grantsAfterAdd(grants, persisted, grant),
         }));
     }, []);
 
@@ -87,7 +118,7 @@ export function useGrantLibrary(): GrantLibrary {
         const persisted = forgetGrant(permissionContext);
         setState(({grants}) => ({
             hydrated: true,
-            grants: mergeGrants({current: grants, persisted}),
+            grants: grantsAfterForget(grants, persisted, permissionContext),
         }));
     }, []);
 

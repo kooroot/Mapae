@@ -4,7 +4,7 @@ import {giwaSepolia} from "@mapae/shared";
 import type {Address, Hex} from "viem";
 import type {AgentSessionKey} from "./agent-key";
 import type {SessionGrant} from "./grant";
-import {mergeGrants} from "./grant-library";
+import {grantsAfterAdd, grantsAfterForget, mergeGrants} from "./grant-library";
 
 const OWNER = "0x0000000000000000000000000000000000000a11" as Address;
 
@@ -119,5 +119,44 @@ describe("mergeGrants", () => {
             persisted: [persisted(newer), persisted(older)],
         });
         expect(merged.map((item) => item.name)).toEqual(["Agent bb", "Agent aa"]);
+    });
+});
+
+describe("grantsAfterAdd / grantsAfterForget", () => {
+    const first = grant("aa", key("11"));
+    const second = grant("bb", key("22"));
+
+    test("adding when nothing was persisted keeps every other grant, keys included", () => {
+        // The regression: a throwing storage made `appendGrant` answer `[grant]`, and the
+        // merge against that dropped every other in-memory grant — with its key.
+        const next = grantsAfterAdd([first], undefined, second);
+        expect(next.map((item) => item.name)).toEqual(["Agent bb", "Agent aa"]);
+        expect(next[0]?.agentKey).toEqual(key("22"));
+        expect(next[1]?.agentKey).toEqual(key("11"));
+    });
+
+    test("re-adding a context without a store answer replaces it at the head", () => {
+        const fresh = {...grant("aa", key("33")), name: "Renamed"};
+        const next = grantsAfterAdd([second, first], undefined, fresh);
+        expect(next.map((item) => item.name)).toEqual(["Renamed", "Agent bb"]);
+        expect(next[0]?.agentKey).toEqual(key("33"));
+    });
+
+    test("forgetting when nothing was persisted removes that grant and nothing else", () => {
+        // The same regression from the other side: `forgetGrant` answered `[]`, and the
+        // merge emptied the list.
+        const next = grantsAfterForget([second, first], undefined, first.artifact.permissionContext);
+        expect(next.map((item) => item.name)).toEqual(["Agent bb"]);
+        expect(next[0]?.agentKey).toEqual(key("22"));
+    });
+
+    test("with a store answer, both defer to mergeGrants unchanged", () => {
+        const stored = [persisted(second), persisted(first)];
+        expect(grantsAfterAdd([first], stored, second)).toEqual(
+            mergeGrants({current: [first], persisted: stored, incoming: second}),
+        );
+        expect(
+            grantsAfterForget([second, first], [persisted(second)], first.artifact.permissionContext),
+        ).toEqual(mergeGrants({current: [second, first], persisted: [persisted(second)]}));
     });
 });
