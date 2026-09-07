@@ -32,8 +32,9 @@ export const DOCUMENT_SECURITY_HEADERS: Readonly<Record<string, string>> = {
  * whole document with `unsafe-inline`.
  *
  * `getRouter` is called once per SSR request, so this value is request-scoped.
- * The browser recovers the same value from TanStack's `csp-nonce` meta tag
- * during hydration; it must not mint a second one.
+ * The browser recovers the same value from the root document's own `csp-nonce`
+ * meta — the first in the head, rendered by `__root.tsx` — which TanStack's
+ * hydration reads back before React renders; it must not mint a second one.
  */
 export function createSsrNonce(): string | undefined {
     if (typeof document !== "undefined") return undefined;
