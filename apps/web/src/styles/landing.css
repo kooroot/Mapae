@@ -160,6 +160,10 @@
     gap: 9px;
     height: 44px;
     padding: 0 22px;
+    /* A `<button>` wears this too (the route error's retry), so the user agent's
+       border and arrow cursor are cleared here rather than at each site. */
+    border: 0;
+    cursor: pointer;
     border-radius: var(--radius);
     font-family: var(--sans);
     font-size: 14px;
