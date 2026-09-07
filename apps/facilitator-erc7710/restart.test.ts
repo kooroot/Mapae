@@ -14,7 +14,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {SpendBudget} from "@mapae/delegation";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
-import {metricsReport} from "./metrics.js";
+import {metricsReport, rejectedRetention} from "./metrics.js";
 
 const ALICE = "0x1111111111111111111111111111111111111111";
 const BOB = "0x2222222222222222222222222222222222222222";
@@ -100,6 +100,28 @@ describe("restart", () => {
         expect(empty.allTime.total).toBe(0);
         expect(empty.budget.remainingWei).toBe(LIMIT.toString());
         expect(empty).not.toEqual(before);
+    });
+
+    test("a prune before the kill is what the next life reads: the refusals it dropped stay dropped", () => {
+        const path = tempStorePath();
+        const now = 20 * DAY_MS;
+
+        const first = open(path);
+        const base = {kind: "settle", payTo: SHOP, amountBase: 100_000n} as const;
+        first.ledger.record({...base, at: now - 10 * DAY_MS, payer: ALICE, outcome: "settled", txHash: TX});
+        first.ledger.record({...base, at: now - 10 * DAY_MS, payer: BOB, outcome: "rejected"});
+        first.ledger.record({...base, at: now - DAY_MS, payer: BOB, outcome: "rejected"});
+        // What boot does with the file it found: prune to the facilitator's retention.
+        expect(first.ledger.prune(rejectedRetention(now))).toBe(1);
+        const before = metricsReport(first.ledger, now, new SpendBudget(LIMIT, now, first.budget), LIMIT);
+        expect(before.allTime).toMatchObject({total: 2, succeeded: 1, failed: 1});
+        first.close();
+
+        const second = open(path);
+        const after = metricsReport(second.ledger, now, new SpendBudget(LIMIT, now, second.budget), LIMIT);
+        expect(after).toEqual(before);
+        // The next boot's prune finds nothing left to drop.
+        expect(second.ledger.prune(rejectedRetention(now))).toBe(0);
     });
 
     test("a reservation in flight at the kill is not carried over; a charged one is", () => {

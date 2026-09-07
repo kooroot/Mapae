@@ -1,7 +1,15 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import {SpendBudget, budgetDay} from "@mapae/delegation";
 import {openStore, type MapaeStore} from "@mapae/store";
-import {bearerTokenMatches, metricsReport, readMetricsToken, summaryJson} from "./metrics.js";
+import {
+    REJECTED_SETTLEMENTS_KEPT,
+    REJECTED_SETTLEMENT_RETENTION_MS,
+    bearerTokenMatches,
+    metricsReport,
+    readMetricsToken,
+    rejectedRetention,
+    summaryJson,
+} from "./metrics.js";
 
 const TOKEN = "correct-horse-battery-staple";
 const ALICE = "0x1111111111111111111111111111111111111111";
@@ -76,6 +84,39 @@ describe("summaryJson", () => {
             volumeByPayTo: {[SHOP]: "1180591620717411303424", [BOB]: "0"},
             uniquePayers: 2,
         });
+    });
+});
+
+describe("rejectedRetention", () => {
+    test("keeps a refusal a week and no more than 50,000 of them; the cutoff never precedes the epoch", () => {
+        const now = 30 * DAY_MS;
+        expect(rejectedRetention(now)).toEqual({rejectedBefore: now - 7 * DAY_MS, keepRejected: 50_000});
+        expect(REJECTED_SETTLEMENT_RETENTION_MS).toBe(7 * DAY_MS);
+        expect(REJECTED_SETTLEMENTS_KEPT).toBe(50_000);
+        expect(rejectedRetention(DAY_MS).rejectedBefore).toBe(0);
+    });
+
+    test("under the policy a refusal older than the week leaves failed and total; settled and error rows stay", () => {
+        const store = open();
+        const now = 30 * DAY_MS;
+        const budget = new SpendBudget(LIMIT, now, store.budget);
+        const base = {kind: "settle", payTo: SHOP, amountBase: 100n} as const;
+        store.ledger.record({...base, at: now - 8 * DAY_MS, payer: ALICE, outcome: "settled"});
+        store.ledger.record({...base, at: now - 8 * DAY_MS, payer: ALICE, outcome: "error"});
+        store.ledger.record({...base, at: now - 8 * DAY_MS, payer: BOB, outcome: "rejected"});
+        store.ledger.record({...base, at: now - 6 * DAY_MS, payer: BOB, outcome: "rejected"});
+
+        expect(store.ledger.prune(rejectedRetention(now))).toBe(1);
+        expect(metricsReport(store.ledger, now, budget, LIMIT).allTime).toEqual({
+            total: 3,
+            succeeded: 1,
+            failed: 2,
+            volumeByPayTo: {[SHOP]: "100"},
+            uniquePayers: 1,
+        });
+        // The policy's cap is what an operator can reason about from /metrics: the
+        // rejected count can never exceed it for long.
+        expect(rejectedRetention(now).keepRejected).toBe(REJECTED_SETTLEMENTS_KEPT);
     });
 });
 

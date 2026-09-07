@@ -79,6 +79,23 @@ payer별 몫도 `STORE_PATH`의 `payer:<주소>` 시리즈에 남아 재시작�
 결제 본문은 ASCII라 문자 상한 아래면 바이트 상한 아래이므로, 413은 이 서비스의 어떤
 클라이언트도 만들지 않는 본문에만 나간다.
 
+## 원장 보존
+
+`/settle`이 거절한 서명된 결제는 원장에 `rejected` 행으로 남는다. 요청 제한은 그 행이
+쌓이는 속도를 묶지 개수를 묶지 않아, 느긋한 공격자는 sqlite 파일을 끝없이 키울 수 있었다.
+그래서 `rejected` 행은 7일(`REJECTED_SETTLEMENT_RETENTION_MS`)만 두고, 그 안에서도 최신
+50,000건(`REJECTED_SETTLEMENTS_KEPT`)까지만 둔다. 개수는 요청 제한의 최악에서 잰 것이다 —
+주소 하나가 하루에 600회/시 × 24시간 = 14,400행, 행당 약 200 B로 3 MB쯤이니 50,000건은
+그런 주소-일 셋 반, 약 10 MB이고, 지속되는 홍수 아래서는 일주일이 아니라 개수가 먼저
+묶는다. `settled`와 `error` 행은 절대 지우지 않는다 — 돈이 움직였거나 움직였을 수 있고,
+원장이 그 유일한 기록이다.
+
+기동 때 한 번, 그 뒤 매시간(`unref`된 타이머라 프로세스를 붙들지 않는다)
+`rejectedRetention(now)`(`metrics.ts`)이 계산한 컷오프와 상한으로 `Ledger.prune`을
+부르고, 지운 행이 있을 때만 `[ledger] pruned N rejected settlement events`를 남긴다.
+지우기가 실패해도(파일 잠김, 디스크 가득) 서비스는 내려가지 않고 로그만 남는다 —
+못 쓴 원장 행과 같은 취급이다.
+
 ## `/metrics`
 
 `METRICS_TOKEN`으로 잠긴 운영자 엔드포인트. 모든 수는 십진 문자열이다.
@@ -92,6 +109,9 @@ payer별 몫도 `STORE_PATH`의 `payer:<주소>` 시리즈에 남아 재시작�
 ```
 
 - `last24h` / `allTime` — 원장 요약. `volumeByPayTo`는 정산된 금액(base 단위)을 수취인별로 합한 것.
+  `allTime`의 `succeeded`·`volumeByPayTo`·`uniquePayers`는 말 그대로 전체 기간이지만,
+  `failed`와 `total`은 `rejected` 행을 보존 범위(아래 "원장 보존": 7일, 최대 50,000건)
+  안에서만 센다 — 그보다 오래된 거절은 두 수에서 빠진다.
 - `budget.day` — 수치가 속한 UTC 날짜. `spentWei`는 영수증이 청구한 합, `remainingWei`는
   진행 중인 예약까지 뺀 값이라 브로드캐스트 도중에는 `limit - spent`와 다르다. 마지막
   영수증이 예약보다 비싸면 `spentWei`가 `limitWei`를 넘고 `remainingWei`는 `"0"`이다.
@@ -151,5 +171,5 @@ bun run dev
 ## 검증
 
 ```bash
-bun test apps/facilitator-erc7710   # 요청 제한·payer 몫·정산 실패 분류·/health 분류 + /metrics 순수 함수 + 재시작 증명
+bun test apps/facilitator-erc7710   # 요청 제한·payer 몫·정산 실패 분류·/health 분류 + /metrics 순수 함수·원장 보존 + 재시작 증명
 ```

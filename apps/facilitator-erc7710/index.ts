@@ -60,7 +60,7 @@ import {
     requireReadiness,
     type FrameworkHealthError,
 } from "./guards.js";
-import {bearerTokenMatches, metricsReport, readMetricsToken} from "./metrics.js";
+import {bearerTokenMatches, metricsReport, readMetricsToken, rejectedRetention} from "./metrics.js";
 
 // Two caps on one body, in different units, because they guard different things. Bun's
 // is bytes on the wire: a Content-Length above it is refused with an empty 413 before
@@ -239,6 +239,10 @@ const RELAYER_PAYER_DAILY_WEI = readPayerShare(RELAYER_DAILY_WEI);
 // while a flood from one address stops costing RPC after its first 600 requests. Bounded
 // to a number so the limiter's integer check sees an integer, as the receipt timeout is.
 const FACILITATOR_RATE_PER_HOUR = Number(readPositiveInteger("FACILITATOR_RATE_PER_HOUR", 600n));
+// How often the ledger's rejected rows are pruned to `rejectedRetention`: once at boot
+// and hourly after. An hour of the worst flood is 600 rows — nothing against the
+// 50,000 cap — and the delete is two indexed statements in one transaction.
+const LEDGER_PRUNE_EVERY_MS = 3_600_000;
 // The nonce manager serializes nonce assignment per address. Without it, two concurrent
 // /settle calls for different payment intents each read eth_getTransactionCount(pending)
 // independently and can pick the same nonce — one broadcast then replaces the other in the
@@ -261,6 +265,23 @@ const store = openStore(STORE_PATH);
 const budget = new SpendBudget(RELAYER_DAILY_WEI, Date.now(), store.budget);
 const gasBudgets = new GasBudgets(budget, new PayerBudgets(RELAYER_PAYER_DAILY_WEI, store.budget));
 const limiter = new FixedWindowLimiter(FACILITATOR_RATE_PER_HOUR, RATE_WINDOW_MS);
+
+/**
+ * Housekeeping never takes the service down: a delete that fails (a locked file, a full
+ * disk) is the operator's problem and is logged as one, like a ledger row that could not
+ * be written. Silent when there was nothing to prune — the common hour.
+ */
+function pruneLedger(): void {
+    try {
+        const pruned = store.ledger.prune(rejectedRetention(Date.now()));
+        if (pruned > 0) console.log(`[ledger] pruned ${pruned} rejected settlement events`);
+    } catch (error) {
+        console.error(`[ledger] rejected settlement events not pruned — ${redactForLog(error)}`);
+    }
+}
+pruneLedger();
+// unref'd: a timer must never be what keeps the process alive.
+setInterval(pruneLedger, LEDGER_PRUNE_EVERY_MS).unref();
 
 const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
 const facilitatorClient = createWalletClient({
