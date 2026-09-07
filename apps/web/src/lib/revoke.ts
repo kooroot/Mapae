@@ -1,7 +1,7 @@
 import type {Delegation} from "@metamask/smart-accounts-kit";
 import {isDelegationRevoked} from "@mapae/delegation/revocation";
 import {buildRevocationSubmissionBody} from "@mapae/delegation/revocation-submission";
-import type {Address, Hex} from "viem";
+import {BaseError, ContractFunctionZeroDataError, type Address, type Hex} from "viem";
 import type {PackedUserOperation} from "viem/account-abstraction";
 import {deployment, publicClient} from "./config";
 import type {Locale} from "./i18n";
@@ -21,8 +21,27 @@ export type StudioRevokeGate =
     | {kind: "disconnected"}
     | {kind: "wrong-chain"; connected: number; expected: number}
     | {kind: "wrong-wallet"; connected: Address; owner: Address}
+    | {kind: "account-missing"}
+    | {kind: "owner-unreadable"}
     | {kind: "owner-unknown"}
     | {kind: "ready"; owner: Address};
+
+/**
+ * Whether an `owner()` read failed because the payer account has no code.
+ *
+ * `readContract` on a codeless address gets `0x` back from `eth_call`, fails to decode
+ * it, and throws a `ContractFunctionExecutionError` whose cause chain carries viem's
+ * `ContractFunctionZeroDataError`. That is the one failure with a known meaning here —
+ * the payer is derived from the factory, so the only way its `owner()` returns nothing
+ * is that nobody deployed it yet. Every other failure (RPC down, a revert, a timeout) is
+ * a read that did not happen, and is reported as such rather than guessed at.
+ */
+export function isAccountMissingError(error: unknown): boolean {
+    return (
+        error instanceof BaseError &&
+        error.walk((cause) => cause instanceof ContractFunctionZeroDataError) !== null
+    );
+}
 
 export function judgeStudioRevokeGate(input: {
     endpoint: string | undefined;
@@ -32,6 +51,8 @@ export function judgeStudioRevokeGate(input: {
     connectedChainId: number | undefined;
     expectedChainId: number;
     owner: Address | undefined;
+    /** What the `owner()` read rejected with, if it did. `undefined` while pending or read. */
+    ownerError: unknown;
 }): StudioRevokeGate {
     // Ordered by what the owner can act on, cheapest first. `already-revoked` outranks
     // everything except a missing endpoint because once the grant is disabled there is
@@ -51,7 +72,20 @@ export function judgeStudioRevokeGate(input: {
             expected: input.expectedChainId,
         };
     }
-    if (!input.owner) return {kind: "owner-unknown"};
+    if (!input.owner) {
+        // A read that failed is not a read still in flight: "Confirming owner…" for a
+        // codeless account would stand forever. A codeless payer cannot be revoked from
+        // yet — `DelegationManager.disableDelegation` requires `msg.sender == delegator`,
+        // and there is no account to be that sender — and nothing can spend through it
+        // either, so the honest state is "not deployed", not "confirming". A known owner
+        // outranks a later failed re-read: the account had code once, and code stays.
+        if (input.ownerError !== undefined) {
+            return isAccountMissingError(input.ownerError)
+                ? {kind: "account-missing"}
+                : {kind: "owner-unreadable"};
+        }
+        return {kind: "owner-unknown"};
+    }
     if (input.connected.toLowerCase() !== input.owner.toLowerCase()) {
         return {kind: "wrong-wallet", connected: input.connected, owner: input.owner};
     }
@@ -66,6 +100,8 @@ const BUTTON_COPY: Record<Locale, Record<StudioRevokeGate["kind"], string>> = {
         disconnected: "Connect the owner wallet",
         "wrong-chain": "Wallet on a different network",
         "wrong-wallet": "A different wallet is connected",
+        "account-missing": "Payer account not deployed yet",
+        "owner-unreadable": "Owner could not be read",
         "owner-unknown": "Confirming owner…",
         ready: "Sign to revoke this permission",
     },
@@ -75,6 +111,8 @@ const BUTTON_COPY: Record<Locale, Record<StudioRevokeGate["kind"], string>> = {
         disconnected: "소유자 지갑 연결",
         "wrong-chain": "지갑 네트워크가 다름",
         "wrong-wallet": "다른 지갑이 연결됨",
+        "account-missing": "지불 계정 미배포",
+        "owner-unreadable": "소유자를 읽지 못했습니다",
         "owner-unknown": "소유자 확인 중…",
         ready: "권한 회수 서명",
     },

@@ -1,7 +1,9 @@
 import {describe, expect, test} from "bun:test";
-import {getAddress, type Address} from "viem";
+import {readAccountOwner} from "@mapae/delegation/revocation";
+import {createPublicClient, custom, getAddress, type Address} from "viem";
 import {
     awaitRevocationVisible,
+    isAccountMissingError,
     judgeStudioRevokeGate,
     revokeRefusalMessage,
     studioRevokeButtonLabel,
@@ -20,7 +22,32 @@ const ready = {
     connectedChainId: 91_342,
     expectedChainId: 91_342,
     owner: OWNER,
+    ownerError: undefined,
 };
+
+/**
+ * The rejection `readAccountOwner` — the read `RevokeButton` makes — produces when the
+ * node answers `eth_call` as scripted. A real viem client through a `custom` transport, so
+ * the error under test is the one `readContract` actually throws, not a hand-built one.
+ * `retryCount: 0` because viem would otherwise retry a transport failure with backoff.
+ */
+function ownerReadFailure(answer: () => string): Promise<unknown> {
+    const client = createPublicClient({
+        transport: custom(
+            {
+                request: async ({method}: {method: string}) => {
+                    if (method === "eth_call") return answer();
+                    throw new Error(`unexpected ${method}`);
+                },
+            },
+            {retryCount: 0},
+        ),
+    });
+    return readAccountOwner({publicClient: client, account: OWNER}).then(
+        () => undefined,
+        (error: unknown) => error,
+    );
+}
 
 describe("judgeStudioRevokeGate", () => {
     test("everything in place is ready", () => {
@@ -71,6 +98,46 @@ describe("judgeStudioRevokeGate", () => {
         });
     });
 
+    test("a codeless payer is named as not deployed, not left confirming forever", async () => {
+        // The regression: `owner()` on an account nobody deployed rejects, `owner.data`
+        // never arrives, and the button read "Confirming owner…" until the tab closed.
+        const error = await ownerReadFailure(() => "0x");
+        expect(error).toBeDefined();
+        expect(judgeStudioRevokeGate({...ready, owner: undefined, ownerError: error})).toEqual({
+            kind: "account-missing",
+        });
+    });
+
+    test("any other read failure is unreadable — never guessed to be a missing account", async () => {
+        const rpcDown = await ownerReadFailure(() => {
+            throw new Error("fetch failed");
+        });
+        expect(rpcDown).toBeDefined();
+        expect(
+            judgeStudioRevokeGate({...ready, owner: undefined, ownerError: rpcDown}),
+        ).toEqual({kind: "owner-unreadable"});
+        expect(
+            judgeStudioRevokeGate({...ready, owner: undefined, ownerError: new Error("timeout")}),
+        ).toEqual({kind: "owner-unreadable"});
+    });
+
+    test("the read failure ranks after the chain check", () => {
+        expect(
+            judgeStudioRevokeGate({
+                ...ready,
+                owner: undefined,
+                ownerError: new Error("fetch failed"),
+                connectedChainId: 1,
+            }),
+        ).toEqual({kind: "wrong-chain", connected: 1, expected: 91_342});
+    });
+
+    test("a known owner outranks a later failed re-read — code, once there, stays", () => {
+        expect(judgeStudioRevokeGate({...ready, ownerError: new Error("fetch failed")})).toEqual(
+            {kind: "ready", owner: OWNER},
+        );
+    });
+
     test("there is no deposit gate — the sponsor covers the shortfall", () => {
         // The console's local gate refuses on `shortfall > 0n`. Here that state is the
         // normal one: the payer holds no ETH by design and the endpoint deposits at
@@ -98,6 +165,12 @@ describe("studioRevokeButtonLabel", () => {
         expect(
             studioRevokeButtonLabel({kind: "wrong-wallet", connected: OTHER, owner: OWNER}),
         ).toBe("A different wallet is connected");
+        expect(studioRevokeButtonLabel({kind: "account-missing"})).toBe(
+            "Payer account not deployed yet",
+        );
+        expect(studioRevokeButtonLabel({kind: "owner-unreadable"})).toBe(
+            "Owner could not be read",
+        );
         expect(studioRevokeButtonLabel({kind: "owner-unknown"})).toBe("Confirming owner…");
         expect(studioRevokeButtonLabel({kind: "ready", owner: OWNER})).toBe(
             "Sign to revoke this permission",
@@ -116,10 +189,41 @@ describe("studioRevokeButtonLabel", () => {
         expect(
             studioRevokeButtonLabel({kind: "wrong-wallet", connected: OTHER, owner: OWNER}, "ko"),
         ).toBe("다른 지갑이 연결됨");
+        expect(studioRevokeButtonLabel({kind: "account-missing"}, "ko")).toBe("지불 계정 미배포");
+        expect(studioRevokeButtonLabel({kind: "owner-unreadable"}, "ko")).toBe(
+            "소유자를 읽지 못했습니다",
+        );
         expect(studioRevokeButtonLabel({kind: "owner-unknown"}, "ko")).toBe("소유자 확인 중…");
         expect(studioRevokeButtonLabel({kind: "ready", owner: OWNER}, "ko")).toBe(
             "권한 회수 서명",
         );
+    });
+});
+
+describe("isAccountMissingError", () => {
+    test("recognises the error readContract throws when the account has no code", async () => {
+        // `eth_call` to a codeless address returns `0x`; viem fails to decode it and wraps
+        // the failure in `ContractFunctionExecutionError` → `ContractFunctionZeroDataError`.
+        // The predicate walks that cause chain — asserted through the production read.
+        const error = await ownerReadFailure(() => "0x");
+        expect(error).toBeInstanceOf(Error);
+        expect(isAccountMissingError(error)).toBe(true);
+    });
+
+    test("a transport failure is not a missing account", async () => {
+        const error = await ownerReadFailure(() => {
+            throw new Error("fetch failed");
+        });
+        expect(error).toBeInstanceOf(Error);
+        expect(isAccountMissingError(error)).toBe(false);
+    });
+
+    test("the sentence alone is not evidence — only viem's own error class counts", () => {
+        expect(isAccountMissingError(new Error('The contract function "owner" returned no data ("0x").'))).toBe(
+            false,
+        );
+        expect(isAccountMissingError(undefined)).toBe(false);
+        expect(isAccountMissingError("0x")).toBe(false);
     });
 });
 

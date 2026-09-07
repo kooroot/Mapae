@@ -15,6 +15,7 @@ import {chain, deployment, explorerTxUrl, publicSubmitterAvailability, publicCli
 import type {Locale} from "../lib/i18n";
 import {useLocale} from "../lib/locale";
 import {
+    isAccountMissingError,
     judgeStudioRevokeGate,
     requestSponsoredRevocation,
     studioRevokeButtonLabel,
@@ -28,6 +29,8 @@ const COPY: Record<
         endpointMisconfigured: string;
         wrongChain: (expected: number, connected: number) => string;
         wrongWallet: (owner: string, connected: string) => string;
+        accountMissing: string;
+        ownerUnreadable: string;
         sponsoredGas: string;
         confirmed: string;
         viewTransaction: string;
@@ -42,6 +45,10 @@ const COPY: Record<
             `Switch the wallet to GIWA Sepolia (chain ${expected}). It is currently connected to chain ${connected}.`,
         wrongWallet: (owner, connected) =>
             `The owner of this permission is ${owner}. The connected wallet ${connected} cannot sign the revocation.`,
+        accountMissing:
+            "The payer account is not deployed yet. Nothing can spend through this permission until it is, and it can be revoked once the account exists.",
+        ownerUnreadable:
+            "The payer account's owner could not be read. Check the network connection and reload the page to try again.",
         sponsoredGas: "Gas is sponsored — this wallet needs no GIWA ETH.",
         confirmed: "The revocation is confirmed on-chain.",
         viewTransaction: "View transaction",
@@ -55,6 +62,10 @@ const COPY: Record<
             `지갑을 GIWA Sepolia(chain ${expected})로 전환해 주세요. 현재 chain ${connected}에 연결되어 있습니다.`,
         wrongWallet: (owner, connected) =>
             `이 권한의 소유자는 ${owner} 입니다. 연결된 ${connected} 지갑으로는 회수를 서명할 수 없습니다.`,
+        accountMissing:
+            "지불 계정이 아직 배포되지 않았습니다. 계정이 생기기 전까지는 이 권한으로 아무것도 결제할 수 없고, 계정이 생기면 회수할 수 있습니다.",
+        ownerUnreadable:
+            "지불 계정의 소유자를 읽지 못했습니다. 네트워크 연결을 확인하고 페이지를 새로고침해 다시 시도해 주세요.",
         sponsoredGas: "가스는 스폰서가 대납합니다 — 이 지갑에는 GIWA ETH가 필요 없습니다.",
         confirmed: "회수가 온체인에서 확인되었습니다.",
         viewTransaction: "트랜잭션 보기",
@@ -115,6 +126,9 @@ export function RevokeButton({
         queryKey: ["studio-owner", payer],
         queryFn: () => readAccountOwner({publicClient, account: payer}),
         staleTime: Infinity,
+        // A codeless account answers the same way on every read; retrying it with backoff
+        // only delays the sentence that says so. Transient failures keep the default.
+        retry: (failures, error) => !isAccountMissingError(error) && failures < 3,
     });
 
     const gate = judgeStudioRevokeGate({
@@ -124,6 +138,7 @@ export function RevokeButton({
         connectedChainId,
         expectedChainId: chain.id,
         owner: owner.data,
+        ownerError: owner.error ?? undefined,
     });
 
     async function run(): Promise<void> {
@@ -201,6 +216,10 @@ export function RevokeButton({
                 <small className="studio-revoke-note">
                     {t.wrongWallet(shortAddress(gate.owner), shortAddress(gate.connected))}
                 </small>
+            ) : gate.kind === "account-missing" ? (
+                <small className="studio-revoke-note">{t.accountMissing}</small>
+            ) : gate.kind === "owner-unreadable" ? (
+                <small className="studio-revoke-note fault">{t.ownerUnreadable}</small>
             ) : gate.kind === "ready" ? (
                 <small className="studio-revoke-note">{t.sponsoredGas}</small>
             ) : null}
