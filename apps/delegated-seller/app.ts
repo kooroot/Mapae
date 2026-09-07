@@ -288,10 +288,14 @@ function recordedReceipt(order: Order, payTo: Address): SettlementReceipt {
 type Delegation = Pick<PaymentIntent, "delegationManager" | "permissionContext">;
 
 /**
- * The two header fields an intent is keyed on, or nothing. Structural only, and blind
- * to the header's own `accepted` block on purpose: the paywall keys a settlement on its
- * offer plus these two and nothing else, so the same signed context is the same intent
- * wherever it is presented. A header this cannot read is left for the paywall to refuse.
+ * The two header fields an intent is keyed on, or nothing. The shape admitted is the
+ * paywall's exactly — an ERC-7710 `accepted` block and a delegator beside the
+ * delegation — so a header the paywall would answer 400 is never answered a ticket
+ * here instead; two gates that disagree on what a payment looks like are a hole. What
+ * `accepted` says past its method is not read: the paywall keys a settlement on its
+ * own offer plus the delegation and nothing else, so the same signed context is the
+ * same intent wherever it is presented. A header this cannot read is left for the
+ * paywall to refuse.
  */
 function readDelegation(header: string): Delegation | undefined {
     let decoded: unknown;
@@ -300,10 +304,16 @@ function readDelegation(header: string): Delegation | undefined {
     } catch {
         return undefined;
     }
-    const payload: unknown = (decoded as {payload?: unknown} | null)?.payload;
+    const candidate = decoded as {accepted?: {extra?: unknown}; payload?: unknown} | null;
+    const extra = candidate?.accepted?.extra;
+    if (!extra || typeof extra !== "object" || (extra as {assetTransferMethod?: unknown}).assetTransferMethod !== "erc7710") {
+        return undefined;
+    }
+    const payload = candidate?.payload;
     if (!payload || typeof payload !== "object") return undefined;
-    const {delegationManager, permissionContext} = payload as Record<string, unknown>;
+    const {delegationManager, delegator, permissionContext} = payload as Record<string, unknown>;
     if (typeof delegationManager !== "string" || !isAddress(delegationManager)) return undefined;
+    if (typeof delegator !== "string" || !isAddress(delegator)) return undefined;
     if (typeof permissionContext !== "string" || !isHex(permissionContext) || permissionContext.length <= 2) {
         return undefined;
     }
@@ -443,9 +453,11 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
     app.get("/s/:slug/:key", lookup, paywall, (c) => {
         const order = c.get("order");
         if (!order) {
-            // `onSettled` threw — the paywall logged it — so the payment settled and
-            // nothing recorded it. The same header replays to the same intent, so a
-            // retry can still get its ticket; a made-up one here could not be shown.
+            // `onSettled` threw — the paywall logged the intent — so the payment settled
+            // and nothing recorded it. A retry cannot recover it: no row answers the
+            // header here, and `/verify` refuses it on the allowance the settlement
+            // spent. The logged intent is what the operator reconciles from; a made-up
+            // ticket could not be shown at any counter.
             return c.json({error: "order_not_recorded"}, 500);
         }
         // A same-price replay comes back as the row of the item the payment first

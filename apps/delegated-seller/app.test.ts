@@ -26,6 +26,7 @@ import {
     FACILITATOR_ROUTES,
     LEAF_A,
     LEAF_B,
+    MANAGER,
     PAY_TO,
     PAYER,
     TX,
@@ -285,6 +286,24 @@ describe("ticket — one payment, one ticket", () => {
             expect(((await response.json()) as {error: string}).error, header).toBe("malformed_payment");
         }
         expect(stub.paths).toEqual([]);
+    });
+
+    test("a paid leaf in a header the paywall would refuse is refused, not answered from the ledger", async () => {
+        const {pay, stub} = shop();
+        await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
+        stub.routes["/verify"] = ALLOWANCE_SPENT;
+        // The same delegation in envelopes the paywall calls malformed — no ERC-7710
+        // `accepted`, or no delegator. The ledger's gate and the paywall's must agree.
+        const delegation = {delegationManager: MANAGER, permissionContext: LEAF_A};
+        for (const envelope of [
+            {payload: {...delegation, delegator: PAYER}},
+            {accepted: {extra: {assetTransferMethod: "erc7710"}}, payload: delegation},
+        ]) {
+            const response = await pay(AMERICANO, btoa(JSON.stringify(envelope)));
+            expect(response.status, JSON.stringify(envelope)).toBe(400);
+            expect(((await response.json()) as {error: string}).error).toBe("malformed_payment");
+        }
+        expect(stub.paths).toEqual(SETTLED_ONCE);
     });
 
     test("the same price under a fresh leaf is a fresh order for the other item", async () => {
