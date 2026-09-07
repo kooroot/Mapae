@@ -1,12 +1,12 @@
 import {describe, expect, test} from "bun:test";
-import {readAccountOwner} from "@mapae/delegation/revocation";
 import {createPublicClient, custom, getAddress, type Address} from "viem";
 import {
     awaitRevocationVisible,
-    isAccountMissingError,
     judgeStudioRevokeGate,
+    readPayerAccount,
     revokeRefusalMessage,
     studioRevokeButtonLabel,
+    type PayerAccount,
 } from "./revoke";
 
 const address = (suffix: number): Address =>
@@ -14,6 +14,7 @@ const address = (suffix: number): Address =>
 
 const OWNER = address(1);
 const OTHER = address(2);
+const PAYER = address(3);
 
 const ready = {
     endpoint: "https://facilitator.mapae.io",
@@ -21,32 +22,51 @@ const ready = {
     connected: OWNER,
     connectedChainId: 91_342,
     expectedChainId: 91_342,
-    owner: OWNER,
-    ownerError: undefined,
+    account: {deployed: true, owner: OWNER} satisfies PayerAccount,
+    accountError: undefined,
 };
 
+/** What a node returns for the two reads `readPayerAccount` makes. */
+interface ScriptedNode {
+    eth_getCode: () => string;
+    eth_call?: () => string;
+}
+
+/** `owner()`'s ABI-encoded answer: the address, left-padded to a word. */
+const encodedOwner = `0x${"0".repeat(24)}${OWNER.slice(2)}`;
+
+/** Runtime bytecode, as far as `getCode` cares: anything but `0x`. */
+const SOME_CODE = "0x6080604052";
+
 /**
- * The rejection `readAccountOwner` — the read `RevokeButton` makes — produces when the
- * node answers `eth_call` as scripted. A real viem client through a `custom` transport, so
- * the error under test is the one `readContract` actually throws, not a hand-built one.
- * `retryCount: 0` because viem would otherwise retry a transport failure with backoff.
+ * `readPayerAccount` — the read `RevokeButton` makes — over a real viem client and a
+ * `custom` transport, so the value or rejection under test is the one the production read
+ * produces, not a hand-built one. Records which methods the node was asked, so a test can
+ * assert `owner()` was never called on a codeless account. `retryCount: 0` because viem
+ * would otherwise retry a transport failure with backoff.
  */
-function ownerReadFailure(answer: () => string): Promise<unknown> {
+async function readThrough(
+    node: ScriptedNode,
+): Promise<{value?: PayerAccount; error?: unknown; asked: string[]}> {
+    const asked: string[] = [];
     const client = createPublicClient({
         transport: custom(
             {
                 request: async ({method}: {method: string}) => {
-                    if (method === "eth_call") return answer();
-                    throw new Error(`unexpected ${method}`);
+                    asked.push(method);
+                    const answer = node[method as keyof ScriptedNode];
+                    if (!answer) throw new Error(`unexpected ${method}`);
+                    return answer();
                 },
             },
             {retryCount: 0},
         ),
     });
-    return readAccountOwner({publicClient: client, account: OWNER}).then(
-        () => undefined,
-        (error: unknown) => error,
-    );
+    try {
+        return {value: await readPayerAccount({publicClient: client, account: PAYER}), asked};
+    } catch (error) {
+        return {error, asked};
+    }
 }
 
 describe("judgeStudioRevokeGate", () => {
@@ -92,48 +112,58 @@ describe("judgeStudioRevokeGate", () => {
         ).toEqual({kind: "ready", owner: OWNER});
     });
 
-    test("an unknown owner while connected stays gated rather than guessing", () => {
-        expect(judgeStudioRevokeGate({...ready, owner: undefined})).toEqual({
+    test("an unread account while connected stays gated rather than guessing", () => {
+        expect(judgeStudioRevokeGate({...ready, account: undefined})).toEqual({
             kind: "owner-unknown",
         });
     });
 
     test("a codeless payer is named as not deployed, not left confirming forever", async () => {
-        // The regression: `owner()` on an account nobody deployed rejects, `owner.data`
-        // never arrives, and the button read "Confirming owner…" until the tab closed.
-        const error = await ownerReadFailure(() => "0x");
-        expect(error).toBeDefined();
-        expect(judgeStudioRevokeGate({...ready, owner: undefined, ownerError: error})).toEqual({
+        // The regression: `owner()` on an account nobody deployed rejects, the owner never
+        // arrives, and the button read "Confirming owner…" until the tab closed. Now the
+        // read answers with a verdict, and the gate names it.
+        const {value} = await readThrough({eth_getCode: () => "0x"});
+        expect(value).toEqual({deployed: false});
+        expect(judgeStudioRevokeGate({...ready, account: value})).toEqual({
             kind: "account-missing",
         });
     });
 
-    test("any other read failure is unreadable — never guessed to be a missing account", async () => {
-        const rpcDown = await ownerReadFailure(() => {
-            throw new Error("fetch failed");
+    test("a read that failed is unreadable — never guessed to be a missing account", async () => {
+        const rpcDown = await readThrough({
+            eth_getCode: () => {
+                throw new Error("fetch failed");
+            },
         });
-        expect(rpcDown).toBeDefined();
+        expect(rpcDown.error).toBeDefined();
         expect(
-            judgeStudioRevokeGate({...ready, owner: undefined, ownerError: rpcDown}),
+            judgeStudioRevokeGate({...ready, account: undefined, accountError: rpcDown.error}),
         ).toEqual({kind: "owner-unreadable"});
+        // The exact failure the old error-class predicate read as "missing": `owner()`
+        // returning no data. On an account *with* code that is a read that did not happen.
+        const noData = await readThrough({eth_getCode: () => SOME_CODE, eth_call: () => "0x"});
+        expect(noData.error).toBeDefined();
         expect(
-            judgeStudioRevokeGate({...ready, owner: undefined, ownerError: new Error("timeout")}),
+            judgeStudioRevokeGate({...ready, account: undefined, accountError: noData.error}),
         ).toEqual({kind: "owner-unreadable"});
     });
 
-    test("the read failure ranks after the chain check", () => {
+    test("the read failure and the missing account both rank after the chain check", () => {
         expect(
             judgeStudioRevokeGate({
                 ...ready,
-                owner: undefined,
-                ownerError: new Error("fetch failed"),
+                account: undefined,
+                accountError: new Error("fetch failed"),
                 connectedChainId: 1,
             }),
         ).toEqual({kind: "wrong-chain", connected: 1, expected: 91_342});
+        expect(
+            judgeStudioRevokeGate({...ready, account: {deployed: false}, connectedChainId: 1}),
+        ).toEqual({kind: "wrong-chain", connected: 1, expected: 91_342});
     });
 
-    test("a known owner outranks a later failed re-read — code, once there, stays", () => {
-        expect(judgeStudioRevokeGate({...ready, ownerError: new Error("fetch failed")})).toEqual(
+    test("a known account outranks a later failed re-read — code, once there, stays", () => {
+        expect(judgeStudioRevokeGate({...ready, accountError: new Error("fetch failed")})).toEqual(
             {kind: "ready", owner: OWNER},
         );
     });
@@ -200,30 +230,41 @@ describe("studioRevokeButtonLabel", () => {
     });
 });
 
-describe("isAccountMissingError", () => {
-    test("recognises the error readContract throws when the account has no code", async () => {
-        // `eth_call` to a codeless address returns `0x`; viem fails to decode it and wraps
-        // the failure in `ContractFunctionExecutionError` → `ContractFunctionZeroDataError`.
-        // The predicate walks that cause chain — asserted through the production read.
-        const error = await ownerReadFailure(() => "0x");
-        expect(error).toBeInstanceOf(Error);
-        expect(isAccountMissingError(error)).toBe(true);
+describe("readPayerAccount", () => {
+    test("empty code is 'not deployed', and owner() is never asked", async () => {
+        // The one fact "not deployed" is decided from. Asking `owner()` anyway would get
+        // `0x` back and a decode error with it — an error the gate must not have to read.
+        const {value, asked} = await readThrough({eth_getCode: () => "0x"});
+        expect(value).toEqual({deployed: false});
+        expect(asked).toEqual(["eth_getCode"]);
     });
 
-    test("a transport failure is not a missing account", async () => {
-        const error = await ownerReadFailure(() => {
-            throw new Error("fetch failed");
+    test("code present reads the owner, checksummed", async () => {
+        const {value, asked} = await readThrough({
+            eth_getCode: () => SOME_CODE,
+            eth_call: () => encodedOwner,
         });
-        expect(error).toBeInstanceOf(Error);
-        expect(isAccountMissingError(error)).toBe(false);
+        expect(value).toEqual({deployed: true, owner: OWNER});
+        expect(asked).toEqual(["eth_getCode", "eth_call"]);
     });
 
-    test("the sentence alone is not evidence — only viem's own error class counts", () => {
-        expect(isAccountMissingError(new Error('The contract function "owner" returned no data ("0x").'))).toBe(
-            false,
-        );
-        expect(isAccountMissingError(undefined)).toBe(false);
-        expect(isAccountMissingError("0x")).toBe(false);
+    test("an owner() that returns no data on a coded account rejects — it is not a missing account", async () => {
+        const {value, error} = await readThrough({
+            eth_getCode: () => SOME_CODE,
+            eth_call: () => "0x",
+        });
+        expect(value).toBeUndefined();
+        expect(error).toBeInstanceOf(Error);
+    });
+
+    test("a transport failure on either read rejects", async () => {
+        const down = () => {
+            throw new Error("fetch failed");
+        };
+        expect((await readThrough({eth_getCode: down})).error).toBeInstanceOf(Error);
+        expect(
+            (await readThrough({eth_getCode: () => SOME_CODE, eth_call: down})).error,
+        ).toBeInstanceOf(Error);
     });
 });
 

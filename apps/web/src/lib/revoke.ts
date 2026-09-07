@@ -1,7 +1,7 @@
 import type {Delegation} from "@metamask/smart-accounts-kit";
-import {isDelegationRevoked} from "@mapae/delegation/revocation";
+import {isDelegationRevoked, readAccountOwner} from "@mapae/delegation/revocation";
 import {buildRevocationSubmissionBody} from "@mapae/delegation/revocation-submission";
-import {BaseError, ContractFunctionZeroDataError, type Address, type Hex} from "viem";
+import type {Address, Hex, PublicClient} from "viem";
 import type {PackedUserOperation} from "viem/account-abstraction";
 import {deployment, publicClient} from "./config";
 import type {Locale} from "./i18n";
@@ -27,20 +27,24 @@ export type StudioRevokeGate =
     | {kind: "ready"; owner: Address};
 
 /**
- * Whether an `owner()` read failed because the payer account has no code.
+ * What the chain says about the payer account: deployed, with its owner, or not there yet.
  *
- * `readContract` on a codeless address gets `0x` back from `eth_call`, fails to decode
- * it, and throws a `ContractFunctionExecutionError` whose cause chain carries viem's
- * `ContractFunctionZeroDataError`. That is the one failure with a known meaning here —
- * the payer is derived from the factory, so the only way its `owner()` returns nothing
- * is that nobody deployed it yet. Every other failure (RPC down, a revert, a timeout) is
- * a read that did not happen, and is reported as such rather than guessed at.
+ * `getCode` first, and "not deployed" is decided from the absence of code and from nothing
+ * else. A codeless address answers `owner()` with no data, which viem reports as a decode
+ * error — the same shape as any other failed read — and reading a missing account out of
+ * an error class would have the gate guessing. The two facts stay apart: empty code is
+ * the account not existing; an `owner()` that fails on an account *with* code is a read
+ * that did not happen, and is reported as such.
  */
-export function isAccountMissingError(error: unknown): boolean {
-    return (
-        error instanceof BaseError &&
-        error.walk((cause) => cause instanceof ContractFunctionZeroDataError) !== null
-    );
+export type PayerAccount = {deployed: false} | {deployed: true; owner: Address};
+
+export async function readPayerAccount(params: {
+    publicClient: PublicClient;
+    account: Address;
+}): Promise<PayerAccount> {
+    const code = await params.publicClient.getCode({address: params.account});
+    if (code === undefined || code === "0x") return {deployed: false};
+    return {deployed: true, owner: await readAccountOwner(params)};
 }
 
 export function judgeStudioRevokeGate(input: {
@@ -50,9 +54,10 @@ export function judgeStudioRevokeGate(input: {
     /** The chain the wallet is on. `undefined` while disconnected, which outranks this. */
     connectedChainId: number | undefined;
     expectedChainId: number;
-    owner: Address | undefined;
-    /** What the `owner()` read rejected with, if it did. `undefined` while pending or read. */
-    ownerError: unknown;
+    /** `readPayerAccount`'s answer. `undefined` until it arrives, or when it never did. */
+    account: PayerAccount | undefined;
+    /** What `readPayerAccount` rejected with, if it did. `undefined` while pending or read. */
+    accountError: unknown;
 }): StudioRevokeGate {
     // Ordered by what the owner can act on, cheapest first. `already-revoked` outranks
     // everything except a missing endpoint because once the grant is disabled there is
@@ -72,24 +77,26 @@ export function judgeStudioRevokeGate(input: {
             expected: input.expectedChainId,
         };
     }
-    if (!input.owner) {
-        // A read that failed is not a read still in flight: "Confirming owner…" for a
-        // codeless account would stand forever. A codeless payer cannot be revoked from
-        // yet — `DelegationManager.disableDelegation` requires `msg.sender == delegator`,
-        // and there is no account to be that sender — and nothing can spend through it
-        // either, so the honest state is "not deployed", not "confirming". A known owner
-        // outranks a later failed re-read: the account had code once, and code stays.
-        if (input.ownerError !== undefined) {
-            return isAccountMissingError(input.ownerError)
-                ? {kind: "account-missing"}
-                : {kind: "owner-unreadable"};
-        }
-        return {kind: "owner-unknown"};
+    if (!input.account) {
+        // A read that failed is not a read still in flight: "Confirming owner…" over an
+        // RPC that is down would stand forever. A previously read account outranks a
+        // later failed re-read — code, once deployed, stays, and so does its owner.
+        return input.accountError === undefined
+            ? {kind: "owner-unknown"}
+            : {kind: "owner-unreadable"};
     }
-    if (input.connected.toLowerCase() !== input.owner.toLowerCase()) {
-        return {kind: "wrong-wallet", connected: input.connected, owner: input.owner};
+    if (!input.account.deployed) {
+        // A codeless payer cannot be revoked from yet: `DelegationManager.disableDelegation`
+        // requires `msg.sender == delegator`, and there is no account to be that sender.
+        // Nothing can spend through it either, until someone has it deployed — which the
+        // note under the button spells out, because anyone holding the permission can.
+        return {kind: "account-missing"};
     }
-    return {kind: "ready", owner: input.owner};
+    const {owner} = input.account;
+    if (input.connected.toLowerCase() !== owner.toLowerCase()) {
+        return {kind: "wrong-wallet", connected: input.connected, owner};
+    }
+    return {kind: "ready", owner};
 }
 
 /** What the button says in each gate. Separated so the copy is assertable. */

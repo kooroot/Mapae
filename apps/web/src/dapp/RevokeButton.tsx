@@ -3,7 +3,6 @@ import {
     SPONSORED_REVOCATION_GAS,
     buildRevocationUserOperation,
     finalizeRevocationUserOperation,
-    readAccountOwner,
     readRevocationNonce,
 } from "@mapae/delegation/revocation";
 import {redactUrls} from "@mapae/shared";
@@ -15,8 +14,8 @@ import {chain, deployment, explorerTxUrl, publicSubmitterAvailability, publicCli
 import type {Locale} from "../lib/i18n";
 import {useLocale} from "../lib/locale";
 import {
-    isAccountMissingError,
     judgeStudioRevokeGate,
+    readPayerAccount,
     requestSponsoredRevocation,
     studioRevokeButtonLabel,
 } from "../lib/revoke";
@@ -122,13 +121,16 @@ export function RevokeButton({
     const {signTypedDataAsync} = useSignTypedData();
     const [progress, setProgress] = useState<RevokeProgress>({phase: "idle"});
 
-    const owner = useQuery({
-        queryKey: ["studio-owner", payer],
-        queryFn: () => readAccountOwner({publicClient, account: payer}),
-        staleTime: Infinity,
-        // A codeless account answers the same way on every read; retrying it with backoff
-        // only delays the sentence that says so. Transient failures keep the default.
-        retry: (failures, error) => !isAccountMissingError(error) && failures < 3,
+    // Code first, owner second: a payer nobody deployed yet is a successful read with a
+    // verdict of its own, not a failed `owner()` to be diagnosed from an error class.
+    const account = useQuery({
+        queryKey: ["studio-payer", payer],
+        queryFn: () => readPayerAccount({publicClient, account: payer}),
+        // A deployed account is final — code stays, and so does its owner. "Not deployed"
+        // is the one answer that changes under the user's feet: the note under the button
+        // sends them off to have the account deployed, so that answer is stale at once and
+        // is read again whenever this button mounts.
+        staleTime: (query) => (query.state.data?.deployed ? Infinity : 0),
     });
 
     const gate = judgeStudioRevokeGate({
@@ -137,8 +139,8 @@ export function RevokeButton({
         connected,
         connectedChainId,
         expectedChainId: chain.id,
-        owner: owner.data,
-        ownerError: owner.error ?? undefined,
+        account: account.data,
+        accountError: account.error ?? undefined,
     });
 
     async function run(): Promise<void> {
