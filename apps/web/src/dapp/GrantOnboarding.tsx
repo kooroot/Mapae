@@ -1,4 +1,8 @@
-import {signRootPeriodPermission, toMapaeOwnerSmartAccount} from "@mapae/delegation/signing";
+import {
+    signRootPeriodPermission,
+    toMapaeOwnerSmartAccount,
+    type PermissionArtifact,
+} from "@mapae/delegation/signing";
 import {MOCK_USDC, redactUrls} from "@mapae/shared";
 import {getAddress, isAddress} from "viem";
 import {
@@ -17,7 +21,7 @@ import {
     UserRoundCheck,
     Wallet,
 } from "lucide-react";
-import {useEffect, useMemo, useState, type FormEvent} from "react";
+import {useEffect, useMemo, useRef, useState, type FormEvent} from "react";
 import {
     useAccount,
     useConnect,
@@ -118,6 +122,7 @@ const COPY: Record<
         importPlaceholder: string;
         importSubmit: string;
         faultFallback: string;
+        signedUnplaced: (reason: string) => string;
     }
 > = {
     en: {
@@ -203,6 +208,8 @@ const COPY: Record<
         importPlaceholder: "The full permission code, starting with 0x",
         importSubmit: "Verify the code and import",
         faultFallback: "The request could not be completed. Check your wallet and network connection.",
+        signedUnplaced: (reason) =>
+            `The permission was signed, but the payer account step failed. ${reason} The signed permission is kept under ‘My agents’ so you can revoke it there rather than lose track of it.`,
     },
     ko: {
         headTitleLead: "에이전트가 쓸 수 있는 ",
@@ -285,6 +292,8 @@ const COPY: Record<
         importPlaceholder: "0x로 시작하는 전체 권한 코드",
         importSubmit: "코드 확인하고 불러오기",
         faultFallback: "요청을 완료하지 못했습니다. 지갑과 네트워크 상태를 확인해 주세요.",
+        signedUnplaced: (reason) =>
+            `권한 서명은 끝났지만 지불 계정 단계에서 실패했습니다. ${reason} 서명된 권한은 ‘내 에이전트’에 보관해 두었으니, 잃어버리는 대신 그곳에서 회수할 수 있습니다.`,
     },
 };
 
@@ -317,11 +326,20 @@ const INITIAL_DRAFT: GrantDraft = {
     recipient: "",
 };
 
+/**
+ * Whether the account step after the signature completed. An `unplaced` grant carries a
+ * valid owner signature but its payer account was not confirmed deployed (or the
+ * signature was not verified): nothing can redeem it until the account exists, and the
+ * moment any later bootstrap deploys that account it goes live — which is why it enters
+ * the library either way, and why the parent should not present it as a finished grant.
+ */
+export type GrantPlacement = "placed" | "unplaced";
+
 export function GrantOnboarding({
     onGranted,
     onImported,
 }: {
-    onGranted: (grant: SessionGrant) => void;
+    onGranted: (grant: SessionGrant, placement: GrantPlacement) => void;
     onImported: (permissionContext: `0x${string}`) => Promise<void>;
 }) {
     const {locale} = useLocale();
@@ -330,6 +348,9 @@ export function GrantOnboarding({
     const [attempted, setAttempted] = useState(false);
     const [progress, setProgress] = useState<SigningProgress>({kind: "idle"});
     const [generatedKey, setGeneratedKey] = useState<AgentSessionKey>();
+    // A ref, not state: state lags a render, and the second submit that matters is the
+    // one fired before the first has re-rendered `busy` into the button.
+    const signing = useRef(false);
     const {address, chainId, isConnected} = useAccount();
     const {connect, connectors, isPending: connecting, error: connectError} = useConnect();
     const {disconnect} = useDisconnect();
@@ -384,7 +405,10 @@ export function GrantOnboarding({
 
     function update<K extends keyof GrantDraft>(key: K, value: GrantDraft[K]) {
         setDraft((current) => ({...current, [key]: value}));
-        setProgress({kind: "idle"});
+        // Only an error is dismissed by editing. Resetting unconditionally turned a
+        // mid-signature edit into an idle form: the preview diverged from the payload
+        // sitting in the wallet, and the submit button re-enabled for a second signature.
+        setProgress((current) => (current.kind === "error" ? {kind: "idle"} : current));
         // A hand-edited delegate is no longer the key this tab generated; keeping the
         // key around would export a bundle whose address and grant disagree. Compare
         // the normalized address, not the raw string — validation accepts any casing
@@ -401,11 +425,12 @@ export function GrantOnboarding({
         const key = generateAgentSessionKey();
         setGeneratedKey(key);
         setDraft((current) => ({...current, delegate: key.address}));
-        setProgress({kind: "idle"});
+        setProgress((current) => (current.kind === "error" ? {kind: "idle"} : current));
     }
 
     async function signGrant(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        if (signing.current) return;
         setAttempted(true);
         // Readiness no longer gates signing. The signature is what proves ownership to
         // the sponsor, so it must come first; `DelegationManager` still requires the
@@ -423,48 +448,78 @@ export function GrantOnboarding({
             return;
         }
 
+        signing.current = true;
         try {
-            setProgress({kind: "signing"});
-            const head = await publicClient.getBlock();
-            const startDate = Math.max(0, Number(head.timestamp) - 1);
-            const artifact = await signRootPeriodPermission({
-                publicClient:
-                    publicClient as Parameters<typeof signRootPeriodPermission>[0]["publicClient"],
-                walletClient:
-                    walletClient as Parameters<typeof signRootPeriodPermission>[0]["walletClient"],
-                environment: deployment.environment,
-                accountOwner: address,
-                delegate: validation.value.delegate,
-                policy: {
-                    role: validation.value.recipient ? "vendor-agent" : "open-agent",
-                    token: MOCK_USDC.address,
-                    periodAmount: validation.value.periodAmount,
-                    periodDurationSeconds: validation.value.periodDurationSeconds,
-                    expiresAfterSeconds: validation.value.expiresAfterSeconds,
-                    recipient: validation.value.recipient,
-                },
-                startDate,
-            });
-            if (accountReadiness.kind === "missing" && sponsor.kind === "configured") {
-                setProgress({kind: "bootstrapping"});
-                await requestSponsoredBootstrap(sponsor.url, artifact, locale);
-                setAccountReadiness({kind: "ready", smartAccount: artifact.delegator});
+            let artifact: PermissionArtifact;
+            try {
+                setProgress({kind: "signing"});
+                const head = await publicClient.getBlock();
+                const startDate = Math.max(0, Number(head.timestamp) - 1);
+                artifact = await signRootPeriodPermission({
+                    publicClient:
+                        publicClient as Parameters<typeof signRootPeriodPermission>[0]["publicClient"],
+                    walletClient:
+                        walletClient as Parameters<typeof signRootPeriodPermission>[0]["walletClient"],
+                    environment: deployment.environment,
+                    accountOwner: address,
+                    delegate: validation.value.delegate,
+                    policy: {
+                        role: validation.value.recipient ? "vendor-agent" : "open-agent",
+                        token: MOCK_USDC.address,
+                        periodAmount: validation.value.periodAmount,
+                        periodDurationSeconds: validation.value.periodDurationSeconds,
+                        expiresAfterSeconds: validation.value.expiresAfterSeconds,
+                        recipient: validation.value.recipient,
+                    },
+                    startDate,
+                });
+            } catch (error) {
+                // Nothing was signed, so nothing exists to keep: the draft stays for
+                // another attempt.
+                setProgress({kind: "error", reason: faultLine(error, locale)});
+                return;
             }
-            setProgress({kind: "verifying"});
-            await verifyPermissionArtifact(artifact, locale);
+
+            // From here on an owner signature exists, and this tab holds its only copy.
+            // Whatever the account step does, the grant enters the library: the draft
+            // and the key it consumed are cleared exactly as on success, because the
+            // signature already spent them — a second submit from the same draft would
+            // be a second live delegation for the same key, not a retry.
             const agentKey =
                 generatedKey && generatedKey.address === validation.value.delegate
                     ? generatedKey
                     : undefined;
+            const grant = signedSessionGrant(artifact, validation.value, agentKey);
             setDraft(INITIAL_DRAFT);
             setAttempted(false);
             // Clear only the key this submission consumed — a key generated while the
             // wallet prompt was open belongs to the next grant, not to the void.
             setGeneratedKey((current) => (current === agentKey ? undefined : current));
+
+            try {
+                if (accountReadiness.kind === "missing" && sponsor.kind === "configured") {
+                    setProgress({kind: "bootstrapping"});
+                    await requestSponsoredBootstrap(sponsor.url, artifact, locale);
+                    setAccountReadiness({kind: "ready", smartAccount: artifact.delegator});
+                }
+                setProgress({kind: "verifying"});
+                await verifyPermissionArtifact(artifact, locale);
+            } catch (error) {
+                // Dropping the artifact here was the audit's finding: the next successful
+                // attempt deploys the payer account and this delegation — signed, valid,
+                // listed nowhere — went live with no kill switch. Kept in the library it
+                // is visible and revocable; the copy says which half failed.
+                setProgress({
+                    kind: "error",
+                    reason: t.signedUnplaced(faultLine(error, locale)),
+                });
+                onGranted(grant, "unplaced");
+                return;
+            }
             setProgress({kind: "idle"});
-            onGranted(signedSessionGrant(artifact, validation.value, agentKey));
-        } catch (error) {
-            setProgress({kind: "error", reason: faultLine(error, locale)});
+            onGranted(grant, "placed");
+        } finally {
+            signing.current = false;
         }
     }
 
@@ -525,6 +580,7 @@ export function GrantOnboarding({
                                     value={draft.agentName}
                                     maxLength={40}
                                     placeholder={t.agentNamePlaceholder}
+                                    disabled={busy}
                                     onChange={(event) => update("agentName", event.target.value)}
                                 />
                             </Field>
@@ -540,6 +596,7 @@ export function GrantOnboarding({
                                         spellCheck={false}
                                         autoComplete="off"
                                         placeholder="0x…"
+                                        disabled={busy}
                                         onChange={(event) =>
                                             update("delegate", event.target.value)
                                         }
@@ -588,6 +645,7 @@ export function GrantOnboarding({
                                         inputMode="decimal"
                                         value={draft.amount}
                                         placeholder="25"
+                                        disabled={busy}
                                         onChange={(event) => update("amount", event.target.value)}
                                     />
                                     <span>tUSDC</span>
@@ -602,6 +660,7 @@ export function GrantOnboarding({
                                     <select
                                         id="grant-period"
                                         value={draft.periodSeconds}
+                                        disabled={busy}
                                         onChange={(event) =>
                                             update("periodSeconds", event.target.value)
                                         }
@@ -628,6 +687,7 @@ export function GrantOnboarding({
                             <button
                                 type="button"
                                 data-active={draft.recipientMode === "fixed"}
+                                disabled={busy}
                                 onClick={() => update("recipientMode", "fixed")}
                             >
                                 {t.fixedRecipientOnly}
@@ -635,6 +695,7 @@ export function GrantOnboarding({
                             <button
                                 type="button"
                                 data-active={draft.recipientMode === "any"}
+                                disabled={busy}
                                 onClick={() => update("recipientMode", "any")}
                             >
                                 {t.anyRecipient}
@@ -653,6 +714,7 @@ export function GrantOnboarding({
                                         spellCheck={false}
                                         autoComplete="off"
                                         placeholder="0x…"
+                                        disabled={busy}
                                         onChange={(event) =>
                                             update("recipient", event.target.value)
                                         }
@@ -673,6 +735,7 @@ export function GrantOnboarding({
                                     <select
                                         id="grant-expiry"
                                         value={draft.expirySeconds}
+                                        disabled={busy}
                                         onChange={(event) =>
                                             update("expirySeconds", event.target.value)
                                         }
