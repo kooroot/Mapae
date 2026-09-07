@@ -55,6 +55,18 @@ import {
 } from "./guards.js";
 import {bearerTokenMatches, metricsReport, readMetricsToken} from "./metrics.js";
 
+// Two caps on one body, in different units, because they guard different things. Bun's
+// is bytes on the wire: a Content-Length above it is refused with an empty 413 before
+// the handler runs, and a chunked body with no Content-Length is cut at the cap inside
+// `c.req.text()`, which rejects and Bun again answers 413 whatever the handler returns
+// (measured on Bun 1.4.0 with the cap at 10 bytes). So buffering is bounded at the cap
+// rather than avoided — without it a chunked request made the process hold up to Bun's
+// 128 MB default. The character cap is what `JSON.parse` is handed and is the one that
+// answers with a 200 body (a 413 from Bun reaches the seller as "answer lost", which is
+// wrong for a request that was never parsed). Payments are ASCII, so a body under the
+// character cap is under the byte cap and always gets the 200 answer; the byte cap only
+// ever fires on bodies no client of this service produces.
+const MAX_BODY_BYTES = 200_000;
 const MAX_BODY_CHARACTERS = 150_000;
 // The framework check and the relayer balance are each read at most once per window,
 // whichever way the read went. 5 s is short enough that a pause or a drained wallet is
@@ -714,4 +726,6 @@ console.log(`  payer   ${RELAYER_PAYER_DAILY_WEI} wei/day per payer (RELAYER_PAY
 console.log(`  rate    ${FACILITATOR_RATE_PER_HOUR}/hour per IP (FACILITATOR_RATE_PER_HOUR)`);
 console.log(`  metrics ${METRICS_TOKEN === undefined ? "disabled (METRICS_TOKEN unset)" : "enabled"}`);
 
-export default {hostname: HOST, port: PORT, fetch: app.fetch};
+// Bun reads the object as `Bun.serve` options; `maxRequestBodySize` is the byte cap
+// above — a 413 from Bun for anything over it, with buffering bounded at the cap.
+export default {hostname: HOST, port: PORT, fetch: app.fetch, maxRequestBodySize: MAX_BODY_BYTES};

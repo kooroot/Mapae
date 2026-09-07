@@ -62,6 +62,14 @@ payer별 몫도 `STORE_PATH`의 `payer:<주소>` 시리즈에 남아 재시작�
 | `/verify` | `200 {isValid: false, invalidReason: "rate_limited"}` |
 | `/settle` | `200 {success: false, network, errorReason: "rate_limited"}` |
 
+본문 크기는 두 번 잰다. Bun의 `maxRequestBodySize`(200,000바이트)는 Content-Length가
+상한을 넘으면 핸들러 전에 빈 `413`을 내고, Content-Length 없는 청크 본문은 상한에서 읽기를
+끊어(`c.req.text()`가 거부) 역시 `413`을 낸다 — 버퍼링을 없애는 게 아니라 200 KB로 묶는
+것이고, 없으면 Bun 기본값 128 MB까지 쌓인다. 읽은 뒤의 150,000자 검사는 `JSON.parse`에
+넘길 문자열을 재고 200 본문으로 거절한다.
+결제 본문은 ASCII라 문자 상한 아래면 바이트 상한 아래이므로, 413은 이 서비스의 어떤
+클라이언트도 만들지 않는 본문에만 나간다.
+
 ## `/metrics`
 
 `METRICS_TOKEN`으로 잠긴 운영자 엔드포인트. 모든 수는 십진 문자열이다.
