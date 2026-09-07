@@ -97,7 +97,8 @@ griefing spread into a settlement outage.
 | Duplicate settle | Deduplicated by a `paymentIntentId` over the canonical payment terms and the context bytes; the broadcast tx hash is stored before the receipt |
 | Gas DoS via complex delegations | Estimate first, then refuse anything above the configured gas cap |
 | Unauthorized relayer | The intersection of the leaf's `RedeemerEnforcer` and the 402's `facilitatorAddresses` is enforced |
-| Onboarding griefing (repeated deploy requests) | Faucet window (one top-up per account per 24 hours) + daily gas budget + a small dedicated sponsor wallet — exhaustion stops only that day's onboarding and never touches settlement or funds |
+| Onboarding griefing (repeated deploy requests) | Hourly per-IP cap (a speed bump) + faucet window (one top-up per account per 24 hours) + daily gas budget + a small dedicated sponsor wallet — exhaustion stops only that day's onboarding and never touches settlement or funds |
+| Settlement griefing (paying oneself repeatedly with free tUSDC) | Hourly per-IP cap + a per-payer daily gas share (`RELAYER_PAYER_DAILY_WEI`) reserved before the day's total — one payer exhausting its share leaves every other seller settling for the rest of the day |
 | Nominating the deploy target address | The request body is `{permissionContext}` only — the owner is recovered from the signature, and the account is `CREATE2(owner)`, which must match the delegator |
 | Non-canonical signatures (high-s, `v ∉ {27,28}`) | Deploy only after an offline canonical-form check — viem accepts them but OZ `ECDSA` reverts, so without the check we would pay to deploy an account whose every grant reverts |
 | Vulnerable dependencies | `bun audit` runs in the gate. Every finding is either fixed or accepted with a re-measurable proof attached |

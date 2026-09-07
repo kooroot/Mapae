@@ -145,8 +145,10 @@ accounts whose every grant reverts forever.
 Per-account idempotency is identity, not a budget — keypairs are free offline, so
 the real bounds on a griefing run are the faucet window (one top-up per account per
 24 hours), the daily gas budget (`BOOTSTRAP_DAILY_WEI`), and the sponsor balance
-kept deliberately small. There is no per-IP limit: IPs are shared and keys are
-free, so it never stopped a griefer and did stop two people in one office. The
+kept deliberately small. The hourly per-IP cap (`BOOTSTRAP_RATE_PER_HOUR`, default
+30, IPv6 counted per /64) is a speed bump on top of those: IPs are shared and keys
+are free, so it cannot stop a griefer, but without any cap one machine could drain
+the day's budget from one address in under an hour by sending fresh keypairs. The
 faucet tops any account below 1000 tUSDC (testnet, not real money) up to that
 target (`packages/delegation/src/faucet-policy.ts`). The sponsor holds no
 delegation authority, so it cannot reach payer funds, caps, or settlement.

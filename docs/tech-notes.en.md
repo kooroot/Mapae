@@ -182,8 +182,10 @@ accounts whose every grant reverts forever.
 Per-account idempotency is identity, not a budget — keypairs are free offline, so
 the real bounds on a griefing run are the faucet window (one top-up per account per
 24 hours), the daily gas budget (`BOOTSTRAP_DAILY_WEI`), and the sponsor balance
-kept deliberately small. There is no per-IP limit: IPs are shared and keys are
-free, so it never stopped a griefer and did stop two people in one office. The
+kept deliberately small. The hourly per-IP cap (`BOOTSTRAP_RATE_PER_HOUR`, default
+30, IPv6 counted per /64) is a speed bump on top of those: IPs are shared and keys
+are free, so it cannot stop a griefer, but without any cap one machine could drain
+the day's budget from one address in under an hour by sending fresh keypairs. The
 faucet tops any account below 1000 tUSDC (testnet, not real money) up to that
 target (`packages/delegation/src/faucet-policy.ts`). The sponsor holds no
 delegation authority, so it cannot reach payer funds, caps, or settlement.
@@ -687,7 +689,8 @@ griefing spread into a settlement outage.
 | Duplicate settle | Deduplicated by a `paymentIntentId` over the canonical payment terms and the context bytes; the broadcast tx hash is stored before the receipt |
 | Gas DoS via complex delegations | Estimate first, then refuse anything above the configured gas cap |
 | Unauthorized relayer | The intersection of the leaf's `RedeemerEnforcer` and the 402's `facilitatorAddresses` is enforced |
-| Onboarding griefing (repeated deploy requests) | Faucet window (one top-up per account per 24 hours) + daily gas budget + a small dedicated sponsor wallet — exhaustion stops only that day's onboarding and never touches settlement or funds |
+| Onboarding griefing (repeated deploy requests) | Hourly per-IP cap (a speed bump) + faucet window (one top-up per account per 24 hours) + daily gas budget + a small dedicated sponsor wallet — exhaustion stops only that day's onboarding and never touches settlement or funds |
+| Settlement griefing (paying oneself repeatedly with free tUSDC) | Hourly per-IP cap + a per-payer daily gas share (`RELAYER_PAYER_DAILY_WEI`) reserved before the day's total — one payer exhausting its share leaves every other seller settling for the rest of the day |
 | Nominating the deploy target address | The request body is `{permissionContext}` only — the owner is recovered from the signature, and the account is `CREATE2(owner)`, which must match the delegator |
 | Non-canonical signatures (high-s, `v ∉ {27,28}`) | Deploy only after an offline canonical-form check — viem accepts them but OZ `ECDSA` reverts, so without the check we would pay to deploy an account whose every grant reverts |
 | Vulnerable dependencies | `bun audit` runs in the gate. Every finding is either fixed or accepted with a re-measurable proof attached |
