@@ -20,6 +20,7 @@ import {
     BaseError,
     ContractFunctionExecutionError,
     ContractFunctionRevertedError,
+    ExecutionRevertedError,
     HttpRequestError,
     RpcRequestError,
     TimeoutError,
@@ -497,6 +498,15 @@ describe("isRpcUnreachable", () => {
         // enforcers: a revert reading "rate limit exceeded" must not become a non-answer.
         expect(isRpcUnreachable(reverted("rate limit exceeded"))).toBe(false);
         expect(isRpcUnreachable(reverted("too many requests"))).toBe(false);
+        // A node that reports the revert under a plain -32000 gives viem no revert data to
+        // decode, so the chain carries an `ExecutionRevertedError` instead — still an answer.
+        expect(
+            isRpcUnreachable(
+                simulationFailed(
+                    new ExecutionRevertedError({message: "execution reverted: rate limit exceeded"}),
+                ),
+            ),
+        ).toBe(false);
         // The real shapes still are: a 429 on the transport, or proxyd's JSON-RPC error
         // under a 200, both wrapped by the simulation that hit them.
         expect(isRpcUnreachable(simulationFailed(RATE_LIMITED_BY_HTTP()))).toBe(true);

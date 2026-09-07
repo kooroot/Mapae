@@ -25,6 +25,7 @@ import type {Budget} from "@mapae/store";
 import type {MiddlewareHandler} from "hono";
 import {
     ContractFunctionRevertedError,
+    ExecutionRevertedError,
     HttpRequestError,
     TimeoutError,
     type Address,
@@ -406,7 +407,8 @@ export type FrameworkHealthError =
  * looked, was answered not-ready for a refusal — no ledger row, and an invitation to
  * retry. A `ContractFunctionRevertedError` anywhere in the chain is the RPC having
  * answered, whatever the reason says, and settles the question before the text is
- * consulted. {@link beforeBroadcast} asks the same question of the stage before the
+ * consulted — as does viem's `ExecutionRevertedError`, the shape a revert takes when
+ * the node reports it under a plain `-32000` instead of code `3`. {@link beforeBroadcast} asks the same question of the stage before the
  * broadcast on both routes: a transport death in there is no verdict on the delegation
  * either.
  */
@@ -414,7 +416,9 @@ export function isRpcUnreachable(error: unknown): boolean {
     let current: unknown = error;
     let depth = 0;
     while (current instanceof Error && depth < 8) {
-        if (current instanceof ContractFunctionRevertedError) return false;
+        if (current instanceof ContractFunctionRevertedError || current instanceof ExecutionRevertedError) {
+            return false;
+        }
         if (current instanceof HttpRequestError || current instanceof TimeoutError) return true;
         current = current.cause;
         depth += 1;
