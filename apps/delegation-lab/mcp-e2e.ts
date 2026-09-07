@@ -515,6 +515,67 @@ function proveOrdersLedger(storePath: string, tickets: Ticket[]): void {
     console.log("[orders] PASS — three settlements, three intents, the same-price logo included ✅");
 }
 
+/** The store's ticket: 80 random bits as 16 lowercase Crockford base32 characters. */
+const TICKET_CODE = /^[0-9a-hjkmnp-tv-z]{16}$/;
+
+/**
+ * What the counter checks. `/s/:slug/tickets/:code` shows whoever holds a code the order
+ * it bought — and only at the shop that issued it, so a code is worth nothing at another
+ * counter. The code is the store's, not the row's: the row id counts the shop's orders
+ * and anyone could name the next, which is why the ticket carries no `order` field.
+ */
+async function provePickupLookup(tickets: Ticket[]): Promise<void> {
+    for (const {ticket} of tickets) {
+        if (!TICKET_CODE.test(ticket.code)) {
+            throw new Error(`ticket code ${ticket.code} is not 16 Crockford base32 characters`);
+        }
+    }
+    const [bought] = tickets;
+    const elsewhere = tickets.find((other) => other.ticket.shop.slug !== bought?.ticket.shop.slug);
+    if (!bought || !elsewhere) throw new Error("the pickup proof needs tickets from two shops");
+    const lookup = (slug: string, accept: string) =>
+        fetch(`${SELLER_URL}/s/${slug}/tickets/${bought.ticket.code}`, {
+            headers: {accept},
+            signal: AbortSignal.timeout(5_000),
+        });
+
+    const shown = await lookup(bought.ticket.shop.slug, "application/json");
+    const verified = (await shown.json()) as {
+        code?: string;
+        status?: string;
+        item?: {key?: string};
+        transaction?: string | null;
+    };
+    if (
+        shown.status !== 200 ||
+        verified.code !== bought.ticket.code ||
+        verified.status !== "paid" ||
+        verified.item?.key !== bought.ticket.item.key
+    ) {
+        throw new Error(`pickup lookup answered ${shown.status} ${JSON.stringify(verified)}`);
+    }
+    if (verified.transaction !== (bought.receipt.transaction ?? null)) {
+        throw new Error("pickup lookup names a transaction other than the receipt's");
+    }
+    // The page a person at the counter sees carries the same code.
+    const page = await lookup(bought.ticket.shop.slug, "text/html");
+    if (page.status !== 200 || !(await page.text()).includes(`<code>${bought.ticket.code}</code>`)) {
+        throw new Error("the ticket page does not show the code");
+    }
+    const refused = await lookup(elsewhere.ticket.shop.slug, "application/json");
+    const denial = (await refused.json()) as {error?: string};
+    if (refused.status !== 404 || denial.error !== "unknown_ticket") {
+        throw new Error(
+            `${elsewhere.ticket.shop.slug} answered another shop's code with ${refused.status} ${JSON.stringify(denial)}`,
+        );
+    }
+    console.log(
+        `[pickup] ${bought.ticket.shop.slug}/tickets/${bought.ticket.code} → ${verified.item.key} ${verified.status}; ` +
+            `at ${elsewhere.ticket.shop.slug} → 404 unknown_ticket`,
+    );
+    console.log("[pickup] PASS — the code is shown where it was bought and nowhere else ✅");
+}
+
 /**
  * Set `SETTLEMENT_RECEIPT_TIMEOUT_MS=1` and the facilitator gives up on the receipt of a
  * transaction it has already broadcast. That is the one case where the payer is charged
@@ -928,8 +989,9 @@ async function main(): Promise<void> {
     // just produced. Nothing here is stored off-chain.
     await reportConsoleState(forkRpc, forkBaseBlock);
 
-    // The shop's own ledger, read from the file.
+    // The shop's own ledger, read from the file, and the counter's view of one ticket.
     proveOrdersLedger(storePath, [first, second, third]);
+    await provePickupLookup([first, second, third]);
 
     // D5 pre-flight: 3.0 is already spent against a 3.0/60s cap, so a 2.5 payment
     // cannot fit. The agent must say so from the chain's own accounting instead of
