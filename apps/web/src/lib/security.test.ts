@@ -105,16 +105,16 @@ describe("document security policy", () => {
         }
     });
 
-    test("stylesheet elements need the nonce; style attributes keep unsafe-inline", () => {
-        // The production document emits one nonce-stamped `<link>` and no `<style>`, so
-        // the element directive can be as tight as script-src. The attribute directive
-        // cannot: React's `style="…"` props have no nonce. The plain style-src stays as
-        // the fallback for browsers that predate the split.
+    test("style-src keeps unsafe-inline, and no element directive narrows it", () => {
+        // `bun run dev` injects each CSS import as a nonce-less `<style>` — Vite reads the
+        // csp-nonce meta's `nonce` attribute, TanStack writes its `content` — so a nonce
+        // on style-src-elem blanks every dev page while production passes. The policy
+        // developers work under has to be the one that ships.
         const policy = createContentSecurityPolicy(NONCE, "app");
 
         expect(sources(policy, "style-src")).toEqual(["'self'", "'unsafe-inline'"]);
-        expect(sources(policy, "style-src-elem")).toEqual(["'self'", `'nonce-${NONCE}'`]);
-        expect(sources(policy, "style-src-attr")).toEqual(["'unsafe-inline'"]);
+        expect(policy).not.toContain("style-src-elem");
+        expect(policy).not.toContain("style-src-attr");
     });
 
     test("rejects values that could alter the response header", () => {
