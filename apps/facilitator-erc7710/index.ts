@@ -43,16 +43,24 @@ import {
 import {privateKeyToAccount} from "viem/accounts";
 import {
     BudgetExhausted,
+    CachedProbe,
     GasBudgets,
     PayerBudgets,
     RATE_WINDOW_MS,
     SETTLE_RATE_LIMITED,
     VERIFY_RATE_LIMITED,
+    classifyFrameworkError,
     rateLimitByIp,
+    type FrameworkHealthError,
 } from "./guards.js";
 import {bearerTokenMatches, metricsReport, readMetricsToken} from "./metrics.js";
 
 const MAX_BODY_CHARACTERS = 150_000;
+// The framework check and the relayer balance are each read at most once per window,
+// whichever way the read went. 5 s is short enough that a pause or a drained wallet is
+// seen before the next block's settlements, long enough that /health — public, and the
+// one route with no rate limit — cannot enqueue more than one probe per window.
+const PROBE_TTL_MS = 5_000;
 
 function readPort(): number {
     const value = Number(process.env.PORT ?? 8081);
@@ -233,41 +241,36 @@ const facilitatorClient = createWalletClient({
 
 type Receipt = Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
 
-class FrameworkReadinessGate {
-    #cachedUntil: number;
-    #cached: FrameworkLiveVerification;
-    #pending?: Promise<FrameworkLiveVerification>;
-
-    constructor(initial: FrameworkLiveVerification) {
-        this.#cached = initial;
-        this.#cachedUntil = Date.now() + 5_000;
-    }
-
-    async verify(): Promise<FrameworkLiveVerification> {
-        if (Date.now() < this.#cachedUntil) return this.#cached;
-        this.#pending ??= verifyFrameworkOperationalState({
-            publicClient,
-            deployment,
-            expectedFrameworkAdmin: frameworkAdmin,
-        });
-        try {
-            const result = await this.#pending;
-            this.#cached = result;
-            this.#cachedUntil = Date.now() + 5_000;
-            return result;
-        } finally {
-            this.#pending = undefined;
-        }
-    }
-}
-
 const startupVerification = await verifyActiveFrameworkDeployment({
     publicClient,
     deployment,
     manifest,
     expectedFrameworkAdmin: frameworkAdmin,
 });
-const readiness = new FrameworkReadinessGate(startupVerification);
+// The operator sees the redacted reason here, once per probe; the wire sees a closed
+// enum from `classifyFrameworkError`. Logging in the handler instead would repeat the
+// cached failure for every caller inside the window.
+const readiness = new CachedProbe(async () => {
+    try {
+        return await verifyFrameworkOperationalState({
+            publicClient,
+            deployment,
+            expectedFrameworkAdmin: frameworkAdmin,
+        });
+    } catch (error) {
+        console.error(`[readiness] framework verification failed — ${redactForLog(error)}`);
+        throw error;
+    }
+}, PROBE_TTL_MS);
+readiness.prime(startupVerification);
+const relayerBalance = new CachedProbe(async () => {
+    try {
+        return await publicClient.getBalance({address: relayer.address});
+    } catch (error) {
+        console.error(`[health] relayer balance not read — ${redactForLog(error)}`);
+        throw error;
+    }
+}, PROBE_TTL_MS);
 
 /**
  * How long a broadcast transaction stays remembered for its payment intent.
@@ -562,30 +565,31 @@ app.use("*", async (c, next) => {
     c.header("X-Content-Type-Options", "nosniff");
 });
 
+// Public: the tunnel's catch-all forwards it, and facilitator.mapae.io/health answers
+// anyone. Everything here is either a closed enum or an address that is already on
+// chain; the one free-text field it used to carry is now a log line.
 app.get("/health", async (c) => {
     let framework: FrameworkLiveVerification | undefined;
     // Why it is unhealthy, not just that it is. Verification throws for a paused
     // manager, an unexpected owner, and an unreachable RPC alike, so without this
-    // every one of them looks identical: ok=false, frameworkPaused=null. Loopback
-    // only, and redacted, so the reason never becomes an oracle for a caller.
-    let frameworkError: string | null = null;
+    // every one of them looks identical: ok=false, frameworkPaused=null. As one of four
+    // words, so the reason never becomes an oracle for a caller — the redacted text
+    // said which RPC host was down and which viem was talking to it.
+    let frameworkError: FrameworkHealthError | null = null;
     try {
-        framework = await readiness.verify();
+        framework = await readiness.read();
     } catch (error) {
-        framework = undefined;
-        frameworkError = redactForLog(error, 200);
+        frameworkError = classifyFrameworkError(error);
     }
     // Degrade like the framework check above rather than throwing: a health probe
     // that 500s when the RPC blips tells the operator less than one that reports
     // which dependency is down.
-    const relayerBalance = await publicClient
-        .getBalance({address: relayer.address})
-        .catch(() => undefined);
-    // The remaining budget is deliberately not here. /health is public through the
-    // proxy, and "how much gas is left today" is a targeting number for anyone deciding
-    // whether draining the day is worth it; it is reported behind /metrics' token.
+    const balance = await relayerBalance.read().catch(() => undefined);
+    // The remaining budget is deliberately not here. "How much gas is left today" is a
+    // targeting number for anyone deciding whether draining the day is worth it; it is
+    // reported behind /metrics' token.
     return c.json({
-        ok: Boolean(framework) && relayerBalance !== undefined && relayerBalance > 0n,
+        ok: Boolean(framework) && balance !== undefined && balance > 0n,
         network: GIWA_SEPOLIA_CAIP2,
         composition: deployment.compositionId,
         delegationManager: manager,
@@ -593,7 +597,7 @@ app.get("/health", async (c) => {
         frameworkPaused: framework?.paused ?? null,
         frameworkError,
         facilitator: relayer.address,
-        relayerFunded: relayerBalance === undefined ? null : relayerBalance > 0n,
+        relayerFunded: balance === undefined ? null : balance > 0n,
     });
 });
 
@@ -625,7 +629,7 @@ app.use("/settle", rateLimitByIp(limiter, SETTLE_RATE_LIMITED));
 
 app.post("/verify", async (c) => {
     try {
-        await readiness.verify();
+        await readiness.read();
         const payment = validateDelegatedPayment(await readJson(c), {
             delegationManager: manager,
             facilitator: relayer.address,
@@ -650,7 +654,7 @@ app.post("/verify", async (c) => {
 // nothing must never be called. The status code is transport here; the body is the claim.
 app.post("/settle", async (c) => {
     try {
-        await readiness.verify();
+        await readiness.read();
         const payment = validateDelegatedPayment(await readJson(c), {
             delegationManager: manager,
             facilitator: relayer.address,

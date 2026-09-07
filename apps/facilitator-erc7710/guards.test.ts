@@ -1,21 +1,23 @@
 /**
  * The guards, proven without booting the facilitator: a Hono app around the limiter, an
- * in-memory store under the payer budgets, and a clock the test moves by hand wherever
- * a window matters.
+ * in-memory store under the payer budgets, hand-built errors for the classifier, and a
+ * clock the test moves by hand wherever a window matters.
  */
 import {afterEach, describe, expect, test} from "bun:test";
 import {FixedWindowLimiter, SpendBudget, budgetDay} from "@mapae/delegation";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
 import {Hono} from "hono";
-import type {Address} from "viem";
+import {HttpRequestError, TimeoutError, type Address} from "viem";
 import {
     BudgetExhausted,
+    CachedProbe,
     GasBudgets,
     PAYER_IDLE_MS,
     PayerBudgets,
     RATE_WINDOW_MS,
     SETTLE_RATE_LIMITED,
     VERIFY_RATE_LIMITED,
+    classifyFrameworkError,
     rateLimitByIp,
 } from "./guards.js";
 
@@ -298,3 +300,135 @@ describe("GasBudgets", () => {
     });
 });
 
+describe("classifyFrameworkError", () => {
+    const RPC = "https://rpc.example/very-secret-key";
+
+    test("a transport failure anywhere in the cause chain is the RPC being unreachable", () => {
+        const transport = new HttpRequestError({url: RPC, details: "fetch failed"});
+        expect(classifyFrameworkError(transport)).toBe("rpc_unreachable");
+        const wrapped = new Error("contract read failed", {cause: transport});
+        expect(classifyFrameworkError(wrapped)).toBe("rpc_unreachable");
+        expect(classifyFrameworkError(new TimeoutError({body: {}, url: RPC}))).toBe("rpc_unreachable");
+    });
+
+    test("a rate limit that outlived the transport's retries is the RPC refusing to answer", () => {
+        expect(classifyFrameworkError(new Error("over rate limit"))).toBe("rpc_unreachable");
+    });
+
+    test("the artifact's admin disagreeing with the environment is an owner mismatch", () => {
+        expect(classifyFrameworkError(new Error("active deployment admin identity mismatch"))).toBe(
+            "owner_mismatch",
+        );
+        expect(classifyFrameworkError(new Error("DelegationManager owner mismatch"))).toBe("owner_mismatch");
+        expect(classifyFrameworkError(new Error("DelegationManager pending owner mismatch"))).toBe(
+            "owner_mismatch",
+        );
+    });
+
+    test("a named pause is framework_paused", () => {
+        expect(classifyFrameworkError(new Error("DelegationManager is paused"))).toBe("framework_paused");
+    });
+
+    test("everything the verifier cannot name more precisely is verification_failed", () => {
+        // The live admin state — owner, pending owner, paused — reaches the classifier as
+        // one message today, so it cannot be read as either of the two named codes.
+        expect(classifyFrameworkError(new Error("DelegationManager is not operationally active"))).toBe(
+            "verification_failed",
+        );
+        // NAME/VERSION disagreement, not an owner: "identity mismatch" alone must not match.
+        expect(classifyFrameworkError(new Error("DelegationManager operational identity mismatch"))).toBe(
+            "verification_failed",
+        );
+        expect(classifyFrameworkError(new Error("DelegationManager has no operational runtime"))).toBe(
+            "verification_failed",
+        );
+        expect(classifyFrameworkError("not even an error")).toBe("verification_failed");
+    });
+
+    test("the answer is one of four words and never the message", () => {
+        const answer = classifyFrameworkError(new HttpRequestError({url: RPC, details: "fetch failed"}));
+        expect(["framework_paused", "owner_mismatch", "rpc_unreachable", "verification_failed"]).toContain(
+            answer,
+        );
+        expect(answer).not.toContain("rpc.example");
+        expect(answer).not.toContain("viem");
+    });
+});
+
+describe("CachedProbe", () => {
+    const TTL = 5_000;
+
+    /** A probe whose completion the test controls, counting how often it was started. */
+    function controlled<T>() {
+        let calls = 0;
+        let resolve!: (value: T) => void;
+        let reject!: (error: unknown) => void;
+        const probe = () => {
+            calls += 1;
+            return new Promise<T>((res, rej) => {
+                resolve = res;
+                reject = rej;
+            });
+        };
+        return {
+            probe,
+            calls: () => calls,
+            resolve: (value: T) => resolve(value),
+            reject: (error: unknown) => reject(error),
+        };
+    }
+
+    test("readers that arrive while a probe is in flight share it", async () => {
+        const time = clock(NOW);
+        const control = controlled<bigint>();
+        const cached = new CachedProbe(control.probe, TTL, time.read);
+        const reads = Array.from({length: 10}, () => cached.read());
+        expect(control.calls()).toBe(1);
+        control.resolve(7n);
+        expect(await Promise.all(reads)).toEqual(Array.from({length: 10}, () => 7n));
+    });
+
+    test("a value is served from the cache until the window ends, then probed again", async () => {
+        const time = clock(NOW);
+        let calls = 0;
+        const cached = new CachedProbe(async () => (calls += 1), TTL, time.read);
+        expect(await cached.read()).toBe(1);
+        time.set(NOW + TTL - 1);
+        expect(await cached.read()).toBe(1);
+        time.set(NOW + TTL);
+        expect(await cached.read()).toBe(2);
+        expect(calls).toBe(2);
+    });
+
+    test("a failure is cached for the window like a value, so a flood under an outage probes once", async () => {
+        const time = clock(NOW);
+        const outage = new Error("fetch failed");
+        let calls = 0;
+        const cached = new CachedProbe(async () => {
+            calls += 1;
+            throw outage;
+        }, TTL, time.read);
+        for (let i = 0; i < 5; i += 1) {
+            await expect(cached.read()).rejects.toBe(outage);
+        }
+        expect(calls).toBe(1);
+        time.set(NOW + TTL);
+        await expect(cached.read()).rejects.toBe(outage);
+        expect(calls).toBe(2);
+    });
+
+    test("prime seeds the first window from a reading taken elsewhere", async () => {
+        const time = clock(NOW);
+        let calls = 0;
+        const cached = new CachedProbe(async () => (calls += 1), TTL, time.read);
+        cached.prime(99);
+        expect(await cached.read()).toBe(99);
+        expect(calls).toBe(0);
+        time.set(NOW + TTL);
+        expect(await cached.read()).toBe(1);
+    });
+
+    test("refuses a window that would cache nothing", () => {
+        expect(() => new CachedProbe(async () => 1, 0)).toThrow("ttlMs");
+    });
+});

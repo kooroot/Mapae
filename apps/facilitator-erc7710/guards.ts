@@ -9,13 +9,14 @@
 import {
     FixedWindowLimiter,
     SpendBudget,
+    isRateLimitError,
     type Erc7710SettleResponse,
     type Erc7710VerifyResponse,
 } from "@mapae/delegation";
 import {GIWA_SEPOLIA_CAIP2} from "@mapae/shared";
 import type {Budget} from "@mapae/store";
 import type {MiddlewareHandler} from "hono";
-import type {Address} from "viem";
+import {HttpRequestError, TimeoutError, type Address} from "viem";
 
 // ── Per-IP rate limit ──────────────────────────────────────────────────────────────
 
@@ -188,3 +189,105 @@ export class GasBudgets {
     }
 }
 
+// ── /health ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Why the framework check failed, as a closed set. `/health` is public through the
+ * tunnel, and the free text it used to carry (`redactForLog(error, 200)`) kept the RPC
+ * hostname and viem's version banner — an oracle for anyone deciding what to attack.
+ * The operator gets the redacted text in the log instead.
+ */
+export type FrameworkHealthError =
+    | "framework_paused"
+    | "owner_mismatch"
+    | "rpc_unreachable"
+    | "verification_failed";
+
+/**
+ * viem wraps a transport failure in `HttpRequestError` (or `TimeoutError`) and nests it
+ * as the `cause` of whatever action was running, so the chain is walked. A rate-limit
+ * answer that outlived the throttled transport's retries is the RPC refusing to answer,
+ * which is the same thing from here.
+ */
+function isRpcUnreachable(error: unknown): boolean {
+    if (isRateLimitError(error)) return true;
+    let current: unknown = error;
+    let depth = 0;
+    while (current instanceof Error && depth < 8) {
+        if (current instanceof HttpRequestError || current instanceof TimeoutError) return true;
+        current = current.cause;
+        depth += 1;
+    }
+    return false;
+}
+
+/**
+ * Map a `verifyFrameworkOperationalState` failure onto {@link FrameworkHealthError}.
+ *
+ * The verifier speaks in messages, not types. "active deployment admin identity
+ * mismatch" is the artifact disagreeing with `FRAMEWORK_ADMIN_ADDRESS`; the live admin
+ * state — owner, pending owner, paused — currently reaches here as one message,
+ * "DelegationManager is not operationally active", which cannot say which of the three
+ * it was and so classifies as `verification_failed`. `framework_paused` fires once the
+ * verifier names the pause.
+ */
+export function classifyFrameworkError(error: unknown): FrameworkHealthError {
+    if (isRpcUnreachable(error)) return "rpc_unreachable";
+    const message = error instanceof Error ? error.message : "";
+    if (/\bpaused\b/.test(message)) return "framework_paused";
+    if (/owner mismatch|admin identity mismatch/.test(message)) return "owner_mismatch";
+    return "verification_failed";
+}
+
+/**
+ * One reading per window, shared by every caller that arrives while it is fresh or in
+ * flight. Both routes that touch it are reachable without a rate limit — `/health` is
+ * public and the hosted shop's loopback calls are exempt — so the probe is what bounds
+ * the RPC work a flood can cause: at most one per window, whichever way it went.
+ *
+ * A failure is cached like a value. Not caching it looked kinder — the next caller gets
+ * a fresh try — but under an RPC outage that turns a `/health` flood into one probe per
+ * round trip, each of them a batch of reads queued ahead of the settlement whose
+ * receipt is being awaited. A caller inside the window gets the same answer either way;
+ * the window is what makes the answer cheap.
+ */
+export class CachedProbe<T> {
+    #settled?: {until: number; outcome: {ok: true; value: T} | {ok: false; error: unknown}};
+    #pending?: Promise<T>;
+
+    constructor(
+        private readonly probe: () => Promise<T>,
+        private readonly ttlMs: number,
+        private readonly clock: () => number = Date.now,
+    ) {
+        if (!Number.isInteger(ttlMs) || ttlMs < 1) throw new Error("ttlMs must be a positive integer");
+    }
+
+    /** Seed the cache with a reading taken elsewhere, so the first window issues no probe. */
+    prime(value: T): void {
+        this.#settled = {until: this.clock() + this.ttlMs, outcome: {ok: true, value}};
+    }
+
+    async read(): Promise<T> {
+        const settled = this.#settled;
+        if (settled && this.clock() < settled.until) {
+            if (settled.outcome.ok) return settled.outcome.value;
+            throw settled.outcome.error;
+        }
+        this.#pending ??= this.#run();
+        return this.#pending;
+    }
+
+    async #run(): Promise<T> {
+        try {
+            const value = await this.probe();
+            this.#settled = {until: this.clock() + this.ttlMs, outcome: {ok: true, value}};
+            return value;
+        } catch (error) {
+            this.#settled = {until: this.clock() + this.ttlMs, outcome: {ok: false, error}};
+            throw error;
+        } finally {
+            this.#pending = undefined;
+        }
+    }
+}

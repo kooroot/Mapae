@@ -79,8 +79,24 @@ payer별 몫도 `STORE_PATH`의 `payer:<주소>` 시리즈에 남아 재시작�
   진행 중인 예약까지 뺀 값이라 브로드캐스트 도중에는 `limit - spent`와 다르다. 마지막
   영수증이 예약보다 비싸면 `spentWei`가 `limitWei`를 넘고 `remainingWei`는 `"0"`이다.
 
-`/health`는 공개 엔드포인트라 예산을 내보내지 않는다 — "오늘 얼마나 남았나"는 하루를
-말리는 게 남는 장사인지 재는 숫자다.
+## `/health`
+
+터널을 통해 공개된 엔드포인트. 프레임워크 검증 실패 이유는 닫힌 집합으로만 나가고,
+가린 원문은 운영자 로그(`[readiness]`)에 남는다 — 자유 문장이던 동안 RPC 호스트명과
+viem 버전 문구가 그대로 새어 나갔다.
+
+| `frameworkError` | 뜻 |
+| --- | --- |
+| `null` | 검증 통과 |
+| `rpc_unreachable` | RPC가 답하지 않았다(전송 실패, 타임아웃, 재시도를 넘긴 rate limit) |
+| `owner_mismatch` | 배포 아티팩트의 관리자가 `FRAMEWORK_ADMIN_ADDRESS`와 다르다 |
+| `framework_paused` | DelegationManager가 멈춰 있다 |
+| `verification_failed` | 그 밖의 모든 것 — 체인 ID, 런타임 코드, NAME/VERSION, 라이브 관리자 상태 |
+
+프레임워크 검증과 서명자 잔고는 각각 5초 창에 한 번만 읽고, 실패도 값처럼 캐시한다.
+공개 경로에 요청 제한이 없는 대신 창당 프로브 하나가 RPC 큐에 들어가는 전부다.
+예산은 내보내지 않는다 — "오늘 얼마나 남았나"는 하루를 말리는 게 남는 장사인지 재는
+숫자라 `/metrics` 토큰 뒤에 둔다.
 
 ## 기동
 
@@ -92,5 +108,5 @@ bun run dev
 ## 검증
 
 ```bash
-bun test apps/facilitator-erc7710   # 요청 제한·payer 몫 + /metrics 순수 함수 + 재시작 증명
+bun test apps/facilitator-erc7710   # 요청 제한·payer 몫·/health 분류 + /metrics 순수 함수 + 재시작 증명
 ```
