@@ -16,7 +16,17 @@ import {
 import {GIWA_SEPOLIA_CAIP2, redactForLog} from "@mapae/shared";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
 import {Hono} from "hono";
-import {BaseError, HttpRequestError, TimeoutError, getAddress, type Address, type Hex} from "viem";
+import {
+    BaseError,
+    ContractFunctionExecutionError,
+    ContractFunctionRevertedError,
+    HttpRequestError,
+    RpcRequestError,
+    TimeoutError,
+    getAddress,
+    type Address,
+    type Hex,
+} from "viem";
 import {
     BudgetExhausted,
     CachedProbe,
@@ -70,6 +80,34 @@ function clock(start: number) {
         },
     };
 }
+
+const RPC = "https://rpc.example/very-secret-key";
+
+/** Enough ABI for viem to format a failure of the redemption's entry point. */
+const REDEEM_ABI = [
+    {type: "function", name: "redeemDelegations", inputs: [], outputs: [], stateMutability: "nonpayable"},
+] as const;
+
+/** A simulation failure as viem raises it: its own wrapper over whatever the call died of. */
+function simulationFailed(cause: BaseError): ContractFunctionExecutionError {
+    return new ContractFunctionExecutionError(cause, {abi: REDEEM_ABI, functionName: "redeemDelegations"});
+}
+
+/** A revert with the reason the contract chose — a caveat enforcer's, so the caller's. */
+function reverted(reason: string): ContractFunctionExecutionError {
+    return simulationFailed(
+        new ContractFunctionRevertedError({
+            abi: REDEEM_ABI,
+            functionName: "redeemDelegations",
+            message: `execution reverted: ${reason}`,
+        }),
+    );
+}
+
+/** The two shapes of a rate limit that outlived the throttled transport's retries. */
+const RATE_LIMITED_BY_HTTP = () => new HttpRequestError({url: RPC, status: 429, details: "over rate limit"});
+const RATE_LIMITED_BY_RPC = () =>
+    new RpcRequestError({body: {}, error: {code: -32016, message: "over rate limit"}, url: RPC});
 
 describe("rateLimitByIp", () => {
     const PUBLIC = {"cf-connecting-ip": "203.0.113.5", "content-type": "application/json"};
@@ -449,15 +487,24 @@ describe("GasBudgets", () => {
 
 describe("isRpcUnreachable", () => {
     test("a simulation that died on transport is the RPC not answering; a revert is a verdict", () => {
-        const transport = new HttpRequestError({url: "https://rpc.example/key", details: "fetch failed"});
+        const transport = new HttpRequestError({url: RPC, details: "fetch failed"});
         expect(isRpcUnreachable(new Error("simulation failed", {cause: transport}))).toBe(true);
         expect(isRpcUnreachable(new Error("execution reverted: caveat"))).toBe(false);
+    });
+
+    test("a revert is the RPC having answered, whatever its reason says — the reason is the caller's", () => {
+        // A rate limit is recognised by its text, and a delegation names its own caveat
+        // enforcers: a revert reading "rate limit exceeded" must not become a non-answer.
+        expect(isRpcUnreachable(reverted("rate limit exceeded"))).toBe(false);
+        expect(isRpcUnreachable(reverted("too many requests"))).toBe(false);
+        // The real shapes still are: a 429 on the transport, or proxyd's JSON-RPC error
+        // under a 200, both wrapped by the simulation that hit them.
+        expect(isRpcUnreachable(simulationFailed(RATE_LIMITED_BY_HTTP()))).toBe(true);
+        expect(isRpcUnreachable(simulationFailed(RATE_LIMITED_BY_RPC()))).toBe(true);
     });
 });
 
 describe("beforeBroadcast", () => {
-    const RPC = "https://rpc.example/very-secret-key";
-
     /** What the step's promise rejected with, or `undefined` when it resolved. */
     async function raised(step: () => Promise<unknown>): Promise<unknown> {
         return beforeBroadcast(step).then(
@@ -495,10 +542,32 @@ describe("beforeBroadcast", () => {
             throw new TimeoutError({body: {}, url: RPC});
         });
         expect(timeout).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
-        const limited = await raised(async () => {
-            throw new Error("over rate limit");
+        const limitedByHttp = await raised(async () => {
+            throw simulationFailed(RATE_LIMITED_BY_HTTP());
         });
-        expect(limited).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
+        expect(limitedByHttp).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
+        const limitedByRpc = await raised(async () => {
+            throw simulationFailed(RATE_LIMITED_BY_RPC());
+        });
+        expect(limitedByRpc).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
+    });
+
+    test("a revert whose reason claims a rate limit is still the verdict: through untouched, a rejected row", async () => {
+        // The reason string is the contract's, and the caller chose the contract. A
+        // refusal that could talk its way into the not-ready answer would leave no ledger
+        // row and send the buyer to retry — the exact pair the not-ready path exists to
+        // avoid for a genuine non-answer.
+        const revert = reverted("rate limit exceeded");
+        await expect(
+            beforeBroadcast(async () => {
+                throw revert;
+            }),
+        ).rejects.toBe(revert);
+        expect(describeFailure(revert)).toEqual({
+            outcome: "rejected",
+            errorCode: "delegation_rejected",
+            transaction: null,
+        });
     });
 
     test("a revert or the gas cap from the same stage passes through untouched — it is the verdict", async () => {
@@ -522,7 +591,6 @@ describe("beforeBroadcast", () => {
 });
 
 describe("describeFailure", () => {
-    const RPC = "https://rpc.example/very-secret-key";
     const HASH = `0x${"c".repeat(64)}` as Hex;
 
     test("the RPC dying before the broadcast is no verdict: the not-ready answer, and no ledger row", () => {
@@ -595,7 +663,6 @@ describe("describeFailure", () => {
 });
 
 describe("classifyFrameworkError", () => {
-    const RPC = "https://rpc.example/very-secret-key";
 
     test("a transport failure anywhere in the cause chain is the RPC being unreachable", () => {
         const transport = new HttpRequestError({url: RPC, details: "fetch failed"});

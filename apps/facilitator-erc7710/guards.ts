@@ -23,7 +23,13 @@ import {
 import {GIWA_SEPOLIA_CAIP2, redactForLog} from "@mapae/shared";
 import type {Budget} from "@mapae/store";
 import type {MiddlewareHandler} from "hono";
-import {HttpRequestError, TimeoutError, type Address, type Hex} from "viem";
+import {
+    ContractFunctionRevertedError,
+    HttpRequestError,
+    TimeoutError,
+    type Address,
+    type Hex,
+} from "viem";
 
 // ── Per-IP rate limit ──────────────────────────────────────────────────────────────
 
@@ -395,20 +401,26 @@ export type FrameworkHealthError =
  * viem wraps a transport failure in `HttpRequestError` (or `TimeoutError`) and nests it
  * as the `cause` of whatever action was running, so the chain is walked. A rate-limit
  * answer that outlived the throttled transport's retries is the RPC refusing to answer,
- * which is the same thing from here. {@link beforeBroadcast} asks the same question of
- * the stage before the broadcast on both routes: a transport death in there is no
- * verdict on the delegation either.
+ * which is the same thing from here — but that one is read from the error's text, and a
+ * revert's text belongs to the contract: a delegation names its own caveat enforcers, so
+ * a caller can make the simulation revert with "rate limit exceeded" and, until this
+ * looked, was answered not-ready for a refusal — no ledger row, and an invitation to
+ * retry. A `ContractFunctionRevertedError` anywhere in the chain is the RPC having
+ * answered, whatever the reason says, and settles the question before the text is
+ * consulted. {@link beforeBroadcast} asks the same question of the stage before the
+ * broadcast on both routes: a transport death in there is no verdict on the delegation
+ * either.
  */
 export function isRpcUnreachable(error: unknown): boolean {
-    if (isRateLimitError(error)) return true;
     let current: unknown = error;
     let depth = 0;
     while (current instanceof Error && depth < 8) {
+        if (current instanceof ContractFunctionRevertedError) return false;
         if (current instanceof HttpRequestError || current instanceof TimeoutError) return true;
         current = current.cause;
         depth += 1;
     }
-    return false;
+    return isRateLimitError(error);
 }
 
 /**
