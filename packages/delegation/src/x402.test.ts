@@ -15,6 +15,7 @@ import {
     withDelegationSignature,
 } from "./policy.js";
 import {
+    FACILITATOR_NOT_READY,
     RATE_LIMITED,
     SETTLEMENT_UNCONFIRMED,
     decideSettlement,
@@ -408,6 +409,22 @@ describe("D5 settlement outcome ladder", () => {
                 {
                     reachable: true,
                     body: {success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: RATE_LIMITED},
+                },
+                PAYER,
+            ),
+        ).toEqual({kind: "unavailable"});
+    });
+
+    test("a settle the facilitator was not ready for is unavailable, never failed", () => {
+        // The readiness probe failed for this caller before the body was read. Until
+        // this reason existed it reached here as `delegation_rejected` — a verdict on a
+        // delegation nobody examined, from a facilitator whose RPC had blinked.
+        expect(FACILITATOR_NOT_READY).toBe("facilitator_not_ready");
+        expect(
+            decideSettlement(
+                {
+                    reachable: true,
+                    body: {success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: FACILITATOR_NOT_READY},
                 },
                 PAYER,
             ),

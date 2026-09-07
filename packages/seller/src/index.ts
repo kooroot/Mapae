@@ -156,8 +156,9 @@ export interface MapaeSeller {
      * `/settle`, and only a confirmed settlement lets the next handler run:
      *
      * - 503 `facilitator_unavailable` — `/supported` or `/verify` could not be reached,
-     *   or the facilitator refused to look at the payment (its per-address rate limit).
-     *   Nothing was charged; the buyer may retry later with the same payment.
+     *   or the facilitator refused to look at the payment (its per-address rate limit,
+     *   or a readiness check it failed). Nothing was charged; the buyer may retry later
+     *   with the same payment.
      * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment.
      * - 403 `delegation_rejected` — the facilitator examined the delegation and refused it.
      * - 504 `settlement_unknown` — the facilitator broadcast but no receipt was seen, or

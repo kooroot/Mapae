@@ -59,6 +59,16 @@ export const CLIENT_IP_HEADER = "x-mapae-client-ip";
  */
 export const RATE_LIMITED = "rate_limited";
 
+/**
+ * The facilitator's readiness probe failed for the caller that shared it, so no verdict
+ * was formed. `/verify` answers it as a 503 — the seller reads any non-2xx there as
+ * unavailable, and so does anyone else's client. `/settle` cannot use a status code
+ * for it, since a non-2xx there means "the answer was lost"; it answers a 200 carrying
+ * this reason, and the seller reads it as it reads {@link RATE_LIMITED}: nothing was
+ * examined, nothing was charged, try again later.
+ */
+export const FACILITATOR_NOT_READY = "facilitator_not_ready";
+
 export interface Erc7710VerifyResponse {
     isValid: boolean;
     payer?: Address;
@@ -81,8 +91,9 @@ export interface Erc7710SettleResponse {
  * payer's balance, and collapsing them is the whole failure this type exists to prevent
  * — a rejection invites a retry, and retrying an `unknown` can pay twice. `unavailable`
  * is the facilitator refusing to look at the request at all — its rate limit fired
- * before the body was read — so nothing was charged and nothing is in doubt: the buyer
- * may present the same payment again later, which neither of the other two may say.
+ * before the body was read, or its readiness probe failed — so nothing was charged and
+ * nothing is in doubt: the buyer may present the same payment again later, which
+ * neither of the other two may say.
  *
  * Verification refusal is not one of them. It is a boolean answered before settlement is
  * ever attempted, so giving this union a `rejected` variant would add a case no producer
@@ -161,8 +172,8 @@ export function decideVerification(
  * connection refused, non-2xx, unparseable JSON. All of them are `unknown` rather than
  * `failed`, because none of them distinguishes "the request never landed" from "it
  * landed, broadcast, and the answer was lost on the way back". A body that says the
- * request was refused unread ({@link RATE_LIMITED}) is the one answer that rules both
- * out, and is `unavailable`.
+ * request was refused unexamined ({@link RATE_LIMITED}, {@link FACILITATOR_NOT_READY})
+ * is the one answer that rules both out, and is `unavailable`.
  */
 export function decideSettlement(
     response: {reachable: boolean; body?: unknown},
@@ -172,7 +183,9 @@ export function decideSettlement(
         return {kind: "unknown"};
     }
     const body = response.body as Erc7710SettleResponse;
-    if (body.errorReason === RATE_LIMITED) return {kind: "unavailable"};
+    if (body.errorReason === RATE_LIMITED || body.errorReason === FACILITATOR_NOT_READY) {
+        return {kind: "unavailable"};
+    }
     if (body.errorReason === SETTLEMENT_UNCONFIRMED) {
         return {kind: "unknown", transaction: readTransaction(body.transaction)};
     }

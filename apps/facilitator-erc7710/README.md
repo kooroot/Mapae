@@ -111,6 +111,16 @@ viem 버전 문구가 그대로 새어 나갔다.
 대신 창당 프로브 하나가 RPC 큐에 들어가는 전부다. 프레임워크 검증의 실패는 그 프로브를
 함께 기다린 호출자에게만 가고 다음 호출자는 다시 읽는다: 열 번의 읽기 중 하나가 타임아웃난
 것이 5초 동안 모든 판매자를 거절하는 일이 되어선 안 된다.
+
+프로브가 실패한 호출자는 판정 없이 돌려보낸다 — 위임을 본 적이 없으니
+`delegation_rejected`라 부르지 않는다. 판매자 사다리는 둘 다 503 `facilitator_unavailable`
+(청구된 것 없음, 나중에 같은 결제로 재시도)로 읽는다.
+
+| 경로 | 응답 |
+| --- | --- |
+| `/verify` | `503 {isValid: false, invalidReason: "facilitator_not_ready"}` — 2xx가 아니면 판매자는 unavailable로 읽는다 |
+| `/settle` | `200 {success: false, network, errorReason: "facilitator_not_ready"}` — 2xx가 아니면 "답을 잃었다"가 되므로 본문으로 말한다 |
+
 예산은 내보내지 않는다 — "오늘 얼마나 남았나"는 하루를 말리는 게 남는 장사인지 재는
 숫자라 `/metrics` 토큰 뒤에 둔다.
 

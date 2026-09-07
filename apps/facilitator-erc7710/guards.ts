@@ -8,6 +8,7 @@
  */
 import {
     CLIENT_IP_HEADER,
+    FACILITATOR_NOT_READY,
     FixedWindowLimiter,
     RATE_LIMITED,
     SpendBudget,
@@ -98,6 +99,55 @@ export function rateLimitByIp(
         counted += 1;
         if (counted % SWEEP_EVERY === 0) limiter.sweep(now);
         if (!limiter.tryConsume(limiterKey(ip), now)) return c.json(refusal);
+        return next();
+    };
+}
+
+// ── Readiness ──────────────────────────────────────────────────────────────────────
+
+/** How a route answers a caller whose readiness probe failed: the status and the body. */
+export interface NotReadyAnswer<Body extends Erc7710VerifyResponse | Erc7710SettleResponse> {
+    status: 200 | 503;
+    body: Body;
+}
+
+/**
+ * What a caller whose readiness probe failed is answered with. No verdict was formed —
+ * the delegation was never looked at — and until this existed both routes answered as
+ * though one had been (`delegation_rejected`), which sent a buyer to re-sign a grant
+ * nothing had refused whenever one RPC read timed out.
+ *
+ * `/verify` answers a 503: the seller reads any non-2xx there as *unavailable*, and so
+ * does anyone else's x402 client. `/settle` cannot — a non-2xx there is "the answer was
+ * lost", a payment in doubt — so it answers a 200 whose reason the seller's ladder reads
+ * as unavailable, exactly like {@link SETTLE_RATE_LIMITED}.
+ */
+export const VERIFY_NOT_READY: NotReadyAnswer<Erc7710VerifyResponse> = {
+    status: 503,
+    body: {isValid: false, invalidReason: FACILITATOR_NOT_READY},
+};
+export const SETTLE_NOT_READY: NotReadyAnswer<Erc7710SettleResponse> = {
+    status: 200,
+    body: {success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: FACILITATOR_NOT_READY},
+};
+
+/**
+ * Refuse the request when the readiness probe fails, before the body is read. The probe
+ * is shared per window (see {@link CachedProbe}), so a caller here either reads the
+ * window's value or waits on the one probe in flight; it never adds a read of its own.
+ * The probe logs its own failure, once; the caller's answer carries the closed reason
+ * and nothing about why.
+ */
+export function requireReadiness(
+    readiness: Pick<CachedProbe<unknown>, "read">,
+    refusal: NotReadyAnswer<Erc7710VerifyResponse | Erc7710SettleResponse>,
+): MiddlewareHandler {
+    return async (c, next) => {
+        try {
+            await readiness.read();
+        } catch {
+            return c.json(refusal.body, refusal.status);
+        }
         return next();
     };
 }

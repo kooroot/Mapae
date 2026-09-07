@@ -21,7 +21,12 @@ import {
     type Erc7710DelegationPayload,
 } from "@mapae/shared";
 import {ENTRY_POINT_V07} from "@mapae/delegation/config";
-import {CLIENT_IP_HEADER, RATE_LIMITED, SETTLEMENT_UNCONFIRMED} from "@mapae/delegation/facilitator-contract";
+import {
+    CLIENT_IP_HEADER,
+    FACILITATOR_NOT_READY,
+    RATE_LIMITED,
+    SETTLEMENT_UNCONFIRMED,
+} from "@mapae/delegation/facilitator-contract";
 import {
     buildD3Policies,
     preparePeriodDelegation,
@@ -480,15 +485,19 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
         expect(throttledVerify.paths()).toEqual(["/supported", "/verify"]);
         expect(verify.seen.served).toBe(0);
 
-        const throttledSettle = facilitator({
-            "/settle": json({success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: RATE_LIMITED}),
-        });
-        const settle = seller(paywall({fetch: throttledSettle.fetch}));
-        const refusedAtSettle = await pay(settle.app);
-        expect(refusedAtSettle.status).toBe(503);
-        expect(await refusedAtSettle.json()).toEqual({error: "facilitator_unavailable"});
-        expect(throttledSettle.paths()).toEqual(["/supported", "/verify", "/settle"]);
-        expect(settle.seen.served).toBe(0);
+        // /settle's refusals that examined nothing — the limiter, or a readiness probe
+        // that failed — cannot use a status code, so they ride in the body's reason.
+        for (const errorReason of [RATE_LIMITED, FACILITATOR_NOT_READY]) {
+            const throttledSettle = facilitator({
+                "/settle": json({success: false, network: GIWA_SEPOLIA_CAIP2, errorReason}),
+            });
+            const settle = seller(paywall({fetch: throttledSettle.fetch}));
+            const refusedAtSettle = await pay(settle.app);
+            expect(refusedAtSettle.status).toBe(503);
+            expect(await refusedAtSettle.json()).toEqual({error: "facilitator_unavailable"});
+            expect(throttledSettle.paths()).toEqual(["/supported", "/verify", "/settle"]);
+            expect(settle.seen.served).toBe(0);
+        }
     });
 
     test("403 delegation_rejected when the facilitator refuses, or names a payer we did not send", async () => {

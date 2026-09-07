@@ -47,10 +47,13 @@ import {
     GasBudgets,
     PayerBudgets,
     RATE_WINDOW_MS,
+    SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
+    VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     classifyFrameworkError,
     rateLimitByIp,
+    requireReadiness,
     type FrameworkHealthError,
 } from "./guards.js";
 import {bearerTokenMatches, metricsReport, readMetricsToken} from "./metrics.js";
@@ -660,10 +663,13 @@ app.get("/metrics", (c) => {
 // before the body is read, so a refused request costs a Map lookup and no RPC.
 app.use("/verify", rateLimitByIp(limiter, VERIFY_RATE_LIMITED));
 app.use("/settle", rateLimitByIp(limiter, SETTLE_RATE_LIMITED));
+// After the limiter and before the body: a caller whose probe failed is told the
+// facilitator was not ready, not that its delegation was refused — no verdict exists.
+app.use("/verify", requireReadiness(readiness, VERIFY_NOT_READY));
+app.use("/settle", requireReadiness(readiness, SETTLE_NOT_READY));
 
 app.post("/verify", async (c) => {
     try {
-        await readiness.read();
         const payment = validateDelegatedPayment(await readJson(c), {
             delegationManager: manager,
             facilitator: relayer.address,
@@ -688,7 +694,6 @@ app.post("/verify", async (c) => {
 // nothing must never be called. The status code is transport here; the body is the claim.
 app.post("/settle", async (c) => {
     try {
-        await readiness.read();
         const payment = validateDelegatedPayment(await readJson(c), {
             delegationManager: manager,
             facilitator: relayer.address,

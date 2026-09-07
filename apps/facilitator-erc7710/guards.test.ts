@@ -4,7 +4,13 @@
  * clock the test moves by hand wherever a window matters.
  */
 import {afterEach, describe, expect, test} from "bun:test";
-import {CLIENT_IP_HEADER, FixedWindowLimiter, SpendBudget, budgetDay} from "@mapae/delegation";
+import {
+    CLIENT_IP_HEADER,
+    FACILITATOR_NOT_READY,
+    FixedWindowLimiter,
+    SpendBudget,
+    budgetDay,
+} from "@mapae/delegation";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
 import {Hono} from "hono";
 import {HttpRequestError, TimeoutError, getAddress, type Address} from "viem";
@@ -15,12 +21,15 @@ import {
     PAYER_IDLE_MS,
     PayerBudgets,
     RATE_WINDOW_MS,
+    SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
     SWEEP_EVERY,
+    VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     classifyFrameworkError,
     limiterKey,
     rateLimitByIp,
+    requireReadiness,
 } from "./guards.js";
 
 const ALICE = "0x1111111111111111111111111111111111111111" as Address;
@@ -195,6 +204,80 @@ describe("rateLimitByIp", () => {
         expect((await settle(app, PUBLIC)).body).toEqual(SETTLE_RATE_LIMITED);
         expect(reached).toBe(1);
         expect(store.ledger.summary({sinceMs: 0}).total).toBe(1);
+    });
+});
+
+describe("requireReadiness", () => {
+    const HEADERS = {"cf-connecting-ip": "203.0.113.5", "content-type": "application/json"};
+
+    /** Both routes behind the gate, over a probe the test can make fail or pass. */
+    function gated(outcome: () => Promise<unknown>) {
+        const readiness = new CachedProbe(outcome, {ttlMs: 5_000, cacheFailures: false});
+        const app = new Hono();
+        let reached = 0;
+        app.use("/verify", requireReadiness(readiness, VERIFY_NOT_READY));
+        app.use("/settle", requireReadiness(readiness, SETTLE_NOT_READY));
+        app.post("/verify", async (c) => {
+            reached += 1;
+            await c.req.text();
+            return c.json({isValid: true, payer: ALICE});
+        });
+        app.post("/settle", async (c) => {
+            reached += 1;
+            await c.req.text();
+            return c.json({success: true});
+        });
+        const post = async (path: "/verify" | "/settle") => {
+            const response = await app.request(path, {method: "POST", headers: HEADERS, body: "{}"});
+            return {status: response.status, body: (await response.json()) as unknown};
+        };
+        return {post, reached: () => reached};
+    }
+
+    test("/verify answers a failed probe with a 503, which the seller reads as unavailable", async () => {
+        const gate = gated(async () => {
+            throw new Error("fetch failed");
+        });
+        expect(await gate.post("/verify")).toEqual({
+            status: 503,
+            body: {isValid: false, invalidReason: "facilitator_not_ready"},
+        });
+        expect(gate.reached()).toBe(0);
+    });
+
+    test("/settle answers a failed probe with a 200 body, since a non-2xx there is a payment in doubt", async () => {
+        const gate = gated(async () => {
+            throw new Error("fetch failed");
+        });
+        const refused = await gate.post("/settle");
+        expect(refused.status).toBe(200);
+        expect(refused.body).toEqual(SETTLE_NOT_READY.body);
+        expect(SETTLE_NOT_READY.body.errorReason).toBe(FACILITATOR_NOT_READY);
+        expect(gate.reached()).toBe(0);
+    });
+
+    test("neither answer is the rejection a formed verdict would carry", () => {
+        expect(VERIFY_NOT_READY.body.invalidReason).not.toBe("delegation_rejected");
+        expect(SETTLE_NOT_READY.body.errorReason).not.toBe("delegation_rejected");
+        expect(FACILITATOR_NOT_READY).toBe("facilitator_not_ready");
+    });
+
+    test("a passing probe lets the handler read the body", async () => {
+        const gate = gated(async () => ({owner: ALICE, paused: false}));
+        expect(await gate.post("/verify")).toEqual({status: 200, body: {isValid: true, payer: ALICE}});
+        expect(await gate.post("/settle")).toEqual({status: 200, body: {success: true}});
+        expect(gate.reached()).toBe(2);
+    });
+
+    test("callers share the window's probe rather than each adding a read", async () => {
+        let probes = 0;
+        const gate = gated(async () => {
+            probes += 1;
+            return {};
+        });
+        await Promise.all([gate.post("/verify"), gate.post("/settle"), gate.post("/verify")]);
+        expect(probes).toBe(1);
+        expect(gate.reached()).toBe(3);
     });
 });
 
