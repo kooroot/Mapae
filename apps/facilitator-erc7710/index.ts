@@ -123,6 +123,25 @@ function readPositiveInteger(name: string, fallback: bigint): bigint {
     return BigInt(raw);
 }
 
+/**
+ * A tenth of the day unless set. A day under 10 wei — a dry-run figure for exercising
+ * `budget_exhausted` — has no tenth, and is refused naming that: handing the "0" to the
+ * integer check blamed RELAYER_PAYER_DAILY_WEI, which the operator never wrote. Larger
+ * than the day is refused rather than clamped: a share above the ceiling is a
+ * configuration that says one thing and does another.
+ */
+function readPayerShare(dailyWei: bigint): bigint {
+    const tenth = dailyWei / 10n;
+    if (tenth === 0n && !process.env.RELAYER_PAYER_DAILY_WEI?.trim()) {
+        throw new Error(
+            "RELAYER_DAILY_WEI under 10 wei leaves no default payer share; set RELAYER_PAYER_DAILY_WEI",
+        );
+    }
+    const share = readPositiveInteger("RELAYER_PAYER_DAILY_WEI", tenth);
+    if (share > dailyWei) throw new Error("RELAYER_PAYER_DAILY_WEI must not exceed RELAYER_DAILY_WEI");
+    return share;
+}
+
 async function readDeployment() {
     const path =
         process.env.DELEGATION_DEPLOYMENT_PATH ??
@@ -206,15 +225,7 @@ const RELAYER_DAILY_WEI = readPositiveInteger("RELAYER_DAILY_WEI", 500_000_000_0
 // tUSDC could spend the whole day — about 1,500 calls — at zero cost, and every other
 // seller got `budget_exhausted` until UTC midnight. A tenth of the day per payer means
 // draining it takes ten funded grants, and nine of them leave room for everyone else.
-// Larger than the day is refused rather than clamped: a share above the ceiling is a
-// configuration that says one thing and does another.
-const RELAYER_PAYER_DAILY_WEI = readPositiveInteger(
-    "RELAYER_PAYER_DAILY_WEI",
-    RELAYER_DAILY_WEI / 10n,
-);
-if (RELAYER_PAYER_DAILY_WEI > RELAYER_DAILY_WEI) {
-    throw new Error("RELAYER_PAYER_DAILY_WEI must not exceed RELAYER_DAILY_WEI");
-}
+const RELAYER_PAYER_DAILY_WEI = readPayerShare(RELAYER_DAILY_WEI);
 // Requests per address per hour on /verify and /settle together, refused before the body
 // is read. A real seller's payment is one /verify and one /settle, so the default admits
 // 300 payments an hour from one address — more than the day's gas budget can settle —

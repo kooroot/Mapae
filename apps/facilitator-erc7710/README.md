@@ -11,7 +11,7 @@ ERC-7710 위임 결제의 검증·정산 서비스. 판매자가 `/verify`로 �
 | `STORE_PATH` | `./data/facilitator.sqlite` | 정산 원장과 그날 쓴 가스를 남기는 `@mapae/store` 파일. `:memory:`는 드라이런용 — 재시작하면 아무것도 남지 않는다 |
 | `METRICS_TOKEN` | (없음) | 없으면 `GET /metrics`는 `503 metrics_disabled`. 16자 이상으로 두면 `Authorization: Bearer <token>`에 답한다 |
 | `RELAYER_DAILY_WEI` | `500000000000000` (0.0005 ETH) | 정산 서명자가 하루(UTC)에 쓸 수 있는 가스 상한, wei |
-| `RELAYER_PAYER_DAILY_WEI` | `RELAYER_DAILY_WEI / 10` | payer 한 명이 하루에 쓰게 하는 가스 몫, wei. `RELAYER_DAILY_WEI`보다 크면 기동을 거부한다 |
+| `RELAYER_PAYER_DAILY_WEI` | `RELAYER_DAILY_WEI / 10` | payer 한 명이 하루에 쓰게 하는 가스 몫, wei. `RELAYER_DAILY_WEI`보다 크면 기동을 거부하고, `RELAYER_DAILY_WEI`가 10 wei 미만이면 기본값이 없으므로 직접 정해야 한다 |
 | `FACILITATOR_RATE_PER_HOUR` | `600` | 한 IP가 한 시간에 `/verify`와 `/settle`을 합쳐 부를 수 있는 횟수 |
 | `MAX_SETTLEMENT_AMOUNT` | `10.00` | 한 번에 정산하는 결제 금액 상한(tUSDC). 온체인 caveat이 본 통제고, 이것은 백스톱이다 |
 
