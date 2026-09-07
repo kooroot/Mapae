@@ -3,7 +3,7 @@ import {fromTokenAmount} from "@mapae/shared";
 import type {Delegation} from "@metamask/smart-accounts-kit";
 import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {isHash, type Hash} from "viem";
-import {postBootstrap} from "./grant";
+import {bootstrapReplyField, postBootstrap} from "./grant";
 import type {Locale} from "./i18n";
 
 /**
@@ -33,24 +33,18 @@ export function topUpPermissionContext(root: Delegation): `0x${string}` {
 const BASE_UNITS = /^(0|[1-9]\d*)$/;
 
 /**
- * Validate, never cast. The body is whatever the sponsor's JSON parsed to — `postBootstrap`
- * only labels it — and two of its fields land somewhere that trusts them: the amounts in
- * `BigInt`, the funding hash in an explorer href. A field that is not a string is absent.
+ * Every field is read through `bootstrapReplyField`, never cast: the body is whatever the
+ * sponsor's JSON parsed to, and two of its fields land somewhere that trusts them — the
+ * amounts in `BigInt`, the funding hash in an explorer href.
  */
-function stringField(body: unknown, key: string): string | undefined {
-    if (typeof body !== "object" || body === null) return undefined;
-    const value = (body as Record<string, unknown>)[key];
-    return typeof value === "string" ? value : undefined;
-}
-
 export function interpretTopUp(reply: {ok: boolean; body: unknown}): TopUpOutcome {
     const {ok, body} = reply;
-    const reason = stringField(body, "reason");
+    const reason = bootstrapReplyField(body, "reason");
     if (!ok) {
         return reason === "faucet_recently_used" ? {kind: "recently_used"} : {kind: "refused", reason};
     }
-    const mintedBase = stringField(body, "mintedBase") ?? "";
-    const targetBase = stringField(body, "targetBase") ?? "";
+    const mintedBase = bootstrapReplyField(body, "mintedBase") ?? "";
+    const targetBase = bootstrapReplyField(body, "targetBase") ?? "";
     if (!BASE_UNITS.test(mintedBase) || !BASE_UNITS.test(targetBase)) {
         // A success without the amounts is a reply this client was not written against.
         return {kind: "refused"};
@@ -62,7 +56,7 @@ export function interpretTopUp(reply: {ok: boolean; body: unknown}): TopUpOutcom
         // The mint happened whatever the receipt field looks like — the amounts say so —
         // so a malformed hash costs the "View transaction" link, not the outcome. The same
         // `isHash` gate `RevokeButton` puts in front of its own explorer href.
-        const transaction = stringField(body, "fundingTransaction");
+        const transaction = bootstrapReplyField(body, "fundingTransaction");
         return transaction !== undefined && isHash(transaction)
             ? {kind: "minted", amount: minted, transaction}
             : {kind: "minted", amount: minted};
@@ -86,6 +80,7 @@ export const FAUCET_COPY: Record<
         faucetOff: string;
         recentlyUsed: string;
         budgetExhausted: string;
+        rateLimited: string;
         feeTooHigh: string;
         failed: string;
         viewTransaction: string;
@@ -102,6 +97,8 @@ export const FAUCET_COPY: Record<
         recentlyUsed:
             "This account already received testnet balance in the last 24 hours. Try again tomorrow.",
         budgetExhausted: "Today's sponsored gas has been used up. Try again tomorrow.",
+        rateLimited:
+            "Too many requests from this network in the last hour. Try again in a little while.",
         feeTooHigh: "Network fees are temporarily high. Try again in a moment.",
         failed: "The testnet balance could not be added.",
         viewTransaction: "View transaction",
@@ -117,6 +114,8 @@ export const FAUCET_COPY: Record<
         recentlyUsed:
             "이 계정은 최근 24시간 안에 테스트넷 잔액을 이미 받았습니다. 내일 다시 시도해 주세요.",
         budgetExhausted: "오늘 대납 가능한 가스를 모두 썼습니다. 내일 다시 시도해 주세요.",
+        rateLimited:
+            "이 네트워크에서 최근 한 시간 안에 요청이 너무 많았습니다. 잠시 후 다시 시도해 주세요.",
         feeTooHigh: "네트워크 수수료가 일시적으로 높습니다. 잠시 후 다시 시도해 주세요.",
         failed: "테스트넷 잔액을 받지 못했습니다.",
         viewTransaction: "트랜잭션 보기",
@@ -141,6 +140,10 @@ export function topUpMessage(outcome: TopUpOutcome, locale: Locale): string {
                 case "budget_exhausted":
                 case "sponsor_unfunded":
                     return t.budgetExhausted;
+                case "rate_limited":
+                    // The per-IP cap sits in front of `/bootstrap` as a whole, so it trips
+                    // top-ups as readily as deployments. A wait, not a fault.
+                    return t.rateLimited;
                 case "fee_too_high":
                     return t.feeTooHigh;
                 default:

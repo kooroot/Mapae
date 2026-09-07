@@ -476,7 +476,7 @@ async function verifyUndeployedPermissionArtifact(
  * a good day, a string, an array or nothing at all on a bad one — and `postBootstrap`
  * only carries it. A field that is not a string is absent, so a reply this client was not
  * written against reads as "no reason" and lands on the generic sentence, never as UI
- * text nobody wrote. `interpretTopUp` in `faucet.ts` reads the same body the same way.
+ * text nobody wrote. `interpretTopUp` in `faucet.ts` reads its reply through this too.
  */
 export function bootstrapReplyField(body: unknown, key: string): string | undefined {
     if (typeof body !== "object" || body === null) return undefined;

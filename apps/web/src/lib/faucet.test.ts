@@ -130,6 +130,7 @@ describe("faucet copy", () => {
                 t.faucetOff,
                 t.recentlyUsed,
                 t.budgetExhausted,
+                t.rateLimited,
                 t.feeTooHigh,
                 t.failed,
                 t.viewTransaction,
@@ -168,5 +169,19 @@ describe("faucet copy", () => {
             FAUCET_COPY.en.failed,
         );
         expect(topUpMessage({kind: "faucet_off"}, "en")).toBe(FAUCET_COPY.en.faucetOff);
+    });
+
+    test("the sponsor's hourly per-network cap reads as a wait, not as a failed top-up", () => {
+        // The cap is checked before `/bootstrap` reads its body, so a top-up trips it as
+        // readily as a deployment. Before this the reason fell through to "could not be
+        // added", and a person who reads a wait as a fault retries until it is one.
+        const capped = {kind: "refused", reason: "rate_limited"} as const;
+        expect(topUpMessage(capped, "en")).toBe(
+            "Too many requests from this network in the last hour. Try again in a little while.",
+        );
+        expect(topUpMessage(capped, "ko")).toBe(
+            "이 네트워크에서 최근 한 시간 안에 요청이 너무 많았습니다. 잠시 후 다시 시도해 주세요.",
+        );
+        expect(topUpMessage(capped, "en")).not.toBe(FAUCET_COPY.en.failed);
     });
 });
