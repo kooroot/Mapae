@@ -615,12 +615,27 @@ describe("D5 settlement-unknown is not a rejection", () => {
     test("a genuine refusal is still PAYMENT_REJECTED", async () => {
         // 403 delegation_rejected and 422 settlement_failed both mean the payment did not
         // go through. Widening the unknown set to cover these would make every refusal
-        // look like a possible charge, which is its own way of being useless. 503 is the
-        // seller's verify-unavailable rung: nothing is charged at /verify, so a retry is
-        // safe and this stays a rejection, not an unknown.
-        for (const status of [402, 403, 422, 400, 500, 503]) {
+        // look like a possible charge, which is its own way of being useless.
+        for (const status of [402, 403, 422, 400, 500]) {
             const result = await resultFor(poisonedResponse(status));
             expect(result.ok === false && result.code).toBe("PAYMENT_REJECTED");
+        }
+    });
+
+    test("a seller that could not take the payment is SELLER_UNAVAILABLE, not a refusal", async () => {
+        // 503 is @mapae/seller's facilitator_unavailable rung — /supported or /verify out
+        // of reach, or the facilitator refusing to look (rate limit, not ready) on either
+        // call; 429 is the seller throttling. Nothing reached a verdict or a chain, so
+        // the same offer is safe to retry, and PAYMENT_REJECTED would send the caller to
+        // inspect a delegation nothing refused.
+        for (const status of [503, 429]) {
+            const result = await resultFor(poisonedResponse(status));
+            expect(result.ok).toBe(false);
+            if (result.ok) throw new Error("unreachable");
+            expect(result.code).toBe("SELLER_UNAVAILABLE");
+            expect(result.status).toBe(status);
+            expect(result.detail).toContain("nothing charged");
+            expect(result.detail).toContain("retry later");
         }
     });
 

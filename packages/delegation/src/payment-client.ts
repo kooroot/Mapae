@@ -57,6 +57,14 @@ export type DelegatedPaymentFailureCode =
     | "SIGNING_FAILED"
     | "PAYMENT_REJECTED"
     /**
+     * The seller could not take the payment: its facilitator was unreachable, rate-limited
+     * or not ready (`503 facilitator_unavailable`), or the seller itself throttled the call
+     * (`429`). Nothing was examined and nothing was charged, so the same offer may be
+     * retried later — unlike `PAYMENT_REJECTED`, whose "no" sends the caller to look at
+     * the delegation, and unlike `SETTLEMENT_UNKNOWN`, whose money may have moved.
+     */
+    | "SELLER_UNAVAILABLE"
+    /**
      * The payment header was delivered and the outcome is not known. **The payer may
      * already have been charged.**
      *
@@ -90,6 +98,18 @@ const SETTLEMENT_UNKNOWN_STATUSES = new Set([
     // charged" — the cheap mistake is a manual check, the expensive one a double payment.
     502, 520, 521, 522, 523, 524,
 ]);
+
+/**
+ * Statuses that mean "the seller could not take the payment", not "no" and not "lost".
+ *
+ * `503` is `@mapae/seller`'s `facilitator_unavailable` rung: `/supported` or `/verify` out
+ * of reach, or the facilitator refusing to look at the payment — its rate limit, or a
+ * readiness probe it failed — on either call. `429` is a seller (or the edge in front of
+ * it) throttling the call before any of that. In every case the payment reached no
+ * verdict and no chain, so the same offer is safe to retry later; reporting it as a
+ * rejection sent the caller to inspect a delegation nothing had refused.
+ */
+const SELLER_UNAVAILABLE_STATUSES = new Set([429, 503]);
 
 /** Signs a payment-specific leaf delegation for a seller's ERC-7710 offer. */
 export type DelegatedLeafProvider = (
@@ -453,6 +473,13 @@ export async function payForDelegatedResource(
             return failure(
                 "SETTLEMENT_UNKNOWN",
                 `seller could not confirm settlement (${second.status}) — the payer may already be charged`,
+                second.status,
+            );
+        }
+        if (SELLER_UNAVAILABLE_STATUSES.has(second.status)) {
+            return failure(
+                "SELLER_UNAVAILABLE",
+                `seller could not take the payment (${second.status}) — nothing charged, retry later`,
                 second.status,
             );
         }
