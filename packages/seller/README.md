@@ -90,7 +90,7 @@ interface SettlementReceipt {
 | status | meaning |
 |---|---|
 | `402` | no payment header — normal for humans and `curl` |
-| `503 facilitator_unavailable` | `/supported` or `/verify` unreachable; nothing charged, retry later |
+| `503 facilitator_unavailable` | `/supported` or `/verify` unreachable, or the facilitator would not look at the payment — its rate limit, or a readiness check it failed — on `/verify` or `/settle`; nothing charged, retry later with the same payment |
 | `400 malformed_payment` | header is not a usable ERC-7710 payment |
 | `403 delegation_rejected` | facilitator refused the delegation (expired, over limit, over the 10.00 cap, offer mismatch) |
 | `504 settlement_unknown` | broadcast but no receipt seen — the buyer **may** have been charged; do not re-sign blindly |
@@ -133,6 +133,12 @@ the gas. Per-settlement cap: 10.00 tUSDC. The middleware reads its signer addres
 DelegationManager from `GET /supported` and copies them into every offer, so your server
 needs no deployment files. The answer is cached for five minutes; if a re-fetch fails, the
 last answer keeps serving and `503` is only returned while nothing has ever been learned.
+
+It rate-limits `/verify` and `/settle` per caller address. When your `facilitator` is on
+loopback — the one caller whose own address it cannot see — the paywall forwards the
+buyer's `CF-Connecting-IP` as `X-Mapae-Client-IP` on both calls, so the buyer is counted
+rather than your server. A remote facilitator, `https://facilitator.mapae.io` included,
+is told nothing about the buyer.
 
 ## Timeouts
 

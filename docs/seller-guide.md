@@ -175,6 +175,10 @@ mapaePaywall({
 - 건당 상한은 `MAX_SETTLEMENT_AMOUNT` 기본 **10.00 tUSDC**다. 그보다 비싼 `price`는
   `/verify`에서 거절된다(아래 403).
 - 수취는 `payTo`로 직접 간다. 마패는 자금을 보관하지도, 환전하지도 않는다.
+- `/verify`와 `/settle`은 호출자 주소별로 요청을 제한한다. `facilitator`가 루프백에
+  있으면 — 자기 주소를 볼 수 없는 유일한 호출자 — 페이월이 손님의 `CF-Connecting-IP`를
+  `X-Mapae-Client-IP`로 두 호출에 실어 보내 서버가 아니라 손님으로 센다. 원격
+  facilitator(`facilitator.mapae.io` 포함)에는 손님에 대해 아무것도 알리지 않는다.
 
 ```bash
 curl -s https://facilitator.mapae.io/supported
@@ -191,7 +195,7 @@ curl -s https://facilitator.mapae.io/supported
 | 응답 | 뜻 | 할 일 |
 |---|---|---|
 | `402` | 결제 헤더가 없다 | 정상. 에이전트가 낼 차례다 |
-| `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했다. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 다시 시도 |
+| `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했거나, facilitator가 결제를 보지 않았다 — 요청 제한, 또는 실패한 준비 검사 — `/verify`든 `/settle`이든. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 같은 결제로 다시 시도 |
 | `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니다 | 에이전트 쪽 문제. `detail`이 이유를 말한다 |
 | `403 delegation_rejected` | facilitator가 위임을 거절했다 — 만료, 한도 초과, 상한(10.00) 초과, 오퍼 불일치 | 손님의 위임을 확인. 가격이 상한 안인지 확인 |
 | `504 settlement_unknown` | 브로드캐스트됐을 수 있으나 영수증을 못 봤다. **청구됐을 수 있다** | 탐색기에서 tx를 확인. 에이전트에게 다시 서명시키지 않는다 |

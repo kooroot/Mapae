@@ -313,10 +313,11 @@ class FacilitatorClient {
     #discovering?: Promise<FacilitatorKind | undefined>;
     /**
      * Whether the buyer is named to this facilitator. It reads {@link CLIENT_IP_HEADER}
-     * only from a caller whose address it cannot see — one on loopback — so that is the
-     * only facilitator the header goes to. A remote one sees this server's address and
-     * ignores the header; sending it there would carry the buyer's address across the
-     * internet for nothing.
+     * only from a caller whose address it cannot see, and with the tunnel as its one
+     * public path those callers are the ones on loopback — so loopback is this side's
+     * stand-in for that rule, and the only facilitator the header goes to. A remote one
+     * sees this server's address and ignores the header; sending it there would carry
+     * the buyer's address across the internet for nothing.
      */
     readonly #namesBuyer: boolean;
 
