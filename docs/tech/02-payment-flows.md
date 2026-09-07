@@ -145,9 +145,10 @@ revert하는 계정을 돈 내고 배포하게 된다.
 비울 수 있었다. faucet은 잔액이 1000 tUSDC(테스트넷, 실제 돈 아님) 미만인
 계정을 목표까지 채운다(`packages/delegation/src/faucet-policy.ts`). 스폰서에는
 위임 권한이 없어 payer 자금·한도·정산에는 닿지 못한다. 검증은
-`bun run test:e2e:bootstrap` — GIWA fork에서 15케이스(킬 스위치·승인 불일치·
+`bun run test:e2e:bootstrap` — GIWA fork에서 16케이스(킬 스위치·승인 불일치·
 relayer 공유 거부·타인 서명·high-s·배포·late binding·가스 회계·faucet 목표
-보충·중복·동시성·faucet 24시간 창·예산 소진·체인 실패 누출 가드) 15/15.
+보충·중복·동시성·faucet 24시간 창·예산 소진·체인 실패 누출 가드·IP당 시간
+제한과 무주소 면제) 16/16.
 
 ## 에이전트 자동화 (MCP)
 
@@ -341,7 +342,10 @@ fork에서 owner를 impersonate해 `pause()`를 실행하면 `/health`가 `ok=fa
 `frameworkError=framework_paused`, `frameworkPaused=true`를 보고하고, 결제는
 판정이 아니라 준비 안 됨(`/verify` 503 `facilitator_not_ready`)으로 돌려보내져
 에이전트가 `SELLER_UNAVAILABLE`(자금 불변, 나중에 재시도)을 받는 것까지 수트가
-확인한다.
+확인한다. 같은 답이 `/settle`에도 있다: 브로드캐스트 전 단계(시뮬레이션·가스
+견적·수수료 조회)에서 RPC가 끊기면 거절이 아니라 200 `facilitator_not_ready`로
+답하고 원장 행을 남기지 않는다 — 판정도, 청구도 없었기 때문이다. 브로드캐스트
+뒤의 실패는 그대로 `settlement_unconfirmed`다.
 
 ## 재현
 
@@ -352,7 +356,7 @@ bun run test:negative              # caveat 케이스 — 기본 타깃은 일�
 SUITE_TARGET=fork bun run test:negative   # 같은 케이스를 GIWA fork 위에서
 bun run test:e2e:mcp               # 결제 완주 → 한도 초과 pre-flight 거절 → pause → 회수
 bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 왕복
-SUITE_FORK_BLOCK=<최근 블록> bun run test:e2e:bootstrap   # 온보딩 서비스 15케이스
+SUITE_FORK_BLOCK=<최근 블록> bun run test:e2e:bootstrap   # 온보딩 서비스 16케이스
 bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO
 ```
 

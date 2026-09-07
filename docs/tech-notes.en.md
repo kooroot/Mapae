@@ -189,11 +189,11 @@ the day's budget from one address in under an hour by sending fresh keypairs. Th
 faucet tops any account below 1000 tUSDC (testnet, not real money) up to that
 target (`packages/delegation/src/faucet-policy.ts`). The sponsor holds no
 delegation authority, so it cannot reach payer funds, caps, or settlement.
-Verification is `bun run test:e2e:bootstrap` — 15 cases on a GIWA fork (kill
+Verification is `bun run test:e2e:bootstrap` — 16 cases on a GIWA fork (kill
 switch, approval mismatch, shared-relayer refusal, foreign signer, high-s,
 deployment, late binding, gas accounting, faucet top-up to target, idempotency,
-concurrency, faucet 24-hour window, budget exhaustion, chain-failure leak guard),
-15/15.
+concurrency, faucet 24-hour window, budget exhaustion, chain-failure leak guard,
+hourly per-IP cap with the header-less exemption), 16/16.
 
 ### Agent automation (MCP)
 
@@ -409,7 +409,10 @@ that executing `pause()` on a fork with an impersonated owner has `/health` repo
 `ok=false`, `frameworkError=framework_paused` and `frameworkPaused=true`, and has
 the payment turned away as not-ready rather than judged (`/verify` 503
 `facilitator_not_ready`), so the agent receives `SELLER_UNAVAILABLE` — nothing
-charged, retry later.
+charged, retry later. `/settle` gives the same answer: when the RPC dies in the
+pre-broadcast stage (simulation, gas estimate, fee query) it answers 200
+`facilitator_not_ready` and writes no ledger row — nothing was judged and nothing
+charged. A failure after the broadcast stays `settlement_unconfirmed`.
 
 ### Reproduction
 
@@ -420,7 +423,7 @@ bun run test:negative              # caveat cases — the default target is a di
 SUITE_TARGET=fork bun run test:negative   # the same cases on a GIWA fork
 bun run test:e2e:mcp               # full payment run → over-cap pre-flight refusal → pause → revocation
 bun run test:e2e:revoke            # actually starts the submission endpoint and round-trips it
-SUITE_FORK_BLOCK=<recent block> bun run test:e2e:bootstrap   # 15 onboarding-service cases
+SUITE_FORK_BLOCK=<recent block> bun run test:e2e:bootstrap   # 16 onboarding-service cases
 bun run preflight:giwa             # read-only GO/NO-GO against GIWA head state
 ```
 
@@ -692,7 +695,7 @@ griefing spread into a settlement outage.
 | Gas DoS via complex delegations | Estimate first, then refuse anything above the configured gas cap |
 | Unauthorized relayer | The intersection of the leaf's `RedeemerEnforcer` and the 402's `facilitatorAddresses` is enforced |
 | Onboarding griefing (repeated deploy requests) | Hourly per-IP cap (a speed bump) + faucet window (one top-up per account per 24 hours) + daily gas budget + a small dedicated sponsor wallet — exhaustion stops only that day's onboarding and never touches settlement or funds |
-| Settlement griefing (paying oneself repeatedly with free tUSDC) | Hourly per-IP cap + a per-payer daily gas share (`RELAYER_PAYER_DAILY_WEI`) reserved before the day's total — one payer exhausting its share leaves every other seller settling for the rest of the day |
+| Settlement griefing (paying oneself repeatedly with free tUSDC) | Hourly per-IP cap + a per-payer daily gas share (`RELAYER_PAYER_DAILY_WEI`) reserved before the day's total — one payer exhausting its share leaves every other seller settling for the rest of the day. Rejected settle rows are kept in the ledger for 7 days and at most the newest 50,000 (pruned at boot and hourly), so refusals alone cannot grow the sqlite file without bound |
 | Nominating the deploy target address | The request body is `{permissionContext}` only — the owner is recovered from the signature, and the account is `CREATE2(owner)`, which must match the delegator |
 | Non-canonical signatures (high-s, `v ∉ {27,28}`) | Deploy only after an offline canonical-form check — viem accepts them but OZ `ECDSA` reverts, so without the check we would pay to deploy an account whose every grant reverts |
 | Vulnerable dependencies | `bun audit` runs in the gate. Every finding is either fixed or accepted with a re-measurable proof attached |
@@ -785,7 +788,7 @@ the same sentence.
   sponsor-deployed from the owner recovered out of a pre-deployment signature
   (`0xed21ac71…9902`), 3 mUSDC was minted (`0x9d14588b…baa0`), and live
   ERC-1271 answered `0x1626ba7e` to that prior signature. The new user's gas
-  spend is `0`. The service itself is verified by 15 cases on a GIWA fork
+  spend is `0`. The service itself is verified by 16 cases on a GIWA fork
   (`test:e2e:bootstrap`)
 - **Negative-path suite — ephemeral chain and GIWA fork** —
   `negative-path-suite.ts` runs the same case set (normal, period cap, period

@@ -83,7 +83,7 @@ single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는
 | J 스폰서드 회수 | ETH 0·예치금 0 계정이 회수되고 스폰서가 낸다 | `200` + tx, 스폰서 지출·잔여 예치 측정 |
 | K 비소유자 서명 | 계정의 ERC-1271이 **예치 전에** 거절한다 | `403 invalid_account_signature`, 스폰서 nonce 불변 |
 | L 완료 후 재제출 | 끝난 회수는 한 푼도 쓰지 않고 거절 | `409 already_revoked`, 추가 예치 없음 |
-| P 수수료 300 wei | 수수료 **하한**이 릴레이어 손실을 막는다 | `400 invalid_submission`, 스폰서 nonce 불변 |
+| P 수수료 300 wei | 수수료 **하한**이 릴레이어 손실을 막는다 — cap·팁 둘 다 300 wei인 op과 cap은 하한이되 팁만 300 wei인 op을 차례로 낸다 | `400 invalid_submission` ×2, 스폰서 nonce 불변 |
 | M 예산 1 wei | 일일 예산이 실제 상한이다 | `503 budget_exhausted`, 위임은 그대로 |
 | N 닫힌 응답 본문 | 공개 모드는 `detail`을 싣지 않는다 | `400 invalid_submission`, `detail` 없음 |
 | O rate 1/시간 | 두 번째 요청부터 끊긴다 | `429 rate_limited` |

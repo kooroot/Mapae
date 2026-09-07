@@ -85,7 +85,7 @@ D1–D2 EOA 흐름 개발용)와 delegation-lab(fork 시뮬레이션·e2e). 어�
 
 | 서비스 | 머신 | 포트 | 공개 경로 | 쓰는 지갑 | 한 줄 역할 |
 |---|---|---|---|---|---|
-| `apps/facilitator-erc7710` | 미니 | 8081 | `facilitator.mapae.io` | **정산 서명자** | ERC-7710 결제를 검증하고 `redeemDelegations`로 정산. 가스를 대신 낸다. IP당 시간 제한(`FACILITATOR_RATE_PER_HOUR`)과 payer별 일일 가스 몫(`RELAYER_PAYER_DAILY_WEI`)이 총 예산(`RELAYER_DAILY_WEI`) 앞에 선다 |
+| `apps/facilitator-erc7710` | 미니 | 8081 | `facilitator.mapae.io` | **정산 서명자** | ERC-7710 결제를 검증하고 `redeemDelegations`로 정산. 가스를 대신 낸다. IP당 시간 제한(`FACILITATOR_RATE_PER_HOUR`)과 payer별 일일 가스 몫(`RELAYER_PAYER_DAILY_WEI`)이 총 예산(`RELAYER_DAILY_WEI`) 앞에 선다. 거부된 정산 행은 7일·최신 5만 건만 보존 |
 | `apps/delegated-seller` | 미니 | 3001 | `seller.mapae.io` | 없음 (수취 주소는 상점 파일의 판매자 행) | 호스티드 상점. `/s/:slug` 매니페스트, `/s/:slug/:key` 402 → 티켓, `/s/:slug/tickets/:code` 티켓 재조회, `/metrics`(`METRICS_TOKEN`). 정산은 루프백 `FACILITATOR_URL`로 하고 매니페스트·`/health`가 알리는 주소는 `PUBLIC_FACILITATOR_URL`(공개 `BASE_URL`이면 필수, 없으면 기동 거부). 판매자·상품·주문은 `STORE_PATH`의 SQLite 파일이고 시드는 `bun run seed`. 받기만 하므로 키가 없다 |
 | `apps/account-bootstrap` | 미니 | 8083 | `facilitator.mapae.io/bootstrap` | **부트스트랩 스폰서** | 서명만 있고 배포 안 된 payer 계정을 스폰서 가스로 배포. IP당 시간 제한(`BOOTSTRAP_RATE_PER_HOUR`)이 일일 예산 앞에 선다 |
 | `apps/revocation-submitter` | 미니 | 8082 | `facilitator.mapae.io/revoke` (라이브, 2026-08-04) | **서브미터 릴레이어 + 회수 스폰서** | 오너가 서명한 회수 UserOp을 EntryPoint에 실어 보낸다 |

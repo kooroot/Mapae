@@ -152,11 +152,11 @@ the day's budget from one address in under an hour by sending fresh keypairs. Th
 faucet tops any account below 1000 tUSDC (testnet, not real money) up to that
 target (`packages/delegation/src/faucet-policy.ts`). The sponsor holds no
 delegation authority, so it cannot reach payer funds, caps, or settlement.
-Verification is `bun run test:e2e:bootstrap` — 15 cases on a GIWA fork (kill
+Verification is `bun run test:e2e:bootstrap` — 16 cases on a GIWA fork (kill
 switch, approval mismatch, shared-relayer refusal, foreign signer, high-s,
 deployment, late binding, gas accounting, faucet top-up to target, idempotency,
-concurrency, faucet 24-hour window, budget exhaustion, chain-failure leak guard),
-15/15.
+concurrency, faucet 24-hour window, budget exhaustion, chain-failure leak guard,
+hourly per-IP cap with the header-less exemption), 16/16.
 
 ## Agent automation (MCP)
 
@@ -372,7 +372,10 @@ that executing `pause()` on a fork with an impersonated owner has `/health` repo
 `ok=false`, `frameworkError=framework_paused` and `frameworkPaused=true`, and has
 the payment turned away as not-ready rather than judged (`/verify` 503
 `facilitator_not_ready`), so the agent receives `SELLER_UNAVAILABLE` — nothing
-charged, retry later.
+charged, retry later. `/settle` gives the same answer: when the RPC dies in the
+pre-broadcast stage (simulation, gas estimate, fee query) it answers 200
+`facilitator_not_ready` and writes no ledger row — nothing was judged and nothing
+charged. A failure after the broadcast stays `settlement_unconfirmed`.
 
 ## Reproduction
 
@@ -383,7 +386,7 @@ bun run test:negative              # caveat cases — the default target is a di
 SUITE_TARGET=fork bun run test:negative   # the same cases on a GIWA fork
 bun run test:e2e:mcp               # full payment run → over-cap pre-flight refusal → pause → revocation
 bun run test:e2e:revoke            # actually starts the submission endpoint and round-trips it
-SUITE_FORK_BLOCK=<recent block> bun run test:e2e:bootstrap   # 15 onboarding-service cases
+SUITE_FORK_BLOCK=<recent block> bun run test:e2e:bootstrap   # 16 onboarding-service cases
 bun run preflight:giwa             # read-only GO/NO-GO against GIWA head state
 ```
 

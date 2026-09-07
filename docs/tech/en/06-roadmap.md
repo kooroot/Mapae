@@ -19,7 +19,7 @@ the same sentence.
   sponsor-deployed from the owner recovered out of a pre-deployment signature
   (`0xed21ac71…9902`), 3 mUSDC was minted (`0x9d14588b…baa0`), and live
   ERC-1271 answered `0x1626ba7e` to that prior signature. The new user's gas
-  spend is `0`. The service itself is verified by 15 cases on a GIWA fork
+  spend is `0`. The service itself is verified by 16 cases on a GIWA fork
   (`test:e2e:bootstrap`)
 - **Negative-path suite — ephemeral chain and GIWA fork** —
   `negative-path-suite.ts` runs the same case set (normal, period cap, period

@@ -19,7 +19,7 @@
 | `make owner-account-verify` | ✅ | owner 스마트계정이 실제로 배포돼 있고 owner가 맞음 |
 | `bun run preflight:giwa` | ✅ | 결제 한 건이 성공할 조건 전부 (개수는 스크립트가 센다 — 3절) |
 | `bun run run:giwa -- --broadcast` | ✅ **쓰기** | 에이전트가 GIWA에서 실제로 결제함 |
-| `bun run test:e2e:bootstrap` | fork | 온보딩 서비스 15케이스 — 배포·late binding·그리핑 방어. 최근 블록을 `SUITE_FORK_BLOCK`으로 요구 |
+| `bun run test:e2e:bootstrap` | fork | 온보딩 서비스 16케이스 — 배포·late binding·그리핑 방어·IP당 시간 제한. 최근 블록을 `SUITE_FORK_BLOCK`으로 요구 |
 
 `forge test --fork-url`의 함정은 조용하다는 것이다. 통과하고, 주소를 출력하고, 그 주소는
 실제 GIWA 주소가 아니다 — fork 안에서 방금 만들어진 것이다. 라이브 배포를 검사하는 것은

@@ -181,9 +181,10 @@ revert하는 계정을 돈 내고 배포하게 된다.
 비울 수 있었다. faucet은 잔액이 1000 tUSDC(테스트넷, 실제 돈 아님) 미만인
 계정을 목표까지 채운다(`packages/delegation/src/faucet-policy.ts`). 스폰서에는
 위임 권한이 없어 payer 자금·한도·정산에는 닿지 못한다. 검증은
-`bun run test:e2e:bootstrap` — GIWA fork에서 15케이스(킬 스위치·승인 불일치·
+`bun run test:e2e:bootstrap` — GIWA fork에서 16케이스(킬 스위치·승인 불일치·
 relayer 공유 거부·타인 서명·high-s·배포·late binding·가스 회계·faucet 목표
-보충·중복·동시성·faucet 24시간 창·예산 소진·체인 실패 누출 가드) 15/15.
+보충·중복·동시성·faucet 24시간 창·예산 소진·체인 실패 누출 가드·IP당 시간
+제한과 무주소 면제) 16/16.
 
 ### 에이전트 자동화 (MCP)
 
@@ -377,7 +378,10 @@ fork에서 owner를 impersonate해 `pause()`를 실행하면 `/health`가 `ok=fa
 `frameworkError=framework_paused`, `frameworkPaused=true`를 보고하고, 결제는
 판정이 아니라 준비 안 됨(`/verify` 503 `facilitator_not_ready`)으로 돌려보내져
 에이전트가 `SELLER_UNAVAILABLE`(자금 불변, 나중에 재시도)을 받는 것까지 수트가
-확인한다.
+확인한다. 같은 답이 `/settle`에도 있다: 브로드캐스트 전 단계(시뮬레이션·가스
+견적·수수료 조회)에서 RPC가 끊기면 거절이 아니라 200 `facilitator_not_ready`로
+답하고 원장 행을 남기지 않는다 — 판정도, 청구도 없었기 때문이다. 브로드캐스트
+뒤의 실패는 그대로 `settlement_unconfirmed`다.
 
 ### 재현
 
@@ -388,7 +392,7 @@ bun run test:negative              # caveat 케이스 — 기본 타깃은 일�
 SUITE_TARGET=fork bun run test:negative   # 같은 케이스를 GIWA fork 위에서
 bun run test:e2e:mcp               # 결제 완주 → 한도 초과 pre-flight 거절 → pause → 회수
 bun run test:e2e:revoke            # 제출 엔드포인트를 실제로 띄워 왕복
-SUITE_FORK_BLOCK=<최근 블록> bun run test:e2e:bootstrap   # 온보딩 서비스 15케이스
+SUITE_FORK_BLOCK=<최근 블록> bun run test:e2e:bootstrap   # 온보딩 서비스 16케이스
 bun run preflight:giwa             # GIWA 헤드 상태 읽기 전용 GO/NO-GO
 ```
 
@@ -640,7 +644,7 @@ facilitator와 같은 공개 호스트는 `/bootstrap` 경로로 온보딩 스�
 | 복잡한 delegation gas DoS | estimate 후 설정 gas cap 초과 거절 |
 | 비인가 relayer | leaf의 `RedeemerEnforcer`와 402 `facilitatorAddresses` 교집합 강제 |
 | 온보딩 그리핑 (배포 요청 반복) | IP당 시간 제한(과속방지턱) + 계정당 24시간 1회 faucet 창 + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
-| 정산 그리핑 (무료 tUSDC로 자기 자신에게 결제 반복) | IP당 시간 제한 + payer별 일일 가스 몫(`RELAYER_PAYER_DAILY_WEI`)을 총 예산보다 먼저 잡는다 — 한 payer가 제 몫을 다 써도 다른 판매자는 그날 계속 정산된다 |
+| 정산 그리핑 (무료 tUSDC로 자기 자신에게 결제 반복) | IP당 시간 제한 + payer별 일일 가스 몫(`RELAYER_PAYER_DAILY_WEI`)을 총 예산보다 먼저 잡는다 — 한 payer가 제 몫을 다 써도 다른 판매자는 그날 계속 정산된다. 거부된 정산 행은 원장에 7일·최신 5만 건까지만 남긴다(부팅 때와 매시간 정리) — sqlite 파일이 거절만으로 끝없이 자라지 않는다 |
 | 배포 대상 주소 지명 | 요청 본문은 `{permissionContext}`뿐 — owner는 서명에서 복원, 계정은 `CREATE2(owner)`이며 delegator와 일치해야 함 |
 | 비-canonical 서명 (high-s, `v ∉ {27,28}`) | 오프라인 canonical 검사 후에만 배포 — viem은 수락하지만 OZ `ECDSA`는 revert하므로, 검사 없이는 모든 grant가 revert하는 계정을 돈 내고 배포하게 된다 |
 | 취약 의존성 | `bun audit`을 게이트에서 실행. 모든 발견은 수정하거나, 재측정 가능한 증명을 붙여 수용 |
@@ -725,7 +729,7 @@ payload와 permission context는 bearer 권한이므로 로그·오류 상세에
   `0x15286FE9…3301`이 대납 배포되고(`0xed21ac71…9902`), 3 mUSDC가
   민팅됐으며(`0x9d14588b…baa0`), 라이브 ERC-1271이 그 사전 서명에 `0x1626ba7e`를
   답했다. 새 사용자의 가스 지출은 `0`. 서비스 자체의 검증은 GIWA fork
-  15케이스(`test:e2e:bootstrap`)
+  16케이스(`test:e2e:bootstrap`)
 - **negative-path 수트 — 일회용 체인·GIWA fork** — `negative-path-suite.ts`가
   동일한 케이스 집합(정상·주기 cap·주기 reset·만료·wrong-redeemer·수취인
   불일치·replay·facilitator 변조 6종 + 대조군·payer mismatch·root 취소·회수
