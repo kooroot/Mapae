@@ -10,14 +10,17 @@ import {Hono} from "hono";
 import {HttpRequestError, TimeoutError, type Address} from "viem";
 import {
     BudgetExhausted,
+    CLIENT_IP_HEADER,
     CachedProbe,
     GasBudgets,
     PAYER_IDLE_MS,
     PayerBudgets,
     RATE_WINDOW_MS,
     SETTLE_RATE_LIMITED,
+    SWEEP_EVERY,
     VERIFY_RATE_LIMITED,
     classifyFrameworkError,
+    limiterKey,
     rateLimitByIp,
 } from "./guards.js";
 
@@ -78,6 +81,34 @@ describe("rateLimitByIp", () => {
         }
     });
 
+    test("a loopback caller naming the buyer in X-Mapae-Client-IP is counted as that buyer", async () => {
+        const {app} = settleApp(1, () => NOW);
+        const buyer = {"content-type": "application/json", [CLIENT_IP_HEADER]: "203.0.113.9"};
+        expect((await settle(app, buyer)).body).toEqual({success: true});
+        expect((await settle(app, buyer)).body).toEqual(SETTLE_RATE_LIMITED);
+        const other = {...buyer, [CLIENT_IP_HEADER]: "198.51.100.7"};
+        expect((await settle(app, other)).body).toEqual({success: true});
+    });
+
+    test("through the tunnel CF-Connecting-IP is the client; a forwarded name beside it is ignored", async () => {
+        const {app} = settleApp(1, () => NOW);
+        const both = {...PUBLIC, [CLIENT_IP_HEADER]: "198.51.100.7"};
+        expect((await settle(app, both)).body).toEqual({success: true});
+        expect((await settle(app, PUBLIC)).body).toEqual(SETTLE_RATE_LIMITED);
+        const forwardedOnly = {"content-type": "application/json", [CLIENT_IP_HEADER]: "198.51.100.7"};
+        expect((await settle(app, forwardedOnly)).body).toEqual({success: true});
+    });
+
+    test("IPv6 clients inside one /64 share a window", async () => {
+        const {app} = settleApp(1, () => NOW);
+        const first = {...PUBLIC, "cf-connecting-ip": "2001:db8:1:2::1"};
+        const rotated = {...PUBLIC, "cf-connecting-ip": "2001:db8:1:2:ffff:ffff:ffff:ffff"};
+        const elsewhere = {...PUBLIC, "cf-connecting-ip": "2001:db8:1:3::1"};
+        expect((await settle(app, first)).body).toEqual({success: true});
+        expect((await settle(app, rotated)).body).toEqual(SETTLE_RATE_LIMITED);
+        expect((await settle(app, elsewhere)).body).toEqual({success: true});
+    });
+
     test("the (limit + 1)th request inside the window is refused as a 200 with a body", async () => {
         const {app} = settleApp(2, () => NOW);
         expect((await settle(app, PUBLIC)).body).toEqual({success: true});
@@ -119,7 +150,7 @@ describe("rateLimitByIp", () => {
         expect((await settle(app, PUBLIC)).body).toEqual({success: true});
     });
 
-    test("expired windows are swept on the next request, so distinct addresses cannot grow the map", async () => {
+    test("expired windows are swept every SWEEP_EVERY requests, so distinct addresses cannot grow the map", async () => {
         const time = clock(NOW);
         const {app, limiter} = settleApp(1, time.read);
         for (let i = 0; i < 40; i += 1) {
@@ -127,6 +158,10 @@ describe("rateLimitByIp", () => {
         }
         expect(limiter.size).toBe(40);
         time.set(NOW + RATE_WINDOW_MS);
+        // PUBLIC is 203.0.113.5, one of the forty; its next request re-opens its own
+        // window and leaves the other 39 expired until the sweep lands.
+        for (let counted = 40; counted < SWEEP_EVERY - 1; counted += 1) await settle(app, PUBLIC);
+        expect(limiter.size).toBe(40);
         await settle(app, PUBLIC);
         expect(limiter.size).toBe(1);
     });
@@ -161,6 +196,23 @@ describe("rateLimitByIp", () => {
         expect((await settle(app, PUBLIC)).body).toEqual(SETTLE_RATE_LIMITED);
         expect(reached).toBe(1);
         expect(store.ledger.summary({sinceMs: 0}).total).toBe(1);
+    });
+});
+
+describe("limiterKey", () => {
+    test("an IPv4 address is one client", () => {
+        expect(limiterKey("203.0.113.5")).toBe("ip:203.0.113.5");
+        expect(limiterKey("::ffff:203.0.113.5")).toBe("ip:::ffff:203.0.113.5");
+    });
+
+    test("an IPv6 address is its /64, however it was spelled", () => {
+        expect(limiterKey("2001:0db8:0001:0002:0003:0004:0005:0006")).toBe("ip:2001:db8:1:2::/64");
+        expect(limiterKey("2001:db8:1:2::1")).toBe("ip:2001:db8:1:2::/64");
+        expect(limiterKey("2001:db8:1:2:ffff:ffff:ffff:ffff")).toBe("ip:2001:db8:1:2::/64");
+        expect(limiterKey("2001:db8::1")).toBe("ip:2001:db8:0:0::/64");
+        expect(limiterKey("::1")).toBe("ip:0:0:0:0::/64");
+        expect(limiterKey("2001:db8:1:2:3::")).toBe("ip:2001:db8:1:2::/64");
+        expect(limiterKey("2001:db8:1:3::1")).not.toBe(limiterKey("2001:db8:1:2::1"));
     });
 });
 

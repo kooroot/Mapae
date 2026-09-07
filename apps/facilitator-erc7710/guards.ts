@@ -22,6 +22,21 @@ import {HttpRequestError, TimeoutError, type Address} from "viem";
 
 export const RATE_LIMITED = "rate_limited";
 export const RATE_WINDOW_MS = 3_600_000;
+/**
+ * The header the seller forwards the buyer's `CF-Connecting-IP` in when it calls this
+ * service over loopback. Read only when `CF-Connecting-IP` itself is absent — Cloudflare
+ * writes that one on every request through the tunnel, so a request that lacks it came
+ * from a process on this machine, and only our own services run there.
+ */
+export const CLIENT_IP_HEADER = "x-mapae-client-ip";
+/**
+ * Expired windows are dropped from the limiter's map every this-many limited requests
+ * rather than on each one. `sweep` walks the whole map: measured at 6.1 ms per call with
+ * 1,000,000 live keys (Bun 1.4.0), which a flood of distinct addresses would have put in
+ * front of every payment for the rest of the hour. Amortised over 256 requests it is
+ * 24 µs; the map still cannot outlive its windows by more than 255 requests.
+ */
+export const SWEEP_EVERY = 256;
 
 /**
  * What a rate-limited request is answered with: a 200 with a refusal body, exactly like
@@ -42,6 +57,26 @@ export const SETTLE_RATE_LIMITED: Erc7710SettleResponse = {
 };
 
 /**
+ * The window a client address is counted in. An IPv6 client is counted on its /64:
+ * Cloudflare forwards the full 128-bit address, the smallest allocation a residential or
+ * VPS line gets is a /64, and rotating through its 2^64 addresses would make every
+ * request a fresh key that never reaches the limit. An IPv4 address is one client and is
+ * kept whole — as is the IPv4-mapped spelling (`::ffff:a.b.c.d`), whose "/64" would be
+ * the same four zero groups for every IPv4 client there is.
+ */
+export function limiterKey(ip: string): string {
+    if (!ip.includes(":") || ip.includes(".")) return `ip:${ip}`;
+    const [head = "", tail = ""] = ip.split("::");
+    const leading = head === "" ? [] : head.split(":");
+    const trailing = tail === "" ? [] : tail.split(":");
+    const zeros = Math.max(0, 8 - leading.length - trailing.length);
+    const prefix = [...leading, ...new Array<string>(zeros).fill("0"), ...trailing]
+        .slice(0, 4)
+        .map((group) => Number.parseInt(group, 16).toString(16));
+    return `ip:${prefix.join(":")}::/64`;
+}
+
+/**
  * Refuse the (limit + 1)th request from one address within the window, before the body
  * is read and before anything is enqueued toward the RPC — so a flood costs a Map lookup
  * and nothing else. Until this existed the only bound on an anonymous caller was the
@@ -49,20 +84,26 @@ export const SETTLE_RATE_LIMITED: Erc7710SettleResponse = {
  * seller got `budget_exhausted` until UTC midnight.
  *
  * Cloudflare sets `CF-Connecting-IP` on everything that comes through the tunnel, and the
- * tunnel is the only public path; a request without the header came over loopback (the
- * hosted shop on the same machine calls 127.0.0.1:8081 directly) and is exempt.
+ * tunnel is the only public path. A request without it came over loopback, and loopback
+ * has two kinds of caller: our own services, exempt, and the hosted shop on the same
+ * machine (127.0.0.1:8081), whose buyers are the public internet too — it names the
+ * buyer in {@link CLIENT_IP_HEADER} and that buyer is counted. Without the forwarded
+ * name the shop was an unlimited path to `/verify`'s simulation for anyone who could
+ * spell a delegation.
  */
 export function rateLimitByIp(
     limiter: FixedWindowLimiter,
     refusal: Erc7710VerifyResponse | Erc7710SettleResponse,
     clock: () => number = Date.now,
 ): MiddlewareHandler {
+    let counted = 0;
     return async (c, next) => {
-        const ip = c.req.header("cf-connecting-ip");
+        const ip = c.req.header("cf-connecting-ip") ?? c.req.header(CLIENT_IP_HEADER);
         if (ip === undefined) return next();
         const now = clock();
-        limiter.sweep(now);
-        if (!limiter.tryConsume(`ip:${ip}`, now)) return c.json(refusal);
+        counted += 1;
+        if (counted % SWEEP_EVERY === 0) limiter.sweep(now);
+        if (!limiter.tryConsume(limiterKey(ip), now)) return c.json(refusal);
         return next();
     };
 }
