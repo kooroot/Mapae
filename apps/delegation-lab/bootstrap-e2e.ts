@@ -164,12 +164,18 @@ interface BootstrapBody {
     reason?: string;
 }
 
+/**
+ * Every request here arrives over loopback with no `CF-Connecting-IP`, which the service
+ * reads as its own operator and leaves uncounted by the per-address limit. Case P is the
+ * one caller that sets the header, to be counted on purpose.
+ */
 async function postBootstrap(
     body: unknown,
+    headers: Record<string, string> = {},
 ): Promise<{status: number; body: BootstrapBody; raw: string}> {
     const response = await fetch(`${BOOTSTRAP_URL}/bootstrap`, {
         method: "POST",
-        headers: {"content-type": "application/json"},
+        headers: {"content-type": "application/json", ...headers},
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(120_000),
     });
@@ -189,6 +195,7 @@ async function postBootstrap(
 const ALLOWED_REASONS = new Set([
     "bootstrap_disabled",
     "malformed_request",
+    "rate_limited",
     "faucet_recently_used",
     "budget_exhausted",
     "sponsor_unfunded",
@@ -752,6 +759,41 @@ async function main(): Promise<void> {
     assertEnumOnly("unreachable node", unreachable.raw, unreachable.body);
     passed("O", "leak guard     chain failure → enum-only 502, no RPC path key");
     deadRpc.kill();
+    await waitForPortRelease();
+
+    /**
+     * ── P. the per-address limit is wired, and a request without an address is free ──
+     *
+     * The limit is keyed on `CF-Connecting-IP`, which only the tunnel writes. Every other
+     * request in this run carries none and has to stay uncounted — fifteen of them from
+     * one address would trip the 30/hour default, and the suite would be measuring
+     * itself. Both halves are driven on a 1/hour child: the second request from one
+     * named address is refused before its body is read (the first was answered on that
+     * same garbage body), and two more without the header are still answered on theirs.
+     * Two, because a limiter that keyed the header-less caller as one more address would
+     * pass a single one.
+     */
+    const capped = await restart({BOOTSTRAP_RATE_PER_HOUR: "1"});
+    const fromOneAddress = {"cf-connecting-ip": "203.0.113.7"};
+    const underCap = await postBootstrap({garbage: true}, fromOneAddress);
+    if (underCap.status !== 400 || underCap.body.reason !== "malformed_request") {
+        throw new Error(`the first counted request was not judged on its body: ${underCap.status} ${underCap.raw}`);
+    }
+    const overCap = await postBootstrap({garbage: true}, fromOneAddress);
+    if (overCap.status !== 429 || overCap.body.reason !== "rate_limited") {
+        throw new Error(`per-address limit is not wired: ${overCap.status} ${overCap.raw}`);
+    }
+    assertEnumOnly("rate limited", overCap.raw, overCap.body);
+    for (const attempt of [1, 2]) {
+        const uncounted = await postBootstrap({garbage: true});
+        if (uncounted.status !== 400 || uncounted.body.reason !== "malformed_request") {
+            throw new Error(
+                `header-less request ${attempt} was counted against an address: ${uncounted.status} ${uncounted.raw}`,
+            );
+        }
+    }
+    passed("P", "rate 1/hour    2nd request from one address → 429 rate_limited; no address, no count");
+    capped.kill();
     await waitForPortRelease();
 
     // ── no-broadcast evidence ─────────────────────────────────────────────────────────
