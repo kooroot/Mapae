@@ -1,4 +1,4 @@
-import {getAddress} from "viem";
+import {getAddress, type Hex} from "viem";
 import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {DELEGATION_FRAMEWORK_VERSION} from "@mapae/delegation/config";
 import {giwaSepolia} from "@mapae/shared";
@@ -166,27 +166,26 @@ export function loadGrants(): SessionGrant[] {
 }
 
 /**
- * Newest first, deduped on the context — the same identity `addGrant` used in Studio.
+ * One read-modify-write of the document. `add` goes to the head in the order given, each
+ * replacing any stored record with the same context — the identity the Studio dedupes on;
+ * `remove` leaves. One write, so the library can carry the grants an earlier failed write
+ * still owes the store alongside the change at hand.
+ *
  * `undefined` when the store could not be read or the write failed: nothing was persisted,
  * and the caller's in-memory list is the only list there is. Not written when the read
  * failed, because a write on top of a document nobody could read would overwrite another
  * tab's grants with this tab's guess.
  */
-export function appendGrant(grant: SessionGrant): SessionGrant[] | undefined {
+export function writeGrants(change: {
+    add: SessionGrant[];
+    remove?: Hex;
+}): SessionGrant[] | undefined {
     const stored = readDocument();
     if (stored === undefined) return undefined;
+    const replaced = new Set(change.add.map((item) => item.artifact.permissionContext));
     const next = [
-        grant,
-        ...stored.filter(
-            (item) => item.artifact.permissionContext !== grant.artifact.permissionContext,
-        ),
-    ];
-    return writeDocument(next) ? next : undefined;
-}
-
-export function forgetGrant(permissionContext: `0x${string}`): SessionGrant[] | undefined {
-    const stored = readDocument();
-    if (stored === undefined) return undefined;
-    const next = stored.filter((item) => item.artifact.permissionContext !== permissionContext);
+        ...change.add,
+        ...stored.filter((item) => !replaced.has(item.artifact.permissionContext)),
+    ].filter((item) => item.artifact.permissionContext !== change.remove);
     return writeDocument(next) ? next : undefined;
 }

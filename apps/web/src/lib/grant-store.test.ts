@@ -2,12 +2,11 @@ import {describe, expect, test} from "bun:test";
 import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import type {Address, Hex} from "viem";
 import {
-    appendGrant,
-    forgetGrant,
     loadGrants,
     parseStoredGrants,
     serializeGrants,
     STORAGE_KEY,
+    writeGrants,
 } from "./grant-store";
 import type {SessionGrant} from "./grant";
 
@@ -159,63 +158,93 @@ const blocked = (): never => {
     throw new Error("SecurityError: the operation is insecure");
 };
 
-describe("appendGrant / forgetGrant when storage fails", () => {
+/** A storage that keeps its document, so a test can read back what a write left. */
+function memoryStorage(initial: SessionGrant[]): {storage: ScriptedStorage; names: () => string[]} {
+    let document: string | null = serializeGrants(initial);
+    return {
+        storage: {
+            getItem: () => document,
+            setItem: (_key, value) => {
+                document = value;
+            },
+        },
+        names: () => parseStoredGrants(document).map((item) => item.name),
+    };
+}
+
+const OTHER = "0x0000000000000000000000000000000000000c33" as Address;
+const THIRD = "0x0000000000000000000000000000000000000d44" as Address;
+
+function other(name: string, delegate: Address): SessionGrant {
+    return grant({
+        name,
+        artifact: {...grant().artifact, delegate, permissionContext: context(delegate)},
+    });
+}
+
+describe("writeGrants", () => {
+    test("adds go to the head in order, each replacing the stored record with its context", () => {
+        const store = memoryStorage([other("Older", OTHER)]);
+        const written = withStorage(store.storage, () =>
+            writeGrants({add: [grant({name: "Newer"}), other("Third", THIRD)]}),
+        );
+        expect(written?.map((item) => item.name)).toEqual(["Newer", "Third", "Older"]);
+        expect(store.names()).toEqual(["Newer", "Third", "Older"]);
+
+        // Same context, new record: replaced in place at the head, not duplicated.
+        const renamed = withStorage(store.storage, () =>
+            writeGrants({add: [grant({name: "Renamed"})]}),
+        );
+        expect(renamed?.map((item) => item.name)).toEqual(["Renamed", "Third", "Older"]);
+        expect(store.names()).toEqual(["Renamed", "Third", "Older"]);
+    });
+
+    test("a remove leaves in the same write as the adds", () => {
+        const store = memoryStorage([other("Older", OTHER), grant({name: "Doomed"})]);
+        const written = withStorage(store.storage, () =>
+            writeGrants({add: [other("Third", THIRD)], remove: context()}),
+        );
+        expect(written?.map((item) => item.name)).toEqual(["Third", "Older"]);
+        expect(store.names()).toEqual(["Third", "Older"]);
+
+        const alone = withStorage(store.storage, () => writeGrants({add: [], remove: context(OTHER)}));
+        expect(alone?.map((item) => item.name)).toEqual(["Third"]);
+        expect(store.names()).toEqual(["Third"]);
+    });
+
     // The regression these pin: a throwing storage used to read as an empty document, so
-    // `appendGrant` answered `[grant]` and `forgetGrant` answered `[]` — and the library,
-    // merging memory against those, dropped every other grant on add and all on forget.
+    // an add answered `[grant]` and a forget answered `[]` — and the library, merging
+    // memory against those, dropped every other grant on add and all on forget.
     test("an unreadable store answers undefined, and is not written over", () => {
         const writes: string[] = [];
         const result = withStorage(
             {getItem: blocked, setItem: (_key, value) => void writes.push(value)},
-            () => appendGrant(grant()),
+            () => writeGrants({add: [grant()]}),
         );
         expect(result).toBeUndefined();
         // A write on top of a document nobody could read would replace another tab's
         // grants with this tab's guess.
         expect(writes).toEqual([]);
+        expect(
+            withStorage({getItem: blocked, setItem: () => {}}, () =>
+                writeGrants({add: [], remove: context()}),
+            ),
+        ).toBeUndefined();
     });
 
     test("a failed write answers undefined, not the list it could not keep", () => {
-        const result = withStorage({getItem: () => null, setItem: blocked}, () =>
-            appendGrant(grant()),
-        );
-        expect(result).toBeUndefined();
-    });
-
-    test("forgetting under an unreadable or unwritable store answers undefined too", () => {
         const stored = serializeGrants([grant()]);
         expect(
-            withStorage({getItem: blocked, setItem: () => {}}, () => forgetGrant(context())),
+            withStorage({getItem: () => null, setItem: blocked}, () => writeGrants({add: [grant()]})),
         ).toBeUndefined();
         expect(
-            withStorage({getItem: () => stored, setItem: blocked}, () => forgetGrant(context())),
+            withStorage({getItem: () => stored, setItem: blocked}, () =>
+                writeGrants({add: [], remove: context()}),
+            ),
         ).toBeUndefined();
     });
 
     test("hydrating from a blocked store is an empty list, not a throw", () => {
         expect(withStorage({getItem: blocked, setItem: blocked}, loadGrants)).toEqual([]);
-    });
-
-    test("a working store answers the list it wrote — the control the failures are measured against", () => {
-        const OTHER = "0x0000000000000000000000000000000000000c33" as Address;
-        const older = grant({
-            name: "Older",
-            artifact: {...grant().artifact, delegate: OTHER, permissionContext: context(OTHER)},
-        });
-        let document: string | null = serializeGrants([older]);
-        const storage: ScriptedStorage = {
-            getItem: () => document,
-            setItem: (_key, value) => {
-                document = value;
-            },
-        };
-
-        const added = withStorage(storage, () => appendGrant(grant({name: "Newer"})));
-        expect(added?.map((item) => item.name)).toEqual(["Newer", "Older"]);
-        expect(parseStoredGrants(document).map((item) => item.name)).toEqual(["Newer", "Older"]);
-
-        const forgotten = withStorage(storage, () => forgetGrant(context()));
-        expect(forgotten?.map((item) => item.name)).toEqual(["Older"]);
-        expect(parseStoredGrants(document).map((item) => item.name)).toEqual(["Older"]);
     });
 });

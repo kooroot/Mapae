@@ -1,10 +1,12 @@
 import {describe, expect, test} from "bun:test";
+import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {DELEGATION_FRAMEWORK_VERSION} from "@mapae/delegation/config";
 import {giwaSepolia} from "@mapae/shared";
 import type {Address, Hex} from "viem";
 import type {AgentSessionKey} from "./agent-key";
 import type {SessionGrant} from "./grant";
-import {grantsAfterAdd, grantsAfterForget, mergeGrants} from "./grant-library";
+import {createGrantLedger, mergeGrants} from "./grant-library";
+import {parseStoredGrants, serializeGrants} from "./grant-store";
 
 const OWNER = "0x0000000000000000000000000000000000000a11" as Address;
 
@@ -16,12 +18,14 @@ function key(seed: string): AgentSessionKey {
 }
 
 /**
- * The context is the identity the store dedupes on, so each grant gets its own; the
- * bytes never decode here because the merge compares them and nothing else. Typed by the
- * return annotation, not cast: a cast would let a field `SessionGrant` grows tomorrow go
- * missing here without a compile error.
+ * A real, decodable context per delegate: the ledger writes through the actual store,
+ * which validates every record it reads back through `parsePermissionContext`, and the
+ * context is the identity the merge compares. Typed by the return annotation, not cast: a
+ * cast would let a field `SessionGrant` grows tomorrow go missing here without a compile
+ * error.
  */
 function grant(seed: string, agentKey?: AgentSessionKey): SessionGrant {
+    const delegate = `0x${seed.repeat(20)}` as Address;
     return {
         id: `1700000000:${seed}`,
         name: `Agent ${seed}`,
@@ -31,19 +35,30 @@ function grant(seed: string, agentKey?: AgentSessionKey): SessionGrant {
             chainId: giwaSepolia.id,
             role: "open-agent",
             delegator: OWNER,
-            delegate: `0x${seed.repeat(20)}` as Address,
-            permissionContext: `0x${seed.repeat(40)}` as Hex,
+            delegate,
+            permissionContext: encodeDelegations([
+                {
+                    delegate,
+                    delegator: OWNER,
+                    authority: `0x${"0".repeat(64)}` as Hex,
+                    caveats: [],
+                    salt: `0x${"0".repeat(64)}` as Hex,
+                    signature: "0x" as Hex,
+                },
+            ]),
             createdAt: 1_700_000_000,
         },
         agentKey,
     };
 }
 
-/** What `loadGrants`/`appendGrant`/`forgetGrant` hand back: the same grant, no key. */
+/** What the store hands back: the same grant, no key. */
 function persisted(item: SessionGrant): SessionGrant {
     const {agentKey: _dropped, ...rest} = item;
     return rest;
 }
+
+const names = (grants: SessionGrant[]): string[] => grants.map((item) => item.name);
 
 describe("mergeGrants", () => {
     test("a second add keeps the first grant's agent key", () => {
@@ -56,7 +71,7 @@ describe("mergeGrants", () => {
             persisted: [persisted(second), persisted(first)],
             incoming: second,
         });
-        expect(merged.map((item) => item.name)).toEqual(["Agent bb", "Agent aa"]);
+        expect(names(merged)).toEqual(["Agent bb", "Agent aa"]);
         expect(merged[0]?.agentKey).toEqual(key("22"));
         expect(merged[1]?.agentKey).toEqual(key("11"));
     });
@@ -80,7 +95,7 @@ describe("mergeGrants", () => {
             current: [mine],
             persisted: [persisted(theirs), persisted(mine)],
         });
-        expect(merged.map((item) => item.name)).toEqual(["Agent cc", "Agent aa"]);
+        expect(names(merged)).toEqual(["Agent cc", "Agent aa"]);
         expect(merged[0]?.agentKey).toBeUndefined();
         expect(merged[1]?.agentKey).toEqual(key("11"));
     });
@@ -94,7 +109,7 @@ describe("mergeGrants", () => {
             current: [kept, gone],
             persisted: [persisted(kept)],
         });
-        expect(merged.map((item) => item.name)).toEqual(["Agent aa"]);
+        expect(names(merged)).toEqual(["Agent aa"]);
         expect(merged[0]?.agentKey).toEqual(key("11"));
     });
 
@@ -118,45 +133,178 @@ describe("mergeGrants", () => {
             current: [older],
             persisted: [persisted(newer), persisted(older)],
         });
-        expect(merged.map((item) => item.name)).toEqual(["Agent bb", "Agent aa"]);
+        expect(names(merged)).toEqual(["Agent bb", "Agent aa"]);
     });
 });
 
-describe("grantsAfterAdd / grantsAfterForget", () => {
+/**
+ * The store reaches storage as `window.localStorage`, and bun test has no window: each
+ * test installs one whose writes can be switched to throw — a full storage, Safari's
+ * private mode — mid-sequence, which is exactly the sequence the ledger exists for. The
+ * real store runs underneath, so "now in the store" is read back from the document it
+ * actually wrote, not from a double's idea of it.
+ */
+function memoryStorage() {
+    let document: string | null = null;
+    let full = false;
+    return {
+        storage: {
+            getItem: () => document,
+            setItem: (_key: string, value: string) => {
+                if (full) throw new Error("QuotaExceededError");
+                document = value;
+            },
+        },
+        fill(on: boolean) {
+            full = on;
+        },
+        seed(grants: SessionGrant[]) {
+            document = serializeGrants(grants);
+        },
+        stored: () => names(parseStoredGrants(document)),
+    };
+}
+
+function withStorage<T>(storage: ReturnType<typeof memoryStorage>["storage"], run: () => T): T {
+    const scope = globalThis as {window?: unknown};
+    const previous = scope.window;
+    scope.window = {localStorage: storage};
+    try {
+        return run();
+    } finally {
+        if (previous === undefined) delete scope.window;
+        else scope.window = previous;
+    }
+}
+
+describe("createGrantLedger", () => {
     const first = grant("aa", key("11"));
     const second = grant("bb", key("22"));
+    const third = grant("cc", key("33"));
 
-    test("adding when nothing was persisted keeps every other grant, keys included", () => {
-        // The regression: a throwing storage made `appendGrant` answer `[grant]`, and the
-        // merge against that dropped every other in-memory grant — with its key.
-        const next = grantsAfterAdd([first], undefined, second);
-        expect(next.map((item) => item.name)).toEqual(["Agent bb", "Agent aa"]);
-        expect(next[0]?.agentKey).toEqual(key("22"));
-        expect(next[1]?.agentKey).toEqual(key("11"));
+    test("hydrates from the store, key-free", () => {
+        const store = memoryStorage();
+        store.seed([first]);
+        const ledger = createGrantLedger();
+        const grants = withStorage(store.storage, () => ledger.hydrate());
+        expect(names(grants)).toEqual(["Agent aa"]);
+        expect(grants[0]?.agentKey).toBeUndefined();
+        expect(ledger.grants).toBe(grants);
     });
 
-    test("re-adding a context without a store answer replaces it at the head", () => {
-        const fresh = {...grant("aa", key("33")), name: "Renamed"};
-        const next = grantsAfterAdd([second, first], undefined, fresh);
-        expect(next.map((item) => item.name)).toEqual(["Renamed", "Agent bb"]);
-        expect(next[0]?.agentKey).toEqual(key("33"));
+    test("with a working store, a second add keeps the first grant's key and the store's order", () => {
+        const store = memoryStorage();
+        const ledger = createGrantLedger();
+        withStorage(store.storage, () => {
+            ledger.add(first);
+            const grants = ledger.add(second);
+            expect(names(grants)).toEqual(["Agent bb", "Agent aa"]);
+            expect(grants[0]?.agentKey).toEqual(key("22"));
+            expect(grants[1]?.agentKey).toEqual(key("11"));
+            expect(store.stored()).toEqual(["Agent bb", "Agent aa"]);
+        });
     });
 
-    test("forgetting when nothing was persisted removes that grant and nothing else", () => {
-        // The same regression from the other side: `forgetGrant` answered `[]`, and the
-        // merge emptied the list.
-        const next = grantsAfterForget([second, first], undefined, first.artifact.permissionContext);
-        expect(next.map((item) => item.name)).toEqual(["Agent bb"]);
-        expect(next[0]?.agentKey).toEqual(key("22"));
+    test("a grant added while storage was full is written by the next add that succeeds, and keeps its key", () => {
+        // The regression this pins: the failed-persist path applied the add to memory
+        // alone, and the next successful write merged memory against a store that had
+        // never held A — so A, and its key, were dropped by the very act of adding B.
+        const store = memoryStorage();
+        const ledger = createGrantLedger();
+        withStorage(store.storage, () => {
+            store.fill(true);
+            expect(names(ledger.add(first))).toEqual(["Agent aa"]);
+            expect(store.stored()).toEqual([]);
+
+            store.fill(false);
+            const grants = ledger.add(second);
+            expect(names(grants)).toEqual(["Agent bb", "Agent aa"]);
+            expect(grants[0]?.agentKey).toEqual(key("22"));
+            expect(grants[1]?.agentKey).toEqual(key("11"));
+            expect(store.stored()).toEqual(["Agent bb", "Agent aa"]);
+        });
     });
 
-    test("with a store answer, both defer to mergeGrants unchanged", () => {
-        const stored = [persisted(second), persisted(first)];
-        expect(grantsAfterAdd([first], stored, second)).toEqual(
-            mergeGrants({current: [first], persisted: stored, incoming: second}),
+    test("every grant a full storage left behind is written by the next success, in list order", () => {
+        const store = memoryStorage();
+        const ledger = createGrantLedger();
+        withStorage(store.storage, () => {
+            store.fill(true);
+            ledger.add(first);
+            ledger.add(second);
+            expect(store.stored()).toEqual([]);
+
+            store.fill(false);
+            const grants = ledger.add(third);
+            expect(names(grants)).toEqual(["Agent cc", "Agent bb", "Agent aa"]);
+            expect(grants.map((item) => item.agentKey)).toEqual([key("33"), key("22"), key("11")]);
+            expect(store.stored()).toEqual(["Agent cc", "Agent bb", "Agent aa"]);
+        });
+    });
+
+    test("a forget the store answers writes what it is owed too, and forgets only the one asked", () => {
+        const store = memoryStorage();
+        const ledger = createGrantLedger();
+        withStorage(store.storage, () => {
+            ledger.add(third);
+            store.fill(true);
+            expect(names(ledger.add(first))).toEqual(["Agent aa", "Agent cc"]);
+
+            store.fill(false);
+            const grants = ledger.forget(third.artifact.permissionContext);
+            expect(names(grants)).toEqual(["Agent aa"]);
+            expect(grants[0]?.agentKey).toEqual(key("11"));
+            expect(store.stored()).toEqual(["Agent aa"]);
+        });
+    });
+
+    test("a grant forgotten before the store recovers is not resurrected by the recovery", () => {
+        const store = memoryStorage();
+        const ledger = createGrantLedger();
+        withStorage(store.storage, () => {
+            store.fill(true);
+            ledger.add(first);
+            ledger.add(second);
+            expect(names(ledger.forget(first.artifact.permissionContext))).toEqual(["Agent bb"]);
+
+            store.fill(false);
+            const grants = ledger.add(third);
+            expect(names(grants)).toEqual(["Agent cc", "Agent bb"]);
+            expect(store.stored()).toEqual(["Agent cc", "Agent bb"]);
+        });
+    });
+
+    test("a forget the store could not take still leaves memory, keys of the others intact", () => {
+        // The same regression from the other side: a failed forget used to answer `[]`,
+        // and the merge emptied the list.
+        const store = memoryStorage();
+        const ledger = createGrantLedger();
+        withStorage(store.storage, () => {
+            ledger.add(first);
+            ledger.add(second);
+            store.fill(true);
+            const grants = ledger.forget(first.artifact.permissionContext);
+            expect(names(grants)).toEqual(["Agent bb"]);
+            expect(grants[0]?.agentKey).toEqual(key("22"));
+            // Nothing was written: the store still holds what it held.
+            expect(store.stored()).toEqual(["Agent bb", "Agent aa"]);
+        });
+    });
+
+    test("a store that cannot be read is not written over, and memory carries the grant alone", () => {
+        const writes: string[] = [];
+        const ledger = createGrantLedger();
+        const grants = withStorage(
+            {
+                getItem: () => {
+                    throw new Error("SecurityError: the operation is insecure");
+                },
+                setItem: (_key, value) => void writes.push(value),
+            },
+            () => ledger.add(first),
         );
-        expect(
-            grantsAfterForget([second, first], [persisted(second)], first.artifact.permissionContext),
-        ).toEqual(mergeGrants({current: [second, first], persisted: [persisted(second)]}));
+        expect(names(grants)).toEqual(["Agent aa"]);
+        expect(grants[0]?.agentKey).toEqual(key("11"));
+        expect(writes).toEqual([]);
     });
 });
