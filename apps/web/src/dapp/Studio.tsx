@@ -58,9 +58,9 @@ import type {Address} from "viem";
 import {parsePermissionContext, type ParsedPermission} from "../lib/permission";
 import {pick, type Locale} from "../lib/i18n";
 import {LocaleSwitch, useLocale} from "../lib/locale";
+import {STUDIO_SECTIONS, type DetailSection} from "../lib/studio-sections";
 
 type LoadedPermission = Extract<ParsedPermission, {kind: "ok"}>;
-type DetailSection = "overview" | "activity" | "security";
 type StudioSection = "create" | "agents" | DetailSection;
 type ReadState<T> =
     | {kind: "idle"}
@@ -86,7 +86,6 @@ const SECTION_META: Record<DetailSection, {eyebrow: string; icon: LucideIcon}> =
 const COPY: Record<
     Locale,
     {
-        sections: Record<DetailSection, {label: string; title: string; description: string}>;
         mobileHomeAria: string;
         refreshAria: string;
         myAgents: string;
@@ -164,23 +163,6 @@ const COPY: Record<
     }
 > = {
     en: {
-        sections: {
-            overview: {
-                label: "Authority",
-                title: "Delegated authority",
-                description: "Reads what the chain allows right now.",
-            },
-            activity: {
-                label: "Activity",
-                title: "Settlement history",
-                description: "Reads enforcer events — no separate ledger.",
-            },
-            security: {
-                label: "Revoke",
-                title: "Revocation and security",
-                description: "The path that ends this permission, and its current readiness.",
-            },
-        },
         mobileHomeAria: "Mapae home",
         refreshAria: "Refresh on-chain state",
         myAgents: "My agents",
@@ -275,23 +257,6 @@ const COPY: Record<
             "Could not read settlement events. Check the read window or the RPC status.",
     },
     ko: {
-        sections: {
-            overview: {
-                label: "권한",
-                title: "위임된 권한",
-                description: "체인이 지금 허용하는 범위를 읽습니다.",
-            },
-            activity: {
-                label: "활동",
-                title: "정산 기록",
-                description: "별도 원장 없이 enforcer 이벤트를 조회합니다.",
-            },
-            security: {
-                label: "회수",
-                title: "회수와 보안",
-                description: "권한을 끝내는 경로와 현재 준비 상태를 확인합니다.",
-            },
-        },
         mobileHomeAria: "Mapae 홈",
         refreshAria: "온체인 상태 새로고침",
         myAgents: "내 에이전트",
@@ -484,7 +449,7 @@ function StudioBody() {
             ? section
             : "overview";
     const meta = SECTION_META[detailSection];
-    const sectionCopy = t.sections[detailSection];
+    const sectionCopy = STUDIO_SECTIONS[locale][detailSection];
 
     return (
         <div className="studio-shell">
@@ -684,7 +649,7 @@ function StudioSidebar({
                                     onClick={() => onSectionChange(key)}
                                 >
                                     <Icon size={18} />
-                                    <span>{t.sections[key].label}</span>
+                                    <span>{STUDIO_SECTIONS[locale][key].label}</span>
                                 </button>
                             );
                         })}

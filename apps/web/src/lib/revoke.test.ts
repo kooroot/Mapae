@@ -2,6 +2,7 @@ import {describe, expect, test} from "bun:test";
 import {createPublicClient, custom, getAddress, type Address} from "viem";
 import {FAUCET_COPY} from "./faucet";
 import {LOCALES} from "./i18n";
+import {STUDIO_SECTIONS} from "./studio-sections";
 import {
     awaitRevocationVisible,
     judgeStudioRevokeGate,
@@ -253,16 +254,20 @@ describe("studioRevokeGateNote", () => {
     });
 
     test("with a sponsor, the note names the tab and the button that deploy the account now", () => {
-        // Quoted as the Studio renders them: the ‘Authority’ / ‘권한’ tab label, and the
-        // top-up button's own label from `FAUCET_COPY` — the same `/bootstrap` request,
-        // which deploys a codeless account before it tops it up.
+        // Built from the copy the Studio renders — the overview tab's label from
+        // `STUDIO_SECTIONS`, the top-up button's from `FAUCET_COPY` — the same `/bootstrap`
+        // request, which deploys a codeless account before it tops it up. The literal
+        // lines hold the sentence itself, byte for byte, so a change to either source
+        // shows up here as words and not only as a moved reference.
         const en = studioRevokeGateNote(missing, "en", withTopUp);
-        expect(en).toContain("open the ‘Authority’ tab");
+        expect(en).toContain(`open the ‘${STUDIO_SECTIONS.en.overview.label}’ tab`);
         expect(en).toContain(`press ‘${FAUCET_COPY.en.action}’`);
+        expect(en).toContain("open the ‘Authority’ tab and press ‘Get testnet balance’");
         expect(en).toContain("deploys the account first");
         const ko = studioRevokeGateNote(missing, "ko", withTopUp);
-        expect(ko).toContain("‘권한’ 탭에서");
+        expect(ko).toContain(`‘${STUDIO_SECTIONS.ko.overview.label}’ 탭에서`);
         expect(ko).toContain(`‘${FAUCET_COPY.ko.action}’를 누르세요`);
+        expect(ko).toContain("‘권한’ 탭에서 ‘테스트넷 잔액 받기’를 누르세요");
         expect(ko).toContain("계정을 먼저 배포하니");
     });
 
@@ -271,8 +276,7 @@ describe("studioRevokeGateNote", () => {
         for (const locale of LOCALES) {
             const note = studioRevokeGateNote(missing, locale, withoutTopUp);
             expect(note).not.toContain(FAUCET_COPY[locale].action);
-            expect(note).not.toContain("Authority");
-            expect(note).not.toContain("‘권한’");
+            expect(note).not.toContain(`‘${STUDIO_SECTIONS[locale].overview.label}’`);
         }
         expect(studioRevokeGateNote(missing, "en", withoutTopUp)).toContain(
             "Revoke it here as soon as the account exists.",

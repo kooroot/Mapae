@@ -4,7 +4,9 @@ import {buildRevocationSubmissionBody} from "@mapae/delegation/revocation-submis
 import type {Address, Hex, PublicClient} from "viem";
 import type {PackedUserOperation} from "viem/account-abstraction";
 import {deployment, publicClient} from "./config";
+import {FAUCET_COPY} from "./faucet";
 import type {Locale} from "./i18n";
+import {STUDIO_SECTIONS} from "./studio-sections";
 
 /**
  * Why the Studio revoke button is or is not actionable.
@@ -141,9 +143,10 @@ export function studioRevokeButtonLabel(
  * account to exist (`disableDelegation` is called by the account). Anyone holding the
  * permission can have it deployed at any time — the public `/bootstrap` deploys for any
  * signed root permission, and the agent holds one — so waiting is not safe. And the way
- * to deploy it now is the same request from the ‘Authority’ tab's ‘Get testnet balance’,
- * which the page shows only with a configured sponsor: `topUpOffered` says whether it
- * does, so the note never promises a button that is not there.
+ * to deploy it now is the same request from the top-up button on the overview tab, which
+ * the page shows only with a configured sponsor: `topUpOffered` says whether it does, so
+ * the note never promises a button that is not there. The tab and the button are named
+ * from the copy that renders them (`STUDIO_SECTIONS`, `FAUCET_COPY`), never spelled here.
  */
 const NOTE_COPY: Record<
     Locale,
@@ -163,7 +166,7 @@ const NOTE_COPY: Record<
         accountMissing: (topUpOffered) =>
             `The payer account is not deployed yet. Revocation needs the account to exist, and anyone holding this permission can have it deployed at any time. ${
                 topUpOffered
-                    ? "To deploy it yourself now, open the ‘Authority’ tab and press ‘Get testnet balance’ — that request deploys the account first — then revoke it here."
+                    ? `To deploy it yourself now, open the ‘${STUDIO_SECTIONS.en.overview.label}’ tab and press ‘${FAUCET_COPY.en.action}’ — that request deploys the account first — then revoke it here.`
                     : "Revoke it here as soon as the account exists."
             }`,
         // No cause named: the read can fail for reasons on either end, and "check the
@@ -179,7 +182,7 @@ const NOTE_COPY: Record<
         accountMissing: (topUpOffered) =>
             `지불 계정이 아직 배포되지 않았습니다. 회수는 계정이 있어야 할 수 있고, 이 권한을 가진 쪽은 누구든 언제라도 계정을 배포시킬 수 있습니다. ${
                 topUpOffered
-                    ? "지금 직접 배포하려면 ‘권한’ 탭에서 ‘테스트넷 잔액 받기’를 누르세요. 그 요청이 계정을 먼저 배포하니, 그런 다음 여기서 회수하면 됩니다."
+                    ? `지금 직접 배포하려면 ‘${STUDIO_SECTIONS.ko.overview.label}’ 탭에서 ‘${FAUCET_COPY.ko.action}’를 누르세요. 그 요청이 계정을 먼저 배포하니, 그런 다음 여기서 회수하면 됩니다.`
                     : "계정이 생기는 대로 여기서 회수해 주세요."
             }`,
         ownerUnreadable: "지불 계정의 소유자를 읽지 못했습니다. 페이지를 새로고침해 다시 시도해 주세요.",
