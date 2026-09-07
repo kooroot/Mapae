@@ -25,6 +25,7 @@ import {
     type PaymentRequired,
 } from "@mapae/shared";
 import {
+    CLIENT_IP_HEADER,
     decideSettlement,
     decideVerification,
     derivePaymentIntentId,
@@ -165,6 +166,11 @@ export interface MapaeSeller {
      * On success the receipt rides in `Payment-Response` (and the legacy
      * `X-PAYMENT-RESPONSE`), `c.get("mapaeReceipt")` holds it, and `onSettled` has run.
      *
+     * The facilitator rate-limits `/verify` and `/settle` per client address. When the
+     * buyer's request carries `CF-Connecting-IP`, that value is forwarded on both calls
+     * as `X-Mapae-Client-IP`, so the buyer is counted rather than this server; the
+     * facilitator reads it only from a caller it cannot see the address of.
+     *
      * Mount it as a middleware in front of a handler. When it is the last matched route
      * it answers 404 without pricing anything — a buyer never pays for a route nothing
      * serves.
@@ -283,6 +289,16 @@ function readSupportedKind(body: unknown): FacilitatorKind | undefined {
 type FacilitatorAnswer = {reachable: boolean; body?: unknown};
 
 /**
+ * What a payment call says about the buyer. `clientIp` is the buyer's `CF-Connecting-IP`
+ * as the paywall received it, forwarded in {@link CLIENT_IP_HEADER} so the facilitator's
+ * per-address limit counts the buyer and not this server; absent, no header is sent and
+ * the facilitator counts whoever it can see.
+ */
+interface BuyerContext {
+    clientIp: string | undefined;
+}
+
+/**
  * The three facilitator calls, with the one rule they share: `reachable: false` is every
  * way a call did not yield a body — refused connection, non-2xx, unparseable JSON,
  * timeout. It deliberately does not distinguish them. For `/settle` they are all the
@@ -328,24 +344,32 @@ class FacilitatorClient {
         return this.#cached?.kind;
     }
 
-    verify(request: Erc7710FacilitatorRequest): Promise<FacilitatorAnswer> {
-        return this.#call("/verify", request, VERIFY_TIMEOUT_MS);
+    verify(request: Erc7710FacilitatorRequest, buyer: BuyerContext): Promise<FacilitatorAnswer> {
+        return this.#call("/verify", {request, buyer}, VERIFY_TIMEOUT_MS);
     }
 
-    settle(request: Erc7710FacilitatorRequest): Promise<FacilitatorAnswer> {
-        return this.#call("/settle", request, SETTLE_TIMEOUT_MS);
+    settle(request: Erc7710FacilitatorRequest, buyer: BuyerContext): Promise<FacilitatorAnswer> {
+        return this.#call("/settle", {request, buyer}, SETTLE_TIMEOUT_MS);
     }
 
     async #call(
         path: "/supported" | "/verify" | "/settle",
-        request: Erc7710FacilitatorRequest | undefined,
+        payment: {request: Erc7710FacilitatorRequest; buyer: BuyerContext} | undefined,
         timeoutMs: number,
     ): Promise<FacilitatorAnswer> {
         try {
             const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-                method: request ? "POST" : "GET",
-                ...(request
-                    ? {headers: {"content-type": "application/json"}, body: JSON.stringify(request)}
+                method: payment ? "POST" : "GET",
+                ...(payment
+                    ? {
+                          headers: {
+                              "content-type": "application/json",
+                              ...(payment.buyer.clientIp === undefined
+                                  ? {}
+                                  : {[CLIENT_IP_HEADER]: payment.buyer.clientIp}),
+                          },
+                          body: JSON.stringify(payment.request),
+                      }
                     : {}),
                 redirect: "error",
                 signal: AbortSignal.timeout(timeoutMs),
@@ -487,10 +511,15 @@ function buildPaywall(
         // against. The facilitator itself binds that claim to the signed root, so an
         // answer naming anyone else is an answer about some other payment.
         const payer = getAddress(payload.payload.delegator);
+        // Only the address Cloudflare wrote on the buyer's request. An `X-Mapae-Client-IP`
+        // the buyer sent themselves is never passed through: a request through the tunnel
+        // always carries `CF-Connecting-IP`, and one that does not carry it came from
+        // somewhere the facilitator would not count anyway.
+        const buyer: BuyerContext = {clientIp: c.req.header("cf-connecting-ip")};
 
         // "Could not be reached" and "refused this delegation" are different claims.
         // Nothing is charged at /verify, so 503 is a safe, honest "retry later".
-        const verification = decideVerification(await facilitator.verify(request), payer);
+        const verification = decideVerification(await facilitator.verify(request, buyer), payer);
         if (verification.kind === "unavailable") {
             return c.json({error: "facilitator_unavailable"}, 503);
         }
@@ -499,7 +528,7 @@ function buildPaywall(
         // "Did not succeed" and "is not known to have succeeded" are different claims
         // too. A transport failure, or a facilitator that broadcast without seeing a
         // receipt, leaves the payer possibly charged — 422 would assert they were not.
-        const outcome = decideSettlement(await facilitator.settle(request), payer);
+        const outcome = decideSettlement(await facilitator.settle(request, buyer), payer);
         if (outcome.kind === "unknown") return c.json({error: "settlement_unknown"}, 504);
         if (outcome.kind === "failed") return c.json({error: "settlement_failed"}, 422);
 

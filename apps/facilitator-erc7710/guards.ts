@@ -7,6 +7,7 @@
  * `index.ts` only wires them into Hono.
  */
 import {
+    CLIENT_IP_HEADER,
     FixedWindowLimiter,
     SpendBudget,
     isRateLimitError,
@@ -22,13 +23,6 @@ import {HttpRequestError, TimeoutError, type Address} from "viem";
 
 const RATE_LIMITED = "rate_limited";
 export const RATE_WINDOW_MS = 3_600_000;
-/**
- * The header the seller forwards the buyer's `CF-Connecting-IP` in when it calls this
- * service over loopback. Read only when `CF-Connecting-IP` itself is absent — Cloudflare
- * writes that one on every request through the tunnel, so a request that lacks it came
- * from a process on this machine, and only our own services run there.
- */
-export const CLIENT_IP_HEADER = "x-mapae-client-ip";
 /**
  * Expired windows are dropped from the limiter's map every this-many limited requests
  * rather than on each one. `sweep` walks the whole map: measured at 6.1 ms per call with

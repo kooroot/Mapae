@@ -21,7 +21,7 @@ import {
     type Erc7710DelegationPayload,
 } from "@mapae/shared";
 import {ENTRY_POINT_V07} from "@mapae/delegation/config";
-import {SETTLEMENT_UNCONFIRMED} from "@mapae/delegation/facilitator-contract";
+import {CLIENT_IP_HEADER, SETTLEMENT_UNCONFIRMED} from "@mapae/delegation/facilitator-contract";
 import {
     buildD3Policies,
     preparePeriodDelegation,
@@ -117,6 +117,8 @@ interface Call {
     path: string;
     method: string;
     contentType?: string;
+    /** The buyer the paywall named in `X-Mapae-Client-IP`, when it named one. */
+    clientIp?: string;
     body?: unknown;
 }
 
@@ -145,6 +147,7 @@ function facilitator(routes: Partial<Record<Path, Route>> = {}) {
             path: url.pathname,
             method: init?.method ?? "GET",
             contentType: headers.get("content-type") ?? undefined,
+            clientIp: headers.get(CLIENT_IP_HEADER) ?? undefined,
             body: init?.body ? JSON.parse(String(init.body)) : undefined,
         });
         const route = table[url.pathname as Path];
@@ -653,6 +656,59 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
 
 const LOCAL_FACILITATOR = "http://127.0.0.1:8081";
 const OTHER_PAY_TO = getAddress("0x2000000000000000000000000000000000000002");
+
+describe("mapaePaywall — naming the buyer to the facilitator", () => {
+    const BUYER = "203.0.113.5";
+    const payFrom = (app: Hono, headers: Record<string, string>) =>
+        app.request(RESOURCE, {headers: {[PAYMENT_SIGNATURE_HEADER]: paymentHeader(), ...headers}});
+    const forwarded = (remote: ReturnType<typeof facilitator>) =>
+        remote.calls.map((call) => [call.path, call.clientIp]);
+
+    test("the buyer's CF-Connecting-IP rides on /verify and /settle as X-Mapae-Client-IP", async () => {
+        const remote = facilitator();
+        const {app, seen} = seller(paywall({fetch: remote.fetch}));
+        expect((await payFrom(app, {"cf-connecting-ip": BUYER})).status).toBe(200);
+        expect(seen.served).toBe(1);
+        // /supported is about the facilitator, not a buyer, and is cached across buyers.
+        expect(forwarded(remote)).toEqual([
+            ["/supported", undefined],
+            ["/verify", BUYER],
+            ["/settle", BUYER],
+        ]);
+    });
+
+    test("a request without CF-Connecting-IP names nobody", async () => {
+        const remote = facilitator();
+        const {app} = seller(paywall({fetch: remote.fetch}));
+        expect((await pay(app)).status).toBe(200);
+        expect(forwarded(remote)).toEqual([
+            ["/supported", undefined],
+            ["/verify", undefined],
+            ["/settle", undefined],
+        ]);
+    });
+
+    test("an X-Mapae-Client-IP the buyer sent is never passed through", async () => {
+        // Forwarding it would let a buyer with no CF-Connecting-IP pick whose window they
+        // are counted in. Beside a CF-Connecting-IP it is simply not the buyer's address.
+        const remote = facilitator();
+        const {app} = seller(paywall({fetch: remote.fetch}));
+        expect((await payFrom(app, {[CLIENT_IP_HEADER]: "198.51.100.7"})).status).toBe(200);
+        expect(forwarded(remote)).toEqual([
+            ["/supported", undefined],
+            ["/verify", undefined],
+            ["/settle", undefined],
+        ]);
+        remote.calls.length = 0;
+        expect(
+            (await payFrom(app, {"cf-connecting-ip": BUYER, [CLIENT_IP_HEADER]: "198.51.100.7"})).status,
+        ).toBe(200);
+        expect(forwarded(remote)).toEqual([
+            ["/verify", BUYER],
+            ["/settle", BUYER],
+        ]);
+    });
+});
 
 describe("createMapae", () => {
     test("shares one facilitator client across its paywalls: two routes, one /supported fetch", async () => {

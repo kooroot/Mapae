@@ -4,13 +4,12 @@
  * clock the test moves by hand wherever a window matters.
  */
 import {afterEach, describe, expect, test} from "bun:test";
-import {FixedWindowLimiter, SpendBudget, budgetDay} from "@mapae/delegation";
+import {CLIENT_IP_HEADER, FixedWindowLimiter, SpendBudget, budgetDay} from "@mapae/delegation";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
 import {Hono} from "hono";
 import {HttpRequestError, TimeoutError, getAddress, type Address} from "viem";
 import {
     BudgetExhausted,
-    CLIENT_IP_HEADER,
     CachedProbe,
     GasBudgets,
     PAYER_IDLE_MS,

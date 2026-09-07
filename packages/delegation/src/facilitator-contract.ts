@@ -40,6 +40,16 @@ export type Erc7710FacilitatorRequest = FacilitatorRequest<
  */
 export const SETTLEMENT_UNCONFIRMED = "settlement_unconfirmed";
 
+/**
+ * The header a seller forwards the buyer's `CF-Connecting-IP` in. The facilitator
+ * rate-limits `/verify` and `/settle` per client address, and a seller on the same
+ * machine reaches it over loopback, where no `CF-Connecting-IP` exists — without the
+ * forwarded name every buyer of that seller was one unlimited caller. The facilitator
+ * reads it only when `CF-Connecting-IP` itself is absent, so a request through the
+ * tunnel cannot use it to be counted as somebody else.
+ */
+export const CLIENT_IP_HEADER = "x-mapae-client-ip";
+
 export interface Erc7710VerifyResponse {
     isValid: boolean;
     payer?: Address;
