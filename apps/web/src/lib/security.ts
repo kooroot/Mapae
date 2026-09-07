@@ -1,3 +1,5 @@
+import type {SiteSurface} from "./config";
+
 const CSP_NONCE_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 
 /**
@@ -14,31 +16,55 @@ export function createSsrNonce(): string | undefined {
     return globalThis.crypto.randomUUID().replaceAll("-", "");
 }
 
-export function createContentSecurityPolicy(nonce: string): string {
+/**
+ * The policy for one response, shaped by which product the build is.
+ *
+ * Cloudflare Web Analytics is a zone setting: the edge injects a beacon script into
+ * the landing's HTML and the beacon posts to `cloudflareinsights.com`, so the landing
+ * has to name that pair or the beacon dies in the console. A `script-src` entry is
+ * full-page code execution for whoever controls the origin, and the Studio's custody
+ * argument is that the agent key never leaves this tab — one policy for both surfaces
+ * handed that origin the Studio too, for a beacon that was never injected there. Only
+ * a build that is nothing but the landing admits the pair; `combined` hosts the Studio
+ * as well, so it takes the Studio's policy.
+ *
+ * `connect-src` is what the page fetches, not what it links to. The explorer is
+ * reached only through `<a href>`, which CSP does not police, so it is not here; the
+ * RPC host is what viem reads, and the facilitator host carries both `/bootstrap` and
+ * `/revoke` — CSP polices origins, not paths, so the one entry is a precondition of
+ * onboarding and of the kill switch alike.
+ *
+ * Styles are split three ways. The production document emits exactly one stylesheet
+ * element — a `<link>` to this origin that TanStack stamps with the request nonce —
+ * and no `<style>` at all, so `style-src-elem` needs only `'self'` plus the nonce.
+ * The `style="…"` attributes React renders (transition delays, one meter width) have
+ * no nonce mechanism, hence `style-src-attr 'unsafe-inline'`. The plain `style-src`
+ * keeps today's `'unsafe-inline'` for browsers that predate the granular directives;
+ * the ones that understand them ignore it.
+ */
+export function createContentSecurityPolicy(nonce: string, surface: SiteSurface): string {
     if (!CSP_NONCE_PATTERN.test(nonce)) {
         throw new Error("CSP nonce must be a 128-bit URL-safe value");
     }
+    const telemetry = surface === "landing";
 
     return [
         "default-src 'self'",
-        `script-src 'self' 'nonce-${nonce}' https://static.cloudflareinsights.com`,
+        [
+            "script-src 'self'",
+            `'nonce-${nonce}'`,
+            ...(telemetry ? ["https://static.cloudflareinsights.com"] : []),
+        ].join(" "),
         "style-src 'self' 'unsafe-inline'",
+        `style-src-elem 'self' 'nonce-${nonce}'`,
+        "style-src-attr 'unsafe-inline'",
         "font-src 'self'",
         "img-src 'self' data:",
         [
             "connect-src 'self'",
             "https://sepolia-rpc.giwa.io",
-            "https://sepolia-explorer.giwa.io",
-            // The sponsored bootstrap AND revocation endpoints, both routed by path on
-            // the facilitator host — one origin entry covers `/bootstrap` and `/revoke`
-            // alike, because CSP polices origins, not paths. Without this entry the
-            // browser never sends either request, so this line is a precondition of the
-            // onboarding and kill-switch flows rather than a loosening of them. What
-            // travels to it is a signed permission context or an owner-signed revocation,
-            // which the same page already holds; the origin is ours and `vite.config.ts`
-            // pins the host at build time for both variables.
             "https://facilitator.mapae.io",
-            "https://cloudflareinsights.com",
+            ...(telemetry ? ["https://cloudflareinsights.com"] : []),
         ].join(" "),
         "frame-ancestors 'none'",
         "base-uri 'none'",
