@@ -53,6 +53,7 @@ import {
     VERIFY_RATE_LIMITED,
     classifyFrameworkError,
     frameworkPausedFrom,
+    isRpcUnreachable,
     rateLimitByIp,
     requireReadiness,
     type FrameworkHealthError,
@@ -425,7 +426,9 @@ class SettlementCoordinator {
     /**
      * Simulate the redemption against live state and price it. Nothing in here can
      * broadcast — a simulation revert or a gas-cap refusal charges nobody — so a throw
-     * from this method is a genuine rejection on `/verify` and `/settle` alike.
+     * from this method is a genuine rejection on `/verify` and `/settle` alike, unless
+     * it is the RPC failing to answer: `/verify` tells that apart (`isRpcUnreachable`)
+     * and answers not-ready instead.
      */
     async #prepareRedemption(payment: ValidatedDelegatedPayment) {
         const transfer = buildDelegatedTransfer(payment);
@@ -686,6 +689,10 @@ app.post("/verify", async (c) => {
         return c.json(response);
     } catch (error) {
         logSafeFailure("verify", error);
+        // The RPC dying inside the simulation is no verdict either — the readiness probe
+        // passed up to 5 s ago and the delegation was never judged. Same answer as a
+        // failed probe: the seller reads the 503 as unavailable and the buyer retries.
+        if (isRpcUnreachable(error)) return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
         const response: Erc7710VerifyResponse = {isValid: false, invalidReason: "delegation_rejected"};
         return c.json(response);
     }

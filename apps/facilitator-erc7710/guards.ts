@@ -276,9 +276,10 @@ export type FrameworkHealthError =
  * viem wraps a transport failure in `HttpRequestError` (or `TimeoutError`) and nests it
  * as the `cause` of whatever action was running, so the chain is walked. A rate-limit
  * answer that outlived the throttled transport's retries is the RPC refusing to answer,
- * which is the same thing from here.
+ * which is the same thing from here. `/verify` asks the same question of a failed
+ * simulation: a transport death in there is no verdict on the delegation either.
  */
-function isRpcUnreachable(error: unknown): boolean {
+export function isRpcUnreachable(error: unknown): boolean {
     if (isRateLimitError(error)) return true;
     let current: unknown = error;
     let depth = 0;

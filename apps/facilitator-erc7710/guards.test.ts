@@ -28,6 +28,7 @@ import {
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     classifyFrameworkError,
+    isRpcUnreachable,
     frameworkPausedFrom,
     rateLimitByIp,
     requireReadiness,
@@ -436,6 +437,14 @@ describe("GasBudgets", () => {
         expect(payers.size).toBe(1);
         gas.reserve(BOB, 1n, NOW + PAYER_IDLE_MS).settle(1n, NOW + PAYER_IDLE_MS);
         expect(payers.size).toBe(1);
+    });
+});
+
+describe("isRpcUnreachable", () => {
+    test("a simulation that died on transport is the RPC not answering; a revert is a verdict", () => {
+        const transport = new HttpRequestError({url: "https://rpc.example/key", details: "fetch failed"});
+        expect(isRpcUnreachable(new Error("simulation failed", {cause: transport}))).toBe(true);
+        expect(isRpcUnreachable(new Error("execution reverted: caveat"))).toBe(false);
     });
 });
 
