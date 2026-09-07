@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-803%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-936%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -105,7 +105,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 문서](https://docs.mapae.io)에 있다.
-- 회귀 검증: **803 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts 613 + MCP 3 + 웹 154 + 문서 33)
+- 회귀 검증: **936 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts 699 + MCP 3 + 웹 201 + 문서 33)
   + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -146,7 +146,8 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   이체는 채굴됐고 에이전트는 거절됐다는 답을 받았다. 이제 예산이 바깥으로 갈수록
   길어지고(25 → 35 → 45 → 50초), 결과가 확정되지 않은 결제는 `PAYMENT_REJECTED`가
   아니라 `SETTLEMENT_UNKNOWN`을 돌려준다 — 둘은 정반대 대응을 부르고, 앞의 것을
-  재시도하면 두 번 낼 수 있기 때문이다. fork는 즉시 채굴이라 로컬 테스트로는 절대
+  재시도하면 두 번 낼 수 있기 때문이다. 판매자가 결제를 아예 받지 못한 경우(503/429 —
+  facilitator의 요청 제한·준비 안 됨)는 `SELLER_UNAVAILABLE`이다: 자금 불변, 재시도해도 된다. fork는 즉시 채굴이라 로컬 테스트로는 절대
   나오지 않는다.
 - **온보딩 스폰서는 인증 없는 인터넷 요청에 응답하는, 자금이 든 키다.** 키페어는
   오프라인에서 공짜로 만들 수 있으므로 계정 단위 중복방지는 예산이 아니라 신원일

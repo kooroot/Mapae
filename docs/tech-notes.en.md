@@ -405,9 +405,11 @@ EOA transaction that needs no deposit). The defence is two layers: the facilitat
 `verifyFrameworkOperationalState` checks `paused` on every request and refuses
 before settling, and on-chain the `whenNotPaused` on `redeemDelegations`
 (`DelegationManager.sol:132`) reverts even a bypass of that gate. The suite confirms
-that executing `pause()` on a fork with an impersonated owner has the payment
-refused with `PAYMENT_REJECTED 403` and `/health` reporting `ok=false` with the
-reason `DelegationManager is not operationally active`.
+that executing `pause()` on a fork with an impersonated owner has `/health` report
+`ok=false`, `frameworkError=framework_paused` and `frameworkPaused=true`, and has
+the payment turned away as not-ready rather than judged (`/verify` 503
+`facilitator_not_ready`), so the agent receives `SELLER_UNAVAILABLE` — nothing
+charged, retry later.
 
 ### Reproduction
 

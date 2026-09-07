@@ -132,6 +132,7 @@ cd apps/delegation-lab && bun run run:giwa -- --broadcast
 | `LIMIT_EXCEEDED` | 이번 주기 잔량 부족 | 60초 기다렸다 재실행. **정상 동작이다** |
 | `PERMISSION_INACTIVE` | 만료/미개시/회수 | permission 재서명 필요 |
 | `PERMISSION_EMPTY` | permission 파일이 위임 0개로 디코드됨 | 체인 상태가 아니라 **아티팩트가 잘못됐다.** 서명 절차를 다시 밟을 것 |
+| `SELLER_UNAVAILABLE` | 판매자가 결제를 받지 못함(503/429) — facilitator의 요청 제한·준비 안 됨 | 자금 불변. `SETTLEMENT_UNKNOWN`과 달리 **재시도해도 된다** |
 | **`SETTLEMENT_UNKNOWN`** | 정산이 브로드캐스트됐고 결과를 확인하지 못함 | **재시도 금지.** 아래 참조 |
 | `AA21` / relayer 잔고 | relayer ETH 고갈 | 충전 |
 | 대조 실패 | 같은 블록에 다른 결제가 섞임 | 증거 JSON과 explorer로 수동 확인 |

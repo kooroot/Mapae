@@ -175,6 +175,7 @@ Claude Desktop 등 JSON 설정 클라이언트 (`mcpServers`):
 | `LIMIT_EXCEEDED` | 이번 주기 잔량 부족 | 주기가 돌아온 뒤 재시도 — 정상 동작이다 |
 | `PERMISSION_INACTIVE` | 회수·만료·미개시 | permission 재서명 또는 체인 상태 확인 |
 | `PAYMENT_REJECTED` | 판매자·facilitator가 명시적으로 거절 | 자금 불변. `detail` 확인 |
+| `SELLER_UNAVAILABLE` | 판매자가 결제를 받지 못함 — facilitator가 요청 제한·준비 안 됨으로 보지 않았거나(503) 판매자 자체의 429 | 자금 불변. 같은 오퍼로 잠시 뒤 재시도 |
 | `SETTLEMENT_UNKNOWN` | 정산 결과 미확인 | **재시도 금지.** [GIWA 런북 6장](giwa-demo-runbook.md) 절차로 확인 |
 
 permission 파일이 위임 0개로 디코드되는 경우는 이 서버에서는 부팅 검증이

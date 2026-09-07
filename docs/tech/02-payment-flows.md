@@ -337,9 +337,10 @@ payer의 native 잔액은 0으로 유지된다. 단 `withdrawTo`는 `deposits[ms
 `verifyFrameworkOperationalState`가 매 요청마다 `paused`를 확인해 정산 전에
 거절하고, 온체인에서는 `redeemDelegations`에 걸린
 `whenNotPaused`(`DelegationManager.sol:132`)가 게이트 우회조차 revert시킨다.
-fork에서 owner를 impersonate해 `pause()`를 실행하면 결제가
-`PAYMENT_REJECTED 403`으로 거절되고 `/health`가 `ok=false`와
-`DelegationManager is not operationally active` 사유를 보고하는 것까지 수트가
+fork에서 owner를 impersonate해 `pause()`를 실행하면 `/health`가 `ok=false`,
+`frameworkError=framework_paused`, `frameworkPaused=true`를 보고하고, 결제는
+판정이 아니라 준비 안 됨(`/verify` 503 `facilitator_not_ready`)으로 돌려보내져
+에이전트가 `SELLER_UNAVAILABLE`(자금 불변, 나중에 재시도)을 받는 것까지 수트가
 확인한다.
 
 ## 재현
