@@ -1,10 +1,8 @@
 import {describe, expect, mock, test} from "bun:test";
 import {createPublicClient, custom, getAddress, type Address} from "viem";
 import * as faucet from "./faucet";
-import {FAUCET_COPY} from "./faucet";
 import {LOCALES} from "./i18n";
 import * as studioSections from "./studio-sections";
-import {STUDIO_SECTIONS} from "./studio-sections";
 import {
     awaitRevocationVisible,
     judgeStudioRevokeGate,
@@ -262,13 +260,13 @@ describe("studioRevokeGateNote", () => {
         // lines hold the sentence itself, byte for byte, so a change to either source
         // shows up here as words and not only as a moved reference.
         const en = studioRevokeGateNote(missing, "en", withTopUp);
-        expect(en).toContain(`open the ‘${STUDIO_SECTIONS.en.overview.label}’ tab`);
-        expect(en).toContain(`press ‘${FAUCET_COPY.en.action}’`);
+        expect(en).toContain(`open the ‘${studioSections.STUDIO_SECTIONS.en.overview.label}’ tab`);
+        expect(en).toContain(`press ‘${faucet.FAUCET_COPY.en.action}’`);
         expect(en).toContain("open the ‘Authority’ tab and press ‘Get testnet balance’");
         expect(en).toContain("deploys the account first");
         const ko = studioRevokeGateNote(missing, "ko", withTopUp);
-        expect(ko).toContain(`‘${STUDIO_SECTIONS.ko.overview.label}’ 탭에서`);
-        expect(ko).toContain(`‘${FAUCET_COPY.ko.action}’를 누르세요`);
+        expect(ko).toContain(`‘${studioSections.STUDIO_SECTIONS.ko.overview.label}’ 탭에서`);
+        expect(ko).toContain(`‘${faucet.FAUCET_COPY.ko.action}’를 누르세요`);
         expect(ko).toContain("‘권한’ 탭에서 ‘테스트넷 잔액 받기’를 누르세요");
         expect(ko).toContain("계정을 먼저 배포하니");
     });
@@ -277,8 +275,8 @@ describe("studioRevokeGateNote", () => {
         // `TestnetTopUp` renders nothing without a configured sponsor.
         for (const locale of LOCALES) {
             const note = studioRevokeGateNote(missing, locale, withoutTopUp);
-            expect(note).not.toContain(FAUCET_COPY[locale].action);
-            expect(note).not.toContain(`‘${STUDIO_SECTIONS[locale].overview.label}’`);
+            expect(note).not.toContain(faucet.FAUCET_COPY[locale].action);
+            expect(note).not.toContain(`‘${studioSections.STUDIO_SECTIONS[locale].overview.label}’`);
         }
         expect(studioRevokeGateNote(missing, "en", withoutTopUp)).toContain(
             "Revoke it here as soon as the account exists.",
@@ -458,7 +456,7 @@ describe("awaitRevocationVisible", () => {
 /*
  * The export sets as they were before any mock below, captured at load: a module mock is
  * process-wide and rewrites the live bindings of everything that imported the module —
- * this file's own `STUDIO_SECTIONS` included — so the namespace objects cannot be read
+ * this file's own `studioSections` included — so the namespace objects cannot be read
  * back for the restore once the probe is in.
  */
 const REAL_STUDIO_SECTIONS = {...studioSections};
@@ -475,20 +473,20 @@ describe("the account-missing note reads the Studio's copy rather than spelling 
             ...REAL_STUDIO_SECTIONS,
             STUDIO_SECTIONS: {
                 en: {
-                    ...STUDIO_SECTIONS.en,
-                    overview: {...STUDIO_SECTIONS.en.overview, label: "PROBE-TAB"},
+                    ...REAL_STUDIO_SECTIONS.STUDIO_SECTIONS.en,
+                    overview: {...REAL_STUDIO_SECTIONS.STUDIO_SECTIONS.en.overview, label: "PROBE-TAB"},
                 },
                 ko: {
-                    ...STUDIO_SECTIONS.ko,
-                    overview: {...STUDIO_SECTIONS.ko.overview, label: "탐침-탭"},
+                    ...REAL_STUDIO_SECTIONS.STUDIO_SECTIONS.ko,
+                    overview: {...REAL_STUDIO_SECTIONS.STUDIO_SECTIONS.ko.overview, label: "탐침-탭"},
                 },
             },
         }));
         mock.module("./faucet", () => ({
             ...REAL_FAUCET,
             FAUCET_COPY: {
-                en: {...FAUCET_COPY.en, action: "PROBE-BUTTON"},
-                ko: {...FAUCET_COPY.ko, action: "탐침-버튼"},
+                en: {...REAL_FAUCET.FAUCET_COPY.en, action: "PROBE-BUTTON"},
+                ko: {...REAL_FAUCET.FAUCET_COPY.ko, action: "탐침-버튼"},
             },
         }));
         try {
