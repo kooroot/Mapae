@@ -241,7 +241,13 @@ const SPONSORED = PINNED_PAYER === undefined;
  * a gas bill. In sponsored mode the fee ceiling is 1% of the pinned one: the prefund is
  * the *sponsor's* exposure — the EntryPoint refunds the unused part into the requester's
  * own deposit, where their owner can withdraw it — so the ceiling is what turns a
- * per-request faucet into a number the daily budget can bound.
+ * per-request faucet into a number the daily budget can bound. In numbers: the prefund
+ * is (300,000 + 300,000 + 100,000) × 10,000,000 = 7e12 wei (0.000007 ETH) per request,
+ * and whatever `handleOps` does not consume of it stays in the requester's deposit —
+ * most of it, since the operation uses a fraction of its limits. That gift is accepted:
+ * it is bounded at 7e12 wei per request and at `REVOCATION_DAILY_WEI` (7e14 wei, 70
+ * requests) per day, and the requester still had to produce their own account's
+ * ERC-1271 signature to collect it.
  */
 const policy: RevocationSubmissionPolicy = {
     ...(PINNED_PAYER === undefined ? {} : {payer: PINNED_PAYER}),
