@@ -58,19 +58,19 @@ export function createSsrNonce(): string | undefined {
  * `/revoke` — CSP polices origins, not paths, so the one entry is a precondition of
  * onboarding and of the kill switch alike.
  *
- * `style-src` keeps `'unsafe-inline'`, with no `style-src-elem` nonce narrowing it.
- * The production document would take one — its only stylesheet is a `<link>` to this
- * origin that TanStack stamps with the request nonce, and it emits no `<style>` — but
- * `bun run dev` would not: Vite's dev client injects each CSS import as a `<style>`
- * and copies its nonce from the `nonce` attribute of `meta[property=csp-nonce]`,
- * while TanStack writes the value into that meta's `content`, so the injected styles
- * carry none. With the split every dev page rendered unstyled (six violations from
- * `/@vite/client`, `document.styleSheets.length === 0`) and CSS HMR was dead.
- * Splitting for production only would put a policy in front of developers that
- * differs from the one that ships, for a gain the rest of this policy already makes
- * moot: with `default-src 'self'` an injected `<style>` cannot reach an outside
- * origin, so all the nonce would still deny is defacement — which a `style="…"`
- * attribute does just as well.
+ * `style-src` is `'self'` plus the request nonce: no `'unsafe-inline'`, and no `-attr`
+ * escape hatch. The production document earns that on its own — its only stylesheet
+ * is a `<link>` to this origin, and it emits no `<style>`. `bun run dev` did not, and
+ * an earlier split was reverted for it: Vite's dev client injects each CSS import as
+ * a `<style>` and copies its nonce from the `nonce` IDL property of the first
+ * `meta[property=csp-nonce]`, while TanStack's meta carries the value in `content`
+ * alone — so the injected styles had no nonce, every dev page rendered unstyled and
+ * CSS HMR was dead. The root document now renders its own `meta[property=csp-nonce]`
+ * ahead of TanStack's, with the value as both `content` (what TanStack's hydration
+ * reads) and `nonce` (what Vite reads), so the policy developers work under is the
+ * one that ships. A nonce cannot bless a `style="…"` attribute — CSP has no such
+ * mechanism short of `'unsafe-hashes'` — so the app renders none: the three that
+ * existed went to the stylesheet and the CSSOM, which the policy does not police.
  */
 export function createContentSecurityPolicy(nonce: string, surface: SiteSurface): string {
     if (!CSP_NONCE_PATTERN.test(nonce)) {
@@ -85,7 +85,7 @@ export function createContentSecurityPolicy(nonce: string, surface: SiteSurface)
             `'nonce-${nonce}'`,
             ...(telemetry ? ["https://static.cloudflareinsights.com"] : []),
         ].join(" "),
-        "style-src 'self' 'unsafe-inline'",
+        `style-src 'self' 'nonce-${nonce}'`,
         "font-src 'self'",
         "img-src 'self' data:",
         [

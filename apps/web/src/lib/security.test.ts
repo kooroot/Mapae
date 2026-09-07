@@ -105,16 +105,21 @@ describe("document security policy", () => {
         }
     });
 
-    test("style-src keeps unsafe-inline, and no element directive narrows it", () => {
-        // `bun run dev` injects each CSS import as a nonce-less `<style>` — Vite reads the
-        // csp-nonce meta's `nonce` attribute, TanStack writes its `content` — so a nonce
-        // on style-src-elem blanks every dev page while production passes. The policy
-        // developers work under has to be the one that ships.
-        const policy = createContentSecurityPolicy(NONCE, "app");
+    test("style-src is the request nonce on both surfaces, with no unsafe-inline anywhere", () => {
+        // A nonce-only style-src refuses every `style="…"` attribute and every `<style>`
+        // without the nonce. Dev survives it because the root document renders a
+        // `meta[property=csp-nonce]` whose IDL `nonce` Vite's client copies onto the
+        // styles it injects; production never emits a `<style>` at all. No `-elem` or
+        // `-attr` directive: one policy for the developer and the visitor alike.
+        for (const surface of ["app", "landing"] as const) {
+            const policy = createContentSecurityPolicy(NONCE, surface);
 
-        expect(sources(policy, "style-src")).toEqual(["'self'", "'unsafe-inline'"]);
-        expect(policy).not.toContain("style-src-elem");
-        expect(policy).not.toContain("style-src-attr");
+            expect(sources(policy, "style-src")).toEqual(["'self'", `'nonce-${NONCE}'`]);
+            expect(policy).not.toContain("'unsafe-inline'");
+            expect(policy).not.toContain("'unsafe-hashes'");
+            expect(policy).not.toContain("style-src-elem");
+            expect(policy).not.toContain("style-src-attr");
+        }
     });
 
     test("rejects values that could alter the response header", () => {

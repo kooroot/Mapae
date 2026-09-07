@@ -1,4 +1,4 @@
-import {HeadContent, Scripts, createRootRoute} from "@tanstack/react-router";
+import {HeadContent, Scripts, createRootRoute, useRouter} from "@tanstack/react-router";
 import type {ReactNode} from "react";
 import {appUrl, landingUrl, siteSurface} from "../lib/config";
 import {LOCALE_PATH_PREFIX, pick} from "../lib/i18n";
@@ -134,9 +134,24 @@ function RootDocument({children}: {children: ReactNode}) {
 
 function LocalizedDocument({children}: {children: ReactNode}) {
     const {locale} = useLocale();
+    // Minted once per SSR request; TanStack's client reads it back from the meta below
+    // before hydration renders, so both sides render the same value.
+    const nonce = useRouter().options.ssr?.nonce;
     return (
         <html lang={locale}>
             <head>
+                {/*
+                 * Ahead of HeadContent on purpose: this has to be the first
+                 * `meta[property=csp-nonce]` in the document. Two readers take the first
+                 * match and disagree on where the value lives — Vite's dev client copies
+                 * the `nonce` IDL property onto every `<style>` it injects for a CSS
+                 * import, TanStack's hydration reads `content`. TanStack's own meta carries
+                 * `content` alone, so under a nonce-only `style-src` every dev page rendered
+                 * unstyled. This one carries both. The browser blanks the `nonce` attribute
+                 * once the element is parsed, which is no hydration mismatch: React matches
+                 * a hoistable meta by `content` and `property` and never diffs the rest.
+                 */}
+                <meta property="csp-nonce" content={nonce} nonce={nonce} />
                 <HeadContent />
             </head>
             <body>
