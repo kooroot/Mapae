@@ -20,7 +20,7 @@ import {
     type Erc7710SettleResponse,
     type Erc7710VerifyResponse,
 } from "@mapae/delegation";
-import {GIWA_SEPOLIA_CAIP2, redactForLog} from "@mapae/shared";
+import {GIWA_SEPOLIA_CAIP2} from "@mapae/shared";
 import type {Budget} from "@mapae/store";
 import type {MiddlewareHandler} from "hono";
 import {
@@ -283,14 +283,13 @@ export class GasBudgets {
  * `writeContract` on, a transport failure is ambiguous — the node may have accepted the
  * transaction — and is {@link SettlementUnconfirmed}, never this.
  *
- * The message carries the cause, already redacted: the operator's log line has to say
- * which transport died and how, and the wrapper would otherwise hide it.
+ * The message is a constant; what died is the `cause`, and the operator's line is
+ * written from that. Composing the cause's text in here spent a third of
+ * `redactForLog`'s budget on this wrapper's name and redacted the RPC URL twice.
  */
 export class RpcUnreachableBeforeBroadcast extends Error {
     constructor(cause: unknown) {
-        super(`RPC stopped answering before the redemption was broadcast — ${redactForLog(cause)}`, {
-            cause,
-        });
+        super("RPC stopped answering before the redemption was broadcast", {cause});
         this.name = "RpcUnreachableBeforeBroadcast";
     }
 }

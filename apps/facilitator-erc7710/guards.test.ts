@@ -522,10 +522,11 @@ describe("beforeBroadcast", () => {
             throw simulation;
         });
         expect(error).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
+        // The operator's line is written from the cause, so the cause is what says what
+        // died; the wrapper's own message stays a constant and adds nothing to redact.
         expect((error as Error).cause).toBe(simulation);
-        // The operator's line says what died, already redacted.
-        expect((error as Error).message).toContain(redactForLog(simulation));
-        expect((error as Error).message).toContain("fetch failed");
+        expect(redactForLog((error as Error).cause)).toContain("fetch failed");
+        expect((error as Error).message).toBe("RPC stopped answering before the redemption was broadcast");
     });
 
     test("a bare transport error — the fee estimate's shape — keeps the host and drops the key", async () => {
@@ -533,8 +534,9 @@ describe("beforeBroadcast", () => {
             throw new HttpRequestError({url: RPC, details: "fetch failed"});
         });
         expect(error).toBeInstanceOf(RpcUnreachableBeforeBroadcast);
-        expect((error as Error).message).toContain("https://rpc.example");
-        expect((error as Error).message).not.toContain("very-secret-key");
+        const line = redactForLog((error as Error).cause);
+        expect(line).toContain("https://rpc.example/<redacted>");
+        expect(line).not.toContain("very-secret-key");
     });
 
     test("a timeout and a rate limit that outlived the retries are the same non-answer", async () => {

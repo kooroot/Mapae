@@ -720,9 +720,13 @@ function logSafeFailure(path: string, error: unknown): void {
     // the error name left them with "Error: request rejected" for an on-chain
     // caveat rejection. `redactForLog` keeps the revert reason and strips the
     // bearer-length hex that viem embeds in its errors. The RPC dying before the
-    // broadcast is logged as what it is: not a rejection, on either route.
-    const what = error instanceof RpcUnreachableBeforeBroadcast ? "not ready" : "rejected";
-    console.error(`[${path}] ${what} — ${redactForLog(error)}`);
+    // broadcast is logged as what it is — not a rejection, on either route — and from
+    // its cause, which is the error that names the transport that died.
+    if (error instanceof RpcUnreachableBeforeBroadcast) {
+        console.error(`[${path}] not ready — ${redactForLog(error.cause)}`);
+        return;
+    }
+    console.error(`[${path}] rejected — ${redactForLog(error)}`);
 }
 
 // `manager` is already `getAddress(...)`-checked at construction, which throws on
