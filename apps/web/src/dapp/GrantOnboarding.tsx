@@ -122,7 +122,8 @@ const COPY: Record<
         importPlaceholder: string;
         importSubmit: string;
         faultFallback: string;
-        signedUnplaced: (reason: string) => string;
+        signedUndeployed: (reason: string) => string;
+        signedUnverified: (reason: string) => string;
     }
 > = {
     en: {
@@ -208,8 +209,10 @@ const COPY: Record<
         importPlaceholder: "The full permission code, starting with 0x",
         importSubmit: "Verify the code and import",
         faultFallback: "The request could not be completed. Check your wallet and network connection.",
-        signedUnplaced: (reason) =>
-            `The permission was signed, but the payer account step failed. ${reason} The signed permission is kept under ‘My agents’ so you can revoke it there rather than lose track of it.`,
+        signedUndeployed: (reason) =>
+            `The permission was signed, but the payer account could not be deployed. ${reason} The signed permission is kept under ‘My agents’. Nothing can spend through it until the account exists, and once it does you can open it and revoke it from its ‘Revoke’ tab.`,
+        signedUnverified: (reason) =>
+            `The permission was signed, but the signature could not be verified against the payer account. ${reason} The signed permission is kept under ‘My agents’ — open it and revoke it from its ‘Revoke’ tab if you do not mean to keep it.`,
     },
     ko: {
         headTitleLead: "에이전트가 쓸 수 있는 ",
@@ -292,8 +295,10 @@ const COPY: Record<
         importPlaceholder: "0x로 시작하는 전체 권한 코드",
         importSubmit: "코드 확인하고 불러오기",
         faultFallback: "요청을 완료하지 못했습니다. 지갑과 네트워크 상태를 확인해 주세요.",
-        signedUnplaced: (reason) =>
-            `권한 서명은 끝났지만 지불 계정 단계에서 실패했습니다. ${reason} 서명된 권한은 ‘내 에이전트’에 보관해 두었으니, 잃어버리는 대신 그곳에서 회수할 수 있습니다.`,
+        signedUndeployed: (reason) =>
+            `권한 서명은 끝났지만 지불 계정을 배포하지 못했습니다. ${reason} 서명된 권한은 ‘내 에이전트’에 보관해 두었습니다. 계정이 생기기 전까지는 이 권한으로 아무것도 결제할 수 없고, 계정이 생기면 권한을 열어 ‘회수’ 탭에서 회수할 수 있습니다.`,
+        signedUnverified: (reason) =>
+            `권한 서명은 끝났지만 지불 계정에서 서명을 확인하지 못했습니다. ${reason} 서명된 권한은 ‘내 에이전트’에 보관해 두었으니, 남겨 둘 생각이 없다면 권한을 열어 ‘회수’ 탭에서 회수해 주세요.`,
     },
 };
 
@@ -327,11 +332,12 @@ const INITIAL_DRAFT: GrantDraft = {
 };
 
 /**
- * Whether the account step after the signature completed. An `unplaced` grant carries a
- * valid owner signature but its payer account was not confirmed deployed (or the
- * signature was not verified): nothing can redeem it until the account exists, and the
- * moment any later bootstrap deploys that account it goes live — which is why it enters
- * the library either way, and why the parent should not present it as a finished grant.
+ * What the parent may present as finished. `placed` means the payer account is deployed
+ * and accepted the signature. `unplaced` means an owner signature exists but one of those
+ * two was not confirmed — the sponsor did not deploy the account, or the verification
+ * against it failed: nothing can redeem the grant while the account is codeless, and the
+ * moment any later bootstrap deploys that account it goes live. That is why it enters the
+ * library either way, and why the parent must not open it as a finished grant.
  */
 export type GrantPlacement = "placed" | "unplaced";
 
@@ -481,43 +487,48 @@ export function GrantOnboarding({
             }
 
             // From here on an owner signature exists, and this tab holds its only copy.
-            // Whatever the account step does, the grant enters the library: the draft
-            // and the key it consumed are cleared exactly as on success, because the
-            // signature already spent them — a second submit from the same draft would
-            // be a second live delegation for the same key, not a retry.
+            // Whatever the account step does, the grant enters the library.
             const agentKey =
                 generatedKey && generatedKey.address === validation.value.delegate
                     ? generatedKey
                     : undefined;
             const grant = signedSessionGrant(artifact, validation.value, agentKey);
-            setDraft(INITIAL_DRAFT);
-            setAttempted(false);
-            // Clear only the key this submission consumed — a key generated while the
-            // wallet prompt was open belongs to the next grant, not to the void.
-            setGeneratedKey((current) => (current === agentKey ? undefined : current));
 
+            let placement: GrantPlacement = "placed";
+            // The sentence a failure gets from here on. The deploy and the verification
+            // fail for different reasons and leave the owner with different options — a
+            // codeless account cannot be revoked from until it exists — so one sentence
+            // for both told a user whose account was live that "the account step" failed.
+            let failureCopy = t.signedUndeployed;
             try {
                 if (accountReadiness.kind === "missing" && sponsor.kind === "configured") {
                     setProgress({kind: "bootstrapping"});
                     await requestSponsoredBootstrap(sponsor.url, artifact, locale);
                     setAccountReadiness({kind: "ready", smartAccount: artifact.delegator});
                 }
+                failureCopy = t.signedUnverified;
                 setProgress({kind: "verifying"});
                 await verifyPermissionArtifact(artifact, locale);
+                setProgress({kind: "idle"});
             } catch (error) {
                 // Dropping the artifact here was the audit's finding: the next successful
                 // attempt deploys the payer account and this delegation — signed, valid,
                 // listed nowhere — went live with no kill switch. Kept in the library it
                 // is visible and revocable; the copy says which half failed.
-                setProgress({
-                    kind: "error",
-                    reason: t.signedUnplaced(faultLine(error, locale)),
-                });
-                onGranted(grant, "unplaced");
-                return;
+                placement = "unplaced";
+                setProgress({kind: "error", reason: failureCopy(faultLine(error, locale))});
             }
-            setProgress({kind: "idle"});
-            onGranted(grant, "placed");
+            // The draft and the key are cleared on both paths, because the signature
+            // already spent them: a second submit from the same draft would be a second
+            // live delegation for the same key, not a retry. Cleared only now, though —
+            // clearing before the sponsor answered emptied every field and the preview
+            // for up to the 90 s a bootstrap may take, under a button still reading
+            // "Deploying account…". The key needs no guard: the form is locked while
+            // busy, so the key in hand is the one this signature consumed.
+            setDraft(INITIAL_DRAFT);
+            setAttempted(false);
+            setGeneratedKey(undefined);
+            onGranted(grant, placement);
         } finally {
             signing.current = false;
         }
