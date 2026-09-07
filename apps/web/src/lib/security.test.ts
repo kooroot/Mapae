@@ -1,5 +1,11 @@
+import {readFileSync} from "node:fs";
+import {join} from "node:path";
 import {describe, expect, test} from "bun:test";
-import {createContentSecurityPolicy, createSsrNonce} from "./security";
+import {
+    DOCUMENT_SECURITY_HEADERS,
+    createContentSecurityPolicy,
+    createSsrNonce,
+} from "./security";
 
 const NONCE = "0123456789abcdef0123456789abcdef";
 const TELEMETRY_SCRIPT = "https://static.cloudflareinsights.com";
@@ -10,6 +16,24 @@ function sources(policy: string, directive: string): string[] {
     const found = policy.split("; ").find((entry) => entry.startsWith(`${directive} `));
     if (!found) throw new Error(`${directive} is missing from the policy`);
     return found.slice(directive.length + 1).split(" ");
+}
+
+/**
+ * The `/*` block of Cloudflare's `_headers`, as the object it encodes. Only the block
+ * that applies to every static asset is read — the cache rules further down are per
+ * path and are not part of the document's header set.
+ */
+function readStaticAssetHeaders(): Record<string, string> {
+    const lines = readFileSync(join(import.meta.dir, "../../public/_headers"), "utf8").split("\n");
+    const start = lines.indexOf("/*");
+    if (start === -1) throw new Error("public/_headers has no /* block");
+    const headers: Record<string, string> = {};
+    for (const line of lines.slice(start + 1)) {
+        if (!/^\s/.test(line)) break;
+        const separator = line.indexOf(":");
+        headers[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+    }
+    return headers;
 }
 
 describe("document security policy", () => {
@@ -97,5 +121,23 @@ describe("document security policy", () => {
         expect(() => createContentSecurityPolicy("bad'; script-src *", "app")).toThrow(
             "CSP nonce must be a 128-bit URL-safe value",
         );
+    });
+});
+
+describe("document security headers", () => {
+    test("pins HTTPS for a year across subdomains, without preload", () => {
+        // Both hosts answered without this header in the live check, so a first visit
+        // over http:// was a plain redirect an on-path attacker could hold. Preload is
+        // deliberately absent: it is irreversible on the browsers' side.
+        expect(DOCUMENT_SECURITY_HEADERS["Strict-Transport-Security"]).toBe(
+            "max-age=31536000; includeSubDomains",
+        );
+    });
+
+    test("the static-asset block of public/_headers is the same set", () => {
+        // `_headers` never sees the Worker's document response and the root route never
+        // sees a static asset, so the set is written twice. This is what stops the copies
+        // drifting apart silently.
+        expect(readStaticAssetHeaders()).toEqual({...DOCUMENT_SECURITY_HEADERS});
     });
 });

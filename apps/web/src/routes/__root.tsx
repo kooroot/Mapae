@@ -3,6 +3,7 @@ import type {ReactNode} from "react";
 import {appUrl, landingUrl, siteSurface} from "../lib/config";
 import {LOCALE_PATH_PREFIX, pick} from "../lib/i18n";
 import {LocaleProvider, resolveLocale, useLocale} from "../lib/locale";
+import {DOCUMENT_SECURITY_HEADERS} from "../lib/security";
 
 import "../styles/fonts.css";
 import "../styles/tokens.css";
@@ -10,18 +11,6 @@ import "../styles/landing.css";
 import "../styles/hero.css";
 import "../styles/home.css";
 import "../styles/app.css";
-
-// Cloudflare's public/_headers file covers static assets, while TanStack owns
-// the SSR document response. The request-specific CSP is attached in
-// `src/server.ts`, where the header can use the same nonce as TanStack's
-// streaming bootstrap.
-const DOCUMENT_SECURITY_HEADERS = {
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    "X-Content-Type-Options": "nosniff",
-    "Cross-Origin-Opener-Policy": "same-origin",
-    "Permissions-Policy":
-        "geolocation=(), microphone=(), camera=(), payment=()",
-};
 
 /*
  * The document.

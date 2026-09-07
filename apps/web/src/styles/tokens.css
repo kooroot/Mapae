@@ -67,9 +67,10 @@
        Plex still wins every Latin codepoint it covers. Same pairing, same
        reason, as the console.
 
-       All three are bundled from npm and served from this origin. The CSP in
-       public/_headers is font-src 'self', so a Google Fonts <link> would fail
-       silently and every headline would fall back to the platform serif. */
+       All three are bundled from npm and served from this origin. The CSP
+       (src/lib/security.ts, attached per response by src/server.ts) is
+       font-src 'self', so a Google Fonts <link> would fail silently and every
+       headline would fall back to the platform serif. */
     --display: "Noto Serif KR", serif;
     --sans: "Pretendard Variable", Pretendard, system-ui, sans-serif;
     --mono: "IBM Plex Mono", "Nanum Gothic Coding", ui-monospace, monospace;

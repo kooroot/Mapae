@@ -3,6 +3,29 @@ import type {SiteSurface} from "./config";
 const CSP_NONCE_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 
 /**
+ * The document's fixed security headers, applied by the root route.
+ *
+ * Cloudflare's `public/_headers` only decorates static-asset responses; the SSR
+ * document comes out of the Worker, which that file never sees. So the same set
+ * lives twice — here for the document, in `_headers` for `/assets/*` and the rest —
+ * and `security.test.ts` parses the `/*` block of that file and asserts it equals
+ * this object, because two hand-maintained copies had already drifted once (HSTS
+ * was missing from both, and nothing said so).
+ *
+ * HSTS is one year with subdomains and no `preload`: preload is irreversible on
+ * the browsers' side, and the user chose to keep the exit. The CSP is not in this
+ * object on purpose — it carries the request nonce, so `src/server.ts` attaches it
+ * per response from {@link createContentSecurityPolicy}.
+ */
+export const DOCUMENT_SECURITY_HEADERS: Readonly<Record<string, string>> = {
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Content-Type-Options": "nosniff",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
+};
+
+/**
  * TanStack Start emits a small inline streaming bootstrap before the external
  * client bundle. A request nonce lets that bootstrap run without weakening the
  * whole document with `unsafe-inline`.
