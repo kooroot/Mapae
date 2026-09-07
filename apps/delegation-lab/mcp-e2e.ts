@@ -639,25 +639,35 @@ async function provePauseStops(forkRpc: string, client: Client): Promise<void> {
     await Bun.sleep(6_000);
     const health = (await (await fetch(`${FACILITATOR_URL}/health`)).json()) as {
         ok?: boolean;
+        frameworkPaused?: boolean | null;
         frameworkError?: string | null;
     };
-    console.log(`[pause] facilitator health     ok=${health.ok}`);
+    console.log(`[pause] facilitator health     ok=${health.ok} paused=${health.frameworkPaused}`);
     console.log(`[pause] facilitator reason     ${health.frameworkError}`);
     if (health.ok !== false) throw new Error("facilitator reported healthy while paused");
-    // Not just unhealthy — it has to say which dependency failed, or an operator
-    // cannot tell a pause from an RPC outage.
-    if (!health.frameworkError?.includes("not operationally active")) {
-        throw new Error(`health did not explain the pause: ${String(health.frameworkError)}`);
+    // Not just unhealthy — it has to name the pause, or an operator cannot tell it from
+    // an RPC outage. /health speaks in a closed enum (`framework_paused`, never the
+    // verifier's message), and the boolean is read off that same word.
+    if (health.frameworkError !== "framework_paused") {
+        throw new Error(`health did not name the pause: ${String(health.frameworkError)}`);
+    }
+    if (health.frameworkPaused !== true) {
+        throw new Error(`health named the pause but frameworkPaused=${String(health.frameworkPaused)}`);
     }
 
     const body = await pay(client, AMERICANO);
     if (body.ok === true) throw new Error("payment succeeded while the Framework was paused");
     // Pre-flight knows nothing of the pause, so a refusal it would give — the cap, the
-    // permission — means the request never reached the paused facilitator.
-    if (["LIMIT_EXCEEDED", "PERMISSION_INACTIVE", "PERMISSION_EMPTY"].includes(String(body.code))) {
-        throw new Error(`refused by pre-flight (${String(body.code)}), not by the paused Framework`);
+    // permission — means the request never reached the paused facilitator. What does
+    // reach it is turned away before any verdict: the facilitator answers /verify with
+    // 503 facilitator_not_ready, the shop relays 503 facilitator_unavailable, and the
+    // agent is told to retry later — not that its delegation was refused.
+    if (body.code !== "SELLER_UNAVAILABLE") {
+        throw new Error(
+            `expected SELLER_UNAVAILABLE from the paused Framework, got ${String(body.code)} ${String(body.status ?? "")}`,
+        );
     }
-    console.log(`[pause] refused                ${String(body.code)} ${String(body.status ?? "")}`);
+    console.log(`[pause] turned away            ${String(body.code)} ${String(body.status ?? "")}`);
     console.log("[pause] PASS — a paused Framework stops the agent ✅");
 
     await setPaused(false);
