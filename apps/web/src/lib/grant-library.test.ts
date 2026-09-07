@@ -1,4 +1,6 @@
 import {describe, expect, test} from "bun:test";
+import {DELEGATION_FRAMEWORK_VERSION} from "@mapae/delegation/config";
+import {giwaSepolia} from "@mapae/shared";
 import type {Address, Hex} from "viem";
 import type {AgentSessionKey} from "./agent-key";
 import type {SessionGrant} from "./grant";
@@ -15,7 +17,9 @@ function key(seed: string): AgentSessionKey {
 
 /**
  * The context is the identity the store dedupes on, so each grant gets its own; the
- * bytes never decode here because the merge compares them and nothing else.
+ * bytes never decode here because the merge compares them and nothing else. Typed by the
+ * return annotation, not cast: a cast would let a field `SessionGrant` grows tomorrow go
+ * missing here without a compile error.
  */
 function grant(seed: string, agentKey?: AgentSessionKey): SessionGrant {
     return {
@@ -23,8 +27,8 @@ function grant(seed: string, agentKey?: AgentSessionKey): SessionGrant {
         name: `Agent ${seed}`,
         source: "signed",
         artifact: {
-            frameworkVersion: "1.3.0",
-            chainId: 91342,
+            frameworkVersion: DELEGATION_FRAMEWORK_VERSION,
+            chainId: giwaSepolia.id,
             role: "open-agent",
             delegator: OWNER,
             delegate: `0x${seed.repeat(20)}` as Address,
@@ -32,7 +36,7 @@ function grant(seed: string, agentKey?: AgentSessionKey): SessionGrant {
             createdAt: 1_700_000_000,
         },
         agentKey,
-    } as SessionGrant;
+    };
 }
 
 /** What `loadGrants`/`appendGrant`/`forgetGrant` hand back: the same grant, no key. */
