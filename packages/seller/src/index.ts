@@ -168,10 +168,12 @@ export interface MapaeSeller {
      * On success the receipt rides in `Payment-Response` (and the legacy
      * `X-PAYMENT-RESPONSE`), `c.get("mapaeReceipt")` holds it, and `onSettled` has run.
      *
-     * The facilitator rate-limits `/verify` and `/settle` per client address. When the
-     * buyer's request carries `CF-Connecting-IP`, that value is forwarded on both calls
-     * as `X-Mapae-Client-IP`, so the buyer is counted rather than this server; the
-     * facilitator reads it only from a caller it cannot see the address of.
+     * The facilitator rate-limits `/verify` and `/settle` per client address, and reads
+     * `X-Mapae-Client-IP` only from a caller whose own address it cannot see — one on
+     * loopback. So when this instance's facilitator is loopback and the buyer's request
+     * carries `CF-Connecting-IP`, that value is forwarded on both calls under that name
+     * and the buyer is counted rather than this server. A remote facilitator is told
+     * nothing about the buyer.
      *
      * Mount it as a middleware in front of a handler. When it is the last matched route
      * it answers 404 without pricing anything — a buyer never pays for a route nothing
@@ -292,9 +294,9 @@ type FacilitatorAnswer = {reachable: boolean; body?: unknown};
 
 /**
  * What a payment call says about the buyer. `clientIp` is the buyer's `CF-Connecting-IP`
- * as the paywall received it, forwarded in {@link CLIENT_IP_HEADER} so the facilitator's
- * per-address limit counts the buyer and not this server; absent, no header is sent and
- * the facilitator counts whoever it can see.
+ * as the paywall received it; the client forwards it in {@link CLIENT_IP_HEADER} when its
+ * facilitator is one that reads it, so the per-address limit counts the buyer and not
+ * this server. Absent, no header is sent and the facilitator counts whoever it can see.
  */
 interface BuyerContext {
     clientIp: string | undefined;
@@ -309,11 +311,21 @@ interface BuyerContext {
 class FacilitatorClient {
     #cached?: {kind: FacilitatorKind; expiresAt: number};
     #discovering?: Promise<FacilitatorKind | undefined>;
+    /**
+     * Whether the buyer is named to this facilitator. It reads {@link CLIENT_IP_HEADER}
+     * only from a caller whose address it cannot see — one on loopback — so that is the
+     * only facilitator the header goes to. A remote one sees this server's address and
+     * ignores the header; sending it there would carry the buyer's address across the
+     * internet for nothing.
+     */
+    readonly #namesBuyer: boolean;
 
     constructor(
         readonly baseUrl: string,
         readonly fetchImpl: NonNullable<MapaeOptions["fetch"]>,
-    ) {}
+    ) {
+        this.#namesBuyer = isLoopbackHost(new URL(baseUrl).hostname);
+    }
 
     /**
      * `/supported`, cached, coalesced and kept. A fresh answer is trusted for the TTL;
@@ -366,9 +378,9 @@ class FacilitatorClient {
                     ? {
                           headers: {
                               "content-type": "application/json",
-                              ...(payment.buyer.clientIp === undefined
-                                  ? {}
-                                  : {[CLIENT_IP_HEADER]: payment.buyer.clientIp}),
+                              ...(this.#namesBuyer && payment.buyer.clientIp !== undefined
+                                  ? {[CLIENT_IP_HEADER]: payment.buyer.clientIp}
+                                  : {}),
                           },
                           body: JSON.stringify(payment.request),
                       }

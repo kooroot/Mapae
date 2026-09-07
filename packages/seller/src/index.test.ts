@@ -719,6 +719,23 @@ describe("mapaePaywall — naming the buyer to the facilitator", () => {
         ]);
     });
 
+    test("a remote facilitator is told nothing about the buyer", async () => {
+        // The facilitator reads X-Mapae-Client-IP only from a caller whose address it
+        // cannot see. Through the tunnel it sees this server's, so the buyer's address
+        // would cross the internet only to be ignored.
+        const remote = facilitator();
+        const {app, seen} = seller(
+            paywall({facilitator: "https://facilitator.example", fetch: remote.fetch}),
+        );
+        expect((await payFrom(app, {"cf-connecting-ip": BUYER})).status).toBe(200);
+        expect(seen.served).toBe(1);
+        expect(forwarded(remote)).toEqual([
+            ["/supported", undefined],
+            ["/verify", undefined],
+            ["/settle", undefined],
+        ]);
+    });
+
     test("an X-Mapae-Client-IP the buyer sent is never passed through", async () => {
         // Forwarding it would let a buyer with no CF-Connecting-IP pick whose window they
         // are counted in. Beside a CF-Connecting-IP it is simply not the buyer's address.
