@@ -7,9 +7,11 @@ import {createServerEntry} from "@tanstack/react-start/server-entry";
 import {siteSurface} from "./lib/config";
 import {createContentSecurityPolicy} from "./lib/security";
 
-// `siteSurface` is a `VITE_` value Vite inlines at build time, for the SSR bundle as
-// much as the client one — the root route already branches on it to render each
-// surface's title, so the Worker sees the same literal the document does.
+// `siteSurface` is a `VITE_` value fixed at build time, for the SSR bundle as much
+// as the client one: a literal when `build:app` / `build:landing` set the variable,
+// an empty build-time env object (`combined`) when nothing does. The Worker never
+// reads its runtime environment for it, so it sees the surface the root route
+// already branches on for the document's title.
 const streamWithSecurityHeaders = defineHandlerCallback((context) => {
     const nonce = context.router.options.ssr?.nonce;
     if (!nonce) {

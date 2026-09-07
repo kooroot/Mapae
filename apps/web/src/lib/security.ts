@@ -7,10 +7,11 @@ const CSP_NONCE_PATTERN = /^[A-Za-z0-9_-]{32}$/;
  *
  * Cloudflare's `public/_headers` only decorates static-asset responses; the SSR
  * document comes out of the Worker, which that file never sees. So the same set
- * lives twice — here for the document, in `_headers` for `/assets/*` and the rest —
- * and `security.test.ts` parses the `/*` block of that file and asserts it equals
- * this object, because two hand-maintained copies had already drifted once (HSTS
- * was missing from both, and nothing said so).
+ * lives twice — here for the document, in `_headers` for `/assets/*` and the rest.
+ * The two copies were kept in step by hand and nothing checked it; the audit found
+ * the set incomplete (no HSTS) on both surfaces. `security.test.ts` parses the `/*`
+ * block of that file and asserts it equals this object, so the next header cannot
+ * land in one copy only — a header missing from both is what the HSTS test catches.
  *
  * HSTS is one year with subdomains and no `preload`: preload is irreversible on
  * the browsers' side, and the user chose to keep the exit. The CSP is not in this
