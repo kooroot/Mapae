@@ -44,6 +44,21 @@ import {
 } from "viem";
 import {privateKeyToAccount, nonceManager} from "viem/accounts";
 
+/**
+ * Two body bounds, in two units, because they are enforced at two different layers.
+ *
+ * `MAX_BODY_BYTES` goes to Bun as `maxRequestBodySize`: the runtime answers 413 and drops
+ * the connection before `fetch` runs, for a `Content-Length` body and a chunked one
+ * alike — verified against bun 1.4.0. Before it, `readJson` was the only bound, and it
+ * could refuse a chunked body only after buffering all of it. `MAX_BODY_CHARACTERS` is
+ * the second guard, on the decoded string inside the route, and stays because it is the
+ * one that answers with this service's closed enum and log line. It is the smaller
+ * number so that any body the runtime lets through and the route still refuses gets
+ * that answer rather than a bare 413; UTF-8 never has fewer bytes than characters, so
+ * nothing between the two slips past both. A legitimate body is one permission context,
+ * ~2 kB.
+ */
+const MAX_BODY_BYTES = 200_000;
 const MAX_BODY_CHARACTERS = 150_000;
 const MINT_ABI = parseAbi(["function mint(address to, uint256 value)"]);
 const BALANCE_ABI = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
@@ -653,13 +668,13 @@ function refuse(c: Context, reason: BootstrapRefusal, status: number) {
     return c.json({network: GIWA_SEPOLIA_CAIP2, reason}, status as never);
 }
 
+/**
+ * The body has already been bounded by `maxRequestBodySize` when this runs, so the read
+ * below buffers at most `MAX_BODY_BYTES`; the character check is the second guard.
+ */
 async function readJson(c: Context): Promise<unknown> {
     const contentType = c.req.header("content-type")?.toLowerCase() ?? "";
     if (!contentType.startsWith("application/json")) throw new Error("content-type must be JSON");
-    const contentLength = Number(c.req.header("content-length") ?? "0");
-    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_CHARACTERS) {
-        throw new Error("request body is too large");
-    }
     const text = await c.req.text();
     if (text.length === 0 || text.length > MAX_BODY_CHARACTERS) {
         throw new Error("request body is empty or too large");
@@ -676,4 +691,11 @@ console.log(`  daily     ${DAILY_BUDGET} wei`);
 console.log(`  rate      ${RATE_PER_HOUR}/hour per IP (loopback exempt)`);
 console.log(`  store     ${STORE_PATH}`);
 
-export default {hostname: HOST, port: PORT, fetch: app.fetch};
+// `satisfies` because Bun ignores an option it does not know: a misspelled
+// `maxRequestBodySize` would leave the 128 MB default in place with no error anywhere.
+export default {
+    hostname: HOST,
+    port: PORT,
+    maxRequestBodySize: MAX_BODY_BYTES,
+    fetch: app.fetch,
+} satisfies Bun.Serve.Options<undefined>;
