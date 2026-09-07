@@ -144,7 +144,7 @@ function LocalizedDocument({children}: {children: ReactNode}) {
                  * Ahead of HeadContent on purpose: this has to be the first
                  * `meta[property=csp-nonce]` in the document. Two readers take the first
                  * match and disagree on where the value lives — Vite's dev client copies
-                 * the `nonce` IDL property onto every `<style>` it injects for a CSS
+                 * the `nonce` IDL property onto every style element it injects for a CSS
                  * import, TanStack's hydration reads `content`. TanStack's own meta carries
                  * `content` alone, so under a nonce-only `style-src` every dev page rendered
                  * unstyled. This one carries both. The browser blanks the `nonce` attribute

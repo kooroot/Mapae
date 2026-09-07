@@ -129,6 +129,59 @@ describe("document security policy", () => {
     });
 });
 
+/** A line that would put styling in the document by a route the nonce cannot bless. */
+const INLINE_STYLE_SOURCE = /\bstyle=\{|<style\b|dangerouslySetInnerHTML/;
+
+/** Every component source under `src`, sorted so a failure names the same file each run. */
+function readComponentSources(): Array<{path: string; lines: string[]}> {
+    const root = join(import.meta.dir, "..");
+    return [...new Bun.Glob("**/*.tsx").scanSync(root)]
+        .sort()
+        .map((path) => ({path, lines: readFileSync(join(root, path), "utf8").split("\n")}));
+}
+
+describe("what the nonce-only style-src depends on", () => {
+    // The policy refuses every `style="…"` attribute and every un-nonced `<style>`, and
+    // nothing at runtime checks that the tree renders none: a reintroduced attribute
+    // fails no unit test and breaks the page only in a browser. These read the source
+    // instead, so the first one back fails here.
+    test("the pattern flags each shape the policy refuses", () => {
+        expect(INLINE_STYLE_SOURCE.test('<i style={{width: "42%"}} />')).toBe(true);
+        expect(INLINE_STYLE_SOURCE.test("<style>{css}</style>")).toBe(true);
+        expect(INLINE_STYLE_SOURCE.test("<div dangerouslySetInnerHTML={{__html: h}} />")).toBe(
+            true,
+        );
+        // A property write through the CSSOM is the sanctioned route and must stay clean.
+        expect(INLINE_STYLE_SOURCE.test("fill.style.width = `${usedPercent}%`;")).toBe(false);
+    });
+
+    test("no component renders a style attribute, a style element or raw HTML", () => {
+        const sources = readComponentSources();
+        expect(sources.map((source) => source.path)).toContain("routes/__root.tsx");
+
+        const offenders = sources.flatMap(({path, lines}) =>
+            lines.flatMap((line, index) =>
+                INLINE_STYLE_SOURCE.test(line) ? [`${path}:${index + 1}: ${line.trim()}`] : [],
+            ),
+        );
+        expect(offenders).toEqual([]);
+    });
+
+    test("the root document renders the nonce-bearing meta ahead of HeadContent", () => {
+        // Vite's dev client copies the `nonce` IDL property of the first
+        // `meta[property=csp-nonce]` onto the styles it injects, and TanStack's own meta
+        // carries the value in `content` alone — so this line, and its position, is what
+        // keeps every dev page styled under the shipped policy.
+        const root = readFileSync(join(import.meta.dir, "../routes/__root.tsx"), "utf8");
+        const meta = root.indexOf('<meta property="csp-nonce" content={nonce} nonce={nonce} />');
+        const head = root.indexOf("<HeadContent />");
+
+        expect(meta).toBeGreaterThan(-1);
+        expect(head).toBeGreaterThan(-1);
+        expect(meta).toBeLessThan(head);
+    });
+});
+
 describe("document security headers", () => {
     test("pins HTTPS for a year across subdomains, without preload", () => {
         // Both hosts answered without this header in the live check, so a first visit
