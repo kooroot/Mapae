@@ -91,7 +91,7 @@ const MSG: Record<
         bootstrapBudgetExhausted:
             "Today's allowance of new accounts has been used. Try again later.",
         bootstrapRateLimited:
-            "Too many account setups from this network in the last hour. Try again in a little while.",
+            "Too many account requests from this network in the last hour. Try again in a little while.",
         bootstrapFeeTooHigh: "Network fees are temporarily high. Try again in a moment.",
         bootstrapPermissionRejected: "A payer account cannot be set up from this permission.",
         bootstrapFailed: "The payer account could not be set up.",

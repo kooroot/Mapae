@@ -275,7 +275,7 @@ describe("bootstrap outcome", () => {
         // through to "could not be set up", which reads as a fault, not as a wait.
         const refused = {ok: false, reason: "rate_limited", deployed: false};
         expect(judgeBootstrapOutcome(refused, "en")).toBe(
-            "Too many account setups from this network in the last hour. Try again in a little while.",
+            "Too many account requests from this network in the last hour. Try again in a little while.",
         );
         expect(judgeBootstrapOutcome(refused, "ko")).toBe(
             "이 네트워크에서 최근 한 시간 안에 계정 준비 요청이 너무 많았습니다. 잠시 후 다시 시도해 주세요.",
