@@ -764,14 +764,15 @@ async function main(): Promise<void> {
     /**
      * ── P. the per-address limit is wired, and a request without an address is free ──
      *
-     * The limit is keyed on `CF-Connecting-IP`, which only the tunnel writes. Every other
-     * request in this run carries none and has to stay uncounted — fifteen of them from
-     * one address would trip the 30/hour default, and the suite would be measuring
-     * itself. Both halves are driven on a 1/hour child: the second request from one
-     * named address is refused before its body is read (the first was answered on that
-     * same garbage body), and two more without the header are still answered on theirs.
-     * Two, because a limiter that keyed the header-less caller as one more address would
-     * pass a single one.
+     * The limit is keyed on `CF-Connecting-IP`, which only the tunnel writes; a request
+     * without the header is not counted at all. The suite does not lean on that today —
+     * the limiter is the child's own memory, the child is restarted per case, and no
+     * child in this run comes near the 30/hour default — so the exemption is proved
+     * here rather than assumed. Both halves are driven on a 1/hour child: the second
+     * request from one named address is refused before its body is read (the first was
+     * answered on that same garbage body), and two more without the header are still
+     * answered on theirs. Two, because a limiter that keyed the header-less caller as
+     * one more address would pass a single one.
      */
     const capped = await restart({BOOTSTRAP_RATE_PER_HOUR: "1"});
     const fromOneAddress = {"cf-connecting-ip": "203.0.113.7"};
