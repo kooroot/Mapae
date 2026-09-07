@@ -68,10 +68,10 @@ import {bearerTokenMatches, metricsReport, readMetricsToken} from "./metrics.js"
 // ever fires on bodies no client of this service produces.
 const MAX_BODY_BYTES = 200_000;
 const MAX_BODY_CHARACTERS = 150_000;
-// The framework check and the relayer balance are each read at most once per window,
-// whichever way the read went. 5 s is short enough that a pause or a drained wallet is
-// seen before the next block's settlements, long enough that /health — public, and the
-// one route with no rate limit — cannot enqueue more than one probe per window.
+// The framework check and the relayer balance are each read at most once per window.
+// 5 s is short enough that a pause or a drained wallet is seen before the next block's
+// settlements, long enough that /health — public, and the one route with no rate limit
+// — cannot enqueue more than one probe per window.
 const PROBE_TTL_MS = 5_000;
 
 function readPort(): number {
@@ -260,29 +260,40 @@ const startupVerification = await verifyActiveFrameworkDeployment({
     expectedFrameworkAdmin: frameworkAdmin,
 });
 // The operator sees the redacted reason here, once per probe; the wire sees a closed
-// enum from `classifyFrameworkError`. Logging in the handler instead would repeat the
-// cached failure for every caller inside the window.
-const readiness = new CachedProbe(async () => {
-    try {
-        return await verifyFrameworkOperationalState({
-            publicClient,
-            deployment,
-            expectedFrameworkAdmin: frameworkAdmin,
-        });
-    } catch (error) {
-        console.error(`[readiness] framework verification failed — ${redactForLog(error)}`);
-        throw error;
-    }
-}, PROBE_TTL_MS);
+// enum from `classifyFrameworkError`. Logging in the handler instead would repeat one
+// failure for every caller that shared the probe.
+//
+// A failed readiness probe is not the window's answer: its callers are payments, and a
+// single timed-out read out of the ten must not become five seconds of every seller
+// being refused. The next caller probes again. The balance read is the other way round —
+// see `CachedProbeOptions`.
+const readiness = new CachedProbe(
+    async () => {
+        try {
+            return await verifyFrameworkOperationalState({
+                publicClient,
+                deployment,
+                expectedFrameworkAdmin: frameworkAdmin,
+            });
+        } catch (error) {
+            console.error(`[readiness] framework verification failed — ${redactForLog(error)}`);
+            throw error;
+        }
+    },
+    {ttlMs: PROBE_TTL_MS, cacheFailures: false},
+);
 readiness.prime(startupVerification);
-const relayerBalance = new CachedProbe(async () => {
-    try {
-        return await publicClient.getBalance({address: relayer.address});
-    } catch (error) {
-        console.error(`[health] relayer balance not read — ${redactForLog(error)}`);
-        throw error;
-    }
-}, PROBE_TTL_MS);
+const relayerBalance = new CachedProbe(
+    async () => {
+        try {
+            return await publicClient.getBalance({address: relayer.address});
+        } catch (error) {
+            console.error(`[health] relayer balance not read — ${redactForLog(error)}`);
+            throw error;
+        }
+    },
+    {ttlMs: PROBE_TTL_MS, cacheFailures: true},
+);
 
 /**
  * How long a broadcast transaction stays remembered for its payment intent.

@@ -433,7 +433,7 @@ describe("CachedProbe", () => {
     test("readers that arrive while a probe is in flight share it", async () => {
         const time = clock(NOW);
         const control = controlled<bigint>();
-        const cached = new CachedProbe(control.probe, TTL, time.read);
+        const cached = new CachedProbe(control.probe, {ttlMs: TTL, cacheFailures: true, clock: time.read});
         const reads = Array.from({length: 10}, () => cached.read());
         expect(control.calls()).toBe(1);
         control.resolve(7n);
@@ -443,7 +443,7 @@ describe("CachedProbe", () => {
     test("a value is served from the cache until the window ends, then probed again", async () => {
         const time = clock(NOW);
         let calls = 0;
-        const cached = new CachedProbe(async () => (calls += 1), TTL, time.read);
+        const cached = new CachedProbe(async () => (calls += 1), {ttlMs: TTL, cacheFailures: true, clock: time.read});
         expect(await cached.read()).toBe(1);
         time.set(NOW + TTL - 1);
         expect(await cached.read()).toBe(1);
@@ -452,14 +452,14 @@ describe("CachedProbe", () => {
         expect(calls).toBe(2);
     });
 
-    test("a failure is cached for the window like a value, so a flood under an outage probes once", async () => {
+    test("with cacheFailures a failure is the window's answer, so a flood under an outage probes once", async () => {
         const time = clock(NOW);
         const outage = new Error("fetch failed");
         let calls = 0;
         const cached = new CachedProbe(async () => {
             calls += 1;
             throw outage;
-        }, TTL, time.read);
+        }, {ttlMs: TTL, cacheFailures: true, clock: time.read});
         for (let i = 0; i < 5; i += 1) {
             await expect(cached.read()).rejects.toBe(outage);
         }
@@ -469,10 +469,37 @@ describe("CachedProbe", () => {
         expect(calls).toBe(2);
     });
 
+    test("without cacheFailures a failure reaches only the callers that shared the probe, and the next one probes again", async () => {
+        const time = clock(NOW);
+        const control = controlled<number>();
+        const cached = new CachedProbe(control.probe, {ttlMs: TTL, cacheFailures: false, clock: time.read});
+        cached.prime(1);
+        time.set(NOW + TTL);
+        const outage = new Error("fetch failed");
+        const sharing = [cached.read(), cached.read()];
+        control.reject(outage);
+        // `allSettled` attaches both handlers before any microtask runs. Awaiting the
+        // reads one at a time drains the queue and leaves the second rejecting unhandled,
+        // and `expect(read).rejects` attached beforehand spins the loop until it settles.
+        const outcomes = await Promise.allSettled(sharing);
+        expect(outcomes).toEqual([
+            {status: "rejected", reason: outage},
+            {status: "rejected", reason: outage},
+        ]);
+        expect(control.calls()).toBe(1);
+        // The expired value is not resurrected, and the failure is not remembered.
+        const retried = cached.read();
+        expect(control.calls()).toBe(2);
+        control.resolve(2);
+        expect(await retried).toBe(2);
+        expect(await cached.read()).toBe(2);
+        expect(control.calls()).toBe(2);
+    });
+
     test("prime seeds the first window from a reading taken elsewhere", async () => {
         const time = clock(NOW);
         let calls = 0;
-        const cached = new CachedProbe(async () => (calls += 1), TTL, time.read);
+        const cached = new CachedProbe(async () => (calls += 1), {ttlMs: TTL, cacheFailures: true, clock: time.read});
         cached.prime(99);
         expect(await cached.read()).toBe(99);
         expect(calls).toBe(0);
@@ -481,6 +508,6 @@ describe("CachedProbe", () => {
     });
 
     test("refuses a window that would cache nothing", () => {
-        expect(() => new CachedProbe(async () => 1, 0)).toThrow("ttlMs");
+        expect(() => new CachedProbe(async () => 1, {ttlMs: 0, cacheFailures: true})).toThrow("ttlMs");
     });
 });

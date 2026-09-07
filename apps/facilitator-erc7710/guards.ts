@@ -280,38 +280,55 @@ export function classifyFrameworkError(error: unknown): FrameworkHealthError {
     return "verification_failed";
 }
 
+export interface CachedProbeOptions {
+    ttlMs: number;
+    /**
+     * Whether a failed probe is the window's answer, or only the answer of the callers
+     * that shared it. `/health`'s balance read says yes: the route has no rate limit, the
+     * read is one `getBalance`, and under an outage a flood without a cached failure is
+     * one probe per round trip, each queued ahead of the settlement whose receipt is
+     * being awaited. The readiness gate says no: its probe is ten reads whose callers
+     * are payments, and one timed-out read must not become five seconds of refusing
+     * every seller — the next caller probes again, as the gate did before it was
+     * generalised. The flood the gate is then open to is bounded by the rate limit, now
+     * that the hosted shop's buyers are counted through it.
+     */
+    cacheFailures: boolean;
+    clock?: () => number;
+}
+
 /**
  * One reading per window, shared by every caller that arrives while it is fresh or in
- * flight. Both routes that touch it are reachable without a rate limit — `/health` is
- * public and the hosted shop's loopback calls are exempt — so the probe is what bounds
- * the RPC work a flood can cause: at most one per window, whichever way it went.
- *
- * A failure is cached like a value. Not caching it looked kinder — the next caller gets
- * a fresh try — but under an RPC outage that turns a `/health` flood into one probe per
- * round trip, each of them a batch of reads queued ahead of the settlement whose
- * receipt is being awaited. A caller inside the window gets the same answer either way;
- * the window is what makes the answer cheap.
+ * flight. The probe is what bounds the RPC work a flood of callers can cause: at most
+ * one in flight, and at most one per window once it succeeded.
  */
 export class CachedProbe<T> {
     #settled?: {until: number; outcome: {ok: true; value: T} | {ok: false; error: unknown}};
     #pending?: Promise<T>;
+    readonly #ttlMs: number;
+    readonly #cacheFailures: boolean;
+    readonly #clock: () => number;
 
     constructor(
         private readonly probe: () => Promise<T>,
-        private readonly ttlMs: number,
-        private readonly clock: () => number = Date.now,
+        options: CachedProbeOptions,
     ) {
-        if (!Number.isInteger(ttlMs) || ttlMs < 1) throw new Error("ttlMs must be a positive integer");
+        if (!Number.isInteger(options.ttlMs) || options.ttlMs < 1) {
+            throw new Error("ttlMs must be a positive integer");
+        }
+        this.#ttlMs = options.ttlMs;
+        this.#cacheFailures = options.cacheFailures;
+        this.#clock = options.clock ?? Date.now;
     }
 
     /** Seed the cache with a reading taken elsewhere, so the first window issues no probe. */
     prime(value: T): void {
-        this.#settled = {until: this.clock() + this.ttlMs, outcome: {ok: true, value}};
+        this.#settled = {until: this.#clock() + this.#ttlMs, outcome: {ok: true, value}};
     }
 
     async read(): Promise<T> {
         const settled = this.#settled;
-        if (settled && this.clock() < settled.until) {
+        if (settled && this.#clock() < settled.until) {
             if (settled.outcome.ok) return settled.outcome.value;
             throw settled.outcome.error;
         }
@@ -322,10 +339,12 @@ export class CachedProbe<T> {
     async #run(): Promise<T> {
         try {
             const value = await this.probe();
-            this.#settled = {until: this.clock() + this.ttlMs, outcome: {ok: true, value}};
+            this.#settled = {until: this.#clock() + this.#ttlMs, outcome: {ok: true, value}};
             return value;
         } catch (error) {
-            this.#settled = {until: this.clock() + this.ttlMs, outcome: {ok: false, error}};
+            if (this.#cacheFailures) {
+                this.#settled = {until: this.#clock() + this.#ttlMs, outcome: {ok: false, error}};
+            }
             throw error;
         } finally {
             this.#pending = undefined;
