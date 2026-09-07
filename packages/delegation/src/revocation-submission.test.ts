@@ -371,6 +371,37 @@ describe("fee floor (sponsored mode)", () => {
     test("the profile's own fee passes", () => {
         const result = validateRevocationSubmission(sponsoredWire(), floored);
         expect(result.gas.maxFeePerGas).toBe(SPONSORED_REVOCATION_GAS.maxFeePerGas);
+        expect(result.gas.maxPriorityFeePerGas).toBe(SPONSORED_REVOCATION_GAS.maxPriorityFeePerGas);
+    });
+
+    test("a zero tip under a floored max fee is refused — the tip is what the EntryPoint reimburses at", () => {
+        // `maxFeePerGas` sits exactly on the floor, so the cap check alone waves this
+        // through; the reimbursement is `min(maxFeePerGas, tip + baseFee)` = the bare base
+        // fee. The prefund (and the budget's view of it) is still priced at the floor.
+        expect(() =>
+            validateRevocationSubmission(
+                sponsoredWire({gasFees: packFees(0n, SPONSORED_REVOCATION_GAS.maxFeePerGas)}),
+                floored,
+            ),
+        ).toThrow(/maxPriorityFeePerGas 0 is below the required 10000000/);
+    });
+
+    test("a tip one wei under the floor is still under it", () => {
+        const under = SPONSORED_REVOCATION_GAS.maxFeePerGas - 1n;
+        expect(() =>
+            validateRevocationSubmission(
+                sponsoredWire({gasFees: packFees(under, SPONSORED_REVOCATION_GAS.maxFeePerGas)}),
+                floored,
+            ),
+        ).toThrow(/maxPriorityFeePerGas \d+ is below the required/);
+    });
+
+    test("a policy with no floor accepts a zero tip — the pinned mode is unchanged", () => {
+        const result = validateRevocationSubmission(
+            wire({gasFees: packFees(0n, DEFAULT_REVOCATION_GAS.maxFeePerGas)}),
+            policy,
+        );
+        expect(result.gas.maxPriorityFeePerGas).toBe(0n);
     });
 
     test("a fee just above the base fee is refused, not merely under-reimbursed", () => {

@@ -42,7 +42,8 @@ export interface RevocationSubmissionPolicy {
     maxPreVerificationGas: bigint;
     maxFeePerGas: bigint;
     /**
-     * The lowest `maxFeePerGas` this submitter will carry. Unset means no floor.
+     * The lowest `maxFeePerGas` *and* `maxPriorityFeePerGas` this submitter will carry.
+     * Unset means no floor.
      *
      * A ceiling alone does not protect the relayer, and the base fee is not a floor.
      * The EntryPoint reimburses the beneficiary at `min(maxFeePerGas, tip + baseFee)` per
@@ -54,6 +55,12 @@ export interface RevocationSubmissionPolicy {
      * The daily budget does not catch it either: a low fee means a small `requiredPrefund`,
      * so the cheaper the attack the less the one bound that exists bounds it. That is why
      * the floor lives here, on the operation, rather than being left to the spend cap.
+     *
+     * One number binds both fee fields because of that same `min(...)`: `maxFeePerGas` is
+     * only the *cap* on the reimbursement, the tip is what it is actually computed from.
+     * Flooring the cap alone left an operation signed at the floor with a zero tip fully
+     * accepted — priced at the floor for the prefund and the budget, reimbursed at the
+     * bare base fee.
      *
      * Set for the sponsored public mode, left unset for the pinned loopback one — there
      * the only caller is the operator's own console, and the operator is the party who
@@ -332,11 +339,29 @@ export function validateRevocationSubmission(
     // account revoke on the relayer's gas with no reimbursement.
     if (maxFeePerGas === 0n) throw new Error("maxFeePerGas must be non-zero");
     // Non-zero is not the same as enough — see `minFeePerGas`.
-    if (policy.minFeePerGas !== undefined && maxFeePerGas < policy.minFeePerGas) {
-        throw new Error(
-            `maxFeePerGas ${maxFeePerGas} is below the required ${policy.minFeePerGas}; ` +
-                "the relayer cannot recover what it fronts at that price",
-        );
+    if (policy.minFeePerGas !== undefined) {
+        if (maxFeePerGas < policy.minFeePerGas) {
+            throw new Error(
+                `maxFeePerGas ${maxFeePerGas} is below the required ${policy.minFeePerGas}; ` +
+                    "the relayer cannot recover what it fronts at that price",
+            );
+        }
+        // The priority fee is the number the EntryPoint actually reimburses at.
+        // `_getUserOpGasPrice` pays the beneficiary `min(maxFeePerGas, maxPriorityFeePerGas
+        // + block.basefee)` per gas, so `maxFeePerGas` is only the cap on that figure. With
+        // the cap alone floored, an operation signed at the floor with a zero tip was
+        // accepted: its prefund — and therefore the budget's view of it — was priced at the
+        // floor, while the relayer was reimbursed at the bare base fee (267 wei/gas
+        // measured) for a broadcast it pays ~1,000,267 wei/gas for. The Studio profile
+        // signs both fields at the same value (`SPONSORED_REVOCATION_GAS`), which is what
+        // lets one floor bind both.
+        if (maxPriorityFeePerGas < policy.minFeePerGas) {
+            throw new Error(
+                `maxPriorityFeePerGas ${maxPriorityFeePerGas} is below the required ${policy.minFeePerGas}; ` +
+                    "the EntryPoint reimburses at min(maxFeePerGas, maxPriorityFeePerGas + baseFee), " +
+                    "so the relayer cannot recover what it fronts at that tip",
+            );
+        }
     }
 
     const nonce = readUint(op["nonce"], "userOperation.nonce");
