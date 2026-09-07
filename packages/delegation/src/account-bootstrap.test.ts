@@ -32,6 +32,7 @@ import {
     budgetDay,
     buildSponsoredBootstrapApproval,
     costOfReceipt,
+    ipBucket,
     isCanonicalSignature,
     parseBootstrapOrigins,
     readRenamedEnv,
@@ -480,6 +481,33 @@ describe("FixedWindowLimiter", () => {
     test("refuses a nonsensical configuration rather than running unbounded", () => {
         expect(() => new FixedWindowLimiter(0, 1_000)).toThrow("limit");
         expect(() => new FixedWindowLimiter(1, 0)).toThrow("windowMs");
+    });
+});
+
+describe("ipBucket", () => {
+    test("an IPv4 address is its own bucket", () => {
+        expect(ipBucket("203.0.113.7")).toBe("203.0.113.7");
+    });
+
+    test("every address in one IPv6 /64 shares a bucket, so hopping addresses buys nothing", () => {
+        const limiter = new FixedWindowLimiter(1, 1_000);
+        expect(limiter.tryConsume(ipBucket("2001:db8:1:2::1"), 0)).toBe(true);
+        expect(limiter.tryConsume(ipBucket("2001:db8:1:2:ffff:ffff:ffff:ffff"), 0)).toBe(false);
+        expect(ipBucket("2001:db8:1:2::1")).toBe("2001:db8:1:2::/64");
+    });
+
+    test("a different /64 is a different bucket", () => {
+        expect(ipBucket("2001:db8:1:3::1")).not.toBe(ipBucket("2001:db8:1:2::1"));
+    });
+
+    test("the bucket does not depend on how the address was spelled", () => {
+        expect(ipBucket("2001:0DB8:0001:0002:0000:0000:0000:0001")).toBe(ipBucket("2001:db8:1:2::1"));
+    });
+
+    test("a leading or trailing `::` expands from the right end", () => {
+        expect(ipBucket("::1")).toBe("0:0:0:0::/64");
+        expect(ipBucket("2001:db8::")).toBe("2001:db8:0:0::/64");
+        expect(ipBucket("2001:db8::1:2:3:4:5")).toBe("2001:db8:0:1::/64");
     });
 });
 

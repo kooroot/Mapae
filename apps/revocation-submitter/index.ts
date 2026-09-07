@@ -8,6 +8,7 @@ import {
     buildPrefundDepositCall,
     buildSponsoredRevocationApproval,
     costOfReceipt,
+    ipBucket,
     isDelegationRevoked,
     judgeCorsRequest,
     judgeSubmissionReadiness,
@@ -834,11 +835,13 @@ app.post("/revoke", async (c) => {
     if (SPONSORED) {
         // Rate limit before any chain read, so an unauthenticated flood costs us nothing.
         // Cloudflare sets `CF-Connecting-IP`; the tunnel is the only public path, so a
-        // request arriving without it came over loopback.
-        const requester = c.req.header("cf-connecting-ip") ?? "loopback";
+        // request arriving without it came over loopback. IPv6 is keyed by its /64, the
+        // block a client owns outright, so hopping addresses inside it buys nothing.
+        const requester = c.req.header("cf-connecting-ip");
+        const bucket = requester === undefined ? "loopback" : ipBucket(requester);
         const now = Date.now();
         limiter!.sweep(now);
-        if (!limiter!.tryConsume(`ip:${requester}`, now)) {
+        if (!limiter!.tryConsume(`ip:${bucket}`, now)) {
             return refuse(c, "rate_limited", 429);
         }
     }

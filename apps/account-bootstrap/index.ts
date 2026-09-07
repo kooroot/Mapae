@@ -7,6 +7,7 @@ import {
     assertFundedKeySeparation,
     buildSponsoredBootstrapApproval,
     costOfReceipt,
+    ipBucket,
     judgeCorsRequest,
     parseActiveDeploymentArtifactJson,
     parseBootstrapOrigins,
@@ -264,7 +265,9 @@ const DAILY_BUDGET = readPositiveInteger("BOOTSTRAP_DAILY_WEI", 500_000_000_000_
  * 5e14 default is ~2,000 accounts, and nothing in the path ever asked that machine to
  * wait: the drain fits in well under an hour. Thirty an hour is a speed bump for exactly
  * that single-machine drain — the same address now needs ~70 hours — while the daily
- * budget remains the bound, and an office of thirty still gets through.
+ * budget remains the bound, and an office of thirty still gets through. The key is the
+ * address for IPv4 and the /64 for IPv6 (`ipBucket`): a v6 client owns 2^64 addresses,
+ * and keyed per address it would never share a key with itself.
  */
 const RATE_PER_HOUR = Number(readPositiveInteger("BOOTSTRAP_RATE_PER_HOUR", 30n));
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("BOOTSTRAP_RECEIPT_TIMEOUT_MS", 60_000n));
@@ -641,7 +644,7 @@ app.post("/bootstrap", async (c) => {
     const now = Date.now();
     limiter.sweep(now);
     faucetGate.sweep(now);
-    if (requester !== undefined && !limiter.tryConsume(`ip:${requester}`, now)) {
+    if (requester !== undefined && !limiter.tryConsume(`ip:${ipBucket(requester)}`, now)) {
         return refuse(c, "rate_limited", 429);
     }
 

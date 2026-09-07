@@ -57,7 +57,7 @@ faucet이 맞추는 목표 잔액이다(faucet이 꺼져 있으면 `"0"`). 배�
 | `BOOTSTRAP_FAUCET_TARGET_BASE` | `1000000000` (= 1000 tUSDC) | 목표 잔액, base 단위 양의 정수 |
 | `MAX_BOOTSTRAP_MINT_GAS` | `100000` | 민팅 1건의 가스 상한. 민팅 가스는 금액과 무관하다 |
 | `BOOTSTRAP_DAILY_WEI` | `500000000000000` | 배포와 민팅을 합친 하루(UTC) 가스 예산 |
-| `BOOTSTRAP_RATE_PER_HOUR` | `30` | IP당 한 시간에 받는 요청 수. `CF-Connecting-IP`가 없는(loopback) 요청은 세지 않는다 |
+| `BOOTSTRAP_RATE_PER_HOUR` | `30` | IP당 한 시간에 받는 요청 수. IPv6는 /64 단위로 센다. `CF-Connecting-IP`가 없는(loopback) 요청은 세지 않는다 |
 | `STORE_PATH` | `./data/bootstrap.sqlite` | 그날 쓴 가스를 남기는 `@mapae/store` 파일. `:memory:`는 드라이런용 |
 
 나머지 변수(스폰서 키·승인 문구·RPC·바인드·오리진·수수료 상한)는
@@ -85,8 +85,10 @@ bun run dev
 두 사람은 막았기에 뺐는데, 상한이 아예 없으면 한 대의 기계가 한 주소에서 새
 키페어를 계속 보내 하루 예산을 한 시간 안에 비울 수 있었다(배포+민팅 약
 2.4e11 wei, 기본 예산으로 약 2,000계정). 30/시간이면 같은 주소가 그 일에
-70시간 가까이 걸리고, 사무실 하나는 여전히 통과한다. `CF-Connecting-IP`가
-없는 요청은 터널을 거치지 않은 loopback이라 세지 않는다. 스폰서에는 위임
+70시간 가까이 걸리고, 사무실 하나는 여전히 통과한다. IPv6는 /64 단위로
+세어, 한 대의 기계가 자기 블록의 2^64개 주소를 바꿔 가며 상한을 피하지
+못하게 한다. `CF-Connecting-IP`가 없는 요청은 터널을 거치지 않은 loopback이라
+세지 않는다. 스폰서에는 위임
 권한이 없어 payer 자금·한도·정산에는 닿지 못한다.
 
 ## 검증

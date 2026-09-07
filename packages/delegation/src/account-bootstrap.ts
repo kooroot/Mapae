@@ -293,6 +293,31 @@ export class FixedWindowLimiter {
 }
 
 /**
+ * The network a client address is rate-limited as.
+ *
+ * IPv4 is the address itself. IPv6 is its /64: Cloudflare forwards the client's full
+ * 128-bit address, and a residential IPv6 client is delegated at least a /64 (RFC 6177)
+ * it can bind at will, so keyed per address one machine sourcing each request from a
+ * fresh address would present a fresh key every time — counted 1, never refused, and
+ * the map growing by one entry per request until the sweep. The single-machine drain
+ * the bootstrap cap exists to slow would run unslowed over v6. The /64 is the finest
+ * bucket that still names one site rather than one of its 2^64 addresses. Groups are
+ * normalised (case, leading zeros, `::`) so the bucket does not depend on spelling; a
+ * value that is not an address yields a stable garbage bucket, which is all a header
+ * we did not set deserves.
+ */
+export function ipBucket(address: string): string {
+    if (!address.includes(":")) return address;
+    const [head = "", tail] = address.split("::", 2);
+    const headGroups = head === "" ? [] : head.split(":");
+    const tailGroups = tail === undefined || tail === "" ? [] : tail.split(":");
+    const elided = tail === undefined ? 0 : Math.max(8 - headGroups.length - tailGroups.length, 0);
+    const groups = [...headGroups, ...new Array<string>(elided).fill("0"), ...tailGroups];
+    const prefix = groups.slice(0, 4).map((group) => Number.parseInt(group, 16).toString(16));
+    return `${prefix.join(":")}::/64`;
+}
+
+/**
  * Read an OP-Stack receipt fee field that viem hands us untyped.
  *
  * `giwaSepolia` is a plain `defineChain` with no `viem/op-stack` formatter, and viem's
