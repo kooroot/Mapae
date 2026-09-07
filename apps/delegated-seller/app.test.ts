@@ -1,4 +1,5 @@
 import {describe, expect, spyOn, test} from "bun:test";
+import {createHash} from "node:crypto";
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
@@ -18,6 +19,7 @@ import {
     displayAmount,
     type ShopManifest,
     type TicketResponse,
+    type VerifiedTicket,
 } from "./app.js";
 import {DEMO_SHOPS, seedShops} from "./seed.js";
 import {
@@ -26,6 +28,7 @@ import {
     LEAF_B,
     PAY_TO,
     PAYER,
+    TICKET_CODE,
     TX,
     paymentHeader,
     type FacilitatorPath,
@@ -36,12 +39,16 @@ import {
  * Hermetic: an in-memory store seeded with the demo shops and a facilitator made of
  * stub routes behind the injected fetch. No chain, no network, no key. The paywall's
  * own ladder is proven in `packages/seller`; what is proven here is the shop around
- * it — lookup before pricing, the order written once, the replay paths.
+ * it — lookup before pricing, the order written once, the replay paths, the code a
+ * counter checks, and the headers every answer carries.
  */
 
 const BASE_URL = "http://shop.test";
+/** What buyers are told, as distinct from the loopback hop the paywall settles through. */
+const PUBLIC_FACILITATOR = "https://facilitator.test";
 const METRICS_TOKEN = "metrics-token-sixteen+";
 const NOW = 1_800_000_000_000;
+const BROWSER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 
 /** A facilitator made of routes behind the injected fetch; a path without one is a refused connection. */
 function facilitator(routes: Partial<Record<FacilitatorPath, FacilitatorRoute>> = {}) {
@@ -54,13 +61,22 @@ function facilitator(routes: Partial<Record<FacilitatorPath, FacilitatorRoute>> 
         if (!route) throw new TypeError("fetch failed");
         return route();
     };
-    return {fetch, paths};
+    return {fetch, paths, routes: table};
 }
+
+/**
+ * What the real facilitator says to a header whose leaf already paid: `/verify`
+ * simulates against live chain state, where the first settlement spent the one-shot
+ * allowance, so the same header is refused ever after.
+ */
+const ALLOWANCE_SPENT: FacilitatorRoute = () =>
+    Response.json({isValid: false, invalidReason: "allowance already spent"});
 
 const ONE = 1_000_000n;
 const AMERICANO = "/s/demo-cafe/americano";
 const CROISSANT = "/s/demo-cafe/croissant";
 const LOGO = "/s/demo-studio/logo";
+const SETTLED_ONCE = ["/supported", "/verify", "/settle"];
 
 function shop(options: {metricsToken?: string; store?: MapaeStore} = {}) {
     const store = options.store ?? openStore(IN_MEMORY);
@@ -71,6 +87,7 @@ function shop(options: {metricsToken?: string; store?: MapaeStore} = {}) {
         store,
         mapae,
         baseUrl: BASE_URL,
+        facilitatorUrl: PUBLIC_FACILITATOR,
         name: "테스트 상점",
         ...(options.metricsToken === undefined ? {} : {metricsToken: options.metricsToken}),
     });
@@ -93,6 +110,13 @@ function bodyLines(page: string): string[] {
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => line !== "");
+}
+
+/** The base64 sha256 of the stylesheet exactly as served — what a browser would hash. */
+function styleHashOf(page: string): string {
+    const style = /<style>([\s\S]*?)<\/style>/.exec(page)?.[1];
+    expect(style).toBeDefined();
+    return createHash("sha256").update(style ?? "").digest("base64");
 }
 
 describe("lookup — nothing is priced that nothing serves", () => {
@@ -158,11 +182,11 @@ describe("402 — the offer", () => {
 });
 
 describe("ticket — one payment, one ticket", () => {
-    test("a settled payment yields a ticket and exactly one order row", async () => {
+    test("a settled payment yields a ticket bearing the store's code and exactly one order row", async () => {
         const {store, pay, stub} = shop();
         const {ticket, receipt} = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
         expect(ticket).toEqual({
-            order: 1,
+            code: expect.stringMatching(TICKET_CODE),
             shop: {slug: "demo-cafe", name: "데모 카페"},
             item: {key: "americano", name: "아메리카노"},
             amount: "1.00 tUSDC",
@@ -174,15 +198,15 @@ describe("ticket — one payment, one ticket", () => {
         expect(receipt.intent).toMatch(/^0x[0-9a-f]{64}$/);
         expect(receipt.payer).toBe(PAYER);
         expect(receipt.payTo).toBe(PAY_TO);
-        expect(stub.paths).toEqual(["/supported", "/verify", "/settle"]);
+        expect(stub.paths).toEqual(SETTLED_ONCE);
 
         const orders = store.orders.listBySeller("demo-cafe");
         expect(orders).toHaveLength(1);
         expect(orders[0]).toMatchObject({
-            id: 1,
             sellerSlug: "demo-cafe",
             itemKey: "americano",
             paymentIntentId: receipt.intent,
+            ticket: ticket.code,
             payer: PAYER,
             amountBase: ONE,
             txHash: TX,
@@ -190,32 +214,42 @@ describe("ticket — one payment, one ticket", () => {
         });
     });
 
-    test("same-intent replay returns the same ticket", async () => {
-        const {store, pay} = shop();
+    test("same-intent replay is the same answer, from the ledger, with no facilitator call", async () => {
+        const {store, pay, stub} = shop();
         const header = paymentHeader(ONE, LEAF_A);
         const first = await ticketOf(await pay(AMERICANO, header));
+        expect(stub.paths).toEqual(SETTLED_ONCE);
+        // The chain would refuse this header now; the shop must not even ask.
+        stub.routes["/verify"] = ALLOWANCE_SPENT;
         const again = await ticketOf(await pay(AMERICANO, header));
-        expect(again.receipt.intent).toBe(first.receipt.intent);
-        expect(again.ticket).toEqual(first.ticket);
+        expect(stub.paths).toEqual(SETTLED_ONCE);
+        expect(again).toEqual(first);
         expect(store.orders.summary({sinceMs: 0})).toEqual({total: 1, bySeller: {"demo-cafe": 1}});
     });
 
-    test("two leaves for one item are two intents and two tickets", async () => {
+    test("two leaves for one item are two intents, two codes and two rows", async () => {
         const {store, pay} = shop();
         const first = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
         const second = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_B)));
         expect(second.receipt.intent).not.toBe(first.receipt.intent);
-        expect([first.ticket.order, second.ticket.order]).toEqual([1, 2]);
-        expect(store.orders.listBySeller("demo-cafe").map((order) => order.itemKey)).toEqual(["americano", "americano"]);
+        expect(second.ticket.code).toMatch(TICKET_CODE);
+        expect(second.ticket.code).not.toBe(first.ticket.code);
+        // Newest first, so the second payment's row is the first listed.
+        expect(store.orders.listBySeller("demo-cafe").map((order) => [order.itemKey, order.ticket])).toEqual([
+            ["americano", second.ticket.code],
+            ["americano", first.ticket.code],
+        ]);
     });
 
     test("same-price cross-item replay returns the ORIGINAL ticket and never delivers the second item", async () => {
-        const {store, pay} = shop();
+        const {store, pay, stub} = shop();
         // The logo costs what the americano costs and both shops pay to one address, so
         // the header is byte-for-byte a valid payment for either offer.
         const header = paymentHeader(ONE, LEAF_A);
         const original = await ticketOf(await pay(AMERICANO, header));
+        stub.routes["/verify"] = ALLOWANCE_SPENT;
         const replay = await ticketOf(await pay(LOGO, header));
+        expect(stub.paths).toEqual(SETTLED_ONCE);
         expect(replay.receipt.intent).toBe(original.receipt.intent);
         expect(replay.ticket).toEqual(original.ticket);
         expect(replay.ticket.item.key).toBe("americano");
@@ -224,11 +258,41 @@ describe("ticket — one payment, one ticket", () => {
         expect(store.orders.summary({sinceMs: 0})).toEqual({total: 1, bySeller: {"demo-cafe": 1}});
     });
 
+    test("the same leaf at another price is another intent: paid through the facilitator, not replayed", async () => {
+        const {store, pay, stub} = shop();
+        await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
+        const croissant = await ticketOf(await pay(CROISSANT, paymentHeader(2_500_000n, LEAF_A)));
+        expect(stub.paths).toEqual([...SETTLED_ONCE, "/verify", "/settle"]);
+        expect(croissant.ticket).toMatchObject({item: {key: "croissant"}, amount: "2.50 tUSDC"});
+        expect(store.orders.summary({sinceMs: 0})).toEqual({total: 2, bySeller: {"demo-cafe": 2}});
+    });
+
+    test("the intent is keyed on the shop's offer, not on what the header claims it accepted", async () => {
+        const {pay, stub} = shop();
+        const original = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
+        // The paywall derives the intent from its own price and the header's leaf, never
+        // from the header's `accepted` block — so neither does the lookup that precedes it.
+        const misdescribed = await ticketOf(await pay(AMERICANO, paymentHeader(2_500_000n, LEAF_A)));
+        expect(stub.paths).toEqual(SETTLED_ONCE);
+        expect(misdescribed.ticket).toEqual(original.ticket);
+    });
+
+    test("a header the shop cannot read is the paywall's to refuse, before any facilitator call", async () => {
+        const {pay, stub} = shop();
+        for (const header of ["%%%", btoa("null"), btoa(JSON.stringify({payload: {delegator: PAYER}}))]) {
+            const response = await pay(AMERICANO, header);
+            expect(response.status, header).toBe(400);
+            expect(((await response.json()) as {error: string}).error, header).toBe("malformed_payment");
+        }
+        expect(stub.paths).toEqual([]);
+    });
+
     test("the same price under a fresh leaf is a fresh order for the other item", async () => {
         const {store, pay} = shop();
         await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
         const logo = await ticketOf(await pay(LOGO, paymentHeader(ONE, LEAF_B)));
-        expect(logo.ticket).toMatchObject({order: 2, shop: {slug: "demo-studio"}, item: {key: "logo", name: "로고 시안"}});
+        expect(logo.ticket).toMatchObject({shop: {slug: "demo-studio"}, item: {key: "logo", name: "로고 시안"}});
+        expect(store.orders.listBySeller("demo-studio").map((order) => order.ticket)).toEqual([logo.ticket.code]);
         expect(store.orders.summary({sinceMs: 0})).toEqual({total: 2, bySeller: {"demo-cafe": 1, "demo-studio": 1}});
     });
 
@@ -256,10 +320,71 @@ describe("ticket — one payment, one ticket", () => {
     });
 });
 
-describe("manifest — JSON for an agent, a page for a person", () => {
-    const BROWSER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+describe("tickets — the code is the capability", () => {
+    test("JSON for the code at the shop that issued it", async () => {
+        const {get, pay} = shop();
+        const {ticket} = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
+        const response = await get(`/s/demo-cafe/tickets/${ticket.code}`);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("application/json");
+        expect((await response.json()) as VerifiedTicket).toEqual({
+            code: ticket.code,
+            shop: {slug: "demo-cafe", name: "데모 카페"},
+            item: {key: "americano", name: "아메리카노"},
+            amount: "1.00 tUSDC",
+            transaction: TX,
+            issuedAt: ticket.issuedAt,
+            status: "paid",
+        });
+    });
 
-    test("JSON by default, with every item priced and addressed", async () => {
+    test("404 at another shop, for an unknown code, and for anything not shaped like a code", async () => {
+        const {get, pay} = shop();
+        const {ticket} = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
+        for (const path of [
+            `/s/demo-studio/tickets/${ticket.code}`,
+            `/s/demo-cafe/tickets/${"0".repeat(16)}`,
+            `/s/demo-cafe/tickets/${ticket.code.toUpperCase()}`,
+            `/s/demo-cafe/tickets/${ticket.code.slice(1)}`,
+            `/s/demo-cafe/tickets/${"i".repeat(16)}`,
+            `/s/demo-cafe/tickets/${encodeURIComponent("../1")}`,
+            // The row id is not a lookup key, so a buyer's count of orders buys nothing.
+            "/s/demo-cafe/tickets/1",
+        ]) {
+            const response = await get(path);
+            expect(response.status, path).toBe(404);
+            expect(await response.json(), path).toEqual({error: "unknown_ticket"});
+        }
+        expect(await (await get(`/s/nope/tickets/${ticket.code}`)).json()).toEqual({error: "unknown_shop"});
+    });
+
+    test("a page when the client prefers HTML: the notice first, the code shown, names escaped", async () => {
+        const {store, get, pay} = shop();
+        store.items.upsert({
+            sellerSlug: "demo-cafe",
+            key: "evil",
+            name: "<img src=x onerror=alert(1)>",
+            description: "-",
+            priceBase: ONE,
+            createdAt: NOW,
+        });
+        const {ticket} = await ticketOf(await pay("/s/demo-cafe/evil", paymentHeader(ONE, LEAF_A)));
+        const response = await get(`/s/demo-cafe/tickets/${ticket.code}`, {Accept: BROWSER});
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("text/html");
+        const page = await response.text();
+        const lines = bodyLines(page);
+        expect(lines[0]).toBe(TRIAL_NOTICE);
+        expect(lines).toContain("데모 카페");
+        expect(lines).toContain(ticket.code);
+        expect(lines).toContain("상태 — paid");
+        expect(page).toContain("&lt;img src=x onerror=alert(1)&gt;");
+        expect(page).not.toContain("<img");
+    });
+});
+
+describe("manifest — JSON for an agent, a page for a person", () => {
+    test("JSON by default, with every item priced and addressed, naming the public facilitator", async () => {
         const {get} = shop();
         const response = await get("/s/demo-cafe");
         expect(response.status).toBe(200);
@@ -273,7 +398,7 @@ describe("manifest — JSON for an agent, a page for a person", () => {
             payTo: PAY_TO,
             network: GIWA_SEPOLIA_CAIP2,
             asset: MOCK_USDC.address,
-            facilitator: "http://127.0.0.1:8081",
+            facilitator: PUBLIC_FACILITATOR,
             items: [
                 {key: "americano", name: "아메리카노", description: "따뜻한 아메리카노 한 잔", price: "1.00", url: `${BASE_URL}${AMERICANO}`},
                 {key: "croissant", name: "크루아상", description: "버터 크루아상 한 개", price: "2.50", url: `${BASE_URL}${CROISSANT}`},
@@ -323,6 +448,35 @@ describe("manifest — JSON for an agent, a page for a person", () => {
     });
 });
 
+describe("headers — escaping is the second barrier, not the only one", () => {
+    test("every response carries the policy, and its style hash is the served stylesheet's", async () => {
+        const {get, pay} = shop();
+        const shopPage = await get("/s/demo-cafe", {Accept: BROWSER});
+        const hash = styleHashOf(await shopPage.text());
+        const {ticket} = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
+        const ticketPage = await get(`/s/demo-cafe/tickets/${ticket.code}`, {Accept: BROWSER});
+        expect(styleHashOf(await ticketPage.text())).toBe(hash);
+
+        const policy = `default-src 'none'; style-src 'sha256-${hash}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+        const responses: Array<[string, Response]> = [
+            ["shop page", shopPage],
+            ["ticket page", ticketPage],
+            ["health", await get("/health")],
+            ["manifest", await get("/s/demo-cafe")],
+            ["402", await get(AMERICANO)],
+            ["unknown shop", await get("/s/nope")],
+            ["not found", await get("/nowhere")],
+            ["metrics disabled", await get("/metrics")],
+        ];
+        for (const [name, response] of responses) {
+            expect(response.headers.get("content-security-policy"), name).toBe(policy);
+            expect(response.headers.get("referrer-policy"), name).toBe("no-referrer");
+            expect(response.headers.get("cache-control"), name).toBe("no-store");
+            expect(response.headers.get("x-content-type-options"), name).toBe("nosniff");
+        }
+    });
+});
+
 describe("metrics", () => {
     test("disabled without a token", async () => {
         const {get} = shop();
@@ -352,14 +506,14 @@ describe("metrics", () => {
 });
 
 describe("health and seed", () => {
-    test("/health names the facilitator and the network", async () => {
+    test("/health names the public facilitator and the network", async () => {
         const {get} = shop();
         expect(await (await get("/health")).json()).toEqual({
             ok: true,
             name: "테스트 상점",
             network: GIWA_SEPOLIA_CAIP2,
             paymentMethod: "erc7710",
-            facilitator: "http://127.0.0.1:8081",
+            facilitator: PUBLIC_FACILITATOR,
         });
     });
 

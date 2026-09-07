@@ -43,6 +43,7 @@
     "apps/delegated-seller": {
       "name": "@mapae/delegated-seller",
       "dependencies": {
+        "@mapae/delegation": "workspace:*",
         "@mapae/seller": "workspace:*",
         "@mapae/shared": "workspace:*",
         "@mapae/store": "workspace:*",

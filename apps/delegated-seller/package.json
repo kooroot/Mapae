@@ -8,6 +8,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@mapae/delegation": "workspace:*",
     "@mapae/seller": "workspace:*",
     "@mapae/shared": "workspace:*",
     "@mapae/store": "workspace:*",

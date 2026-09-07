@@ -389,7 +389,7 @@ async function payFor(client: Client, resource: string): Promise<ToolBody> {
 
 /** The shop's answer, as the agent relays it inside a successful result. */
 interface Ticket {
-    ticket: {order: number; shop: {slug: string}; item: {key: string}};
+    ticket: {code: string; shop: {slug: string}; item: {key: string}};
     receipt: {intent: string; transaction?: string};
 }
 
@@ -400,7 +400,7 @@ function ticketOf(body: ToolBody, resource: string): Ticket {
     }
     const answer = body.resource as Partial<Ticket> | undefined;
     if (
-        typeof answer?.ticket?.order !== "number" ||
+        typeof answer?.ticket?.code !== "string" ||
         typeof answer.ticket.shop?.slug !== "string" ||
         typeof answer.ticket.item?.key !== "string" ||
         typeof answer.receipt?.intent !== "string"
@@ -409,7 +409,7 @@ function ticketOf(body: ToolBody, resource: string): Ticket {
     }
     const ticket = answer as Ticket;
     console.log(
-        `[e2e] ticket #${ticket.ticket.order}  ${ticket.ticket.shop.slug}/${ticket.ticket.item.key}  ${String(body.amount)} → ${String(body.payTo)}  tx ${String(body.transaction)}`,
+        `[e2e] ticket ${ticket.ticket.code}  ${ticket.ticket.shop.slug}/${ticket.ticket.item.key}  ${String(body.amount)} → ${String(body.payTo)}  tx ${String(body.transaction)}`,
     );
     return ticket;
 }
@@ -435,6 +435,7 @@ interface OrderRow {
     seller_slug: string;
     item_key: string;
     payment_intent_id: string;
+    ticket: string;
     payer: string;
     amount_base: string;
     tx_hash: string | null;
@@ -451,7 +452,7 @@ function readOrders(storePath: string): OrderRow[] {
     try {
         return db
             .query<OrderRow, []>(
-                "SELECT id, seller_slug, item_key, payment_intent_id, payer, amount_base, tx_hash, status " +
+                "SELECT id, seller_slug, item_key, payment_intent_id, ticket, payer, amount_base, tx_hash, status " +
                     "FROM orders ORDER BY id",
             )
             .all();
@@ -489,8 +490,8 @@ function proveOrdersLedger(storePath: string, tickets: Ticket[]): void {
         if (row.seller_slug !== want.slug || row.item_key !== want.key) {
             throw new Error(`row #${row.id} is ${row.seller_slug}/${row.item_key}, expected ${want.slug}/${want.key}`);
         }
-        if (row.id !== ticket.ticket.order) {
-            throw new Error(`row #${row.id} was served as ticket #${ticket.ticket.order}`);
+        if (row.ticket !== ticket.ticket.code) {
+            throw new Error(`row #${row.id} holds code ${row.ticket} but was served as ${ticket.ticket.code}`);
         }
         if (row.payment_intent_id !== ticket.receipt.intent) {
             throw new Error(`row #${row.id} intent differs from the ticket's receipt`);
@@ -915,7 +916,7 @@ async function main(): Promise<void> {
 
     const nonceAfter = await giwaNonce(relayer);
     console.log("");
-    console.log(`[e2e] tickets      #${first.ticket.order} #${second.ticket.order} #${third.ticket.order} (${AMERICANO} ×2, ${LOGO})`);
+    console.log(`[e2e] tickets      ${first.ticket.code} ${second.ticket.code} ${third.ticket.code} (${AMERICANO} ×2, ${LOGO})`);
     console.log(`[e2e] amount       ${String(firstBody.amount)} → ${String(firstBody.payTo)} each`);
     console.log(`[e2e] relayer GIWA nonce after   ${BigInt(nonceAfter)}`);
     if (BigInt(nonceAfter) !== BigInt(nonceBefore)) {

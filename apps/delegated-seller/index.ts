@@ -24,6 +24,13 @@ import {readStorePath} from "./env.js";
  */
 const SETTLE_TIMEOUT_SECONDS = 35;
 const MIN_METRICS_TOKEN_LENGTH = 16;
+/**
+ * No route reads a body — every one is a GET — so Bun's default 128 MiB body budget was
+ * memory any client could ask this process to hold for nothing. 16 KiB is more than the
+ * largest header the shop ever reads, and the server refuses anything past it before a
+ * handler runs.
+ */
+const MAX_REQUEST_BODY_BYTES = 16_384;
 
 function readInteger(name: string, fallback: number, min: number, max: number): number {
     const raw = process.env[name]?.trim();
@@ -54,6 +61,34 @@ function readBaseUrl(host: string, port: number): string {
     return `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
 }
 
+/**
+ * The facilitator buyers are told about. In the hosted topology the shop settles
+ * through a loopback hop (`FACILITATOR_URL=http://127.0.0.1:8081`), and the manifest
+ * and `/health` used to echo that hop verbatim: an agent reading `facilitator` off
+ * seller.mapae.io was handed a URL on its own machine, and the internal topology was
+ * public. Given, this is what is advertised; absent, the facilitator the shop itself
+ * talks to is — which a public shop is refused when that hop is loopback.
+ */
+function readPublicFacilitatorUrl(fallback: string, baseUrl: string): string {
+    const url = new URL(process.env.PUBLIC_FACILITATOR_URL?.trim() || fallback);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+        throw new Error("PUBLIC_FACILITATOR_URL must be an absolute HTTP(S) origin without credentials");
+    }
+    if (url.pathname !== "/" || url.search || url.hash) {
+        throw new Error("PUBLIC_FACILITATOR_URL must be an origin — scheme://host[:port] — with no path, query or fragment");
+    }
+    const loopback = isLoopbackHost(url.hostname);
+    if (url.protocol !== "https:" && !loopback) {
+        throw new Error("PUBLIC_FACILITATOR_URL must use HTTPS unless it is loopback");
+    }
+    if (loopback && !isLoopbackHost(new URL(baseUrl).hostname)) {
+        throw new Error(
+            "PUBLIC_FACILITATOR_URL must be set when BASE_URL is not loopback — a loopback facilitator in the manifest points buyers at their own machine",
+        );
+    }
+    return url.origin;
+}
+
 function readMetricsToken(): string | undefined {
     const token = process.env.METRICS_TOKEN?.trim();
     if (!token) return undefined;
@@ -70,17 +105,26 @@ const STORE_PATH = readStorePath();
 // Validated by createMapae: HTTP(S), no credentials, HTTPS unless loopback.
 const FACILITATOR_URL = process.env.FACILITATOR_URL?.trim() || "http://127.0.0.1:8081";
 const BASE_URL = readBaseUrl(HOST, PORT);
+const PUBLIC_FACILITATOR_URL = readPublicFacilitatorUrl(FACILITATOR_URL, BASE_URL);
 const METRICS_TOKEN = readMetricsToken();
 const NAME = "Mapae hosted shop";
 
 const store = openStore(STORE_PATH);
 const mapae = createMapae({facilitator: FACILITATOR_URL, baseUrl: BASE_URL});
-const app = createShopApp({store, mapae, baseUrl: BASE_URL, name: NAME, metricsToken: METRICS_TOKEN});
+const app = createShopApp({
+    store,
+    mapae,
+    baseUrl: BASE_URL,
+    facilitatorUrl: PUBLIC_FACILITATOR_URL,
+    name: NAME,
+    metricsToken: METRICS_TOKEN,
+});
 
 const shops = store.sellers.list().filter((seller) => seller.kind === "hosted");
 console.log(`delegated seller listening on ${HOST}:${PORT}`);
 console.log(`  base URL    ${BASE_URL}`);
 console.log(`  facilitator ${mapae.facilitator}`);
+console.log(`  advertised  ${PUBLIC_FACILITATOR_URL}`);
 console.log(`  store       ${STORE_PATH}`);
 console.log(`  shops       ${shops.length === 0 ? "none — run `bun run seed`" : shops.map((seller) => seller.slug).join(", ")}`);
 console.log(`  metrics     ${METRICS_TOKEN === undefined ? "disabled (METRICS_TOKEN unset)" : "enabled"}`);
@@ -88,5 +132,6 @@ export default {
     hostname: HOST,
     port: PORT,
     idleTimeout: IDLE_TIMEOUT_SECONDS,
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
     fetch: app.fetch,
 };

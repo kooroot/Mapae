@@ -21,6 +21,8 @@ export const FACILITATOR = address(0x3001);
 export const MANAGER = address(0x4001);
 export const PAYER = address(0x5001);
 export const TX = `0x${"ab".repeat(32)}` as Hex;
+/** The store's ticket shape: 16 lowercase Crockford base32 characters, never a row id. */
+export const TICKET_CODE = /^[0-9a-hjkmnp-tv-z]{16}$/;
 /** Three leaves: distinct permission contexts, hence distinct intents for one offer. */
 export const LEAF_A = `0x${"a1".repeat(40)}` as Hex;
 export const LEAF_B = `0x${"b2".repeat(40)}` as Hex;

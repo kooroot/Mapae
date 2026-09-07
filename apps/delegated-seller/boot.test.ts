@@ -4,13 +4,14 @@ import {mkdtempSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {PAYMENT_SIGNATURE_HEADER} from "@mapae/shared";
-import {TRIAL_NOTICE, type ShopManifest, type TicketResponse} from "./app.js";
+import {TRIAL_NOTICE, type ShopManifest, type TicketResponse, type VerifiedTicket} from "./app.js";
 import {
     FACILITATOR_ROUTES,
     LEAF_A,
     LEAF_B,
     LEAF_C,
     PAY_TO,
+    TICKET_CODE,
     paymentHeader,
     type FacilitatorPath,
 } from "./test-support.js";
@@ -19,7 +20,8 @@ import {
  * The shop as the operator runs it: `bun run seed` into a store file, `index.ts` booted
  * from env in its own process, a facilitator that is a real listener. What `app.test.ts`
  * cannot see from inside the process — the env parsing, the seed command, the file on
- * disk that a reconciliation script would open — is what this suite is for.
+ * disk that a reconciliation script would open, the server's own body limit — is what
+ * this suite is for.
  */
 
 const ONE = 1_000_000n;
@@ -58,9 +60,30 @@ function readRows<T>(sql: string): T[] {
     }
 }
 
+/**
+ * Boot `index.ts` under `env` and expect it to refuse: what it printed before exiting.
+ * A shop that boots instead is killed, and the empty string it yields fails the test.
+ */
+async function bootRefusal(env: Record<string, string>): Promise<string> {
+    const child = Bun.spawn([process.execPath, "run", "index.ts"], {
+        cwd: import.meta.dir,
+        env: childEnv({STORE_PATH: storePath, ...env}),
+        stdout: "ignore",
+        stderr: "pipe",
+    });
+    const exited = await Promise.race([child.exited, Bun.sleep(10_000).then(() => "still running")]);
+    if (exited === "still running") {
+        child.kill();
+        return "";
+    }
+    expect(exited).not.toBe(0);
+    return new Response(child.stderr).text();
+}
+
 let facilitator: ReturnType<typeof Bun.serve> | undefined;
 let seller: Bun.Subprocess<"ignore", "ignore", "pipe"> | undefined;
 let baseUrl = "";
+let facilitatorUrl = "";
 
 beforeAll(async () => {
     facilitator = Bun.serve({
@@ -70,6 +93,7 @@ beforeAll(async () => {
             FACILITATOR_ROUTES[new URL(request.url).pathname as FacilitatorPath]?.() ??
             new Response("", {status: 404}),
     });
+    facilitatorUrl = `http://127.0.0.1:${facilitator.port}`;
     expect(seed()).toBe(0);
 
     // A port nothing holds right now; the shop cannot take 0 because its base URL —
@@ -84,7 +108,7 @@ beforeAll(async () => {
         env: childEnv({
             HOST: "127.0.0.1",
             PORT: String(port),
-            FACILITATOR_URL: `http://127.0.0.1:${facilitator.port}`,
+            FACILITATOR_URL: facilitatorUrl,
             STORE_PATH: storePath,
             METRICS_TOKEN,
         }),
@@ -126,10 +150,13 @@ describe("the booted shop", () => {
         expect(readRows("SELECT id, created_at FROM items ORDER BY id")).toEqual(before);
     });
 
-    test("serves the seeded shops from the file", async () => {
+    test("serves the seeded shops from the file, advertising the facilitator it was given", async () => {
         const manifest = (await (await fetch(`${baseUrl}/s/demo-cafe`)).json()) as ShopManifest;
         expect(manifest.slug).toBe("demo-cafe");
         expect(manifest.payTo).toBe(PAY_TO);
+        // Loopback shop, loopback facilitator: PUBLIC_FACILITATOR_URL unset defaults to the hop itself.
+        expect(manifest.facilitator).toBe(facilitatorUrl);
+        expect(((await (await fetch(`${baseUrl}/health`)).json()) as {facilitator: string}).facilitator).toBe(facilitatorUrl);
         expect(manifest.items.map((item) => [item.key, item.price, item.url])).toEqual([
             ["americano", "1.00", `${baseUrl}${AMERICANO}`],
             ["croissant", "2.50", `${baseUrl}/s/demo-cafe/croissant`],
@@ -147,7 +174,9 @@ describe("the booted shop", () => {
         // The studio's logo costs what the americano does and pays the same address, so
         // only the leaf tells the two intents apart.
         const third = await pay(LOGO, LEAF_C);
-        expect([first, second, third].map((t) => t.ticket.order)).toEqual([1, 2, 3]);
+        const codes = [first, second, third].map((t) => t.ticket.code);
+        for (const code of codes) expect(code).toMatch(TICKET_CODE);
+        expect(new Set(codes).size).toBe(3);
         expect(third.ticket.shop.slug).toBe("demo-studio");
         expect(new Set([first, second, third].map((t) => t.receipt.intent)).size).toBe(3);
 
@@ -156,8 +185,8 @@ describe("the booted shop", () => {
         const replay = await pay(LOGO, LEAF_A);
         expect(replay.ticket).toEqual(first.ticket);
 
-        const rows = readRows<{seller_slug: string; item_key: string; payment_intent_id: string}>(
-            "SELECT seller_slug, item_key, payment_intent_id FROM orders ORDER BY id",
+        const rows = readRows<{seller_slug: string; item_key: string; payment_intent_id: string; ticket: string}>(
+            "SELECT seller_slug, item_key, payment_intent_id, ticket FROM orders ORDER BY id",
         );
         expect(rows.map((row) => `${row.seller_slug}/${row.item_key}`)).toEqual([
             "demo-cafe/americano",
@@ -167,6 +196,17 @@ describe("the booted shop", () => {
         expect(rows.map((row) => row.payment_intent_id)).toEqual(
             [first, second, third].map((t) => t.receipt.intent),
         );
+        expect(rows.map((row) => row.ticket)).toEqual(codes);
+
+        // The code the buyer holds is what the counter checks, at the shop that issued it.
+        const shown = await fetch(`${baseUrl}/s/demo-studio/tickets/${third.ticket.code}`);
+        expect(shown.status).toBe(200);
+        expect((await shown.json()) as VerifiedTicket).toMatchObject({
+            code: third.ticket.code,
+            item: {key: "logo"},
+            status: "paid",
+        });
+        expect((await fetch(`${baseUrl}/s/demo-cafe/tickets/${third.ticket.code}`)).status).toBe(404);
     });
 
     test("/metrics counts the file's orders, behind the token", async () => {
@@ -175,5 +215,35 @@ describe("the booted shop", () => {
         expect(response.status).toBe(200);
         const body = (await response.json()) as {orders: {allTime: unknown}};
         expect(body.orders.allTime).toEqual({total: 3, bySeller: {"demo-cafe": 2, "demo-studio": 1}});
+    });
+
+    test("a body past 16 KiB is refused by the server, before any route sees it", async () => {
+        const small = await fetch(`${baseUrl}/health`, {method: "POST", body: "x".repeat(1_024)});
+        expect(small.status).toBe(404);
+        const large = await fetch(`${baseUrl}/health`, {method: "POST", body: "x".repeat(16_385)});
+        expect(large.status).toBe(413);
+    });
+});
+
+describe("boot refuses to point buyers at their own machine", () => {
+    const publicShop = {HOST: "127.0.0.1", PORT: "3001", BASE_URL: "https://shop.example"};
+
+    test("a public BASE_URL with the default loopback facilitator", async () => {
+        expect(await bootRefusal(publicShop)).toContain("PUBLIC_FACILITATOR_URL must be set when BASE_URL is not loopback");
+    });
+
+    test("a public BASE_URL with an explicit loopback PUBLIC_FACILITATOR_URL", async () => {
+        expect(await bootRefusal({...publicShop, PUBLIC_FACILITATOR_URL: "http://localhost:8081"})).toContain(
+            "PUBLIC_FACILITATOR_URL must be set when BASE_URL is not loopback",
+        );
+    });
+
+    test("a PUBLIC_FACILITATOR_URL that is not a bare HTTPS origin", async () => {
+        expect(await bootRefusal({...publicShop, PUBLIC_FACILITATOR_URL: "https://facilitator.example/v1"})).toContain(
+            "PUBLIC_FACILITATOR_URL must be an origin",
+        );
+        expect(await bootRefusal({...publicShop, PUBLIC_FACILITATOR_URL: "http://facilitator.example"})).toContain(
+            "PUBLIC_FACILITATOR_URL must use HTTPS unless it is loopback",
+        );
     });
 });
