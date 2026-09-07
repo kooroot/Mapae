@@ -7,7 +7,7 @@ import {afterEach, describe, expect, test} from "bun:test";
 import {FixedWindowLimiter, SpendBudget, budgetDay} from "@mapae/delegation";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
 import {Hono} from "hono";
-import {HttpRequestError, TimeoutError, type Address} from "viem";
+import {HttpRequestError, TimeoutError, getAddress, type Address} from "viem";
 import {
     BudgetExhausted,
     CLIENT_IP_HEADER,
@@ -227,8 +227,12 @@ describe("PayerBudgets", () => {
 
     test("the share is keyed on the address, whichever case it was spelled in", () => {
         const payers = new PayerBudgets(100n, memoryStore().budget);
-        const upper = ALICE.toUpperCase().replace("0X", "0x") as Address;
-        expect(payers.for(upper, NOW)).toBe(payers.for(ALICE, NOW));
+        const lower = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd" as Address;
+        const checksummed = getAddress(lower);
+        // ALICE is all digits, so its two spellings were one string and the old form of
+        // this test compared a key with itself; this address has letters to case.
+        expect(checksummed).not.toBe(lower);
+        expect(payers.for(checksummed, NOW)).toBe(payers.for(lower, NOW));
         expect(payers.size).toBe(1);
     });
 
@@ -313,6 +317,23 @@ describe("GasBudgets", () => {
         expect(payers.for(BOB, NOW).remaining(NOW)).toBe(100n);
         expect(payers.for(BOB, NOW).spentToday(NOW)).toBe(0n);
         expect(total.remaining(NOW)).toBe(50n);
+    });
+
+    test("when both are spent the share answers, because it is asked first", () => {
+        const {gas} = gasBudgets(100n, 100n);
+        gas.reserve(ALICE, 100n, NOW).settle(100n, NOW);
+        expect(refusal(() => gas.reserve(ALICE, 1n, NOW)).errorCode).toBe("payer_budget_exhausted");
+    });
+
+    test("a settle whose guard throws still charges and releases both holds", () => {
+        const {total, payers, gas} = gasBudgets(1_000n, 200n);
+        const hold = gas.reserve(ALICE, 100n, NOW);
+        // SpendBudget charges the whole reservation and throws on a non-bigint charge. The
+        // share's settle runs in a `finally` and does the same; without it the share's
+        // hold stayed reserved for the rest of the day and its spend read 0.
+        expect(() => hold.settle("7" as never, NOW)).toThrow("bigint");
+        expect(total.spentToday(NOW)).toBe(100n);
+        expect(payers.for(ALICE, NOW).spentToday(NOW)).toBe(100n);
     });
 
     test("settle charges both budgets the same amount and releases both holds", () => {

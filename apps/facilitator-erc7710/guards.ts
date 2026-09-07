@@ -20,7 +20,7 @@ import {HttpRequestError, TimeoutError, type Address} from "viem";
 
 // ── Per-IP rate limit ──────────────────────────────────────────────────────────────
 
-export const RATE_LIMITED = "rate_limited";
+const RATE_LIMITED = "rate_limited";
 export const RATE_WINDOW_MS = 3_600_000;
 /**
  * The header the seller forwards the buyer's `CF-Connecting-IP` in when it calls this
@@ -159,7 +159,7 @@ export class PayerBudgets {
     }
 }
 
-export type BudgetExhaustedCode = "budget_exhausted" | "payer_budget_exhausted";
+type BudgetExhaustedCode = "budget_exhausted" | "payer_budget_exhausted";
 
 /**
  * Raised when a redemption has no room in the day's gas budget — the payer's share of it
