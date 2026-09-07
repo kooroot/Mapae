@@ -42,6 +42,12 @@ export function Reveal({
             setShown(true);
             return;
         }
+        // The stagger goes through the CSSOM rather than a `style` attribute: the
+        // document's `style-src` carries no `'unsafe-inline'`, so a server-rendered
+        // attribute is refused, while a property write is not policed. It lands in
+        // this commit, before the re-render that sets `data-armed` starts the
+        // transition it delays — and, like the observer, it is read once on mount.
+        if (delay) node.style.transitionDelay = `${delay}ms`;
         setArmed(true);
         const observer = new IntersectionObserver(
             (entries) => {
@@ -69,7 +75,6 @@ export function Reveal({
             className={`reveal ${className}`}
             data-armed={armed || undefined}
             data-shown={shown || undefined}
-            style={delay ? {transitionDelay: `${delay}ms`} : undefined}
         >
             {children}
         </Tag>

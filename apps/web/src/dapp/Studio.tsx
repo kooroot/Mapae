@@ -808,7 +808,16 @@ function Overview({
                                 aria-valuemax={100}
                                 aria-valuenow={Math.round(usedPercent)}
                             >
-                                <i style={{width: `${usedPercent}%`}} />
+                                <i
+                                    // Through the CSSOM, not a `style` attribute: the
+                                    // document's `style-src` carries no `'unsafe-inline'`,
+                                    // so a rendered attribute is refused, while a property
+                                    // write is not policed. The callback runs on every
+                                    // commit, so a remounted bar starts at its width too.
+                                    ref={(fill) => {
+                                        if (fill) fill.style.width = `${usedPercent}%`;
+                                    }}
+                                />
                             </div>
                             <div className="studio-cap-legend">
                                 <span>{t.spentLegend(fromTokenAmount(spent))}</span>

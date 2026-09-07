@@ -129,7 +129,7 @@ export function Footer({variant = "paper"}: {variant?: "paper" | "dark"}) {
                     <Tagline />
                     <p className="label foot-motto">
                         {t.mottoLead}
-                        <span style={{color: "var(--ink)"}}>{t.mottoMark}</span>
+                        <span>{t.mottoMark}</span>
                         {t.mottoTail}
                     </p>
                 </div>

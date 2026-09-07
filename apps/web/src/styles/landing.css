@@ -488,6 +488,11 @@
     margin-top: 16px;
 }
 
+/* The one marked word in the motto reads in full ink against the muted label. */
+.foot-motto span {
+    color: var(--ink);
+}
+
 /* The period ring. Non-text weight, so --ink-4 is allowed here and nowhere
    a sentence goes. */
 .second {
