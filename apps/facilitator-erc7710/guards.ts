@@ -295,10 +295,9 @@ function isRpcUnreachable(error: unknown): boolean {
  *
  * The verifier speaks in messages, not types. "active deployment admin identity
  * mismatch" is the artifact disagreeing with `FRAMEWORK_ADMIN_ADDRESS`; the live admin
- * state — owner, pending owner, paused — currently reaches here as one message,
- * "DelegationManager is not operationally active", which cannot say which of the three
- * it was and so classifies as `verification_failed`. `framework_paused` fires once the
- * verifier names the pause.
+ * state arrives as one of the three `assertFrameworkAdminActive` throws — "is paused",
+ * "owner mismatch", "pending owner mismatch" — and the two owner cases are one code:
+ * either way the manager is not under the admin the artifact names.
  */
 export function classifyFrameworkError(error: unknown): FrameworkHealthError {
     if (isRpcUnreachable(error)) return "rpc_unreachable";

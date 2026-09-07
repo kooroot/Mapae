@@ -196,9 +196,7 @@ export async function verifyFrameworkOperationalState(params: {
     const owner = getAddress(ownerValue);
     const pendingAddress = getAddress(pendingValue);
     const pendingOwner = pendingAddress === zeroAddress ? null : pendingAddress;
-    if (owner !== expectedAdmin || pendingOwner !== null || pausedValue) {
-        throw new Error("DelegationManager is not operationally active");
-    }
+    assertFrameworkAdminActive({owner, pendingOwner, paused: pausedValue}, expectedAdmin);
     return {
         chainId,
         blockNumber: blockNumber.toString(),
@@ -209,6 +207,25 @@ export async function verifyFrameworkOperationalState(params: {
         pendingOwner,
         paused: pausedValue,
     };
+}
+
+/**
+ * The live admin state a payment may be redeemed under: not paused, the expected owner,
+ * no transfer of ownership pending. Three throws rather than one — the single
+ * "not operationally active" could not say which of the three it was, so the
+ * facilitator's `/health` reported every one of them as `verification_failed` and an
+ * operator could not tell a pause from a handover. The wording is what its classifier
+ * reads: `paused` names the pause, `owner mismatch` (pending or not) names the owner.
+ * Paused is checked first: it is the kill switch an operator pulls on purpose, and the
+ * reason they will look for.
+ */
+export function assertFrameworkAdminActive(
+    live: Pick<FrameworkLiveVerification, "owner" | "pendingOwner" | "paused">,
+    expectedAdmin: Address,
+): void {
+    if (live.paused) throw new Error("DelegationManager is paused");
+    if (live.owner !== expectedAdmin) throw new Error("DelegationManager owner mismatch");
+    if (live.pendingOwner !== null) throw new Error("DelegationManager pending owner mismatch");
 }
 
 function environmentAddress(

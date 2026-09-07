@@ -102,9 +102,9 @@ viem 버전 문구가 그대로 새어 나갔다.
 | --- | --- |
 | `null` | 검증 통과 |
 | `rpc_unreachable` | RPC가 답하지 않았다(전송 실패, 타임아웃, 재시도를 넘긴 rate limit) |
-| `owner_mismatch` | 배포 아티팩트의 관리자가 `FRAMEWORK_ADMIN_ADDRESS`와 다르다 |
+| `owner_mismatch` | 배포 아티팩트의 관리자가 `FRAMEWORK_ADMIN_ADDRESS`와 다르거나, 라이브 owner가 그와 다르거나, 소유권 이전이 걸려 있다(pending owner) |
 | `framework_paused` | DelegationManager가 멈춰 있다 |
-| `verification_failed` | 그 밖의 모든 것 — 체인 ID, 런타임 코드, NAME/VERSION, 라이브 관리자 상태 |
+| `verification_failed` | 그 밖의 모든 것 — 체인 ID, 런타임 코드, NAME/VERSION |
 
 프레임워크 검증과 서명자 잔고는 각각 5초 창에 한 번만 읽고, 진행 중인 읽기는 그때 온
 호출자들이 함께 쓴다. 잔고 읽기는 실패도 값처럼 캐시한다 — 공개 경로에 요청 제한이 없는

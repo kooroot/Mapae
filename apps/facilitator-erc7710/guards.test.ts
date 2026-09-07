@@ -9,6 +9,7 @@ import {
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
     SpendBudget,
+    assertFrameworkAdminActive,
     budgetDay,
 } from "@mapae/delegation";
 import {IN_MEMORY, openStore, type MapaeStore} from "@mapae/store";
@@ -452,26 +453,38 @@ describe("classifyFrameworkError", () => {
         expect(classifyFrameworkError(new Error("over rate limit"))).toBe("rpc_unreachable");
     });
 
+    /** What the verifier actually throws for a live admin state, not a hand-written message. */
+    function liveFailure(live: Parameters<typeof assertFrameworkAdminActive>[0]): unknown {
+        try {
+            assertFrameworkAdminActive(live, ALICE);
+        } catch (error) {
+            return error;
+        }
+        throw new Error("expected the verifier to refuse");
+    }
+
     test("the artifact's admin disagreeing with the environment is an owner mismatch", () => {
         expect(classifyFrameworkError(new Error("active deployment admin identity mismatch"))).toBe(
             "owner_mismatch",
         );
-        expect(classifyFrameworkError(new Error("DelegationManager owner mismatch"))).toBe("owner_mismatch");
-        expect(classifyFrameworkError(new Error("DelegationManager pending owner mismatch"))).toBe(
+    });
+
+    test("the live owner, or a pending one, is an owner mismatch — as the verifier throws it", () => {
+        expect(classifyFrameworkError(liveFailure({owner: BOB, pendingOwner: null, paused: false}))).toBe(
+            "owner_mismatch",
+        );
+        expect(classifyFrameworkError(liveFailure({owner: ALICE, pendingOwner: BOB, paused: false}))).toBe(
             "owner_mismatch",
         );
     });
 
-    test("a named pause is framework_paused", () => {
-        expect(classifyFrameworkError(new Error("DelegationManager is paused"))).toBe("framework_paused");
+    test("the live pause is framework_paused — as the verifier throws it", () => {
+        expect(classifyFrameworkError(liveFailure({owner: ALICE, pendingOwner: null, paused: true}))).toBe(
+            "framework_paused",
+        );
     });
 
     test("everything the verifier cannot name more precisely is verification_failed", () => {
-        // The live admin state — owner, pending owner, paused — reaches the classifier as
-        // one message today, so it cannot be read as either of the two named codes.
-        expect(classifyFrameworkError(new Error("DelegationManager is not operationally active"))).toBe(
-            "verification_failed",
-        );
         // NAME/VERSION disagreement, not an owner: "identity mismatch" alone must not match.
         expect(classifyFrameworkError(new Error("DelegationManager operational identity mismatch"))).toBe(
             "verification_failed",
