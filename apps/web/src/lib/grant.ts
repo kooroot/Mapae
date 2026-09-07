@@ -54,6 +54,7 @@ const MSG: Record<
         bootstrapNotConfirmed: string;
         bootstrapDisabled: string;
         bootstrapBudgetExhausted: string;
+        bootstrapRateLimited: string;
         bootstrapFeeTooHigh: string;
         bootstrapPermissionRejected: string;
         bootstrapFailed: string;
@@ -89,6 +90,8 @@ const MSG: Record<
         bootstrapDisabled: "Payer account setup is currently turned off.",
         bootstrapBudgetExhausted:
             "Today's allowance of new accounts has been used. Try again later.",
+        bootstrapRateLimited:
+            "Too many account setups from this network in the last hour. Try again in a little while.",
         bootstrapFeeTooHigh: "Network fees are temporarily high. Try again in a moment.",
         bootstrapPermissionRejected: "A payer account cannot be set up from this permission.",
         bootstrapFailed: "The payer account could not be set up.",
@@ -123,6 +126,8 @@ const MSG: Record<
         bootstrapDisabled: "지불 계정 준비 기능이 현재 꺼져 있습니다.",
         bootstrapBudgetExhausted:
             "오늘 준비 가능한 계정 수를 모두 사용했습니다. 잠시 후 다시 시도해 주세요.",
+        bootstrapRateLimited:
+            "이 네트워크에서 최근 한 시간 안에 계정 준비 요청이 너무 많았습니다. 잠시 후 다시 시도해 주세요.",
         bootstrapFeeTooHigh: "네트워크 수수료가 일시적으로 높습니다. 잠시 후 다시 시도해 주세요.",
         bootstrapPermissionRejected: "이 권한으로는 지불 계정을 준비할 수 없습니다.",
         bootstrapFailed: "지불 계정을 준비하지 못했습니다.",
@@ -465,16 +470,18 @@ async function verifyUndeployedPermissionArtifact(
 }
 
 /**
- * The sponsor's reply body. A closed shape by design: it is mapped, never rendered, so a
- * new server-side field or reason can never become UI text nobody wrote.
+ * One string field of the sponsor's reply, or nothing.
+ *
+ * Validate, never cast: the body is whatever the sponsor's JSON parsed to — an object on
+ * a good day, a string, an array or nothing at all on a bad one — and `postBootstrap`
+ * only carries it. A field that is not a string is absent, so a reply this client was not
+ * written against reads as "no reason" and lands on the generic sentence, never as UI
+ * text nobody wrote. `interpretTopUp` in `faucet.ts` reads the same body the same way.
  */
-export interface BootstrapReply {
-    status?: string;
-    transaction?: string;
-    fundingTransaction?: string;
-    mintedBase?: string;
-    targetBase?: string;
-    reason?: string;
+export function bootstrapReplyField(body: unknown, key: string): string | undefined {
+    if (typeof body !== "object" || body === null) return undefined;
+    const value = (body as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : undefined;
 }
 
 /**
@@ -483,13 +490,14 @@ export interface BootstrapReply {
  * The body carries the signed permission context and nothing else — no owner address, no
  * salt, no bytecode. Everything the sponsor acts on is reconstructed from that signature,
  * so there is no field a caller can steer. `redirect: "error"` because that context is a
- * signed delegation, and a redirect would carry it to an origin nobody chose.
+ * signed delegation, and a redirect would carry it to an origin nobody chose. The reply
+ * body is returned as parsed: callers read it through `bootstrapReplyField`.
  */
 export async function postBootstrap(
     endpoint: string,
     permissionContext: `0x${string}`,
     locale: Locale = "en",
-): Promise<{ok: boolean; body: BootstrapReply}> {
+): Promise<{ok: boolean; body: unknown}> {
     let response: Response;
     try {
         response = await fetch(`${endpoint}/bootstrap`, {
@@ -502,7 +510,7 @@ export async function postBootstrap(
     } catch {
         throw new Error(MSG[locale].bootstrapUnreachable);
     }
-    const body = (await response.json().catch(() => ({}))) as BootstrapReply;
+    const body: unknown = await response.json().catch(() => undefined);
     return {ok: response.ok, body};
 }
 
@@ -546,7 +554,11 @@ export async function requestSponsoredBootstrap(
         .getCode({address: artifact.delegator})
         .catch(() => undefined);
     const failure = judgeBootstrapOutcome(
-        {ok, reason: body.reason, deployed: code !== undefined && code !== "0x"},
+        {
+            ok,
+            reason: bootstrapReplyField(body, "reason"),
+            deployed: code !== undefined && code !== "0x",
+        },
         locale,
     );
     if (failure) throw new Error(failure);
@@ -560,6 +572,8 @@ function bootstrapRefusalMessage(reason: string | undefined, locale: Locale): st
         case "budget_exhausted":
         case "sponsor_unfunded":
             return m.bootstrapBudgetExhausted;
+        case "rate_limited":
+            return m.bootstrapRateLimited;
         case "fee_too_high":
             return m.bootstrapFeeTooHigh;
         case "malformed_request":

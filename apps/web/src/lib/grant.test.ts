@@ -1,7 +1,9 @@
 import {describe, expect, test} from "bun:test";
 import {
+    bootstrapReplyField,
     judgeBootstrapOutcome,
     judgeSpendable,
+    postBootstrap,
     signedSessionGrant,
     validateGrantDraft,
     type GrantDraft,
@@ -266,5 +268,80 @@ describe("bootstrap outcome", () => {
         const ko = judgeBootstrapOutcome({ok: true, deployed: false}, "ko");
         expect(en).toBeTruthy();
         expect(ko).not.toBe(en);
+    });
+
+    test("the sponsor's hourly per-network cap has its own sentence, in both languages", () => {
+        // `BOOTSTRAP_RATE_PER_HOUR` answers `{reason: "rate_limited"}`. Before this it fell
+        // through to "could not be set up", which reads as a fault, not as a wait.
+        const refused = {ok: false, reason: "rate_limited", deployed: false};
+        expect(judgeBootstrapOutcome(refused, "en")).toBe(
+            "Too many account setups from this network in the last hour. Try again in a little while.",
+        );
+        expect(judgeBootstrapOutcome(refused, "ko")).toBe(
+            "이 네트워크에서 최근 한 시간 안에 계정 준비 요청이 너무 많았습니다. 잠시 후 다시 시도해 주세요.",
+        );
+        expect(judgeBootstrapOutcome(refused)).not.toBe(
+            judgeBootstrapOutcome({...refused, reason: "budget_exhausted"}),
+        );
+    });
+});
+
+/**
+ * The sponsor's reply is JSON the client did not write. Every field it acts on is read
+ * through `bootstrapReplyField`, so a body of the wrong shape is "no such field", never a
+ * cast that lets a number or an object reach a `switch` on strings.
+ */
+describe("bootstrap reply reading", () => {
+    test("a string field is read, anything else is absent", () => {
+        expect(bootstrapReplyField({reason: "rate_limited"}, "reason")).toBe("rate_limited");
+        expect(bootstrapReplyField({reason: 429}, "reason")).toBeUndefined();
+        expect(bootstrapReplyField({reason: {code: "rate_limited"}}, "reason")).toBeUndefined();
+        expect(bootstrapReplyField({}, "reason")).toBeUndefined();
+    });
+
+    test("a body that is not an object has no fields", () => {
+        for (const body of [undefined, null, "rate_limited", 42, true, ["rate_limited"]]) {
+            expect(bootstrapReplyField(body, "reason")).toBeUndefined();
+        }
+    });
+
+    test("a malformed refusal lands on the generic sentence, never on server text", () => {
+        for (const body of ["<html>", {reason: 429}, ["rate_limited"], undefined]) {
+            expect(
+                judgeBootstrapOutcome(
+                    {ok: false, reason: bootstrapReplyField(body, "reason"), deployed: false},
+                    "en",
+                ),
+            ).toBe("The payer account could not be set up.");
+        }
+    });
+
+    test("postBootstrap carries an unparseable body as nothing, and a parsed one as is", async () => {
+        const answers = [
+            new Response("<html>not json</html>", {status: 502}),
+            new Response(JSON.stringify({reason: "rate_limited"}), {status: 429}),
+            new Response(JSON.stringify("rate_limited"), {status: 429}),
+        ];
+        const original = globalThis.fetch;
+        // Bun's `fetch` carries `preconnect`; the scripted double keeps the real one so
+        // the assignment needs no cast.
+        globalThis.fetch = Object.assign(
+            async () => answers.shift() ?? new Response("", {status: 500}),
+            {preconnect: original.preconnect},
+        );
+        try {
+            const unparseable = await postBootstrap("https://sponsor.test", "0x00");
+            expect(unparseable).toEqual({ok: false, body: undefined});
+
+            const refused = await postBootstrap("https://sponsor.test", "0x00");
+            expect(refused.ok).toBe(false);
+            expect(bootstrapReplyField(refused.body, "reason")).toBe("rate_limited");
+
+            const bare = await postBootstrap("https://sponsor.test", "0x00");
+            expect(bare).toEqual({ok: false, body: "rate_limited"});
+            expect(bootstrapReplyField(bare.body, "reason")).toBeUndefined();
+        } finally {
+            globalThis.fetch = original;
+        }
     });
 });
