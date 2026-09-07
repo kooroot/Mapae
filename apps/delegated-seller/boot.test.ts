@@ -62,6 +62,8 @@ function readRows<T>(sql: string): T[] {
 /**
  * Boot `index.ts` under `env` and expect it to refuse: what it printed before exiting.
  * A shop that boots instead is killed, and the empty string it yields fails the test.
+ * A refusal takes 60 ms here; the wait is bounded well under bun's 5 s per-test limit,
+ * which used to fire first and leave the booted child listening on its port.
  */
 async function bootRefusal(env: Record<string, string>): Promise<string> {
     const child = Bun.spawn([process.execPath, "run", "index.ts"], {
@@ -70,13 +72,14 @@ async function bootRefusal(env: Record<string, string>): Promise<string> {
         stdout: "ignore",
         stderr: "pipe",
     });
-    const exited = await Promise.race([child.exited, Bun.sleep(10_000).then(() => "still running")]);
-    if (exited === "still running") {
+    try {
+        const exited = await Promise.race([child.exited, Bun.sleep(3_000).then(() => "still running")]);
+        if (exited === "still running") return "";
+        expect(exited).not.toBe(0);
+        return await new Response(child.stderr).text();
+    } finally {
         child.kill();
-        return "";
     }
-    expect(exited).not.toBe(0);
-    return new Response(child.stderr).text();
 }
 
 let facilitator: ReturnType<typeof Bun.serve> | undefined;
