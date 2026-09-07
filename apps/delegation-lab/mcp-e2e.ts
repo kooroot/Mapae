@@ -898,8 +898,8 @@ async function main(): Promise<void> {
         // `eth_maxPriorityFeePerGas` with its own 1 gwei suggestion (measured on anvil
         // 1.7.1) where GIWA's tip is ~1e6 wei — a thousand times more per gas, so one
         // ~333k-gas redemption reserves ~3e14–7e14 wei here. The production defaults
-        // (5e14 a day, a tenth of it per payer) refused the first payment as
-        // `payer_budget_exhausted`. 0.1 ETH a day, a tenth of it for the one payer, holds
+        // (5e14 a day, a tenth of it per payer) would refuse the first payment as
+        // `payer_budget_exhausted` — computed from those figures, not yet seen on a run. 0.1 ETH a day, a tenth of it for the one payer, holds
         // the three settlements and their reservations with room to spare; the relayer
         // was just given 1 ETH. Both are pinned: the child auto-loads the facilitator's
         // own .env, and the template writes the payer share out at 5e13 rather than
