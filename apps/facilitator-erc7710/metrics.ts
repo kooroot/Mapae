@@ -15,14 +15,15 @@ const MIN_TOKEN_LENGTH = 16;
 
 /**
  * How long `/settle`'s refusals stay on file. A signed payment the facilitator refuses is
- * a `rejected` ledger row, and the per-address rate limit bounds how fast those arrive,
- * not how many: a patient caller grew the sqlite file forever. Rejected rows are kept for
- * a week and never beyond the newest 50,000. The count is sized from the limit's worst
- * case — one address can put 600 req/h × 24 h = 14,400 rejected rows a day on file, at
- * ~200 B each about 3 MB — so 50,000 is three and a half such address-days, roughly
- * 10 MB, and under a sustained flood it is the count, not the week, that binds. Settled
- * and error rows are never pruned: money moved, or may have, and the ledger is the only
- * record of it.
+ * a `rejected` ledger row, and the per-IP rate limit bounds how fast those arrive, not
+ * how many: a patient caller grew the sqlite file forever. Rejected rows are kept for a
+ * week and never beyond the newest 50,000. The count is sized from the limit's worst
+ * case — one IP (one /64) can put 600 req/h × 24 h = 14,400 rejected rows a day on file,
+ * at ~200 B each about 3 MB — so 50,000 is three and a half such IP-days, roughly 10 MB,
+ * and under a sustained flood it is the count, not the week, that binds. The limit keys
+ * on the IP, not the payer, which is why a count is needed at all: one payer with many
+ * addresses is many windows. Settled and error rows are never pruned: money moved, or
+ * may have, and the ledger is the only record of it.
  */
 export const REJECTED_SETTLEMENT_RETENTION_MS = 7 * DAY_MS;
 export const REJECTED_SETTLEMENTS_KEPT = 50_000;
