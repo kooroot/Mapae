@@ -1,5 +1,5 @@
 /**
- * Schema for `user_version` 3.
+ * Schema for `user_version` 4.
  *
  * The schema is the allowlist. Every column is something an operator may read back
  * later — identifiers, addresses, amounts, hashes, outcomes — and there is no column a
@@ -21,8 +21,12 @@
  * segment, the item's owner, the order's owner. Items are keyed by `(seller_slug, key)`
  * rather than a surrogate id for the same reason: a URL names an item by its key, and
  * an order that records the same pair can be read back without a join.
+ *
+ * Version 4 keyed `budget_days` by scope as well as day, so one file holds a service's
+ * total beside a per-payer share, and gave every order a `ticket`: the code a buyer shows
+ * at pickup used to be the autoincrement id, which anyone can count to.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 CREATE TABLE settlement_events (
@@ -41,9 +45,13 @@ CREATE TABLE settlement_events (
 CREATE INDEX settlement_events_at ON settlement_events (at);
 CREATE INDEX settlement_events_pay_to ON settlement_events (pay_to);
 
+-- One series per scope. 'total' is the service's own daily ceiling; a facilitator
+-- also keeps 'payer:<address>' beside it so one grant holder cannot spend the whole day.
 CREATE TABLE budget_days (
-    day TEXT PRIMARY KEY,
-    spent_wei TEXT NOT NULL
+    scope TEXT NOT NULL,
+    day TEXT NOT NULL,
+    spent_wei TEXT NOT NULL,
+    PRIMARY KEY (scope, day)
 );
 
 -- One row per account that drew from the faucet, dated from the mint that landed. The
@@ -85,11 +93,15 @@ CREATE TABLE items (
     UNIQUE (seller_slug, key)
 );
 
+-- ticket is minted by the store on insert: 80 random bits as 16 Crockford base32
+-- characters, the code a buyer shows and a seller looks up. The id stays the row's
+-- identity for the operator; it never reaches a buyer.
 CREATE TABLE orders (
     id INTEGER PRIMARY KEY,
     seller_slug TEXT NOT NULL,
     item_key TEXT NOT NULL,
     payment_intent_id TEXT NOT NULL UNIQUE,
+    ticket TEXT NOT NULL UNIQUE,
     payer TEXT NOT NULL,
     amount_base TEXT NOT NULL,
     tx_hash TEXT,

@@ -4,7 +4,14 @@ import {createHash} from "node:crypto";
 import {existsSync, mkdtempSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {IN_MEMORY, SCHEMA_VERSION, openStore, type MapaeStore, type SellerInput} from "./index.js";
+import {
+    IN_MEMORY,
+    SCHEMA_VERSION,
+    mintTicket,
+    openStore,
+    type MapaeStore,
+    type SellerInput,
+} from "./index.js";
 
 const ALICE = "0x1111111111111111111111111111111111111111";
 const BOB = "0x2222222222222222222222222222222222222222";
@@ -15,6 +22,8 @@ const TX = `0x${"c".repeat(64)}` as const;
 const INTENT = `0x${"d".repeat(64)}` as const;
 const OTHER_INTENT = `0x${"e".repeat(64)}` as const;
 const THIRD_INTENT = `0x${"f".repeat(64)}` as const;
+
+const TICKET = /^[0-9a-hjkmnp-tv-z]{16}$/;
 
 const HOUR = 3_600_000;
 const T0 = 1_787_961_600_000;
@@ -169,6 +178,7 @@ describe("openStore", () => {
             gasUsed: 333_523n,
         });
         first.budget.save("2026-08-29", 42n);
+        first.budget.scoped(`payer:${ALICE}`).save("2026-08-29", 7n);
         const seller = first.sellers.upsert({
             ...HOSTED_CAFE,
             manageTokenHash: CAFE_TOKEN_HASH,
@@ -197,11 +207,13 @@ describe("openStore", () => {
         const second = open(path);
         expect(second.ledger.list()).toEqual([event]);
         expect(second.budget.load("2026-08-29")).toBe(42n);
+        expect(second.budget.scoped(`payer:${ALICE}`).load("2026-08-29")).toBe(7n);
         expect(second.sellers.get("cafe")).toEqual(seller);
         expect(second.sellers.getByManageTokenHash(CAFE_TOKEN_HASH)).toEqual(seller);
         expect(second.items.listBySeller("cafe")).toEqual([item]);
         expect(second.orders.listBySeller("cafe")).toEqual([order]);
         expect(second.orders.createOnce({...order, payer: CAROL})).toEqual(order);
+        expect(second.orders.getByTicket("cafe", order.ticket)).toEqual(order);
         expect(second.orders.summary({sinceMs: 0})).toEqual({total: 1, bySeller: {cafe: 1}});
     });
 
@@ -410,6 +422,35 @@ describe("budget", () => {
         expect(() => store.budget.save("today", 1n)).toThrow(TypeError);
         expect(() => store.budget.save("2026-08-29", 1 as never)).toThrow(TypeError);
         expect(() => store.budget.save("2026-08-29", -1n)).toThrow(RangeError);
+    });
+
+    test("scopes are separate series of the same days; the total is the 'total' scope", () => {
+        const store = open();
+        const alice = store.budget.scoped(`payer:${ALICE}`);
+        const bob = store.budget.scoped(`payer:${BOB}`);
+        store.budget.save("2026-08-29", 100n);
+        alice.save("2026-08-29", 30n);
+        bob.save("2026-08-29", 5n);
+
+        expect(store.budget.load("2026-08-29")).toBe(100n);
+        expect(alice.load("2026-08-29")).toBe(30n);
+        expect(bob.load("2026-08-29")).toBe(5n);
+        expect(alice.load("2026-08-30")).toBe(0n);
+        // `scoped("total")` is the same series `store.budget` writes, not a second total.
+        expect(store.budget.scoped("total").load("2026-08-29")).toBe(100n);
+
+        alice.save("2026-08-29", 31n);
+        expect(alice.load("2026-08-29")).toBe(31n);
+        expect(store.budget.load("2026-08-29")).toBe(100n);
+    });
+
+    test("refuses a scope that is empty, has whitespace, or is longer than 128 characters", () => {
+        const store = open();
+        expect(() => store.budget.scoped("")).toThrow(TypeError);
+        expect(() => store.budget.scoped("payer 0x1")).toThrow(TypeError);
+        expect(() => store.budget.scoped("a".repeat(129))).toThrow(TypeError);
+        expect(() => store.budget.scoped(1 as never)).toThrow(TypeError);
+        expect(store.budget.scoped("a".repeat(128)).load("2026-08-29")).toBe(0n);
     });
 });
 
@@ -715,6 +756,7 @@ describe("orders", () => {
             sellerSlug: "cafe",
             itemKey: "latte",
             paymentIntentId: INTENT,
+            ticket: expect.stringMatching(TICKET),
             payer: ALICE,
             amountBase: 20_000n,
             txHash: TX,
@@ -741,7 +783,41 @@ describe("orders", () => {
         });
         expect(next.id).toBe(2);
         expect(next.txHash).toBeNull();
+        expect(next.ticket).not.toBe(first.ticket);
         expect(store.orders.listBySeller("cafe")).toHaveLength(2);
+    });
+
+    test("a ticket is minted once per payment and looked up only at the shop that issued it", () => {
+        const store = open();
+        seedCafe(store);
+        store.sellers.upsert(EXTERNAL_SHOP);
+        const order = store.orders.createOnce(PAID);
+        expect(order.ticket).toMatch(TICKET);
+        // The replay keeps the ticket the payment first got; a fresh one would send the
+        // buyer to the counter with two codes for one coffee.
+        expect(store.orders.createOnce({...PAID, payer: BOB}).ticket).toBe(order.ticket);
+
+        expect(store.orders.getByTicket("cafe", order.ticket)).toEqual(order);
+        expect(store.orders.getByTicket("shop", order.ticket)).toBeNull();
+        expect(store.orders.getByTicket("cafe", mintTicket())).toBeNull();
+        expect(() => store.orders.getByTicket("cafe", order.ticket.toUpperCase())).toThrow(TypeError);
+        expect(() => store.orders.getByTicket("cafe", "1")).toThrow(TypeError);
+        expect(() => store.orders.getByTicket("Cafe", order.ticket)).toThrow(TypeError);
+    });
+
+    test("getByIntent finds the order a payment already bought, and nothing for a fresh intent", () => {
+        const store = open();
+        seedCafe(store);
+        expect(store.orders.getByIntent(INTENT)).toBeNull();
+        const order = store.orders.createOnce(PAID);
+        expect(store.orders.getByIntent(INTENT)).toEqual(order);
+        expect(store.orders.getByIntent(OTHER_INTENT)).toBeNull();
+    });
+
+    test("mintTicket draws 16 Crockford base32 characters that do not repeat", () => {
+        const tickets = new Set(Array.from({length: 1_000}, () => mintTicket()));
+        expect(tickets.size).toBe(1_000);
+        for (const ticket of tickets) expect(ticket).toMatch(TICKET);
     });
 
     test("createOnce rejects an order whose (seller, key) names no item", () => {

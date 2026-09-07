@@ -10,6 +10,7 @@
  * math and the reopen tests exact.
  */
 import {Database} from "bun:sqlite";
+import {randomBytes} from "node:crypto";
 import {mkdirSync} from "node:fs";
 import {dirname} from "node:path";
 import {SCHEMA_SQL, SCHEMA_VERSION} from "./schema.js";
@@ -69,10 +70,23 @@ export interface Ledger {
     summary(window: {sinceMs: number}): LedgerSummary;
 }
 
-export interface Budget {
+/** One series of daily totals — structurally the `BudgetStore` a `SpendBudget` persists through. */
+export interface BudgetSeries {
     /** Wei spent on `day` (`YYYY-MM-DD`), `0n` when nothing was recorded. */
     load(day: string): bigint;
     save(day: string, spentWei: bigint): void;
+}
+
+/**
+ * Daily spend, one series per scope in one table.
+ *
+ * `store.budget` itself is the `"total"` series — the ceiling a service names in its
+ * environment. `scoped(name)` opens another series beside it, so the facilitator can
+ * hold every payer to a share of the day in the same file, and a restart resumes the
+ * shares as faithfully as the total.
+ */
+export interface Budget extends BudgetSeries {
+    scoped(scope: string): BudgetSeries;
 }
 
 export interface SellerInput {
@@ -162,6 +176,8 @@ export interface Order {
     sellerSlug: string;
     itemKey: string;
     paymentIntentId: HexString;
+    /** 16 Crockford base32 characters minted on insert — what the buyer shows at pickup. */
+    ticket: string;
     payer: HexString;
     amountBase: bigint;
     txHash: HexString | null;
@@ -181,6 +197,10 @@ export interface Orders {
      * The second delivery of one payment is the same ticket, never a new row.
      */
     createOnce(order: OrderInput): Order;
+    /** The order a payment already bought, if any — consulted before a facilitator is asked. */
+    getByIntent(paymentIntentId: HexString): Order | null;
+    /** The seller's order behind a ticket; a code is only good at the shop that issued it. */
+    getByTicket(sellerSlug: string, ticket: string): Order | null;
     /** Newest first. */
     listBySeller(slug: string, options?: {limit?: number}): Order[];
     /** Orders with `createdAt >= sinceMs`; pass `0` for all time. */
@@ -256,6 +276,16 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 function dayKey(value: unknown): string {
     if (typeof value !== "string" || !DAY.test(value)) {
         throw new TypeError("day must be YYYY-MM-DD");
+    }
+    return value;
+}
+
+/** Printable ASCII with no whitespace: `total`, `payer:0x…` — a key, not a sentence. */
+const SCOPE = /^[\x21-\x7e]{1,128}$/;
+
+function scopeKey(value: unknown): string {
+    if (typeof value !== "string" || !SCOPE.test(value)) {
+        throw new TypeError("scope must be 1–128 printable ASCII characters without whitespace");
     }
     return value;
 }
@@ -396,21 +426,29 @@ function createLedger(db: Database): Ledger {
 
 // ── Budget ──────────────────────────────────────────────────────────────────────────
 
+const TOTAL_SCOPE = "total";
+
 function createBudget(db: Database): Budget {
     const select = db.query<{spent_wei: string}, Params>(
-        `SELECT spent_wei FROM budget_days WHERE day = $day`,
+        `SELECT spent_wei FROM budget_days WHERE scope = $scope AND day = $day`,
     );
     const upsert = db.query<never, Params>(
-        `INSERT INTO budget_days (day, spent_wei) VALUES ($day, $spentWei)
-         ON CONFLICT (day) DO UPDATE SET spent_wei = excluded.spent_wei`,
+        `INSERT INTO budget_days (scope, day, spent_wei) VALUES ($scope, $day, $spentWei)
+         ON CONFLICT (scope, day) DO UPDATE SET spent_wei = excluded.spent_wei`,
     );
-    return {
+    const series = (scope: string): BudgetSeries => ({
         load(day) {
-            const row = select.get({day: dayKey(day)});
+            const row = select.get({scope, day: dayKey(day)});
             return row ? BigInt(row.spent_wei) : 0n;
         },
         save(day, spentWei) {
-            upsert.run({day: dayKey(day), spentWei: amountText(spentWei, "spentWei")});
+            upsert.run({scope, day: dayKey(day), spentWei: amountText(spentWei, "spentWei")});
+        },
+    });
+    return {
+        ...series(TOTAL_SCOPE),
+        scoped(scope) {
+            return series(scopeKey(scope));
         },
     };
 }
@@ -601,6 +639,7 @@ interface OrderRow {
     seller_slug: string;
     item_key: string;
     payment_intent_id: string;
+    ticket: string;
     payer: string;
     amount_base: string;
     tx_hash: string | null;
@@ -614,6 +653,7 @@ function toOrder(row: OrderRow): Order {
         sellerSlug: row.seller_slug,
         itemKey: row.item_key,
         paymentIntentId: row.payment_intent_id as HexString,
+        ticket: row.ticket,
         payer: row.payer as HexString,
         amountBase: BigInt(row.amount_base),
         txHash: row.tx_hash as HexString | null,
@@ -622,16 +662,51 @@ function toOrder(row: OrderRow): Order {
     };
 }
 
+/**
+ * Crockford base32, lowercase: no I, L, O or U, so a code read aloud over a counter or
+ * typed from a receipt has no look-alike letters to get wrong.
+ */
+const TICKET_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
+const TICKET_BYTES = 10;
+const TICKET = /^[0-9a-hjkmnp-tv-z]{16}$/;
+
+/** 80 random bits as 16 characters. Unguessable online; short enough to show at pickup. */
+export function mintTicket(): string {
+    const bytes = randomBytes(TICKET_BYTES);
+    let bits = 0;
+    let buffered = 0;
+    let out = "";
+    for (const byte of bytes) {
+        buffered = (buffered << 8) | byte;
+        bits += 8;
+        while (bits >= 5) {
+            bits -= 5;
+            out += TICKET_ALPHABET[(buffered >> bits) & 31];
+        }
+    }
+    return out;
+}
+
+function ticketKey(value: unknown): string {
+    if (typeof value !== "string" || !TICKET.test(value)) {
+        throw new TypeError("ticket must be 16 lowercase Crockford base32 characters");
+    }
+    return value;
+}
+
 function createOrders(db: Database): Orders {
     const insert = db.query<OrderRow, Params>(
         `INSERT INTO orders
-            (seller_slug, item_key, payment_intent_id, payer, amount_base, tx_hash, status, created_at)
-         VALUES ($sellerSlug, $itemKey, $paymentIntentId, $payer, $amountBase, $txHash, $status, $createdAt)
+            (seller_slug, item_key, payment_intent_id, ticket, payer, amount_base, tx_hash, status, created_at)
+         VALUES ($sellerSlug, $itemKey, $paymentIntentId, $ticket, $payer, $amountBase, $txHash, $status, $createdAt)
          ON CONFLICT (payment_intent_id) DO NOTHING
          RETURNING *`,
     );
     const byIntent = db.query<OrderRow, Params>(
         `SELECT * FROM orders WHERE payment_intent_id = $paymentIntentId`,
+    );
+    const byTicket = db.query<OrderRow, Params>(
+        `SELECT * FROM orders WHERE seller_slug = $slug AND ticket = $ticket`,
     );
     const bySeller = db.query<OrderRow, Params>(
         `SELECT * FROM orders WHERE seller_slug = $slug
@@ -647,6 +722,7 @@ function createOrders(db: Database): Orders {
                 sellerSlug: slugKey(order.sellerSlug, "sellerSlug"),
                 itemKey: slugKey(order.itemKey, "itemKey"),
                 paymentIntentId: order.paymentIntentId,
+                ticket: mintTicket(),
                 payer: order.payer,
                 amountBase: amountText(order.amountBase, "amountBase"),
                 txHash: order.txHash ?? null,
@@ -659,6 +735,17 @@ function createOrders(db: Database): Orders {
             const existing = byIntent.get({paymentIntentId: order.paymentIntentId});
             if (!existing) throw new Error("orders: duplicate intent vanished before read");
             return toOrder(existing);
+        },
+        getByIntent(paymentIntentId) {
+            const row = byIntent.get({paymentIntentId});
+            return row ? toOrder(row) : null;
+        },
+        getByTicket(sellerSlug, ticket) {
+            const row = byTicket.get({
+                slug: slugKey(sellerSlug, "sellerSlug"),
+                ticket: ticketKey(ticket),
+            });
+            return row ? toOrder(row) : null;
         },
         listBySeller(slug, {limit = 100} = {}) {
             return bySeller
@@ -720,6 +807,11 @@ export function openStore(path: string): MapaeStore {
         // WAL keeps a reader (an operator's sqlite3 shell) from blocking the service's
         // writes; it is a property of the file, so it is set once and persists.
         if (!inMemory) db.exec("PRAGMA journal_mode = WAL");
+        // The seed and the server open the same file. bun:sqlite's default is to fail a
+        // write the instant another writer holds the lock, so a re-seed during a
+        // settlement could refuse the order row after money moved; five seconds of
+        // waiting is the difference between that and a ticket.
+        if (!inMemory) db.exec("PRAGMA busy_timeout = 5000");
         migrate(db, path);
     } catch (error) {
         db.close();
