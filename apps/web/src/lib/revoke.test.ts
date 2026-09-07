@@ -1,11 +1,14 @@
 import {describe, expect, test} from "bun:test";
 import {createPublicClient, custom, getAddress, type Address} from "viem";
+import {FAUCET_COPY} from "./faucet";
+import {LOCALES} from "./i18n";
 import {
     awaitRevocationVisible,
     judgeStudioRevokeGate,
     readPayerAccount,
     revokeRefusalMessage,
     studioRevokeButtonLabel,
+    studioRevokeGateNote,
     type PayerAccount,
 } from "./revoke";
 
@@ -227,6 +230,87 @@ describe("studioRevokeButtonLabel", () => {
         expect(studioRevokeButtonLabel({kind: "ready", owner: OWNER}, "ko")).toBe(
             "권한 회수 서명",
         );
+    });
+});
+
+describe("studioRevokeGateNote", () => {
+    const withTopUp = {topUpOffered: true};
+    const withoutTopUp = {topUpOffered: false};
+    const missing = {kind: "account-missing"} as const;
+
+    test("a missing payer states what revocation needs and who can deploy the account", () => {
+        // Not "wait until it exists": the agent holds the signed root, the public
+        // `/bootstrap` deploys for any signed root, so the holder can make the grant live
+        // whenever they like — and the owner has no kill switch until then.
+        for (const page of [withTopUp, withoutTopUp]) {
+            const en = studioRevokeGateNote(missing, "en", page);
+            expect(en).toContain("Revocation needs the account to exist");
+            expect(en).toContain("anyone holding this permission can have it deployed at any time");
+            const ko = studioRevokeGateNote(missing, "ko", page);
+            expect(ko).toContain("회수는 계정이 있어야 할 수 있고");
+            expect(ko).toContain("누구든 언제라도 계정을 배포시킬 수 있습니다");
+        }
+    });
+
+    test("with a sponsor, the note names the tab and the button that deploy the account now", () => {
+        // Quoted as the Studio renders them: the ‘Authority’ / ‘권한’ tab label, and the
+        // top-up button's own label from `FAUCET_COPY` — the same `/bootstrap` request,
+        // which deploys a codeless account before it tops it up.
+        const en = studioRevokeGateNote(missing, "en", withTopUp);
+        expect(en).toContain("open the ‘Authority’ tab");
+        expect(en).toContain(`press ‘${FAUCET_COPY.en.action}’`);
+        expect(en).toContain("deploys the account first");
+        const ko = studioRevokeGateNote(missing, "ko", withTopUp);
+        expect(ko).toContain("‘권한’ 탭에서");
+        expect(ko).toContain(`‘${FAUCET_COPY.ko.action}’를 누르세요`);
+        expect(ko).toContain("계정을 먼저 배포하니");
+    });
+
+    test("without a sponsor, the note promises no button the page does not show", () => {
+        // `TestnetTopUp` renders nothing without a configured sponsor.
+        for (const locale of LOCALES) {
+            const note = studioRevokeGateNote(missing, locale, withoutTopUp);
+            expect(note).not.toContain(FAUCET_COPY[locale].action);
+            expect(note).not.toContain("Authority");
+            expect(note).not.toContain("‘권한’");
+        }
+        expect(studioRevokeGateNote(missing, "en", withoutTopUp)).toContain(
+            "Revoke it here as soon as the account exists.",
+        );
+        expect(studioRevokeGateNote(missing, "ko", withoutTopUp)).toContain(
+            "계정이 생기는 대로 여기서 회수해 주세요.",
+        );
+    });
+
+    test("the other gates keep their notes, and the silent ones stay silent", () => {
+        const chainNote = studioRevokeGateNote(
+            {kind: "wrong-chain", connected: 1, expected: 91_342},
+            "en",
+            withTopUp,
+        );
+        expect(chainNote).toContain("chain 91342");
+        expect(chainNote).toContain("chain 1");
+        const walletNote = studioRevokeGateNote(
+            {kind: "wrong-wallet", connected: OTHER, owner: OWNER},
+            "ko",
+            withTopUp,
+        );
+        expect(walletNote).toContain("0x0000…0001");
+        expect(walletNote).toContain("0x0000…0002");
+        expect(studioRevokeGateNote({kind: "owner-unreadable"}, "en", withTopUp)).toContain(
+            "could not be read",
+        );
+        expect(studioRevokeGateNote({kind: "ready", owner: OWNER}, "en", withTopUp)).toContain(
+            "sponsored",
+        );
+        for (const gate of [
+            {kind: "no-endpoint"},
+            {kind: "already-revoked"},
+            {kind: "disconnected"},
+            {kind: "owner-unknown"},
+        ] as const) {
+            expect(studioRevokeGateNote(gate, "en", withTopUp)).toBeUndefined();
+        }
     });
 });
 

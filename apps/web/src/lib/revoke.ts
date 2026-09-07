@@ -133,6 +133,90 @@ export function studioRevokeButtonLabel(
 }
 
 /**
+ * The sentence under the button, for the gates that have one: where to go, or why the
+ * button reads as it does. Beside the labels so the two are written — and asserted —
+ * together.
+ *
+ * The account-missing note has to be exact about three things. Revocation needs the
+ * account to exist (`disableDelegation` is called by the account). Anyone holding the
+ * permission can have it deployed at any time — the public `/bootstrap` deploys for any
+ * signed root permission, and the agent holds one — so waiting is not safe. And the way
+ * to deploy it now is the same request from the ‘Authority’ tab's ‘Get testnet balance’,
+ * which the page shows only with a configured sponsor: `topUpOffered` says whether it
+ * does, so the note never promises a button that is not there.
+ */
+const NOTE_COPY: Record<
+    Locale,
+    {
+        wrongChain: (expected: number, connected: number) => string;
+        wrongWallet: (owner: string, connected: string) => string;
+        accountMissing: (topUpOffered: boolean) => string;
+        ownerUnreadable: string;
+        ready: string;
+    }
+> = {
+    en: {
+        wrongChain: (expected, connected) =>
+            `Switch the wallet to GIWA Sepolia (chain ${expected}). It is currently connected to chain ${connected}.`,
+        wrongWallet: (owner, connected) =>
+            `The owner of this permission is ${owner}. The connected wallet ${connected} cannot sign the revocation.`,
+        accountMissing: (topUpOffered) =>
+            `The payer account is not deployed yet. Revocation needs the account to exist, and anyone holding this permission can have it deployed at any time. ${
+                topUpOffered
+                    ? "To deploy it yourself now, open the ‘Authority’ tab and press ‘Get testnet balance’ — that request deploys the account first — then revoke it here."
+                    : "Revoke it here as soon as the account exists."
+            }`,
+        ownerUnreadable:
+            "The payer account's owner could not be read. Check the network connection and reload the page to try again.",
+        ready: "Gas is sponsored — this wallet needs no GIWA ETH.",
+    },
+    ko: {
+        wrongChain: (expected, connected) =>
+            `지갑을 GIWA Sepolia(chain ${expected})로 전환해 주세요. 현재 chain ${connected}에 연결되어 있습니다.`,
+        wrongWallet: (owner, connected) =>
+            `이 권한의 소유자는 ${owner} 입니다. 연결된 ${connected} 지갑으로는 회수를 서명할 수 없습니다.`,
+        accountMissing: (topUpOffered) =>
+            `지불 계정이 아직 배포되지 않았습니다. 회수는 계정이 있어야 할 수 있고, 이 권한을 가진 쪽은 누구든 언제라도 계정을 배포시킬 수 있습니다. ${
+                topUpOffered
+                    ? "지금 직접 배포하려면 ‘권한’ 탭에서 ‘테스트넷 잔액 받기’를 누르세요. 그 요청이 계정을 먼저 배포하니, 그런 다음 여기서 회수하면 됩니다."
+                    : "계정이 생기는 대로 여기서 회수해 주세요."
+            }`,
+        ownerUnreadable:
+            "지불 계정의 소유자를 읽지 못했습니다. 네트워크 연결을 확인하고 페이지를 새로고침해 다시 시도해 주세요.",
+        ready: "가스는 스폰서가 대납합니다 — 이 지갑에는 GIWA ETH가 필요 없습니다.",
+    },
+};
+
+export function studioRevokeGateNote(
+    gate: StudioRevokeGate,
+    locale: Locale,
+    page: {topUpOffered: boolean},
+): string | undefined {
+    const t = NOTE_COPY[locale];
+    switch (gate.kind) {
+        case "wrong-chain":
+            return t.wrongChain(gate.expected, gate.connected);
+        case "wrong-wallet":
+            return t.wrongWallet(shortAddress(gate.owner), shortAddress(gate.connected));
+        case "account-missing":
+            return t.accountMissing(page.topUpOffered);
+        case "owner-unreadable":
+            return t.ownerUnreadable;
+        case "ready":
+            return t.ready;
+        case "no-endpoint":
+        case "already-revoked":
+        case "disconnected":
+        case "owner-unknown":
+            return undefined;
+    }
+}
+
+function shortAddress(value: string): string {
+    return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+/**
  * Turn the submitter's closed refusal enum into the sentence it stands for.
  *
  * Map, never render: the server's body is a closed set by design, so a new server-side

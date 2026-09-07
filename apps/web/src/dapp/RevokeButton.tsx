@@ -7,10 +7,17 @@ import {
 } from "@mapae/delegation/revocation";
 import {redactUrls} from "@mapae/shared";
 import {useQuery} from "@tanstack/react-query";
-import {useState} from "react";
+import {useMemo, useState} from "react";
 import {getAddress, isHash, type Hex} from "viem";
 import {useAccount, useConnect, useSignTypedData} from "wagmi";
-import {chain, deployment, explorerTxUrl, publicSubmitterAvailability, publicClient} from "../lib/config";
+import {
+    bootstrapAvailability,
+    chain,
+    deployment,
+    explorerTxUrl,
+    publicSubmitterAvailability,
+    publicClient,
+} from "../lib/config";
 import type {Locale} from "../lib/i18n";
 import {useLocale} from "../lib/locale";
 import {
@@ -18,19 +25,16 @@ import {
     readPayerAccount,
     requestSponsoredRevocation,
     studioRevokeButtonLabel,
+    studioRevokeGateNote,
 } from "../lib/revoke";
 
+/** The flow's own copy; what each gate says lives with the gate, in `revoke.ts`. */
 const COPY: Record<
     Locale,
     {
         signing: string;
         submitting: string;
         endpointMisconfigured: string;
-        wrongChain: (expected: number, connected: number) => string;
-        wrongWallet: (owner: string, connected: string) => string;
-        accountMissing: string;
-        ownerUnreadable: string;
-        sponsoredGas: string;
         confirmed: string;
         viewTransaction: string;
         requestFailed: string;
@@ -40,15 +44,6 @@ const COPY: Record<
         signing: "Waiting for the wallet signature…",
         submitting: "Submitting the revocation…",
         endpointMisconfigured: "The revocation endpoint is misconfigured",
-        wrongChain: (expected, connected) =>
-            `Switch the wallet to GIWA Sepolia (chain ${expected}). It is currently connected to chain ${connected}.`,
-        wrongWallet: (owner, connected) =>
-            `The owner of this permission is ${owner}. The connected wallet ${connected} cannot sign the revocation.`,
-        accountMissing:
-            "The payer account is not deployed yet. Nothing can spend through this permission until it is, and it can be revoked once the account exists.",
-        ownerUnreadable:
-            "The payer account's owner could not be read. Check the network connection and reload the page to try again.",
-        sponsoredGas: "Gas is sponsored — this wallet needs no GIWA ETH.",
         confirmed: "The revocation is confirmed on-chain.",
         viewTransaction: "View transaction",
         requestFailed: "The request could not be completed. Check the wallet and network status.",
@@ -57,15 +52,6 @@ const COPY: Record<
         signing: "지갑에서 서명 대기 중…",
         submitting: "회수 제출 중…",
         endpointMisconfigured: "회수 엔드포인트 설정이 잘못되었습니다",
-        wrongChain: (expected, connected) =>
-            `지갑을 GIWA Sepolia(chain ${expected})로 전환해 주세요. 현재 chain ${connected}에 연결되어 있습니다.`,
-        wrongWallet: (owner, connected) =>
-            `이 권한의 소유자는 ${owner} 입니다. 연결된 ${connected} 지갑으로는 회수를 서명할 수 없습니다.`,
-        accountMissing:
-            "지불 계정이 아직 배포되지 않았습니다. 계정이 생기기 전까지는 이 권한으로 아무것도 결제할 수 없고, 계정이 생기면 회수할 수 있습니다.",
-        ownerUnreadable:
-            "지불 계정의 소유자를 읽지 못했습니다. 네트워크 연결을 확인하고 페이지를 새로고침해 다시 시도해 주세요.",
-        sponsoredGas: "가스는 스폰서가 대납합니다 — 이 지갑에는 GIWA ETH가 필요 없습니다.",
         confirmed: "회수가 온체인에서 확인되었습니다.",
         viewTransaction: "트랜잭션 보기",
         requestFailed: "요청을 완료하지 못했습니다. 지갑과 네트워크 상태를 확인해 주세요.",
@@ -112,6 +98,9 @@ export function RevokeButton({
     const {locale} = useLocale();
     const t = COPY[locale];
     const endpoint = publicSubmitterAvailability();
+    // Whether the ‘Authority’ tab shows ‘Get testnet balance’ — `TestnetTopUp` renders only
+    // with a configured sponsor — so the account-missing note can point there honestly.
+    const sponsor = useMemo(() => bootstrapAvailability(), []);
     const payer = getAddress(delegation.delegator);
     // `useAccount().chainId` rather than `useChainId()`: the latter falls back to the
     // config's first chain while disconnected, so it can never report a mismatch, and a
@@ -182,6 +171,9 @@ export function RevokeButton({
     }
 
     const busy = progress.phase === "signing" || progress.phase === "submitting";
+    const note = studioRevokeGateNote(gate, locale, {
+        topUpOffered: sponsor.kind === "configured",
+    });
 
     return (
         <div className="studio-revoke-action">
@@ -210,20 +202,16 @@ export function RevokeButton({
                 <small className="studio-revoke-note fault">
                     {t.endpointMisconfigured} — {endpoint.reason}
                 </small>
-            ) : gate.kind === "wrong-chain" ? (
-                <small className="studio-revoke-note">
-                    {t.wrongChain(gate.expected, gate.connected)}
+            ) : note !== undefined ? (
+                <small
+                    className={
+                        gate.kind === "owner-unreadable"
+                            ? "studio-revoke-note fault"
+                            : "studio-revoke-note"
+                    }
+                >
+                    {note}
                 </small>
-            ) : gate.kind === "wrong-wallet" ? (
-                <small className="studio-revoke-note">
-                    {t.wrongWallet(shortAddress(gate.owner), shortAddress(gate.connected))}
-                </small>
-            ) : gate.kind === "account-missing" ? (
-                <small className="studio-revoke-note">{t.accountMissing}</small>
-            ) : gate.kind === "owner-unreadable" ? (
-                <small className="studio-revoke-note fault">{t.ownerUnreadable}</small>
-            ) : gate.kind === "ready" ? (
-                <small className="studio-revoke-note">{t.sponsoredGas}</small>
             ) : null}
             {progress.phase === "failed" ? (
                 <small className="studio-revoke-note fault">{progress.reason}</small>
@@ -241,10 +229,6 @@ export function RevokeButton({
             ) : null}
         </div>
     );
-}
-
-function shortAddress(value: string): string {
-    return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
 /**
