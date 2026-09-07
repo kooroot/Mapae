@@ -819,10 +819,28 @@ async function main(): Promise<void> {
     // cannot make this run flaky. Fork-local, never touches GIWA.
     await rpc(forkRpc, "anvil_setBalance", [relayer, numberToHex(10n ** 18n)]);
 
+    // The stores this run owns, one file per service. Both children auto-load their
+    // own .env, and both .env files name a STORE_PATH — on the machine that runs the
+    // services, the live ledger. Without the override the fork's settlements were
+    // written into that ledger and charged to its day, and a file from an older schema
+    // stopped the child at boot.
+    storeDir = mkdtempSync(join(tmpdir(), "mapae-e2e-"));
+    const storePath = join(storeDir, "seller.sqlite");
+
     spawnApp("facilitator", `${REPO}/apps/facilitator-erc7710`, "index.ts", {
         GIWA_SEPOLIA_RPC_URL: forkRpc,
         HOST: "127.0.0.1",
         PORT: String(FACILITATOR_PORT),
+        STORE_PATH: join(storeDir, "facilitator.sqlite"),
+        // The day's gas, sized for the fork rather than for GIWA. The facilitator prices
+        // a redemption with viem's `estimateFeesPerGas`, and anvil answers
+        // `eth_maxPriorityFeePerGas` with its own 1 gwei suggestion (measured on anvil
+        // 1.7.1) where GIWA's tip is ~1e6 wei — a thousand times more per gas, so one
+        // ~333k-gas redemption reserves ~3e14–7e14 wei here. The production defaults
+        // (5e14 a day, a tenth of it per payer) refused the first payment as
+        // `payer_budget_exhausted`. 0.1 ETH holds the three settlements and their
+        // reservations with room to spare; the relayer was just given 1 ETH.
+        RELAYER_DAILY_WEI: "100000000000000000",
         // Set SETTLEMENT_RECEIPT_TIMEOUT_MS=1 to force the broadcast-but-unconfirmed
         // path: the seller must answer 504 settlement_unknown, never 422.
         ...(process.env.SETTLEMENT_RECEIPT_TIMEOUT_MS
@@ -844,20 +862,31 @@ async function main(): Promise<void> {
         `[e2e] facilitator up on ${FACILITATOR_URL} — health ok, framework paused ${health.frameworkPaused}`,
     );
 
-    // A store this run owns: seeded by the operator's command, read back as a file.
-    storeDir = mkdtempSync(join(tmpdir(), "mapae-e2e-"));
-    const storePath = join(storeDir, "seller.sqlite");
+    // The shop's store: seeded by the operator's command, read back as a file.
     await seedStore(storePath);
     spawnApp("seller", `${REPO}/apps/delegated-seller`, "index.ts", {
         HOST: "127.0.0.1",
         PORT: String(SELLER_PORT),
         FACILITATOR_URL,
         STORE_PATH: storePath,
+        // Pinned to this run's loopback pair, over whatever the shop's .env advertises.
+        // The hosted shop's file names its public origins; with BASE_URL public and the
+        // facilitator above loopback, the shop refuses to boot rather than point buyers
+        // at their own machine, and with both public the 402s named a resource this
+        // run never serves.
+        BASE_URL: SELLER_URL,
+        PUBLIC_FACILITATOR_URL: FACILITATOR_URL,
     });
     await waitFor("seller", async () =>
         (await fetch(`${SELLER_URL}/health`, {signal: AbortSignal.timeout(5_000)})).ok,
     );
-    console.log(`[e2e] seller up on ${SELLER_URL} — store ${storePath}`);
+    const shop = (await (
+        await fetch(`${SELLER_URL}/health`, {signal: AbortSignal.timeout(5_000)})
+    ).json()) as {facilitator?: string};
+    if (shop.facilitator !== FACILITATOR_URL) {
+        throw new Error(`the shop advertises ${String(shop.facilitator)}, not this run's ${FACILITATOR_URL}`);
+    }
+    console.log(`[e2e] seller up on ${SELLER_URL} — store ${storePath}, advertises ${shop.facilitator}`);
 
     // The MCP server runs with the delegated agent's cwd so it inherits that
     // app's .env (session key, artifact paths, parent permission) unchanged.
