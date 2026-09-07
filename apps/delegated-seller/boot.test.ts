@@ -85,14 +85,16 @@ let baseUrl = "";
 let facilitatorUrl = "";
 
 beforeAll(async () => {
+    // Mounted under a path: `createMapae` admits `FACILITATOR_URL=…/hop`, and the shop
+    // must advertise that hop as given rather than refuse it as not being an origin.
     facilitator = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
         fetch: (request) =>
-            FACILITATOR_ROUTES[new URL(request.url).pathname as FacilitatorPath]?.() ??
+            FACILITATOR_ROUTES[new URL(request.url).pathname.replace(/^\/hop/, "") as FacilitatorPath]?.() ??
             new Response("", {status: 404}),
     });
-    facilitatorUrl = `http://127.0.0.1:${facilitator.port}`;
+    facilitatorUrl = `http://127.0.0.1:${facilitator.port}/hop`;
     expect(seed()).toBe(0);
 
     // A port nothing holds right now; the shop cannot take 0 because its base URL —
@@ -153,7 +155,8 @@ describe("the booted shop", () => {
         const manifest = (await (await fetch(`${baseUrl}/s/demo-cafe`)).json()) as ShopManifest;
         expect(manifest.slug).toBe("demo-cafe");
         expect(manifest.payTo).toBe(PAY_TO);
-        // Loopback shop, loopback facilitator: PUBLIC_FACILITATOR_URL unset defaults to the hop itself.
+        // Loopback shop, loopback facilitator: PUBLIC_FACILITATOR_URL unset defaults to
+        // the hop itself as `createMapae` normalised it, path included.
         expect(manifest.facilitator).toBe(facilitatorUrl);
         expect(((await (await fetch(`${baseUrl}/health`)).json()) as {facilitator: string}).facilitator).toBe(facilitatorUrl);
         expect(manifest.items.map((item) => [item.key, item.price, item.url])).toEqual([
@@ -232,8 +235,16 @@ describe("boot refuses to point buyers at their own machine", () => {
 
     test("a public BASE_URL with an explicit loopback PUBLIC_FACILITATOR_URL", async () => {
         expect(await bootRefusal({...publicShop, PUBLIC_FACILITATOR_URL: "http://localhost:8081"})).toContain(
-            "PUBLIC_FACILITATOR_URL must be set when BASE_URL is not loopback",
+            "PUBLIC_FACILITATOR_URL must not be loopback when BASE_URL is not loopback",
         );
+    });
+
+    test("a FACILITATOR_URL the seller refuses is refused under the seller's rule, by name", async () => {
+        // The shop's reader used to run ahead of `createMapae` and judge FACILITATOR_URL
+        // by the stricter origin rule, under a variable the operator never set.
+        const refusal = await bootRefusal({FACILITATOR_URL: "http://127.0.0.1:8081/hop?x=1"});
+        expect(refusal).toContain("facilitator must be a base URL without query or fragment");
+        expect(refusal).not.toContain("PUBLIC_FACILITATOR_URL");
     });
 
     test("a PUBLIC_FACILITATOR_URL that is not a bare HTTPS origin", async () => {

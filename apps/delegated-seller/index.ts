@@ -61,32 +61,43 @@ function readBaseUrl(host: string, port: number): string {
     return `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
 }
 
-/**
- * The facilitator buyers are told about. In the hosted topology the shop settles
- * through a loopback hop (`FACILITATOR_URL=http://127.0.0.1:8081`), and the manifest
- * and `/health` used to echo that hop verbatim: an agent reading `facilitator` off
- * seller.mapae.io was handed a URL on its own machine, and the internal topology was
- * public. Given, this is what is advertised; absent, the facilitator the shop itself
- * talks to is — which a public shop is refused when that hop is loopback.
- */
-function readPublicFacilitatorUrl(fallback: string, baseUrl: string): string {
-    const url = new URL(process.env.PUBLIC_FACILITATOR_URL?.trim() || fallback);
+/** An origin like BASE_URL, and HTTPS unless loopback like the seller's own facilitator. */
+function parsePublicFacilitatorUrl(value: string): string {
+    const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
         throw new Error("PUBLIC_FACILITATOR_URL must be an absolute HTTP(S) origin without credentials");
     }
     if (url.pathname !== "/" || url.search || url.hash) {
         throw new Error("PUBLIC_FACILITATOR_URL must be an origin — scheme://host[:port] — with no path, query or fragment");
     }
-    const loopback = isLoopbackHost(url.hostname);
-    if (url.protocol !== "https:" && !loopback) {
+    if (url.protocol !== "https:" && !isLoopbackHost(url.hostname)) {
         throw new Error("PUBLIC_FACILITATOR_URL must use HTTPS unless it is loopback");
     }
-    if (loopback && !isLoopbackHost(new URL(baseUrl).hostname)) {
+    return url.origin;
+}
+
+/**
+ * The facilitator buyers are told about. In the hosted topology the shop settles
+ * through a loopback hop (`FACILITATOR_URL=http://127.0.0.1:8081`), and the manifest
+ * and `/health` used to echo that hop verbatim: an agent reading `facilitator` off
+ * seller.mapae.io was handed a URL on its own machine, and the internal topology was
+ * public. Given, this is what is advertised. Absent, the facilitator the shop itself
+ * talks to is, exactly as `createMapae` normalised it: FACILITATOR_URL is judged once,
+ * by the seller's rule and under its own name — that rule admits a path, this one does
+ * not, and a shop that booted on `…/hop` must not be refused for a variable nobody set.
+ * A public shop is refused only when what it would advertise is loopback.
+ */
+function readPublicFacilitatorUrl(facilitator: string, baseUrl: string): string {
+    const value = process.env.PUBLIC_FACILITATOR_URL?.trim();
+    const advertised = value ? parsePublicFacilitatorUrl(value) : facilitator;
+    if (isLoopbackHost(new URL(advertised).hostname) && !isLoopbackHost(new URL(baseUrl).hostname)) {
         throw new Error(
-            "PUBLIC_FACILITATOR_URL must be set when BASE_URL is not loopback — a loopback facilitator in the manifest points buyers at their own machine",
+            value
+                ? "PUBLIC_FACILITATOR_URL must not be loopback when BASE_URL is not loopback — buyers would be pointed at their own machine"
+                : "PUBLIC_FACILITATOR_URL must be set when BASE_URL is not loopback — FACILITATOR_URL is loopback, and buyers would be pointed at their own machine",
         );
     }
-    return url.origin;
+    return advertised;
 }
 
 function readMetricsToken(): string | undefined {
@@ -105,12 +116,12 @@ const STORE_PATH = readStorePath();
 // Validated by createMapae: HTTP(S), no credentials, HTTPS unless loopback.
 const FACILITATOR_URL = process.env.FACILITATOR_URL?.trim() || "http://127.0.0.1:8081";
 const BASE_URL = readBaseUrl(HOST, PORT);
-const PUBLIC_FACILITATOR_URL = readPublicFacilitatorUrl(FACILITATOR_URL, BASE_URL);
+const mapae = createMapae({facilitator: FACILITATOR_URL, baseUrl: BASE_URL});
+const PUBLIC_FACILITATOR_URL = readPublicFacilitatorUrl(mapae.facilitator, BASE_URL);
 const METRICS_TOKEN = readMetricsToken();
 const NAME = "Mapae hosted shop";
 
 const store = openStore(STORE_PATH);
-const mapae = createMapae({facilitator: FACILITATOR_URL, baseUrl: BASE_URL});
 const app = createShopApp({
     store,
     mapae,
