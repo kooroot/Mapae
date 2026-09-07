@@ -64,8 +64,9 @@ export const RATE_LIMITED = "rate_limited";
  * was formed. `/verify` answers it as a 503 — the seller reads any non-2xx there as
  * unavailable, and so does anyone else's client. `/settle` cannot use a status code
  * for it, since a non-2xx there means "the answer was lost"; it answers a 200 carrying
- * this reason, and the seller reads it as it reads {@link RATE_LIMITED}: nothing was
- * examined, nothing was charged, try again later.
+ * this reason. Both bodies carry it, and the seller reads it on both routes as it
+ * reads {@link RATE_LIMITED} — whatever status it arrived under: nothing was examined,
+ * nothing was charged, try again later.
  */
 export const FACILITATOR_NOT_READY = "facilitator_not_ready";
 
@@ -146,8 +147,9 @@ export type VerificationOutcome =
  * Map a `/verify` call onto the three outcomes. `reachable: false` — connection refused,
  * non-2xx, unparseable JSON, timeout — is `unavailable`, never `rejected`: the seller
  * could not obtain a verdict, which is not the same as obtaining a "no". So is a body
- * saying the facilitator refused to form one ({@link RATE_LIMITED}): the delegation was
- * not examined, and blaming it would send the buyer to re-sign what nothing refused.
+ * saying the facilitator refused to form one ({@link RATE_LIMITED},
+ * {@link FACILITATOR_NOT_READY}): the delegation was not examined, and blaming it would
+ * send the buyer to re-sign what nothing refused.
  */
 export function decideVerification(
     response: {reachable: boolean; body?: unknown},
@@ -156,7 +158,8 @@ export function decideVerification(
     if (!response.reachable || !response.body || typeof response.body !== "object") {
         return {kind: "unavailable"};
     }
-    if ((response.body as Erc7710VerifyResponse).invalidReason === RATE_LIMITED) {
+    const {invalidReason} = response.body as Erc7710VerifyResponse;
+    if (invalidReason === RATE_LIMITED || invalidReason === FACILITATOR_NOT_READY) {
         return {kind: "unavailable"};
     }
     if (!isVerificationAccepted(response.body, expectedPayer)) {

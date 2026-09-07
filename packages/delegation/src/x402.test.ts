@@ -326,6 +326,19 @@ describe("D5 settlement outcome ladder", () => {
         ).toEqual({kind: "unavailable"});
     });
 
+    test("verify: a not-ready answer is 'unavailable' whatever status carried it", () => {
+        // /verify sends this reason under a 503 the seller never parses. A proxy that
+        // rewrites the status, or a facilitator that stops using one, must not turn
+        // "nothing was examined" into the refused delegation `decideSettlement` already
+        // refuses to read it as.
+        expect(
+            decideVerification(
+                {reachable: true, body: {isValid: false, invalidReason: FACILITATOR_NOT_READY}},
+                PAYER,
+            ),
+        ).toEqual({kind: "unavailable"});
+    });
+
     test("verify: a reachable body that fails the payer cross-check is 'rejected'", () => {
         expect(
             decideVerification({reachable: true, body: {isValid: false}}, PAYER).kind,
