@@ -431,6 +431,9 @@ describe("ledger", () => {
 
         expect(store.ledger.prune({rejectedBefore: 0, keepRejected: 2})).toBe(2);
         expect(store.ledger.list()).toEqual([fourth, second, errored, settled]);
+        // The two survivors share an `at`; the tiebreak is the id, as `list` shows them.
+        expect(store.ledger.prune({rejectedBefore: 0, keepRejected: 1})).toBe(1);
+        expect(store.ledger.list()).toEqual([fourth, errored, settled]);
     });
 
     test("prune applies both bounds in one pass and returns the total; a second pass drops nothing", () => {
