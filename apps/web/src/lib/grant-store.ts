@@ -168,8 +168,8 @@ export function loadGrants(): SessionGrant[] {
 /**
  * One read-modify-write of the document. `add` goes to the head in the order given, each
  * replacing any stored record with the same context — the identity the Studio dedupes on;
- * `remove` leaves. One write, so the library can carry the grants an earlier failed write
- * still owes the store alongside the change at hand.
+ * `remove` leaves. One write, so the library can carry what an earlier failed write still
+ * owes the store — grants never written, removals never made — alongside the change at hand.
  *
  * `undefined` when the store could not be read or the write failed: nothing was persisted,
  * and the caller's in-memory list is the only list there is. Not written when the read
@@ -178,14 +178,15 @@ export function loadGrants(): SessionGrant[] {
  */
 export function writeGrants(change: {
     add: SessionGrant[];
-    remove?: Hex;
+    remove?: Hex[];
 }): SessionGrant[] | undefined {
     const stored = readDocument();
     if (stored === undefined) return undefined;
     const replaced = new Set(change.add.map((item) => item.artifact.permissionContext));
+    const removed = new Set(change.remove ?? []);
     const next = [
         ...change.add,
         ...stored.filter((item) => !replaced.has(item.artifact.permissionContext)),
-    ].filter((item) => item.artifact.permissionContext !== change.remove);
+    ].filter((item) => !removed.has(item.artifact.permissionContext));
     return writeDocument(next) ? next : undefined;
 }

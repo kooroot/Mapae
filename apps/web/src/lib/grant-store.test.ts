@@ -202,12 +202,12 @@ describe("writeGrants", () => {
     test("a remove leaves in the same write as the adds", () => {
         const store = memoryStorage([other("Older", OTHER), grant({name: "Doomed"})]);
         const written = withStorage(store.storage, () =>
-            writeGrants({add: [other("Third", THIRD)], remove: context()}),
+            writeGrants({add: [other("Third", THIRD)], remove: [context()]}),
         );
         expect(written?.map((item) => item.name)).toEqual(["Third", "Older"]);
         expect(store.names()).toEqual(["Third", "Older"]);
 
-        const alone = withStorage(store.storage, () => writeGrants({add: [], remove: context(OTHER)}));
+        const alone = withStorage(store.storage, () => writeGrants({add: [], remove: [context(OTHER)]}));
         expect(alone?.map((item) => item.name)).toEqual(["Third"]);
         expect(store.names()).toEqual(["Third"]);
     });
@@ -227,7 +227,7 @@ describe("writeGrants", () => {
         expect(writes).toEqual([]);
         expect(
             withStorage({getItem: blocked, setItem: () => {}}, () =>
-                writeGrants({add: [], remove: context()}),
+                writeGrants({add: [], remove: [context()]}),
             ),
         ).toBeUndefined();
     });
@@ -239,7 +239,7 @@ describe("writeGrants", () => {
         ).toBeUndefined();
         expect(
             withStorage({getItem: () => stored, setItem: blocked}, () =>
-                writeGrants({add: [], remove: context()}),
+                writeGrants({add: [], remove: [context()]}),
             ),
         ).toBeUndefined();
     });

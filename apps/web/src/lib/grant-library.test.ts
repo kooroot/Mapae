@@ -291,6 +291,41 @@ describe("createGrantLedger", () => {
         });
     });
 
+    test("a forget the store could not take is made by the next write that succeeds", () => {
+        const store = memoryStorage();
+        const ledger = createGrantLedger();
+        withStorage(store.storage, () => {
+            ledger.add(first);
+            ledger.add(second);
+            store.fill(true);
+            ledger.forget(first.artifact.permissionContext);
+            store.fill(false);
+            const grants = ledger.add(third);
+            // The forgotten grant is neither merged back from the store nor still in it.
+            expect(names(grants)).toEqual(["Agent cc", "Agent bb"]);
+            expect(grants[1]?.agentKey).toEqual(key("22"));
+            expect(store.stored()).toEqual(["Agent cc", "Agent bb"]);
+        });
+    });
+
+    test("a context forgotten and re-added while storage was full is written, not removed", () => {
+        const store = memoryStorage();
+        const ledger = createGrantLedger();
+        const again = grant("aa", key("44"));
+        withStorage(store.storage, () => {
+            ledger.add(first);
+            ledger.add(second);
+            store.fill(true);
+            ledger.forget(first.artifact.permissionContext);
+            ledger.add(again);
+            store.fill(false);
+            const grants = ledger.add(third);
+            expect(names(grants)).toEqual(["Agent cc", "Agent aa", "Agent bb"]);
+            expect(grants[1]?.agentKey).toEqual(key("44"));
+            expect(store.stored()).toEqual(["Agent cc", "Agent aa", "Agent bb"]);
+        });
+    });
+
     test("a store that cannot be read is not written over, and memory carries the grant alone", () => {
         const writes: string[] = [];
         const ledger = createGrantLedger();

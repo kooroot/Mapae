@@ -71,14 +71,17 @@ export interface GrantLedger {
  * full, private mode). Nothing was persisted then, and merging memory against an empty
  * answer was the bug: every other grant vanished on add, all of them on forget. With no
  * store to defer to, the change applies to memory alone and the grant's context is noted
- * as unpersisted. The next call the store does answer writes those grants first — the ones
- * still in memory; a forgotten one is not resurrected — alongside the change at hand, and
- * only then defers to the merge. Without that a grant added while storage was full would
- * be dropped by the very next successful write, because the store never held it.
+ * as unpersisted; a forget it could not make is noted the same way. The next call the store
+ * does answer carries what is owed — the grants still in memory that were never written,
+ * the removals never made — alongside the change at hand, and only then defers to the
+ * merge. Without that a grant added while storage was full would be dropped by the very
+ * next successful write, because the store never held it, and a grant forgotten while
+ * storage was full would come back key-less, because the store still did.
  */
 export function createGrantLedger(): GrantLedger {
     let grants: SessionGrant[] = [];
     const unpersisted = new Set<Hex>();
+    const unremoved = new Set<Hex>();
 
     /** The grants a failed write left in memory alone, minus the one being changed now. */
     function owed(except: Hex): SessionGrant[] {
@@ -87,6 +90,16 @@ export function createGrantLedger(): GrantLedger {
                 unpersisted.has(item.artifact.permissionContext) &&
                 item.artifact.permissionContext !== except,
         );
+    }
+
+    /** The removals a failed forget still owes the store, minus the one being changed now. */
+    function owedRemovals(except: Hex): Hex[] {
+        return [...unremoved].filter((context) => context !== except);
+    }
+
+    function settled(): void {
+        unpersisted.clear();
+        unremoved.clear();
     }
 
     return {
@@ -99,23 +112,34 @@ export function createGrantLedger(): GrantLedger {
         },
         add(grant) {
             const context = grant.artifact.permissionContext;
-            const persisted = writeGrants({add: [grant, ...owed(context)]});
+            const persisted = writeGrants({
+                add: [grant, ...owed(context)],
+                remove: owedRemovals(context),
+            });
             if (persisted) {
-                unpersisted.clear();
+                settled();
                 grants = mergeGrants({current: grants, persisted, incoming: grant});
             } else {
+                // Re-adding a context whose removal was owed: the add will replace the
+                // stored record when the store answers, so no removal is owed any more.
                 unpersisted.add(context);
+                unremoved.delete(context);
                 grants = [grant, ...without(grants, context)];
             }
             return grants;
         },
         forget(context) {
-            const persisted = writeGrants({add: owed(context), remove: context});
+            const persisted = writeGrants({
+                add: owed(context),
+                remove: [context, ...owedRemovals(context)],
+            });
             if (persisted) {
-                unpersisted.clear();
+                settled();
                 grants = mergeGrants({current: grants, persisted});
             } else {
-                unpersisted.delete(context);
+                // A grant the store never held needs no removal; one it holds is owed one.
+                if (unpersisted.has(context)) unpersisted.delete(context);
+                else unremoved.add(context);
                 grants = without(grants, context);
             }
             return grants;
