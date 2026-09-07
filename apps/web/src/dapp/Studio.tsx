@@ -27,7 +27,7 @@ import {
 import {useEffect, useMemo, useState} from "react";
 import {PassEmblem, Wordmark} from "../brand/marks";
 import {AgentGrantList} from "./AgentGrantList";
-import {GrantOnboarding} from "./GrantOnboarding";
+import {GrantOnboarding, type GrantPlacement} from "./GrantOnboarding";
 import {Web3Providers} from "./Web3Providers";
 import {
     chain,
@@ -420,9 +420,15 @@ function StudioBody() {
         setSection("overview");
     }
 
-    function addGrant(grant: SessionGrant) {
+    /**
+     * An unplaced grant — signed, but its payer account was not deployed or the signature
+     * could not be verified against it — is kept but not opened. Opening it would switch
+     * the section and unmount `GrantOnboarding` in the same render as the alert that says
+     * which half failed, so the owner would see a finished grant and never the sentence.
+     */
+    function addGrant(grant: SessionGrant, placement: GrantPlacement = "placed") {
         library.add(grant);
-        openGrant(grant);
+        if (placement === "placed") openGrant(grant);
     }
 
     /**
