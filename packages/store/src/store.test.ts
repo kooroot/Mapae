@@ -156,8 +156,11 @@ describe("openStore", () => {
             "faucet_windows",
             "items",
             "orders",
+            "payment_jobs",
+            "payment_runs",
             "sellers",
             "settlement_events",
+            "settlement_intents",
         ]);
 
         open(path).close();

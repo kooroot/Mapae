@@ -538,6 +538,7 @@ function buildPaywall(
         if (verification.kind === "unavailable") {
             return c.json({error: "facilitator_unavailable"}, 503);
         }
+        if (verification.kind === "unknown") return c.json({error: "settlement_unknown"}, 504);
         if (verification.kind === "rejected") return c.json({error: "delegation_rejected"}, 403);
 
         // "Did not succeed" and "is not known to have succeeded" are different claims

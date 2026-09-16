@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-965%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-980%20TS%20%2B%2014%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -105,7 +105,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 문서](https://docs.mapae.io)에 있다.
-- 회귀 검증: **965 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts 719 + MCP 3 + 웹 210 + 문서 33)
+- 회귀 검증: **980 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts/scheduler 734 + MCP 3 + 웹 210 + 문서 33)
   + 14 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -129,9 +129,9 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   분기. 의존 요소가 실제로 작동함을 증명하는 대조군 3개가 함께 붙는다: 예치금이
   없으면 `AA21`, owner가 아닌 서명은 `AA24`, 서명된 `entryPoint` 필드를 변조하면
   `AA24`. 제출 엔드포인트(`apps/revocation-submitter`)가 생겼고 Studio의 회수 버튼
-  (`apps/web/src/dapp/RevokeButton.tsx`)도 거기에 연결됐다 — 연결 → 계정 `owner()` 대조 → 서명 → POST. 아직 증명하지 않은
-  것은 마지막 한 뼘, **MetaMask가 그 9개 필드 구조체를 사람이 읽을 수 있게
-  렌더링하는지**다. 이건 테스트가 아니라 실제 지갑을 실제 사람 앞에 띄워봐야 한다.
+  (`apps/web/src/dapp/RevokeButton.tsx`)도 거기에 연결됐다 — 연결 → 계정 `owner()` 대조 → 서명 → POST.
+  2026-08-04 라이브 스폰서드 회수에서는 실제 사용자가 MetaMask 승인 화면을 통과했다.
+  이는 한 번의 실제 승인 증거이며, 모든 지갑·버전에서의 표시 품질을 검증한 것은 아니다.
 - **킬 스위치는 가스리스가 아니며, 미리 충전해두지 않으면 작동하지 않는다.**
   결제는 EntryPoint를 아예 거치지 않으므로(relayer가 `redeemDelegations`를 직접
   호출) 결제에 대한 payer의 zero-ETH 불변식은 그대로다. 회수는 EntryPoint를 피할
@@ -408,8 +408,11 @@ facilitator는 릴레이어 키를 쥐고, 서명된 `Payment-Signature`를 받�
   바인딩이 아닙니다. 애플리케이션 API 자체에는 인증이 없으므로 터널과 상한이
   하중을 받칩니다.
 
-현재 프로세스 내 중복방지는 안전하지만, 재시작과 다중 replica를 넘는
-idempotency는 제품화 전에 Redis/Postgres 같은 영속 저장소로 이전해야 합니다.
+동일 결제의 거래 해시는 전송 전에 SQLite에 저장하며 재시작 뒤에도 원래 영수증을
+조회합니다. 성공 원장은 결제별 한 번만 집계합니다. 서명된 거래·위임은 저장하지 않습니다.
+전송 여부가 불확실하면 새 거래를 보내지 않고 `settlement_unconfirmed`를 유지합니다.
+같은 서명자와 가스 예산을 쓰는 facilitator는 여전히 단일 프로세스로 운영합니다.
+저장소 스키마 6의 배포 조건과 복구 경계는 [서비스 문서](apps/facilitator-erc7710/README.md)에 있습니다.
 
 위협 모델과 온체인 보안 설계는 [기술 문서](https://docs.mapae.io)에 정리되어 있습니다.
 
@@ -480,3 +483,5 @@ end-to-end 스크립트는 자식 프로세스가 loopback 노드가 아닌 곳�
 
 MIT — [LICENSE](LICENSE) 참조. `contracts/lib/` 아래 submodule은 각 업스트림
 프로젝트의 라이선스를 따릅니다.
+
+[예약 결제 CLI](apps/payment-scheduler/README.md): 영속 실행 이력, 취소, 시간·지출 조건과 제한된 재시도.

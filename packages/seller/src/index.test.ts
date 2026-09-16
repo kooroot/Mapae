@@ -462,6 +462,16 @@ describe("mapaePaywall — malformed payments", () => {
 });
 
 describe("mapaePaywall — settle-before-serve ladder", () => {
+    test("an unreadable recovery journal remains unknown through verification, never a safe retry", async () => {
+        const remote = facilitator({"/verify": json({isValid: false, invalidReason: "settlement_unconfirmed"})});
+        const {app, seen} = seller(paywall({fetch: remote.fetch}));
+        const response = await pay(app);
+        expect(response.status).toBe(504);
+        expect(await response.json()).toEqual({error: "settlement_unknown"});
+        expect(remote.paths()).toEqual(["/supported", "/verify"]);
+        expect(seen.served).toBe(0);
+    });
+
     test("503 facilitator_unavailable when /verify cannot be reached; /settle is never tried", async () => {
         for (const verify of [refused, json({}, 500), json("garbage")]) {
             const remote = facilitator({"/verify": verify});

@@ -1,21 +1,16 @@
-import {Hono, type Context} from "hono";
+import {Hono} from "hono";
 import {DelegationManager} from "@metamask/smart-accounts-kit/contracts";
 import {
     FixedWindowLimiter,
-    PaymentIntentSingleFlight,
-    SpendBudget,
+    budgetDay,
     buildDelegatedTransfer,
-    costOfReceipt,
     parseActiveDeploymentArtifactJson,
-    readRenamedEnv,
     parseFrameworkDeploymentManifestJson,
-    reconcileSettlementReceipt,
     validateDelegatedPayment,
     verifyActiveFrameworkDeployment,
     verifyFrameworkOperationalState,
     throttledHttp,
     type Erc7710SettleResponse,
-    type Erc7710VerifyResponse,
     type FrameworkLiveVerification,
     type ValidatedDelegatedPayment,
 } from "@mapae/delegation";
@@ -33,7 +28,7 @@ import {
     createWalletClient,
     getAddress,
     isAddress,
-    nonceManager,
+    TransactionReceiptNotFoundError,
     publicActions,
     zeroAddress,
     type Address,
@@ -42,13 +37,9 @@ import {
 import {privateKeyToAccount} from "viem/accounts";
 import {
     CachedProbe,
-    GasBudgets,
-    PayerBudgets,
     RATE_WINDOW_MS,
-    RpcUnreachableBeforeBroadcast,
     SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
-    SettlementNotCredited,
     SettlementUnconfirmed,
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
@@ -60,6 +51,9 @@ import {
     requireReadiness,
     type FrameworkHealthError,
 } from "./guards.js";
+import {createPaymentRoutes} from "./routes.js";
+import {receiptFailure, settlementResponse} from "./settlement.js";
+import {SettlementRecovery} from "./recovery.js";
 import {bearerTokenMatches, metricsReport, readMetricsToken, rejectedRetention} from "./metrics.js";
 
 // Two caps on one body, in different units, because they guard different things. Bun's
@@ -74,12 +68,16 @@ import {bearerTokenMatches, metricsReport, readMetricsToken, rejectedRetention} 
 // character cap is under the byte cap and always gets the 200 answer; the byte cap only
 // ever fires on bodies no client of this service produces.
 const MAX_BODY_BYTES = 200_000;
-const MAX_BODY_CHARACTERS = 150_000;
 // The framework check and the relayer balance are each read at most once per window.
 // 5 s is short enough that a pause or a drained wallet is seen before the next block's
 // settlements, long enough that /health — public, and the one route with no rate limit
 // — cannot enqueue more than one probe per window.
 const PROBE_TTL_MS = 5_000;
+
+// These obsolete names once referred to different wallets in different services.
+for (const name of ["RELAYER_ADDRESS", "RELAYER_PRIVATE_KEY"]) {
+    if (process.env[name]?.trim()) throw new Error(`${name} is obsolete; use FACILITATOR_SIGNER_*`);
+}
 
 function readPort(): number {
     const value = Number(process.env.PORT ?? 8081);
@@ -103,11 +101,10 @@ function readRpcUrl(): string {
     );
 }
 
-// FACILITATOR_SIGNER_* is this wallet's one global name across every service; the legacy
-// RELAYER_* spelling keeps a live mini `.env` booting through the rename, with a warning.
+// FACILITATOR_SIGNER_* is this wallet's only name across every service.
 function readRelayerKey(): Hex {
     const value =
-        readRenamedEnv({current: "FACILITATOR_SIGNER_PRIVATE_KEY", legacy: "RELAYER_PRIVATE_KEY"}) ??
+        process.env.FACILITATOR_SIGNER_PRIVATE_KEY?.trim() ??
         "";
     if (!/^0x[0-9a-fA-F]{64}$/.test(value)) {
         throw new Error("FACILITATOR_SIGNER_PRIVATE_KEY must be a 32-byte hex private key");
@@ -117,7 +114,7 @@ function readRelayerKey(): Hex {
 
 function readRelayerAddress(): Address {
     const value =
-        readRenamedEnv({current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"}) ?? "";
+        process.env.FACILITATOR_SIGNER_ADDRESS?.trim() ?? "";
     if (!isAddress(value)) throw new Error("FACILITATOR_SIGNER_ADDRESS must be an address");
     const address = getAddress(value);
     if (address === zeroAddress) throw new Error("FACILITATOR_SIGNER_ADDRESS must not be zero");
@@ -243,12 +240,8 @@ const FACILITATOR_RATE_PER_HOUR = Number(readPositiveInteger("FACILITATOR_RATE_P
 // and hourly after. An hour of the worst flood is 600 rows — nothing against the
 // 50,000 cap — and the delete is two indexed statements in one transaction.
 const LEDGER_PRUNE_EVERY_MS = 3_600_000;
-// The nonce manager serializes nonce assignment per address. Without it, two concurrent
-// /settle calls for different payment intents each read eth_getTransactionCount(pending)
-// independently and can pick the same nonce — one broadcast then replaces the other in the
-// mempool, dropping a settlement the seller already told the buyer succeeded. PaymentIntent
-// single-flight only coalesces same-intent calls; distinct intents race here.
-const relayer = privateKeyToAccount(readRelayerKey(), {nonceManager});
+// The durable settlement journal allocates nonces; one coordinator owns this signer.
+const relayer = privateKeyToAccount(readRelayerKey());
 const expectedRelayer = readRelayerAddress();
 if (relayer.address !== expectedRelayer) {
     throw new Error(
@@ -262,8 +255,13 @@ const manager = getAddress(deployment.environment.DelegationManager);
 // After the signer and the artifacts, so a misconfigured boot fails before a ledger
 // file is created for nothing.
 const store = openStore(STORE_PATH);
-const budget = new SpendBudget(RELAYER_DAILY_WEI, Date.now(), store.budget);
-const gasBudgets = new GasBudgets(budget, new PayerBudgets(RELAYER_PAYER_DAILY_WEI, store.budget));
+const budget = {
+    spentToday: (now: number) => store.budget.load(budgetDay(now)),
+    remaining: (now: number) => {
+        const left = RELAYER_DAILY_WEI - store.budget.load(budgetDay(now));
+        return left > 0n ? left : 0n;
+    },
+};
 const limiter = new FixedWindowLimiter(FACILITATOR_RATE_PER_HOUR, RATE_WINDOW_MS);
 
 /**
@@ -334,44 +332,15 @@ const relayerBalance = new CachedProbe(
     {ttlMs: PROBE_TTL_MS, cacheFailures: true},
 );
 
-/**
- * How long a broadcast transaction stays remembered for its payment intent.
- *
- * The map exists so a receipt timeout never triggers a second broadcast, which
- * only matters while a client could still be retrying — bounded by the agent's own
- * request timeout (AGENT_REQUEST_TIMEOUT_MS in @mapae/delegation, the outermost layer
- * of the settlement budget). Keeping entries forever would grow the process without
- * bound; evicting them earlier than any live retry could arrive is what makes dropping
- * them safe.
- */
-const INTENT_MEMORY_MS = 60 * 60 * 1_000;
-
-/**
- * One ledger row per settle attempt. Called from inside the single-flight, so a
- * coalesced duplicate request is not counted twice — and never allowed to throw. A
- * ledger that cannot be written is an operator problem; letting it surface here would
- * report a payment that mined as `delegation_rejected`, the exact collapse the rest of
- * this file exists to prevent.
- */
-function recordSettlement(event: SettlementEventInput): void {
-    try {
-        store.ledger.record(event);
-    } catch (error) {
-        console.error(`[ledger] settlement event not recorded — ${redactForLog(error)}`);
-    }
+/** Pre-broadcast refusals are best-effort diagnostics; terminal accounting is atomic in the journal. */
+function recordRejection(event: SettlementEventInput): void {
+    try {store.ledger.record(event);}
+    catch (error) {console.error(`[ledger] rejection not recorded — ${redactForLog(error)}`);}
 }
 
 class SettlementCoordinator {
-    readonly #singleFlight = new PaymentIntentSingleFlight<Erc7710SettleResponse>();
-    readonly #broadcastTransactions = new Map<Hex, {hash: Hex; at: number}>();
-
-    #rememberBroadcast(intent: Hex, hash: Hex): void {
-        const cutoff = Date.now() - INTENT_MEMORY_MS;
-        for (const [key, entry] of this.#broadcastTransactions) {
-            if (entry.at < cutoff) this.#broadcastTransactions.delete(key);
-        }
-        this.#broadcastTransactions.set(intent, {hash, at: Date.now()});
-    }
+    readonly #recovery = new SettlementRecovery(store.settlements, relayer.address, giwaSepolia.id,
+        {total: RELAYER_DAILY_WEI, payer: RELAYER_PAYER_DAILY_WEI});
 
     /**
      * Simulate the redemption against live state and price its gas. Nothing in here can
@@ -398,151 +367,48 @@ class SettlementCoordinator {
     }
 
     async simulate(payment: ValidatedDelegatedPayment): Promise<void> {
+        // A retry resolves the original transaction in /settle. Re-simulation would
+        // reject an already consumed or expired leaf before its receipt can be recovered.
+        if (this.#recovery.transaction(payment.paymentIntentId)) return;
         await beforeBroadcast(() => this.#prepareRedemption(payment));
     }
 
     async settle(payment: ValidatedDelegatedPayment): Promise<Erc7710SettleResponse> {
-        return this.#singleFlight.run(payment.paymentIntentId, () =>
-            this.#settleOnce(payment),
-        );
-    }
-
-    async #settleOnce(payment: ValidatedDelegatedPayment): Promise<Erc7710SettleResponse> {
-        const event = {
-            kind: "settle",
-            payer: payment.payer,
-            payTo: payment.paymentRequirements.payTo,
-            amountBase: payment.amount,
-        } as const;
         try {
-            const {hash, gasUsed} = await this.#redeem(payment);
-            recordSettlement({...event, at: Date.now(), outcome: "settled", txHash: hash, gasUsed});
-            return {
-                success: true,
-                transaction: hash,
-                network: GIWA_SEPOLIA_CAIP2,
-                payer: payment.payer,
-            };
+            const record = await this.#recovery.settle({paymentIntentId: payment.paymentIntentId,
+                payer: payment.payer, payTo: payment.paymentRequirements.payTo, amountBase: payment.amount}, {
+                pendingNonce: () => beforeBroadcast(() => publicClient.getTransactionCount({address: relayer.address, blockTag: "pending"})),
+                prepare: async (nonce) => {
+                    const {gas} = await beforeBroadcast(() => this.#prepareRedemption(payment));
+                    const fees = await beforeBroadcast(() => publicClient.estimateFeesPerGas());
+                    return this.#sign(payment, {nonce, gas, ...fees});
+                },
+                restore: (envelope) => this.#sign(payment, envelope),
+                receipt: async (hash) => {
+                    try {return await publicClient.getTransactionReceipt({hash});}
+                    catch (error) {if (error instanceof TransactionReceiptNotFoundError) return null; throw error;}
+                },
+                send: (serializedTransaction) => facilitatorClient.sendRawTransaction({serializedTransaction}),
+                wait: (hash) => this.#awaitReceipt(hash),
+                failure: (receipt) => receiptFailure(receipt, payment),
+            });
+            return settlementResponse(record);
         } catch (error) {
             const failure = describeFailure(error);
-            // No verdict, no row — the readiness middleware writes none for the same
-            // answer, and a row here would count a refusal nobody made.
-            if (failure.outcome !== "not_ready") {
-                recordSettlement({
-                    ...event,
-                    at: Date.now(),
-                    outcome: failure.outcome,
-                    txHash: failure.transaction,
-                    errorCode: failure.errorCode,
-                });
-            }
+            if (failure.outcome === "rejected") recordRejection({kind: "settle", payer: payment.payer,
+                payTo: payment.paymentRequirements.payTo, amountBase: payment.amount, at: Date.now(),
+                outcome: "rejected", errorCode: failure.errorCode});
             throw error;
         }
     }
 
-    /** Broadcast (or resume) the redemption and wait for a receipt that credited the vendor. */
-    async #redeem(payment: ValidatedDelegatedPayment): Promise<{hash: Hex; gasUsed: bigint}> {
-        const remembered = this.#broadcastTransactions.get(payment.paymentIntentId)?.hash;
-        // A remembered hash was already charged to the budget by the attempt that
-        // broadcast it — its whole reservation, since no receipt was seen — so resuming
-        // it reserves nothing and charges nothing more.
-        const receipt = remembered
-            ? await this.#awaitReceipt(remembered)
-            : await this.#broadcast(payment);
-        if (receipt.status !== "success") throw new Error("redemption transaction reverted");
-        // Status "success" only says the call did not revert. The enforcers constrain
-        // calldata and consume allowance but never prove the recipient was credited —
-        // a token returning false instead of reverting passes everything above while
-        // moving nothing. The receipt's own Transfer log is the precondition for
-        // reporting success, and through the seller's settle ladder, for the resource.
-        const discrepancies = reconcileSettlementReceipt({
-            logs: receipt.logs,
-            asset: payment.paymentRequirements.asset,
-            payer: payment.payer,
-            payTo: payment.paymentRequirements.payTo,
-            amount: payment.amount,
-        });
-        if (discrepancies.length > 0) {
-            throw new SettlementNotCredited(
-                receipt.transactionHash,
-                discrepancies.map((problem) => problem.detail).join("; "),
-            );
-        }
-        return {hash: receipt.transactionHash, gasUsed: receipt.gasUsed};
-    }
-
-    /**
-     * Price the redemption, hold its worst case against the payer's share and the day's
-     * budget, broadcast, and settle what the receipt says it cost.
-     *
-     * Ordering as in account-bootstrap: everything that can refuse without spending runs
-     * before the reservation; the reservation lands before the broadcast so two
-     * concurrent intents cannot both spend the last of the day; and the settle is in a
-     * `finally`, so every exit returns both holds exactly once. What is charged depends
-     * on how far the broadcast got — nothing when no hash came back, the whole
-     * reservation when a hash did but its receipt did not, and the receipt's own cost
-     * when it did. The same figure lands on both budgets; the ledger sees one attempt.
-     */
-    async #broadcast(payment: ValidatedDelegatedPayment): Promise<Receipt> {
-        // Simulation, gas estimate and fee estimate are the stage that cannot have
-        // broadcast: the RPC dying anywhere in it is answered not-ready, never as a
-        // verdict on the delegation.
-        const {request, gas, maxFeePerGas, maxPriorityFeePerGas} = await beforeBroadcast(
-            async () => ({
-                ...(await this.#prepareRedemption(payment)),
-                ...(await publicClient.estimateFeesPerGas()),
-            }),
-        );
-        // The node's own upfront rule is `balance >= gas * maxFeePerGas`, and the same
-        // product is what the day is asked for. The fees go to the broadcast unchanged,
-        // so the reservation is the most that transaction can cost in execution gas.
-        const hold = gasBudgets.reserve(payment.payer, gas * maxFeePerGas, Date.now());
-        let charged = 0n;
-        try {
-            let hash: Hex;
-            // The stage above provably did not broadcast, so its throws are genuine
-            // rejections or, through `beforeBroadcast`, the RPC not answering — and the
-            // reservation is local. `writeContract` is the one ambiguous step: it
-            // prepares, signs, and sends in a single call, so a lost response after the
-            // node accepted the transaction rejects here while the transfer will still
-            // mine. Reporting that as `delegation_rejected` would tell the payer they
-            // were not charged and invite a retry that signs a fresh leaf and pays twice
-            // — the exact unknown-vs-failed collapse SETTLEMENT_UNCONFIRMED exists to
-            // prevent, which was being enforced only one step later at the receipt wait.
-            // A same-intent retry is safe regardless: the leaf's one-shot
-            // ERC20TransferAmountEnforcer reverts a second redemption of the identical
-            // context.
-            try {
-                // The call is the simulated one, field by field rather than spread: the
-                // simulated request is typed over every fee variant, and spreading it
-                // beside an EIP-1559 pair is a union the type checker cannot pick from.
-                hash = await facilitatorClient.writeContract({
-                    address: request.address,
-                    abi: request.abi,
-                    functionName: request.functionName,
-                    args: request.args,
-                    gas,
-                    maxFeePerGas,
-                    maxPriorityFeePerGas,
-                });
-            } catch {
-                throw new SettlementUnconfirmed();
-            }
-            // The relayer's gas is committed the moment the node returns a hash. Until a
-            // receipt says otherwise the charge is the whole reservation: a receipt
-            // timeout leaves the day over-counted, never under-counted, and settling 0
-            // for a broadcast we merely failed to observe is how a daily cap quietly
-            // stops bounding anything.
-            charged = hold.amount;
-            // Save before waiting. A receipt timeout must never trigger a duplicate broadcast.
-            this.#rememberBroadcast(payment.paymentIntentId, hash);
-            const receipt = await this.#awaitReceipt(hash);
-            // A reverted redemption still burned its gas and is charged like a mined one.
-            charged = costOfReceipt(receipt, hold.amount);
-            return receipt;
-        } finally {
-            hold.settle(charged, Date.now());
-        }
+    async #sign(payment: ValidatedDelegatedPayment, envelope: {nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint}) {
+        const transfer = buildDelegatedTransfer(payment);
+        const data = DelegationManager.encode.redeemDelegations({delegations: [...transfer.delegations],
+            modes: [...transfer.modes], executions: transfer.executions.map((batch) => [...batch])});
+        return facilitatorClient.signTransaction({to: manager, data, type: "eip1559", chainId: giwaSepolia.id,
+            nonce: envelope.nonce, gas: envelope.gas, maxFeePerGas: envelope.maxFeePerGas,
+            maxPriorityFeePerGas: envelope.maxPriorityFeePerGas});
     }
 
     async #awaitReceipt(hash: Hex): Promise<Receipt> {
@@ -638,96 +504,12 @@ app.use("/settle", rateLimitByIp(limiter, SETTLE_RATE_LIMITED));
 app.use("/verify", requireReadiness(readiness, VERIFY_NOT_READY));
 app.use("/settle", requireReadiness(readiness, SETTLE_NOT_READY));
 
-app.post("/verify", async (c) => {
-    try {
-        const payment = validateDelegatedPayment(await readJson(c), {
-            delegationManager: manager,
-            facilitator: relayer.address,
-            maxAmount: MAX_AMOUNT,
-        });
-        await coordinator.simulate(payment);
-        const response: Erc7710VerifyResponse = {
-            isValid: true,
-            payer: payment.payer,
-        };
-        return c.json(response);
-    } catch (error) {
-        logSafeFailure("verify", error);
-        // The RPC dying inside the simulation is no verdict either — the readiness probe
-        // passed up to 5 s ago and the delegation was never judged. Same answer as a
-        // failed probe: the seller reads the 503 as unavailable and the buyer retries.
-        if (error instanceof RpcUnreachableBeforeBroadcast) {
-            return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
-        }
-        const response: Erc7710VerifyResponse = {isValid: false, invalidReason: "delegation_rejected"};
-        return c.json(response);
-    }
-});
-
-// Every failure, budget exhaustion included, is a 200 with `success: false` and an
-// `errorReason`. The seller's client treats any non-2xx as "the answer was lost" and
-// tells the buyer the payment is *unknown* — the one thing a refusal that broadcast
-// nothing must never be called. The status code is transport here; the body is the claim.
-app.post("/settle", async (c) => {
-    try {
-        const payment = validateDelegatedPayment(await readJson(c), {
-            delegationManager: manager,
-            facilitator: relayer.address,
-            maxAmount: MAX_AMOUNT,
-        });
-        const response = await coordinator.settle(payment);
-        console.log(
-            `[settled] paymentIntentId=${payment.paymentIntentId} tx=${response.transaction}`,
-        );
-        return c.json(response);
-    } catch (error) {
-        logSafeFailure("settle", error);
-        const failure = describeFailure(error);
-        // The RPC dying before the broadcast is the readiness middleware's answer, not a
-        // verdict: nothing was charged, so the seller's ladder reads it as unavailable and
-        // the buyer may present the same payment again. Every coalesced caller of the
-        // intent shares the throw, so every one of them is told the same.
-        if (failure.outcome === "not_ready") {
-            return c.json(SETTLE_NOT_READY.body, SETTLE_NOT_READY.status);
-        }
-        const response: Erc7710SettleResponse = {
-            success: false,
-            network: GIWA_SEPOLIA_CAIP2,
-            transaction: failure.transaction ?? undefined,
-            errorReason: failure.errorCode,
-        };
-        return c.json(response);
-    }
-});
-
-async function readJson(c: Context): Promise<unknown> {
-    const contentType = c.req.header("content-type")?.toLowerCase() ?? "";
-    if (!contentType.startsWith("application/json")) throw new Error("content-type must be JSON");
-    const contentLength = Number(c.req.header("content-length") ?? "0");
-    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_CHARACTERS) {
-        throw new Error("request body is too large");
-    }
-    const text = await c.req.text();
-    if (text.length === 0 || text.length > MAX_BODY_CHARACTERS) {
-        throw new Error("request body is empty or too large");
-    }
-    return JSON.parse(text) as unknown;
-}
-
-function logSafeFailure(path: string, error: unknown): void {
-    // The response stays deliberately opaque — an untrusted caller learns nothing
-    // about why its payment failed. The operator is not untrusted, and logging only
-    // the error name left them with "Error: request rejected" for an on-chain
-    // caveat rejection. `redactForLog` keeps the revert reason and strips the
-    // bearer-length hex that viem embeds in its errors. The RPC dying before the
-    // broadcast is logged as what it is — not a rejection, on either route — and from
-    // its cause, which is the error that names the transport that died.
-    if (error instanceof RpcUnreachableBeforeBroadcast) {
-        console.error(`[${path}] not ready — ${redactForLog(error.cause)}`);
-        return;
-    }
-    console.error(`[${path}] rejected — ${redactForLog(error)}`);
-}
+app.route("/", createPaymentRoutes({
+    validate: (body) => validateDelegatedPayment(body, {delegationManager: manager,
+        facilitator: relayer.address, maxAmount: MAX_AMOUNT}),
+    simulate: (payment) => coordinator.simulate(payment),
+    settle: (payment) => coordinator.settle(payment),
+}));
 
 // `manager` is already `getAddress(...)`-checked at construction, which throws on
 // anything malformed — a second check here could never fire while reading like a

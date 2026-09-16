@@ -1,5 +1,5 @@
 /**
- * Schema for `user_version` 4.
+ * Schema for `user_version` 6.
  *
  * The schema is the allowlist. Every column is something an operator may read back
  * later — identifiers, addresses, amounts, hashes, outcomes — and there is no column a
@@ -26,9 +26,47 @@
  * total beside a per-payer share, and gave every order a `ticket`: the code a buyer shows
  * at pickup used to be the autoincrement id, which anyone can count to.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 6;
 
 export const SCHEMA_SQL = `
+CREATE TABLE payment_jobs (
+    id TEXT PRIMARY KEY, resource_path TEXT NOT NULL, pay_to TEXT NOT NULL,
+    max_amount TEXT NOT NULL, max_total TEXT NOT NULL, max_runs INTEGER NOT NULL,
+    starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, interval_ms INTEGER NOT NULL,
+    max_attempts INTEGER NOT NULL, retry_delay_ms INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'cancelled', 'completed')),
+    next_at INTEGER NOT NULL, run_count INTEGER NOT NULL, attempts INTEGER NOT NULL, committed TEXT NOT NULL
+);
+CREATE TABLE payment_runs (
+    id INTEGER PRIMARY KEY, job_id TEXT NOT NULL REFERENCES payment_jobs(id),
+    at INTEGER NOT NULL, attempt INTEGER NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('unknown', 'paid', 'unpaid')),
+    amount TEXT NOT NULL, code TEXT NOT NULL, tx_hash TEXT, finished INTEGER NOT NULL
+);
+CREATE INDEX payment_runs_job ON payment_runs(job_id, id);
+
+-- Written before sending a signed transaction. No payload or signature is stored.
+-- A hash never expires: even a late retry must find the original transaction.
+CREATE TABLE settlement_intents (
+    payment_intent_id TEXT PRIMARY KEY,
+    tx_hash TEXT NOT NULL UNIQUE,
+    signer TEXT NOT NULL,
+    chain_id INTEGER NOT NULL,
+    nonce INTEGER NOT NULL,
+    gas TEXT NOT NULL,
+    max_fee TEXT NOT NULL,
+    priority_fee TEXT NOT NULL,
+    payer TEXT NOT NULL,
+    pay_to TEXT NOT NULL,
+    amount_base TEXT NOT NULL,
+    budget_day TEXT NOT NULL,
+    reserved_wei TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    terminal_event_id INTEGER REFERENCES settlement_events (id),
+    actual_cost TEXT,
+    CONSTRAINT settlement_nonce UNIQUE (chain_id, signer, nonce)
+);
+
 CREATE TABLE settlement_events (
     id INTEGER PRIMARY KEY,
     at INTEGER NOT NULL,

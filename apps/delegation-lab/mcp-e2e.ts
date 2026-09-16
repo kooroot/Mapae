@@ -22,7 +22,6 @@ import {
     parseActiveDeploymentArtifactJson,
     readDelegationStatus,
     readSettlementReceipts,
-    readRenamedEnv,
 } from "@mapae/delegation";
 import {
     assertRpcTarget,
@@ -202,10 +201,8 @@ function assertPortFree(name: string, port: number): void {
 }
 
 function readRelayerAddress(): Address {
-    // The settlement signer's global name; the deprecated RELAYER_ADDRESS spelling
-    // still reads, with a warning, so an old lab .env survives the rename.
     const value =
-        readRenamedEnv({current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"}) ?? "";
+        process.env.FACILITATOR_SIGNER_ADDRESS?.trim() ?? "";
     if (!isAddress(value)) {
         throw new Error("FACILITATOR_SIGNER_ADDRESS must be set (apps/delegation-lab/.env)");
     }
@@ -815,7 +812,7 @@ async function proveRevocationStops(forkRpc: string, client: Client): Promise<vo
 async function assertPrerequisites(): Promise<void> {
     const missing: string[] = [];
 
-    if (!process.env.FACILITATOR_SIGNER_ADDRESS?.trim() && !process.env.RELAYER_ADDRESS?.trim()) {
+    if (!process.env.FACILITATOR_SIGNER_ADDRESS?.trim()) {
         missing.push("FACILITATOR_SIGNER_ADDRESS is unset — see apps/delegation-lab/.env.example");
     }
     const permissionPath =

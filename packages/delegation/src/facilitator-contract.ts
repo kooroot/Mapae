@@ -81,7 +81,7 @@ export interface Erc7710SettleResponse {
     transaction?: Hex;
     network: typeof GIWA_SEPOLIA_CAIP2;
     payer?: Address;
-    /** `SETTLEMENT_UNCONFIRMED` means the redemption was broadcast; the receipt was not seen. */
+    /** `SETTLEMENT_UNCONFIRMED` means a prior transaction cannot yet be resolved safely. */
     errorReason?: string;
 }
 
@@ -139,6 +139,7 @@ export function isVerificationAccepted(body: unknown, expectedPayer: Address): b
  * is a simulation — so `unavailable` is safe to retry, unlike a settlement `unknown`.
  */
 export type VerificationOutcome =
+    | {kind: "unknown"}
     | {kind: "unavailable"}
     | {kind: "rejected"}
     | {kind: "accepted"; payer: Address};
@@ -159,6 +160,7 @@ export function decideVerification(
         return {kind: "unavailable"};
     }
     const {invalidReason} = response.body as Erc7710VerifyResponse;
+    if (invalidReason === SETTLEMENT_UNCONFIRMED) return {kind: "unknown"};
     if (invalidReason === RATE_LIMITED || invalidReason === FACILITATOR_NOT_READY) {
         return {kind: "unavailable"};
     }

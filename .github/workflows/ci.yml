@@ -52,3 +52,6 @@ jobs:
           NO_COLOR: "1"
         working-directory: apps/delegation-lab
         run: bun run test:negative
+
+      - name: Run hermetic settlement recovery
+        run: bun run test:e2e:recovery

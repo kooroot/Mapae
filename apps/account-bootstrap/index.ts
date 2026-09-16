@@ -11,7 +11,6 @@ import {
     judgeCorsRequest,
     parseActiveDeploymentArtifactJson,
     parseBootstrapOrigins,
-    readRenamedEnv,
     throttledHttp,
     validateAccountBootstrap,
     type AccountBootstrapPolicy,
@@ -92,6 +91,11 @@ type BootstrapRefusal =
     | "fee_too_high"
     | "gas_estimate_rejected"
     | "bootstrap_unavailable";
+
+// These obsolete names once referred to different wallets in different services.
+for (const name of ["RELAYER_ADDRESS", "RELAYER_PRIVATE_KEY"]) {
+    if (process.env[name]?.trim()) throw new Error(`${name} is obsolete; use FACILITATOR_SIGNER_*`);
+}
 
 function readPort(): number {
     const value = Number(process.env.PORT ?? 8083);
@@ -204,14 +208,11 @@ if (sponsor.address !== expectedSponsor) {
  * facilitator's signer is `FACILITATOR_SIGNER_ADDRESS` here for the same reason it is in
  * the revocation submitter — this file used to call it `RELAYER_ADDRESS` while the
  * submitter used the same spelling for its *own* sender, and that collision of meanings is
- * how a settlement key nearly became another service's broadcast sender. The legacy name
- * still works with a warning so the live mini `.env` keeps booting through the rename.
+ * how a settlement key nearly became another service's broadcast sender. Only
+ * FACILITATOR_SIGNER_ADDRESS is read.
  */
 function readFacilitatorSignerReference(): Address | undefined {
-    const value = readRenamedEnv({
-        current: "FACILITATOR_SIGNER_ADDRESS",
-        legacy: "RELAYER_ADDRESS",
-    });
+    const value = process.env.FACILITATOR_SIGNER_ADDRESS?.trim() || undefined;
     if (value === undefined) return undefined;
     if (!isAddress(value)) throw new Error("FACILITATOR_SIGNER_ADDRESS must be an address");
     return getAddress(value);

@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-965%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-980%20TS%20%2B%2014%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -108,7 +108,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://docs.mapae.io).
-- Regression suite: **965 TypeScript tests (719 shared/delegation/seller/store/facilitator/shop/scripts + 3 MCP + 210 web + 33 docs)
+- Regression suite: **980 TypeScript tests (734 shared/delegation/seller/store/facilitator/shop/scripts/scheduler + 3 MCP + 210 web + 33 docs)
   + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
@@ -136,9 +136,9 @@ Being explicit about the edges matters more than a longer list of green checks.
   now exists (`apps/revocation-submitter`) and Studio's revoke button
   (`apps/web/src/dapp/RevokeButton.tsx`) is wired to it: connect, check the connected
   wallet against the account's `owner()`, sign, POST.
-  What is still not proven is the last inch — **MetaMask rendering that nine-field
-  struct legibly for a human to approve**. That needs a real wallet in front of a real
-  person, not a test.
+  A real user approved the MetaMask prompt for the live sponsored revocation on
+  2026-08-04. This proves one actual approval, not display quality across every wallet
+  and version.
 - **The kill switch is not gasless, and it does not work unless it was pre-funded.**
   Payments never touch the EntryPoint — the relayer calls `redeemDelegations` directly
   — so the payer's zero-ETH invariant holds for paying. Revocation cannot avoid the
@@ -165,8 +165,9 @@ Being explicit about the edges matters more than a longer list of green checks.
   deliberately small balance. Exhausting them
   stops onboarding for the day — it cannot reach payer funds, caps, or settlement,
   because the sponsor holds no delegation authority.
-- **Idempotency is in-process.** It is correct for a single replica and must move
-  to a durable store before running more than one.
+- **Transaction recovery survives a restart.** SQLite stores the transaction hash before
+  sending; retries resolve that receipt and count success once. The facilitator still
+  requires one process per signer because nonce assignment and gas admission are local.
 - **A production stablecoin needs its own token-behaviour review.** MockUSDC is a
   testnet rail.
 
@@ -436,9 +437,12 @@ caps, and settlement are out of its reach by construction.
   public interface binding. The application API carries no authentication of its own,
   which is why the tunnel and those limits are load-bearing.
 
-In-process idempotency is covered. Before multi-replica production deployment,
-`paymentIntentId → transaction hash` state must move to a durable store such as
-Redis or Postgres.
+Transaction hashes are persisted before submission; the original receipt is recovered
+across restarts, and successful ledger entries are counted once. Signed transactions
+and permission payloads are never stored. An uncertain send remains
+`settlement_unconfirmed` rather than authorizing another transaction. A facilitator
+signer still runs in one process. See the [service documentation](apps/facilitator-erc7710/README.md)
+for schema 6 rollout requirements and recovery boundaries.
 
 See the [technical documentation](https://docs.mapae.io) for the threat model and the
 on-chain security design.
@@ -510,3 +514,5 @@ are meant to reach GIWA and must never be aimed at a fork.
 
 MIT — see [LICENSE](LICENSE). The submodules under `contracts/lib/` are upstream
 projects and keep their own licenses.
+
+[Bounded scheduled payments CLI](apps/payment-scheduler/README.md): durable history, cancellation, time and spending conditions, and conservative retries.

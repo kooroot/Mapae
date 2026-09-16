@@ -24,23 +24,20 @@ ERC-7710 위임 결제의 검증·정산 서비스. 판매자가 `/verify`로 �
 payer는 위임이 허락하는 만큼 정산을 요구할 수 있다. 그래서 `/settle`은 가스 견적 뒤,
 브로드캐스트 전에 `가스 × maxFeePerGas`를 예산에서 먼저 잡는다.
 
-예산은 둘이다. payer별 몫(`RELAYER_PAYER_DAILY_WEI`)을 먼저 잡고, 그다음 그날 총액
-(`RELAYER_DAILY_WEI`)을 잡는다. 총액 하나만 있던 동안은 `/settle`이 누구의 어떤 결제든
-받으므로, 무료 테스트넷 tUSDC로 자기 자신에게 결제하는 payer 하나가 그날치(약 1,500건)를
-공짜로 다 쓰고 다른 판매자 전부가 UTC 자정까지 `budget_exhausted`를 받았다. 몫이 있으면
-하루를 말리는 데 자금 든 위임 열 개가 필요하고, 아홉 개까지는 남들 자리가 남는다.
-payer별 몫도 `STORE_PATH`의 `payer:<주소>` 시리즈에 남아 재시작을 견디고, 하루 동안
-정산이 없는 payer는 메모리에서 비운다(다음 결제 때 파일에서 다시 읽는다).
+총액(`RELAYER_DAILY_WEI`)과 payer별 몫(`RELAYER_PAYER_DAILY_WEI`)을 검사하고,
+결제 기록·nonce·두 예약을 하나의 SQLite 트랜잭션으로 저장한다. 어느 한도가 부족하거나
+쓰기 하나가 실패하면 전부 롤백하고 전송하지 않는다. 재시작해도 미확정 예약이 남는다.
 
 | 상황 | 예산 처리 | 응답 |
 | --- | --- | --- |
 | 시뮬레이션·가스 견적·수수료 견적 중 RPC가 답하지 않음 | 예약 전, 브로드캐스트 없음 | `200 {success: false, errorReason: "facilitator_not_ready"}`, 원장에 행 없음 — 판정이 없었다 |
 | 시뮬레이션이 revert하거나 가스 상한을 넘음 | 예약 전, 브로드캐스트 없음 | `200 {success: false, errorReason: "delegation_rejected"}`, 원장에 `rejected` |
 | payer 몫이 모자람 | 아무것도 잡지 않음, 브로드캐스트 없음 | `200 {success: false, errorReason: "payer_budget_exhausted"}`, 원장에 `rejected` |
-| 그날 총액이 모자람 | payer 몫의 예약을 `0`으로 풀고 브로드캐스트 없음 | `200 {success: false, errorReason: "budget_exhausted"}`, 원장에 `rejected` |
+| 그날 총액이 모자람 | 두 예약과 결제 기록 모두 저장하지 않고 브로드캐스트 없음 | `200 {success: false, errorReason: "budget_exhausted"}`, 원장에 `rejected` |
 | 영수증 도착 | 영수증의 실제 비용(L1 데이터 수수료 포함)을 두 예산에 같이 정산 | 정상 흐름 |
-| 브로드캐스트가 해시를 못 냄 | 두 예산 모두 `0` 정산(예약 해제) | `settlement_unconfirmed`, 원장에 `error` |
-| 해시는 있는데 영수증이 없음 | 예약 전액을 두 예산에 그대로 청구 | `settlement_unconfirmed`, 원장에 `error` |
+| RPC 전송 응답을 잃음 | 전송 전에 로컬에서 계산한 해시와 예약 전액을 보존 | 해시를 포함한 `settlement_unconfirmed`, 복구 기록을 미확정으로 유지 |
+| 해시는 있는데 영수증이 없음 | 예약 전액을 두 예산에 그대로 청구 | `settlement_unconfirmed`, 복구 기록을 미확정으로 유지 |
+| 채굴된 거래가 revert | 실제 가스 비용 정산 | `settlement_reverted`, 해시·가스를 포함한 `error` 원장 |
 | 채굴됐는데 영수증에 판매자 앞 `Transfer`가 없음 | 영수증의 실제 비용을 청구 | `vendor_not_credited`, 원장에 `error` |
 
 거절은 다른 정산 실패와 같은 모양(200 + `success: false`)으로 나간다. 판매자
@@ -49,6 +46,36 @@ payer별 몫도 `STORE_PATH`의 `payer:<주소>` 시리즈에 남아 재시작�
 
 그날 쓴 총액은 `STORE_PATH`에 남아 재시작해도 이어진다. 죽였다 살린 뒤 `/metrics`가
 같은 값을 내는지는 `restart.test.ts`가 파일 스토어를 닫고 다시 열어 확인한다.
+
+## 재시작 후 정산 복구
+
+`settlement_intents`에 거래 해시와 서명하지 않은 거래 필드(nonce, gas, 수수료,
+chain, signer)를 전송 전에 저장한다. 서명 원문·permission context·개인키는 저장하지 않는다.
+동일 결제가 다시 제시되면 먼저 원래 영수증을 조회한다. 없으면 제시된 결제와 저장한 필드로
+재서명하고, **해시가 원래 값과 정확히 같을 때만** 동일 거래를 재전송한다. 기록 후 전송 전
+프로세스가 죽어도 이 경로로 복구한다. 재시작 시 노드가 모르는 예약 nonce도 재사용하지 않는다.
+
+재요청의 `/verify`는 기록된 결제를 재시뮬레이션하지 않는다. `/settle`은 영수증 상태와
+판매자 앞 정확한 `Transfer`를 확인한다. 성공·채굴 revert·미입금 결과 모두 원장에 한 번만
+기록하고, 실제 비용(L1 수수료 포함)을 **최초 예약한 UTC 날짜**의 두 예산에 원자적으로
+반영한다. 자정이나 재시작 뒤에도 같다. 원장 쓰기 실패는 미확정 기록을 남겨 재시도한다.
+
+영수증·저장소·재구성 해시를 확인할 수 없으면 `settlement_unconfirmed`다. `/verify`에서도
+이유를 명시하며 판매자는 504 `settlement_unknown`으로 전달한다. 새 leaf로 재결제하지 않는다.
+미확정 상태는 terminal 원장을 늘리지 않는다. 복구는 같은 결제를 다시 제시해야 실행되며,
+원문을 저장하지 않으므로 입력 없이 백그라운드에서 재전송하지 않는다. 결제 기록은 만료되지
+않고, 같은 signer는 한 facilitator 프로세스에서만 사용한다. 다른 서비스와 키를 공유하지 않는다.
+
+## 저장소와 배포
+
+현재 저장소는 **스키마 6**다. 이전 파일을 자동 변환하거나 초기화하지 않으며,
+이전 스키마를 지정하면 기동을 거부한다. 운영 DB 교체는 기존 원장·주문·예산 보존과
+미확정 정산 처리를 먼저 결정해야 한다. 기존 파일을 삭제하면 과거 티켓 조회와
+가스 예산, 재결제 방지 근거를 잃으므로 배포 명령에 삭제를 넣지 않는다.
+새 인스턴스의 `STORE_PATH`는 처음부터 스키마 6로 생성된다.
+
+환경변수는 `FACILITATOR_SIGNER_ADDRESS`와 `FACILITATOR_SIGNER_PRIVATE_KEY`만
+사용한다. `RELAYER_ADDRESS`·`RELAYER_PRIVATE_KEY`가 남아 있으면 기동을 거부한다.
 
 ## 요청 제한
 
@@ -115,8 +142,8 @@ IP 하나(IPv6는 /64 하나)가 하루에 600회/시 × 24시간 = 14,400행, �
   두 창 다 그렇다. 일주일보다 오래된 거절은 `allTime`에서 빠지고, 지속되는 홍수 아래서는
   개수가 먼저 묶인다: 600회/시 한도의 IP 넷이면 하루에 57,600행이라 매시간 지우기가
   하루도 안 된 행을 잘라 `last24h`도 실제보다 적게 센다.
-- `budget.day` — 수치가 속한 UTC 날짜. `spentWei`는 영수증이 청구한 합, `remainingWei`는
-  진행 중인 예약까지 뺀 값이라 브로드캐스트 도중에는 `limit - spent`와 다르다. 마지막
+- `budget.day` — 수치가 속한 UTC 날짜. `spentWei`는 실제 비용과 미확정 예약의 합이다. `remainingWei`는
+  `max(0, limit - spent)`로 계산한다. 마지막
   영수증이 예약보다 비싸면 `spentWei`가 `limitWei`를 넘고 `remainingWei`는 `"0"`이다.
 
 ## `/health`
@@ -158,7 +185,7 @@ viem 버전 문구가 그대로 새어 나갔다.
 브로드캐스트 전이라 청구된 것이 없고 판정도 없으므로 두 경로 모두 위 표대로 답하고,
 `/settle`은 원장에 아무 행도 남기지 않는다 — 준비 프로브가 막은 요청과 똑같이. 전에는
 `/settle`이 이것을 `delegation_rejected`와 `rejected` 행으로 답해, 아무도 거절하지 않은
-위임을 구매자가 다시 서명하러 갔다. `writeContract`부터는 다르다: 노드가 트랜잭션을
+위임을 구매자가 다시 서명하러 갔다. `sendRawTransaction`부터는 다르다: 노드가 트랜잭션을
 받았을 수 있으므로 거기서의 전송 실패는 `settlement_unconfirmed`로 남는다.
 
 예산은 내보내지 않는다 — "오늘 얼마나 남았나"는 하루를 말리는 게 남는 장사인지 재는
@@ -176,3 +203,8 @@ bun run dev
 ```bash
 bun test apps/facilitator-erc7710   # 요청 제한·payer 몫·정산 실패 분류·/health 분류 + /metrics 순수 함수·원장 보존 + 재시작 증명
 ```
+
+실제 프로세스 장애 검증은 저장소 루트에서 `bun run test:e2e:recovery`로 실행한다.
+Anvil의 공개 테스트 키와 루프백 RPC만 사용하며 HTTP 라우트·복구·가스 회계를 검사한다.
+이 fixture의 송금은 native ETH다. 위임/토큰 권한 검증 자체는 delegation-lab의
+`bun run test:negative`가 별도로 검증한다. 둘 다 CI에서 실행한다.

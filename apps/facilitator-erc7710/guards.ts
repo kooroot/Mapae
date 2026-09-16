@@ -14,21 +14,19 @@ import {
     FixedWindowLimiter,
     RATE_LIMITED,
     SETTLEMENT_UNCONFIRMED,
-    SpendBudget,
     ipBucket,
     isRateLimitError,
     type Erc7710SettleResponse,
     type Erc7710VerifyResponse,
 } from "@mapae/delegation";
 import {GIWA_SEPOLIA_CAIP2} from "@mapae/shared";
-import type {Budget} from "@mapae/store";
+import {SettlementBudgetExceeded} from "@mapae/store";
 import type {MiddlewareHandler} from "hono";
 import {
     ContractFunctionRevertedError,
     ExecutionRevertedError,
     HttpRequestError,
     TimeoutError,
-    type Address,
     type Hex,
 } from "viem";
 
@@ -148,126 +146,6 @@ export function requireReadiness(
 
 // ── Gas budgets: the day's total and each payer's share of it ──────────────────────
 
-/** How long a payer's budget stays in memory after its last redemption. */
-export const PAYER_IDLE_MS = 24 * 3_600_000;
-
-/**
- * One `SpendBudget` per payer, created on first sight and persisted through its own
- * series in the store (`payer:<address>`), beside the `total` series the day's ceiling
- * uses. A restart resumes each share as faithfully as it resumes the total.
- *
- * Entries idle for a full day are swept: a payer's budget is a day's number, so after
- * 24 h without a redemption nothing in memory is worth keeping, and a stream of
- * distinct payers must not grow the map without bound. Nothing is lost by evicting —
- * the next sight reloads the day's spend from the store.
- */
-export class PayerBudgets {
-    readonly #entries = new Map<string, {budget: SpendBudget; touchedAt: number}>();
-
-    constructor(
-        private readonly dailyLimitWei: bigint,
-        private readonly series: Pick<Budget, "scoped">,
-    ) {
-        if (dailyLimitWei <= 0n) throw new Error("dailyLimitWei must be positive");
-    }
-
-    for(payer: Address, now: number): SpendBudget {
-        const key = payer.toLowerCase();
-        let entry = this.#entries.get(key);
-        if (!entry) {
-            entry = {
-                budget: new SpendBudget(this.dailyLimitWei, now, this.series.scoped(`payer:${key}`)),
-                touchedAt: now,
-            };
-            this.#entries.set(key, entry);
-        }
-        entry.touchedAt = now;
-        return entry.budget;
-    }
-
-    sweep(now: number): void {
-        const cutoff = now - PAYER_IDLE_MS;
-        for (const [key, entry] of this.#entries) {
-            if (entry.touchedAt <= cutoff) this.#entries.delete(key);
-        }
-    }
-
-    get size(): number {
-        return this.#entries.size;
-    }
-}
-
-type BudgetExhaustedCode = "budget_exhausted" | "payer_budget_exhausted";
-
-/**
- * Raised when a redemption has no room in the day's gas budget — the payer's share of it
- * or the whole of it. Nothing was broadcast and nobody was charged: a rejection like a
- * simulation revert, but with its own code so the operator can tell "the payer's grant
- * is bad" from "our wallet is done for the day" in the ledger, and the seller can tell
- * the buyer to try again later. The two codes are the same outcome; `payer_budget_
- * exhausted` says the day still has room for everybody else.
- */
-export class BudgetExhausted extends Error {
-    constructor(readonly errorCode: BudgetExhaustedCode) {
-        super(
-            errorCode === "payer_budget_exhausted"
-                ? "payer's daily gas share exhausted"
-                : "relayer daily gas budget exhausted",
-        );
-        this.name = "BudgetExhausted";
-    }
-}
-
-/** Two reservations that must be released together. */
-export interface GasHold {
-    readonly amount: bigint;
-    /** Charge `charged` to both budgets and release both holds. Exactly once, from a `finally`. */
-    settle(charged: bigint, now: number): void;
-}
-
-/**
- * The relayer's gas as two ceilings that are reserved together: the payer's daily share
- * first, then the day's total. The share is what stops one payer with a valid grant from
- * spending the whole day — before it, every redemption was charged to a single global
- * figure, so one self-paying attacker locked every other seller out until UTC midnight.
- *
- * The share is asked first because its refusal is the cheaper one: it says nothing about
- * the day. When the total refuses after the share admitted, the share's hold is released
- * with a charge of `0n` so a refused redemption does not shrink the payer's day either.
- */
-export class GasBudgets {
-    constructor(
-        private readonly total: SpendBudget,
-        private readonly payers: PayerBudgets,
-    ) {}
-
-    reserve(payer: Address, amount: bigint, now: number): GasHold {
-        this.payers.sweep(now);
-        const share = this.payers.for(payer, now);
-        const shareHold = share.reserve(amount, now);
-        if (!shareHold) throw new BudgetExhausted("payer_budget_exhausted");
-        const totalHold = this.total.reserve(amount, now);
-        if (!totalHold) {
-            share.settle(shareHold, 0n, now);
-            throw new BudgetExhausted("budget_exhausted");
-        }
-        const total = this.total;
-        return {
-            amount,
-            settle(charged, at) {
-                // `SpendBudget.settle` throws on a non-bigint charge after charging the
-                // reservation; the `finally` keeps the second hold from being stranded
-                // by the first one's guard.
-                try {
-                    total.settle(totalHold, charged, at);
-                } finally {
-                    share.settle(shareHold, charged, at);
-                }
-            },
-        };
-    }
-}
-
 // ── Settlement failures ─────────────────────────────────────────────────────────────
 
 /**
@@ -288,6 +166,14 @@ export class GasBudgets {
  * written from that. Composing the cause's text in here spent a third of
  * `redactForLog`'s budget on this wrapper's name and redacted the RPC URL twice.
  */
+/** The transaction journal could not be read or durably written. No new send is allowed. */
+export class SettlementStorageUnavailable extends Error {
+    constructor(cause: unknown) {
+        super("settlement storage unavailable", {cause});
+        this.name = "SettlementStorageUnavailable";
+    }
+}
+
 export class RpcUnreachableBeforeBroadcast extends Error {
     constructor(cause: unknown) {
         super("RPC stopped answering before the redemption was broadcast", {cause});
@@ -332,32 +218,13 @@ export class SettlementUnconfirmed extends Error {
 }
 
 /**
- * Raised when the redemption mined with status "success" but its own receipt carries
- * no `Transfer(payer → payTo, amount)` on the asset — the false-return-token shape.
- * Distinct from a rejection on both sides of the ledger: the vendor was NOT paid, so
- * the resource must not be served, and yet the payer's period allowance WAS consumed,
- * so the transaction hash has to reach the operator instead of being swallowed.
- */
-export class SettlementNotCredited extends Error {
-    constructor(
-        readonly transaction: Hex,
-        detail: string,
-    ) {
-        super(`settlement mined without crediting the vendor: ${detail}`);
-        this.name = "SettlementNotCredited";
-    }
-}
-
-/**
  * What a failed settle attempt says to the wire and to the ledger — one classification
  * for both consumers, so the two can never disagree about what happened.
  *
  * `rejected`: nobody was charged (validation, simulation revert, gas cap, either budget).
- * `error`: the chain was touched and the answer is unknown (SETTLEMENT_UNCONFIRMED —
- * broadcast, receipt not seen) or wrong (`vendor_not_credited` — mined, allowance
- * consumed, the recipient not paid). Both send the seller's ladder to "failed" and
- * withhold the resource; both carry the hash when there is one, because an operator has
- * to be able to find a transaction that consumed allowance without paying anybody.
+ * `error`: the original transaction may exist but its final result is unknown.
+ * Mined failures are classified from the receipt by settlement.ts and committed by
+ * the settlement journal, with their gas cost and transaction identity.
  * `not_ready`: no verdict at all ({@link RpcUnreachableBeforeBroadcast}) — the answer is
  * {@link SETTLE_NOT_READY} and there is no row, because a row records a verdict.
  */
@@ -366,7 +233,7 @@ export type SettlementFailure =
     | {outcome: "rejected" | "error"; errorCode: string; transaction: Hex | null};
 
 export function describeFailure(error: unknown): SettlementFailure {
-    if (error instanceof RpcUnreachableBeforeBroadcast) return {outcome: "not_ready"};
+    if (error instanceof RpcUnreachableBeforeBroadcast || error instanceof SettlementStorageUnavailable) return {outcome: "not_ready"};
     if (error instanceof SettlementUnconfirmed) {
         return {
             outcome: "error",
@@ -374,10 +241,7 @@ export function describeFailure(error: unknown): SettlementFailure {
             transaction: error.transaction ?? null,
         };
     }
-    if (error instanceof SettlementNotCredited) {
-        return {outcome: "error", errorCode: "vendor_not_credited", transaction: error.transaction};
-    }
-    if (error instanceof BudgetExhausted) {
+    if (error instanceof SettlementBudgetExceeded) {
         return {outcome: "rejected", errorCode: error.errorCode, transaction: null};
     }
     return {outcome: "rejected", errorCode: "delegation_rejected", transaction: null};

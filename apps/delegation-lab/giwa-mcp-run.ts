@@ -23,7 +23,6 @@ import {
     readDelegationStatus,
     reconcileSettlement,
     throttledHttp,
-    readRenamedEnv,
 } from "@mapae/delegation";
 import {
     MOCK_USDC,
@@ -60,7 +59,7 @@ const balanceOfAbi = [
 /** 정산 서명자의 전역 이름. RELAYER_ADDRESS는 폐기된 옛 철자로, 경고와 함께 읽힌다. */
 function readFacilitatorSignerEnv(): Address {
     const value =
-        readRenamedEnv({current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"}) ?? "";
+        process.env.FACILITATOR_SIGNER_ADDRESS?.trim() ?? "";
     if (!isAddress(value)) {
         throw new Error("FACILITATOR_SIGNER_ADDRESS must be set to an address");
     }

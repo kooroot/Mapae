@@ -13,6 +13,10 @@ import {Database} from "bun:sqlite";
 import {randomBytes} from "node:crypto";
 import {mkdirSync} from "node:fs";
 import {dirname} from "node:path";
+import {createSettlementJournal, type SettlementJournal} from "./settlement.js";
+export * from "./settlement.js";
+import {createScheduleStore, type ScheduleStore} from "./scheduler.js";
+export * from "./scheduler.js";
 import {SCHEMA_SQL, SCHEMA_VERSION} from "./schema.js";
 
 export {SCHEMA_SQL, SCHEMA_VERSION} from "./schema.js";
@@ -242,6 +246,8 @@ export interface FaucetWindows {
 export interface MapaeStore {
     readonly path: string;
     readonly ledger: Ledger;
+    readonly settlements: SettlementJournal;
+    schedules: ScheduleStore;
     readonly budget: Budget;
     readonly faucetWindows: FaucetWindows;
     readonly sellers: Sellers;
@@ -424,22 +430,23 @@ function createLedger(db: Database): Ledger {
             dropRejectedBefore.run({before}).changes + dropRejectedBeyond.run({keep}).changes,
     );
 
+    const record = (event: SettlementEventInput): SettlementEvent => {
+        const row = insert.get({
+            at: millis(event.at, "at"),
+            kind: event.kind,
+            payer: event.payer,
+            payTo: event.payTo,
+            amountBase: amountText(event.amountBase, "amountBase"),
+            txHash: event.txHash ?? null,
+            outcome: event.outcome,
+            gasUsed: optionalAmountText(event.gasUsed, "gasUsed"),
+            errorCode: event.errorCode ?? null,
+        });
+        if (!row) throw new Error("settlement_events insert returned no row");
+        return toSettlementEvent(row);
+    };
     return {
-        record(event) {
-            const row = insert.get({
-                at: millis(event.at, "at"),
-                kind: event.kind,
-                payer: event.payer,
-                payTo: event.payTo,
-                amountBase: amountText(event.amountBase, "amountBase"),
-                txHash: event.txHash ?? null,
-                outcome: event.outcome,
-                gasUsed: optionalAmountText(event.gasUsed, "gasUsed"),
-                errorCode: event.errorCode ?? null,
-            });
-            if (!row) throw new Error("settlement_events insert returned no row");
-            return toSettlementEvent(row);
-        },
+        record,
         list({limit = 100} = {}) {
             return newest.all({limit: positiveInteger(limit, "limit")}).map(toSettlementEvent);
         },
@@ -850,6 +857,8 @@ export function openStore(path: string): MapaeStore {
         // WAL keeps a reader (an operator's sqlite3 shell) from blocking the service's
         // writes; it is a property of the file, so it is set once and persists.
         if (!inMemory) db.exec("PRAGMA journal_mode = WAL");
+        // The transaction journal must reach disk before the network can accept a send.
+        db.exec("PRAGMA synchronous = FULL");
         // The seed and the server open the same file. bun:sqlite's default is to fail a
         // write the instant another writer holds the lock, so a re-seed during a
         // settlement could refuse the order row after money moved; five seconds of
@@ -861,9 +870,12 @@ export function openStore(path: string): MapaeStore {
         throw error;
     }
     let closed = false;
+    const ledger = createLedger(db);
     return {
         path,
-        ledger: createLedger(db),
+        ledger,
+        settlements: createSettlementJournal(db, ledger),
+        schedules: createScheduleStore(db),
         budget: createBudget(db),
         faucetWindows: createFaucetWindows(db),
         sellers: createSellers(db),

@@ -20,7 +20,6 @@ import {
     throttledHttp,
     tightestPeriodRemaining,
     verifyActiveFrameworkDeployment,
-    readRenamedEnv,
 } from "@mapae/delegation";
 import {
     GIWA_SEPOLIA_CAIP2,
@@ -60,7 +59,7 @@ function readAddressEnv(name: string): Address | undefined {
 /** 정산 서명자의 전역 이름. RELAYER_ADDRESS는 폐기된 옛 철자로, 경고와 함께 읽힌다. */
 function readFacilitatorSignerEnv(): Address | undefined {
     const value =
-        readRenamedEnv({current: "FACILITATOR_SIGNER_ADDRESS", legacy: "RELAYER_ADDRESS"}) ?? "";
+        process.env.FACILITATOR_SIGNER_ADDRESS?.trim() ?? "";
     return isAddress(value) ? getAddress(value) : undefined;
 }
 

@@ -7,8 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "bun run build:seller && tsc -p packages/shared/tsconfig.json && tsc -p packages/delegation/tsconfig.json && tsc -p packages/seller/tsconfig.test.json && tsc -p packages/store/tsconfig.json && tsc -p apps/delegation-lab/tsconfig.json && tsc -p apps/facilitator-erc7710/tsconfig.json && tsc -p apps/delegated-agent/tsconfig.json && tsc -p apps/delegated-seller/tsconfig.json && tsc -p apps/agent-mcp/tsconfig.json && tsc -p apps/revocation-submitter/tsconfig.json && tsc -p apps/account-bootstrap/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p apps/docs/tsconfig.json && tsc -p scripts/tsconfig.json",
-    "test:ts": "bun test packages/shared/src packages/delegation/src packages/seller/src packages/store/src apps/facilitator-erc7710 apps/delegated-seller scripts",
+    "typecheck": "bun run build:seller && tsc -p packages/shared/tsconfig.json && tsc -p packages/delegation/tsconfig.json && tsc -p packages/seller/tsconfig.test.json && tsc -p packages/store/tsconfig.json && tsc -p apps/delegation-lab/tsconfig.json && tsc -p apps/facilitator-erc7710/tsconfig.json && tsc -p apps/delegated-agent/tsconfig.json && tsc -p apps/delegated-seller/tsconfig.json && tsc -p apps/agent-mcp/tsconfig.json && tsc -p apps/revocation-submitter/tsconfig.json && tsc -p apps/account-bootstrap/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p apps/docs/tsconfig.json && tsc -p scripts/tsconfig.json && tsc -p apps/payment-scheduler/tsconfig.json",
+    "test:ts": "bun test packages/shared/src packages/delegation/src packages/seller/src packages/store/src apps/facilitator-erc7710 apps/delegated-seller scripts apps/payment-scheduler",
     "test:mcp": "cd apps/agent-mcp && bun test",
     "test:docs": "cd apps/docs && bun test",
     "build:docs": "cd apps/docs && bun run build",
@@ -30,7 +30,9 @@
     "test:web": "cd apps/web && bun test",
     "build:web": "cd apps/web && bun run build",
     "deploy:landing": "cd apps/web && bun run deploy:landing",
-    "deploy:app": "cd apps/web && bun run deploy:app"
+    "deploy:app": "cd apps/web && bun run deploy:app",
+    "test:e2e:recovery": "bun run scripts/recovery-e2e.ts",
+    "test:scheduler": "bun test apps/payment-scheduler"
   },
   "dependencies": {
     "viem": "^2.55.8"
@@ -43,10 +45,11 @@
     "uuid": "11.1.1",
     "fast-uri": "3.1.6",
     "qs": "6.16.0",
-    "hono": "4.13.0",
+    "hono": "4.13.5",
     "ip-address": "10.4.0",
     "undici": "7.29.0",
-    "js-yaml": "4.3.1",
-    "nanoid": "3.3.18"
+    "js-yaml": "4.3.2",
+    "nanoid": "3.3.18",
+    "sharp": "0.35.4"
   }
 }

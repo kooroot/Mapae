@@ -2,11 +2,8 @@
  * The restart proof: kill the facilitator, bring it back on the same `STORE_PATH`, and
  * `/metrics` says the same thing — ledger and budget alike.
  *
- * `index.ts` cannot be imported here (it needs a signer, artifacts and an RPC at module
- * load), so the test composes exactly what its boot does with the store: `openStore`,
- * `new SpendBudget(limit, Date.now(), store.budget)`, `metricsReport(...)`. What is
- * proven is the persistence contract between those three, which is the part a restart
- * can break.
+ * These store/metrics tests use a structural budget gauge. Real HTTP process death
+ * and durable settlement reconciliation are exercised by test:e2e:recovery.
  */
 import {afterEach, describe, expect, test} from "bun:test";
 import {mkdtempSync, rmSync} from "node:fs";
@@ -124,30 +121,15 @@ describe("restart", () => {
         expect(second.ledger.prune(rejectedRetention(now))).toBe(0);
     });
 
-    test("a reservation in flight at the kill is not carried over; a charged one is", () => {
-        const path = tempStorePath();
-        const now = 20 * DAY_MS;
-
+    test("a journal reservation in flight survives restart and remains visible in metrics", () => {
+        const path = tempStorePath(), now = 20 * DAY_MS;
         const first = open(path);
-        const budget = new SpendBudget(LIMIT, now, first.budget);
-        const charged = budget.reserve(RESERVATION, now);
-        if (!charged) throw new Error("expected a hold");
-        // A broadcast whose receipt never arrived keeps its whole reservation charged.
-        budget.settle(charged, charged.amount, now);
-        // A second hold is mid-broadcast when the process dies: never settled.
-        expect(budget.reserve(RESERVATION, now)).toBeDefined();
-        expect(budget.remaining(now)).toBe(LIMIT - 2n * RESERVATION);
+        first.settlements.claim({paymentIntentId: TX, txHash: TX, signer: ALICE, chainId: 1, nonce: 0,
+            gas: 100n, maxFeePerGas: 10n, maxPriorityFeePerGas: 1n, payer: ALICE, payTo: SHOP,
+            amountBase: 1n, createdAt: now}, {total: LIMIT, payer: LIMIT});
         first.close();
-
         const second = open(path);
-        const revived = new SpendBudget(LIMIT, now, second.budget);
-        // Documented bound (SpendBudget): reservations are not persisted, so a crash
-        // mid-broadcast under-counts by at most the one hold that was in flight.
-        expect(metricsReport(second.ledger, now, revived, LIMIT).budget).toEqual({
-            day: "1970-01-21",
-            limitWei: LIMIT.toString(),
-            spentWei: RESERVATION.toString(),
-            remainingWei: (LIMIT - RESERVATION).toString(),
-        });
+        expect(second.budget.load("1970-01-21")).toBe(1000n);
+        expect(second.settlements.get(TX)?.terminal).toBeNull();
     });
 });

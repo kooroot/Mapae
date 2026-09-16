@@ -49,8 +49,11 @@ the same sentence.
 
 To be built:
 
-- **Settlement brain** — triggers and schedulers, compound delegations
-  (recipient, period, cap), a ledger, retries
+- **Settlement automation** — triggers and schedulers, task-level compound delegations,
+  execution history and retry policies. The SQLite ledger, daily gas budgets and
+  transaction-hash recovery already exist: hashes are stored before sending and
+  successful retries are counted once. This is locally tested code, not evidence of
+  a production rollout. One facilitator process per signer is still required.
 - **KYC and attestation verification path** — Dojang KYC gate + EAS
   contract/receipt schemas + resolvers
 - **Fulfillment verification** — an optimistic structure (default pass,
