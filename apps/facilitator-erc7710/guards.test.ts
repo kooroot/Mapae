@@ -8,7 +8,7 @@ import {
     CLIENT_IP_HEADER,
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
-    SETTLEMENT_UNCONFIRMED,
+    SETTLEMENT_PENDING,
     assertFrameworkAdminActive,
 } from "@mapae/delegation";
 import {GIWA_SEPOLIA_CAIP2, redactForLog} from "@mapae/shared";
@@ -32,7 +32,8 @@ import {
     SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
     SWEEP_EVERY,
-    SettlementUnconfirmed,
+    SettlementPending,
+    SettlementStorageUnavailable,
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     beforeBroadcast,
@@ -404,7 +405,7 @@ describe("beforeBroadcast", () => {
         expect(describeFailure(revert)).toEqual({
             outcome: "rejected",
             errorCode: "delegation_rejected",
-            transaction: null,
+            transaction: "",
         });
     });
 
@@ -440,7 +441,7 @@ describe("describeFailure", () => {
         // The route answers exactly what the readiness middleware answers.
         expect(SETTLE_NOT_READY).toEqual({
             status: 200,
-            body: {success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: FACILITATOR_NOT_READY},
+            body: {success: false, transaction: "", network: GIWA_SEPOLIA_CAIP2, errorReason: FACILITATOR_NOT_READY},
         });
         // And there is nothing to record: the store refuses a row with that outcome, so
         // the coordinator's skip is the only way it can be honoured.
@@ -456,25 +457,29 @@ describe("describeFailure", () => {
         ).toThrow(/settlement_events_outcome/);
     });
 
-    test("a revert from the same stage is a rejection, with a rejected row", () => {
+    test("a revert from the same stage is a rejection, with a rejected row and no hash", () => {
         expect(describeFailure(new Error("execution reverted: caveat"))).toEqual({
             outcome: "rejected",
             errorCode: "delegation_rejected",
-            transaction: null,
+            transaction: "",
         });
     });
 
-    test("a broadcast whose receipt was not seen is still settlement_unconfirmed, with an error row", () => {
-        expect(describeFailure(new SettlementUnconfirmed(HASH))).toEqual({
+    test("a claim whose receipt was not seen is settlement_pending, and always carries its hash", () => {
+        expect(describeFailure(new SettlementPending(HASH))).toEqual({
             outcome: "error",
-            errorCode: SETTLEMENT_UNCONFIRMED,
+            errorCode: SETTLEMENT_PENDING,
             transaction: HASH,
         });
-        // A throw from writeContract itself has no hash to carry, and is unknown all the same.
-        expect(describeFailure(new SettlementUnconfirmed())).toEqual({
-            outcome: "error",
-            errorCode: SETTLEMENT_UNCONFIRMED,
-            transaction: null,
+        expect(SETTLEMENT_PENDING).toBe("settlement_pending");
+    });
+
+    test("an unreadable journal is not-ready, never a pending answer without a hash", () => {
+        // The journal writes the hash before the broadcast, so the only pending state
+        // that ever lacked one was a journal that could not be read — a request that
+        // examined nothing and charged nothing, which is what not-ready says.
+        expect(describeFailure(new SettlementStorageUnavailable(new Error("database is locked")))).toEqual({
+            outcome: "not_ready",
         });
     });
 
@@ -482,12 +487,12 @@ describe("describeFailure", () => {
         expect(describeFailure(new SettlementBudgetExceeded("payer_budget_exhausted"))).toEqual({
             outcome: "rejected",
             errorCode: "payer_budget_exhausted",
-            transaction: null,
+            transaction: "",
         });
         expect(describeFailure(new SettlementBudgetExceeded("budget_exhausted"))).toEqual({
             outcome: "rejected",
             errorCode: "budget_exhausted",
-            transaction: null,
+            transaction: "",
         });
     });
 });

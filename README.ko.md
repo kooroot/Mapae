@@ -410,7 +410,7 @@ facilitator는 릴레이어 키를 쥐고, 서명된 `Payment-Signature`를 받�
 
 동일 결제의 거래 해시는 전송 전에 SQLite에 저장하며 재시작 뒤에도 원래 영수증을
 조회합니다. 성공 원장은 결제별 한 번만 집계합니다. 서명된 거래·위임은 저장하지 않습니다.
-전송 여부가 불확실하면 새 거래를 보내지 않고 `settlement_unconfirmed`를 유지합니다.
+전송 여부가 불확실하면 새 거래를 보내지 않고 해시를 실은 `settlement_pending`을 유지합니다.
 같은 서명자와 가스 예산을 쓰는 facilitator는 여전히 단일 프로세스로 운영합니다.
 저장소 스키마 6의 배포 조건과 복구 경계는 [서비스 문서](apps/facilitator-erc7710/README.md)에 있습니다.
 

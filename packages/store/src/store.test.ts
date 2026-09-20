@@ -299,7 +299,7 @@ describe("ledger", () => {
             outcome: "error",
             txHash: TX,
             gasUsed: 2n ** 64n,
-            errorCode: "settlement_unconfirmed",
+            errorCode: "settlement_pending",
         });
         expect(event).toEqual({
             id: 1,
@@ -311,7 +311,7 @@ describe("ledger", () => {
             outcome: "error",
             txHash: TX,
             gasUsed: 2n ** 64n,
-            errorCode: "settlement_unconfirmed",
+            errorCode: "settlement_pending",
         });
         expect(store.ledger.list()).toEqual([event]);
 

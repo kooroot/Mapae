@@ -72,7 +72,8 @@ try {
     mode = "hide-receipt";
     const unknown = await post(url, body(3));
     assert.equal(unknown.success, false);
-    assert.equal(unknown.errorReason, "settlement_unconfirmed");
+    assert.equal(unknown.errorReason, "settlement_pending");
+    assert.match(unknown.transaction, /^0x[0-9a-f]{64}$/, "a pending answer always names its hash");
     await stop(); mode = "normal"; url = await start(beforeMidnight + 120000);
     const found = await post(url, body(3));
     assert.equal(found.success, true); assert.equal(found.transaction, unknown.transaction);

@@ -37,8 +37,16 @@ export type Erc7710FacilitatorRequest = FacilitatorRequest<
  * unconfirmed* payment from 504 to 422 — from "you may have been charged" to "you were
  * not". That is the bug that told a caller `PAYMENT_REJECTED` while GIWA tx
  * `0x533c5cb2…9964c` had already moved 1.00 mUSDC out of the payer.
+ *
+ * The word is x402 v2's (§9 `settlement_pending`), and the spec binds it to a
+ * non-empty `transaction`. Under its old name (*unconfirmed*) the hash was optional,
+ * because one producer had none: an unreadable recovery journal. That case
+ * is not a payment in doubt — the request examined nothing and charged nothing — and
+ * is answered not-ready ({@link FACILITATOR_NOT_READY}) instead. Every remaining
+ * producer computes the hash before the broadcast, so a pending answer without one no
+ * longer exists.
  */
-export const SETTLEMENT_UNCONFIRMED = "settlement_unconfirmed";
+export const SETTLEMENT_PENDING = "settlement_pending";
 
 /**
  * The header a seller forwards the buyer's `CF-Connecting-IP` in. The facilitator
@@ -78,10 +86,14 @@ export interface Erc7710VerifyResponse {
 
 export interface Erc7710SettleResponse {
     success: boolean;
-    transaction?: Hex;
+    /**
+     * Always present, as x402 v2 requires: the hash of the redemption, or `""` when
+     * nothing was broadcast. A `SETTLEMENT_PENDING` body never carries `""`.
+     */
+    transaction: Hex | "";
     network: typeof GIWA_SEPOLIA_CAIP2;
     payer?: Address;
-    /** `SETTLEMENT_UNCONFIRMED` means a prior transaction cannot yet be resolved safely. */
+    /** `SETTLEMENT_PENDING` means the transaction named above is not yet resolved. */
     errorReason?: string;
 }
 
@@ -108,6 +120,7 @@ export type SettlementOutcome =
 
 const TRANSACTION_HASH = /^0x[0-9a-fA-F]{64}$/;
 
+/** A hash, or nothing — the wire's `""` and anything else that is not a hash read alike. */
 function readTransaction(value: unknown): Hex | undefined {
     return typeof value === "string" && TRANSACTION_HASH.test(value) ? (value as Hex) : undefined;
 }
@@ -137,9 +150,12 @@ export function isVerificationAccepted(body: unknown, expectedPayer: Address): b
  * and refused it are different claims, and collapsing them blames the caller's delegation
  * for the seller's dependency being down (task #37). Nothing is charged at `/verify` — it
  * is a simulation — so `unavailable` is safe to retry, unlike a settlement `unknown`.
+ *
+ * There is no `unknown` here. `/verify` never broadcasts, and the one answer that used
+ * to carry the pending sentinel — an unreadable recovery journal — is not-ready now,
+ * which is `unavailable`.
  */
 export type VerificationOutcome =
-    | {kind: "unknown"}
     | {kind: "unavailable"}
     | {kind: "rejected"}
     | {kind: "accepted"; payer: Address};
@@ -160,7 +176,6 @@ export function decideVerification(
         return {kind: "unavailable"};
     }
     const {invalidReason} = response.body as Erc7710VerifyResponse;
-    if (invalidReason === SETTLEMENT_UNCONFIRMED) return {kind: "unknown"};
     if (invalidReason === RATE_LIMITED || invalidReason === FACILITATOR_NOT_READY) {
         return {kind: "unavailable"};
     }
@@ -191,7 +206,7 @@ export function decideSettlement(
     if (body.errorReason === RATE_LIMITED || body.errorReason === FACILITATOR_NOT_READY) {
         return {kind: "unavailable"};
     }
-    if (body.errorReason === SETTLEMENT_UNCONFIRMED) {
+    if (body.errorReason === SETTLEMENT_PENDING) {
         return {kind: "unknown", transaction: readTransaction(body.transaction)};
     }
     if (body.success !== true) return {kind: "failed"};

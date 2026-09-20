@@ -6,7 +6,7 @@ import {openStore, type MapaeStore, type TransactionEnvelope} from "@mapae/store
 import {keccak256, parseTransaction, type Hex} from "viem";
 import {privateKeyToAccount} from "viem/accounts";
 import {SettlementRecovery, type RecoveryOperations, type RecoveryReceipt} from "./recovery.js";
-import {SettlementUnconfirmed} from "./guards.js";
+import {SettlementPending, SettlementStorageUnavailable} from "./guards.js";
 const account = privateKeyToAccount(`0x${"1".repeat(64)}`);
 const PAY_TO = `0x${"2".repeat(40)}` as const;
 const ID = `0x${"a".repeat(64)}` as const;
@@ -44,7 +44,7 @@ test("successful receipt reconciles both budgets including L1 and terminal retry
 });
 test("termination boundary after claim but before send recovers by re-signing exactly the same hash", async () => {
     const path = file(), first = open(path), f = ops();
-    await expect(engine(first).settle(payment, {...f.operations, receipt: async () => {throw Error("process ended");}})).rejects.toBeInstanceOf(SettlementUnconfirmed);
+    await expect(engine(first).settle(payment, {...f.operations, receipt: async () => {throw Error("process ended");}})).rejects.toBeInstanceOf(SettlementPending);
     const hash = first.settlements.get(ID)!.txHash;
     expect(f.sent).toHaveLength(0); first.close();
     const second = open(path), next = ops();
@@ -60,21 +60,21 @@ test("a lost send answer can still succeed from the original receipt", async () 
 });
 test("an unconfirmed send can be resent after restart without changing bytes or reserving again", async () => {
     const path = file(), first = open(path), f = ops();
-    await expect(engine(first).settle(payment, {...f.operations, wait: async () => {throw Error("timeout");}})).rejects.toBeInstanceOf(SettlementUnconfirmed);
+    await expect(engine(first).settle(payment, {...f.operations, wait: async () => {throw Error("timeout");}})).rejects.toBeInstanceOf(SettlementPending);
     expect(first.budget.load("2026-09-13")).toBe(1000n); first.close();
     const second = open(path), next = ops(); await engine(second).settle(payment, next.operations);
     expect(next.sent).toEqual(f.sent); expect(second.budget.load("2026-09-13")).toBe(103n);
 });
 test("a receipt found after restart finishes accounting without another send", async () => {
     const path = file(), first = open(path), f = ops();
-    await expect(engine(first).settle(payment, {...f.operations, wait: async () => {throw Error("timeout");}})).rejects.toBeInstanceOf(SettlementUnconfirmed);
+    await expect(engine(first).settle(payment, {...f.operations, wait: async () => {throw Error("timeout");}})).rejects.toBeInstanceOf(SettlementPending);
     first.close(); const second = open(path), next = ops();
     await engine(second).settle(payment, {...next.operations, receipt: next.operations.wait});
     expect(next.sent).toHaveLength(0); expect(second.budget.load("2026-09-13")).toBe(103n);
 });
 test("tampered reconstruction never sends a new transaction", async () => {
     const s = open(), f = ops();
-    await expect(engine(s).settle(payment, {...f.operations, restore: (r) => sign({...r, nonce: r.nonce + 1})})).rejects.toBeInstanceOf(SettlementUnconfirmed);
+    await expect(engine(s).settle(payment, {...f.operations, restore: (r) => sign({...r, nonce: r.nonce + 1})})).rejects.toBeInstanceOf(SettlementPending);
     expect(f.sent).toHaveLength(0); expect(s.settlements.get(ID)?.terminal).toBeNull();
     await engine(s).settle(payment, f.operations); expect(f.sent).toHaveLength(1);
 });
@@ -89,12 +89,19 @@ test("same-intent concurrency coalesces; distinct intents reserve distinct durab
 });
 test("unreadable actual receipt fees preserve the reservation for a later correct receipt", async () => {
     const s = open(), f = ops();
-    await expect(engine(s).settle(payment, {...f.operations, wait: async (hash) => ({transactionHash: hash, gasUsed: 50n, effectiveGasPrice: 2n, l1Fee: "bad"})})).rejects.toBeInstanceOf(SettlementUnconfirmed);
+    await expect(engine(s).settle(payment, {...f.operations, wait: async (hash) => ({transactionHash: hash, gasUsed: 50n, effectiveGasPrice: 2n, l1Fee: "bad"})})).rejects.toBeInstanceOf(SettlementPending);
     expect(s.settlements.get(ID)?.actualCost).toBeNull(); expect(s.budget.load("2026-09-13")).toBe(1000n);
     await engine(s).settle(payment, f.operations); expect(s.budget.load("2026-09-13")).toBe(103n);
 });
-test("an unreadable journal cannot claim a prior payment was rejected", async () => {
+test("an unreadable journal is not-ready: it neither claims a prior payment was rejected nor names a hash it cannot read", async () => {
     const s = open(), f = ops(); s.close();
-    await expect(engine(s).settle(payment, f.operations)).rejects.toBeInstanceOf(SettlementUnconfirmed);
+    await expect(engine(s).settle(payment, f.operations)).rejects.toBeInstanceOf(SettlementStorageUnavailable);
+    expect(() => engine(s).transaction(ID)).toThrow(SettlementStorageUnavailable);
     expect(f.prepared).toHaveLength(0);
+});
+test("every pending answer carries the hash the journal wrote before the broadcast", async () => {
+    const s = open(), f = ops();
+    const pending = await engine(s).settle(payment, {...f.operations, wait: async () => {throw Error("timeout");}}).catch((error: unknown) => error);
+    expect(pending).toBeInstanceOf(SettlementPending);
+    expect((pending as SettlementPending).transaction).toBe(s.settlements.get(ID)!.txHash);
 });

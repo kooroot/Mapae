@@ -40,7 +40,6 @@ import {
     RATE_WINDOW_MS,
     SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
-    SettlementUnconfirmed,
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     beforeBroadcast,
@@ -288,8 +287,6 @@ const facilitatorClient = createWalletClient({
     transport: throttledHttp(RPC_URL),
 }).extend(publicActions);
 
-type Receipt = Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
-
 const startupVerification = await verifyActiveFrameworkDeployment({
     publicClient,
     deployment,
@@ -389,7 +386,10 @@ class SettlementCoordinator {
                     catch (error) {if (error instanceof TransactionReceiptNotFoundError) return null; throw error;}
                 },
                 send: (serializedTransaction) => facilitatorClient.sendRawTransaction({serializedTransaction}),
-                wait: (hash) => this.#awaitReceipt(hash),
+                // A wait that gives up is the recovery's to classify: the claim is durable
+                // and the hash is known, so it surfaces as `SettlementPending`, never as a
+                // rejection that would assert the payer was not charged.
+                wait: (hash) => publicClient.waitForTransactionReceipt({hash, confirmations: 1, timeout: RECEIPT_TIMEOUT_MS}),
                 failure: (receipt) => receiptFailure(receipt, payment),
             });
             return settlementResponse(record);
@@ -409,21 +409,6 @@ class SettlementCoordinator {
         return facilitatorClient.signTransaction({to: manager, data, type: "eip1559", chainId: giwaSepolia.id,
             nonce: envelope.nonce, gas: envelope.gas, maxFeePerGas: envelope.maxFeePerGas,
             maxPriorityFeePerGas: envelope.maxPriorityFeePerGas});
-    }
-
-    async #awaitReceipt(hash: Hex): Promise<Receipt> {
-        try {
-            return await publicClient.waitForTransactionReceipt({
-                hash,
-                confirmations: 1,
-                timeout: RECEIPT_TIMEOUT_MS,
-            });
-        } catch {
-            // The transaction is already on the network; only our wait gave up.
-            // Collapsing this into the generic rejection would tell the seller the
-            // payer was not charged, which is exactly what nobody knows yet.
-            throw new SettlementUnconfirmed(hash);
-        }
     }
 }
 

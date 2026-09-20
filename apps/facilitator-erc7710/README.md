@@ -35,14 +35,19 @@ payer는 위임이 허락하는 만큼 정산을 요구할 수 있다. 그래서
 | payer 몫이 모자람 | 아무것도 잡지 않음, 브로드캐스트 없음 | `200 {success: false, errorReason: "payer_budget_exhausted"}`, 원장에 `rejected` |
 | 그날 총액이 모자람 | 두 예약과 결제 기록 모두 저장하지 않고 브로드캐스트 없음 | `200 {success: false, errorReason: "budget_exhausted"}`, 원장에 `rejected` |
 | 영수증 도착 | 영수증의 실제 비용(L1 데이터 수수료 포함)을 두 예산에 같이 정산 | 정상 흐름 |
-| RPC 전송 응답을 잃음 | 전송 전에 로컬에서 계산한 해시와 예약 전액을 보존 | 해시를 포함한 `settlement_unconfirmed`, 복구 기록을 미확정으로 유지 |
-| 해시는 있는데 영수증이 없음 | 예약 전액을 두 예산에 그대로 청구 | `settlement_unconfirmed`, 복구 기록을 미확정으로 유지 |
+| RPC 전송 응답을 잃음 | 전송 전에 로컬에서 계산한 해시와 예약 전액을 보존 | 해시를 포함한 `settlement_pending`, 복구 기록을 미확정으로 유지 |
+| 해시는 있는데 영수증이 없음 | 예약 전액을 두 예산에 그대로 청구 | 해시를 포함한 `settlement_pending`, 복구 기록을 미확정으로 유지 |
 | 채굴된 거래가 revert | 실제 가스 비용 정산 | `settlement_reverted`, 해시·가스를 포함한 `error` 원장 |
 | 채굴됐는데 영수증에 판매자 앞 `Transfer`가 없음 | 영수증의 실제 비용을 청구 | `vendor_not_credited`, 원장에 `error` |
 
 거절은 다른 정산 실패와 같은 모양(200 + `success: false`)으로 나간다. 판매자
 클라이언트는 2xx가 아닌 응답을 "답을 잃었다"로 읽고 구매자에게 결제 상태를 *unknown*으로
 알리는데, 아무것도 브로드캐스트하지 않은 거절은 그렇게 불려선 안 된다.
+
+`transaction`은 모든 `/settle` 응답에 있다 — 브로드캐스트한 거래의 해시, 아무것도
+브로드캐스트하지 않았으면 `""`(x402 v2가 요구하는 모양). `settlement_pending`은
+언제나 해시와 함께 나간다: 저널이 브로드캐스트 전에 해시를 적으므로 해시 없는 미확정은
+존재하지 않는다.
 
 그날 쓴 총액은 `STORE_PATH`에 남아 재시작해도 이어진다. 죽였다 살린 뒤 `/metrics`가
 같은 값을 내는지는 `restart.test.ts`가 파일 스토어를 닫고 다시 열어 확인한다.
@@ -60,8 +65,11 @@ chain, signer)를 전송 전에 저장한다. 서명 원문·permission context�
 기록하고, 실제 비용(L1 수수료 포함)을 **최초 예약한 UTC 날짜**의 두 예산에 원자적으로
 반영한다. 자정이나 재시작 뒤에도 같다. 원장 쓰기 실패는 미확정 기록을 남겨 재시도한다.
 
-영수증·저장소·재구성 해시를 확인할 수 없으면 `settlement_unconfirmed`다. `/verify`에서도
-이유를 명시하며 판매자는 504 `settlement_unknown`으로 전달한다. 새 leaf로 재결제하지 않는다.
+영수증·재구성 해시를 확인할 수 없으면 해시를 실은 `settlement_pending`이고, 판매자는
+504 `settlement_unknown`으로 전달한다. 새 leaf로 재결제하지 않는다. 저장소를 읽지 못한
+경우는 다르다 — 해시는 브로드캐스트 전에 저널에 적으므로 저장소를 못 읽은 요청은
+아무것도 검토·청구하지 않았고, 두 경로 모두 `facilitator_not_ready`(`/verify` 503,
+`/settle` 200)로 답한다. 그래서 `/verify`가 pending을 내는 경로는 없다.
 미확정 상태는 terminal 원장을 늘리지 않는다. 복구는 같은 결제를 다시 제시해야 실행되며,
 원문을 저장하지 않으므로 입력 없이 백그라운드에서 재전송하지 않는다. 결제 기록은 만료되지
 않고, 같은 signer는 한 facilitator 프로세스에서만 사용한다. 다른 서비스와 키를 공유하지 않는다.
@@ -186,7 +194,7 @@ viem 버전 문구가 그대로 새어 나갔다.
 `/settle`은 원장에 아무 행도 남기지 않는다 — 준비 프로브가 막은 요청과 똑같이. 전에는
 `/settle`이 이것을 `delegation_rejected`와 `rejected` 행으로 답해, 아무도 거절하지 않은
 위임을 구매자가 다시 서명하러 갔다. `sendRawTransaction`부터는 다르다: 노드가 트랜잭션을
-받았을 수 있으므로 거기서의 전송 실패는 `settlement_unconfirmed`로 남는다.
+받았을 수 있으므로 거기서의 전송 실패는 해시를 실은 `settlement_pending`으로 남는다.
 
 예산은 내보내지 않는다 — "오늘 얼마나 남았나"는 하루를 말리는 게 남는 장사인지 재는
 숫자라 `/metrics` 토큰 뒤에 둔다.

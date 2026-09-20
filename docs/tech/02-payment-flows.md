@@ -360,7 +360,7 @@ fork에서 owner를 impersonate해 `pause()`를 실행하면 `/health`가 `ok=fa
 확인한다. 같은 답이 `/settle`에도 있다: 브로드캐스트 전 단계(시뮬레이션·가스
 견적·수수료 조회)에서 RPC가 끊기면 거절이 아니라 200 `facilitator_not_ready`로
 답하고 원장 행을 남기지 않는다 — 판정도, 청구도 없었기 때문이다. 브로드캐스트
-뒤의 실패는 그대로 `settlement_unconfirmed`다.
+뒤의 실패는 해시를 실은 `settlement_pending`이다.
 
 ## 재현
 

@@ -13,7 +13,7 @@ import {
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
     RATE_LIMITED,
-    SETTLEMENT_UNCONFIRMED,
+    SETTLEMENT_PENDING,
     ipBucket,
     isRateLimitError,
     type Erc7710SettleResponse,
@@ -56,6 +56,7 @@ export const VERIFY_RATE_LIMITED: Erc7710VerifyResponse = {
 };
 export const SETTLE_RATE_LIMITED: Erc7710SettleResponse = {
     success: false,
+    transaction: "",
     network: GIWA_SEPOLIA_CAIP2,
     errorReason: RATE_LIMITED,
 };
@@ -120,7 +121,7 @@ export const VERIFY_NOT_READY: NotReadyAnswer<Erc7710VerifyResponse> = {
 };
 export const SETTLE_NOT_READY: NotReadyAnswer<Erc7710SettleResponse> = {
     status: 200,
-    body: {success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: FACILITATOR_NOT_READY},
+    body: {success: false, transaction: "", network: GIWA_SEPOLIA_CAIP2, errorReason: FACILITATOR_NOT_READY},
 };
 
 /**
@@ -159,25 +160,33 @@ export function requireReadiness(
  * buyer to re-sign a grant nothing had refused.
  *
  * Only {@link beforeBroadcast} raises it, and only around the pre-broadcast stage. From
- * `writeContract` on, a transport failure is ambiguous — the node may have accepted the
- * transaction — and is {@link SettlementUnconfirmed}, never this.
+ * `sendRawTransaction` on, a transport failure is ambiguous — the node may have accepted
+ * the transaction — and is {@link SettlementPending}, never this.
  *
  * The message is a constant; what died is the `cause`, and the operator's line is
  * written from that. Composing the cause's text in here spent a third of
  * `redactForLog`'s budget on this wrapper's name and redacted the RPC URL twice.
  */
-/** The transaction journal could not be read or durably written. No new send is allowed. */
-export class SettlementStorageUnavailable extends Error {
-    constructor(cause: unknown) {
-        super("settlement storage unavailable", {cause});
-        this.name = "SettlementStorageUnavailable";
-    }
-}
-
 export class RpcUnreachableBeforeBroadcast extends Error {
     constructor(cause: unknown) {
         super("RPC stopped answering before the redemption was broadcast", {cause});
         this.name = "RpcUnreachableBeforeBroadcast";
+    }
+}
+
+/**
+ * The settlement journal could not be read, or the claim could not be written durably.
+ * No new send is allowed, and no verdict exists: the request examined nothing and
+ * charged nothing, so both routes answer it as they answer a failed probe. Under the
+ * old wire an unreadable journal was called *unconfirmed* without a hash — but the
+ * journal records the hash before the broadcast, so a row that cannot be read is not a
+ * payment in doubt, it is a facilitator that cannot look. Not-ready says exactly that,
+ * and the seller already reads it as "try again later with the same header".
+ */
+export class SettlementStorageUnavailable extends Error {
+    constructor(cause: unknown) {
+        super("settlement storage unavailable", {cause});
+        this.name = "SettlementStorageUnavailable";
     }
 }
 
@@ -196,24 +205,21 @@ export async function beforeBroadcast<T>(step: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Raised when a redemption was broadcast but its receipt did not arrive in time.
+ * Raised when a redemption's claim is in the journal but its receipt was not seen — the
+ * send answer was lost, the wait timed out, or the terminal write failed after mining.
  *
  * Distinct from every other settlement failure because the payer may well have been
  * charged. The caller needs the hash to find out, and must not be told the payment
- * was rejected.
+ * was rejected. The hash is mandatory: x402 v2 binds `settlement_pending` to a
+ * non-empty `transaction`, and the journal computes the hash before the broadcast, so
+ * every producer has it. The one ambiguity that used to arrive without a hash — an
+ * unreadable journal — is {@link SettlementStorageUnavailable}: that request charged
+ * nothing and is answered not-ready.
  */
-export class SettlementUnconfirmed extends Error {
-    /**
-     * `transaction` is optional because the ambiguity has two shapes. A receipt-wait
-     * timeout knows the hash (the broadcast returned it); a throw from the broadcast
-     * call itself does not — `writeContract` prepares, signs, and sends in one step, so
-     * a lost response after the node accepted the transaction rejects without ever
-     * handing back a hash. Both are "unknown, may be charged", and both must reach the
-     * seller as SETTLEMENT_UNCONFIRMED so the client is told not to re-sign.
-     */
-    constructor(readonly transaction?: Hex) {
+export class SettlementPending extends Error {
+    constructor(readonly transaction: Hex) {
         super("redemption broadcast but not confirmed");
-        this.name = "SettlementUnconfirmed";
+        this.name = "SettlementPending";
     }
 }
 
@@ -222,29 +228,28 @@ export class SettlementUnconfirmed extends Error {
  * for both consumers, so the two can never disagree about what happened.
  *
  * `rejected`: nobody was charged (validation, simulation revert, gas cap, either budget).
- * `error`: the original transaction may exist but its final result is unknown.
- * Mined failures are classified from the receipt by settlement.ts and committed by
- * the settlement journal, with their gas cost and transaction identity.
- * `not_ready`: no verdict at all ({@link RpcUnreachableBeforeBroadcast}) — the answer is
- * {@link SETTLE_NOT_READY} and there is no row, because a row records a verdict.
+ * Its `transaction` is the wire's `""` — nothing was broadcast.
+ * `error`: the original transaction exists but its final result is unknown; the hash
+ * always rides along. Mined failures are classified from the receipt by settlement.ts
+ * and committed by the settlement journal, with their gas cost and transaction identity.
+ * `not_ready`: no verdict at all ({@link RpcUnreachableBeforeBroadcast},
+ * {@link SettlementStorageUnavailable}) — the answer is {@link SETTLE_NOT_READY} and
+ * there is no row, because a row records a verdict.
  */
 export type SettlementFailure =
     | {outcome: "not_ready"}
-    | {outcome: "rejected" | "error"; errorCode: string; transaction: Hex | null};
+    | {outcome: "rejected"; errorCode: string; transaction: ""}
+    | {outcome: "error"; errorCode: typeof SETTLEMENT_PENDING; transaction: Hex};
 
 export function describeFailure(error: unknown): SettlementFailure {
     if (error instanceof RpcUnreachableBeforeBroadcast || error instanceof SettlementStorageUnavailable) return {outcome: "not_ready"};
-    if (error instanceof SettlementUnconfirmed) {
-        return {
-            outcome: "error",
-            errorCode: SETTLEMENT_UNCONFIRMED,
-            transaction: error.transaction ?? null,
-        };
+    if (error instanceof SettlementPending) {
+        return {outcome: "error", errorCode: SETTLEMENT_PENDING, transaction: error.transaction};
     }
     if (error instanceof SettlementBudgetExceeded) {
-        return {outcome: "rejected", errorCode: error.errorCode, transaction: null};
+        return {outcome: "rejected", errorCode: error.errorCode, transaction: ""};
     }
-    return {outcome: "rejected", errorCode: "delegation_rejected", transaction: null};
+    return {outcome: "rejected", errorCode: "delegation_rejected", transaction: ""};
 }
 
 // ── /health ─────────────────────────────────────────────────────────────────────────

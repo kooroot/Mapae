@@ -17,7 +17,7 @@ import {
 import {
     FACILITATOR_NOT_READY,
     RATE_LIMITED,
-    SETTLEMENT_UNCONFIRMED,
+    SETTLEMENT_PENDING,
     decideSettlement,
     decideVerification,
     isVerificationAccepted,
@@ -366,7 +366,7 @@ describe("D5 settlement outcome ladder", () => {
         }
     });
 
-    test("the unconfirmed sentinel is unknown and keeps the hash", () => {
+    test("the pending sentinel is unknown and keeps the hash", () => {
         // The hash is the only way the caller can find out whether they were charged,
         // so dropping it would leave them with a 504 and nothing to look up.
         expect(
@@ -377,7 +377,7 @@ describe("D5 settlement outcome ladder", () => {
                         success: false,
                         network: GIWA_SEPOLIA_CAIP2,
                         transaction: TX,
-                        errorReason: SETTLEMENT_UNCONFIRMED,
+                        errorReason: SETTLEMENT_PENDING,
                     },
                 },
                 PAYER,
@@ -385,10 +385,11 @@ describe("D5 settlement outcome ladder", () => {
         ).toEqual({kind: "unknown", transaction: TX});
     });
 
-    test("the unconfirmed sentinel with no hash is still unknown, never failed", () => {
-        // A throw from the broadcast call itself yields no hash (the response was lost
-        // before writeContract returned one), but the outcome is the same unknown — a
-        // 504 with an undefined transaction, never a 422 that asserts non-payment.
+    test("a pending body without a hash breaks the spec, and is still unknown, never failed", () => {
+        // x402 v2 binds `settlement_pending` to a non-empty transaction, and every
+        // producer in this repository computes the hash before the broadcast. A body
+        // that drops it anyway is read for what it still claims — money may have moved
+        // — as a 504 with nothing to look up, never a 422 that asserts non-payment.
         expect(
             decideSettlement(
                 {
@@ -396,7 +397,8 @@ describe("D5 settlement outcome ladder", () => {
                     body: {
                         success: false,
                         network: GIWA_SEPOLIA_CAIP2,
-                        errorReason: SETTLEMENT_UNCONFIRMED,
+                        transaction: "",
+                        errorReason: SETTLEMENT_PENDING,
                     },
                 },
                 PAYER,
@@ -404,11 +406,11 @@ describe("D5 settlement outcome ladder", () => {
         ).toEqual({kind: "unknown", transaction: undefined});
     });
 
-    test("the sentinel is one shared constant, not a literal per process", () => {
+    test("the sentinel is one shared constant, not a literal per process, and is the §9 word", () => {
         // If this ever drifts, the case above silently becomes `failed` — a 422 that
         // asserts a balance nobody checked. Pinning the value is what makes the
         // facilitator and the seller provably agree without running either.
-        expect(SETTLEMENT_UNCONFIRMED).toBe("settlement_unconfirmed");
+        expect(SETTLEMENT_PENDING).toBe("settlement_pending");
     });
 
     test("a rate-limited settle is unavailable: nothing was charged and nothing is in doubt", () => {

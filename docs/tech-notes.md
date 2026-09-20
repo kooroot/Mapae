@@ -396,7 +396,7 @@ fork에서 owner를 impersonate해 `pause()`를 실행하면 `/health`가 `ok=fa
 확인한다. 같은 답이 `/settle`에도 있다: 브로드캐스트 전 단계(시뮬레이션·가스
 견적·수수료 조회)에서 RPC가 끊기면 거절이 아니라 200 `facilitator_not_ready`로
 답하고 원장 행을 남기지 않는다 — 판정도, 청구도 없었기 때문이다. 브로드캐스트
-뒤의 실패는 그대로 `settlement_unconfirmed`다.
+뒤의 실패는 해시를 실은 `settlement_pending`이다.
 
 ### 재현
 
@@ -529,13 +529,13 @@ root permission 아티팩트를 요구하므로, 배포된 계정을 소유한 �
 
 판정은 순수 함수 `decideSettlement()`로 분리되어 있고
 (`packages/delegation/src/facilitator-contract.ts`), 판정 기준 문자열
-(`SETTLEMENT_UNCONFIRMED`)과 응답 타입은 생산자·소비자가 같은 모듈에서
+(`SETTLEMENT_PENDING`)과 응답 타입은 생산자·소비자가 같은 모듈에서
 가져간다. 판정 사다리는 `unknown` 쪽으로 기운다.
 
 | 관찰 | 결과 | 이유 |
 |---|---|---|
 | 응답 못 받음 (연결 거부·non-2xx·JSON 아님·타임아웃) | `unknown` 504 | "요청이 닿지 않음"과 "브로드캐스트 후 응답 유실"을 구분할 수 없다 |
-| `errorReason === SETTLEMENT_UNCONFIRMED` | `unknown` 504 (+해시) | 해시가 없으면 호출자가 확인할 수단이 없다 |
+| `errorReason === SETTLEMENT_PENDING` | `unknown` 504 (+해시) | x402 v2가 이 사유에 해시를 강제한다 — 해시가 없으면 호출자가 확인할 수단이 없다 |
 | `success !== true` | `failed` 422 | 명시적 거절 — 자금이 이동하지 않았다 |
 | `success === true`, payer 불일치 | `unknown` 504 | 브로드캐스트는 주장되었으나 신원이 어긋났고, 잔액은 확인되지 않았다 |
 | `success === true`, payer 일치 | `settled` 200 | |

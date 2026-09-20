@@ -2,7 +2,7 @@ import {PaymentIntentSingleFlight, readReceiptFeeField} from "@mapae/delegation"
 import type {SettlementInput, SettlementJournal, SettlementLimits, SettlementRecord, TransactionEnvelope} from "@mapae/store";
 import {SettlementBudgetExceeded} from "@mapae/store";
 import {keccak256, parseTransaction, type Hex} from "viem";
-import {SettlementStorageUnavailable, SettlementUnconfirmed} from "./guards.js";
+import {SettlementPending, SettlementStorageUnavailable} from "./guards.js";
 
 export interface RecoveryReceipt {
     transactionHash: Hex;
@@ -35,7 +35,7 @@ export class SettlementRecovery {
 
     transaction(intent: Hex): Hex | undefined {
         try {return this.journal.get(intent)?.txHash;}
-        catch {throw new SettlementUnconfirmed();} // An unreadable journal cannot prove this was never paid.
+        catch (error) {throw new SettlementStorageUnavailable(error);}
     }
 
     settle<T extends RecoveryReceipt>(payment: RecoveryPayment, operations: RecoveryOperations<T>): Promise<SettlementRecord> {
@@ -44,7 +44,7 @@ export class SettlementRecovery {
             const preparing = this.#preparing.then(async () => {
                 let existing: SettlementRecord | null;
                 try {existing = this.journal.get(payment.paymentIntentId);}
-                catch {throw new SettlementUnconfirmed();}
+                catch (error) {throw new SettlementStorageUnavailable(error);}
                 if (existing) return existing;
                 const nonce = this.journal.nextNonce(this.signer, this.chainId, await operations.pendingNonce());
                 const serialized = await operations.prepare(nonce);
@@ -82,9 +82,13 @@ export class SettlementRecovery {
                 return this.journal.finish(record.paymentIntentId, {at: this.now(), gasUsed: receipt.gasUsed,
                     actualCost, errorCode: operations.failure(receipt)});
             } catch {
-                // Includes disk failure after a mined receipt: keep the durable claim
-                // and let the next same-intent request finish the atomic accounting.
-                throw new SettlementUnconfirmed(record.txHash);
+                // The claim is durable and the transaction may be on the network; only
+                // our wait, our reconstruction, or the terminal write gave up. Includes
+                // disk failure after a mined receipt: keep the claim and let the next
+                // same-intent request finish the atomic accounting. Collapsing this into
+                // a rejection would tell the seller the payer was not charged, which is
+                // exactly what nobody knows yet — so the hash goes out as pending.
+                throw new SettlementPending(record.txHash);
             }
         });
     }

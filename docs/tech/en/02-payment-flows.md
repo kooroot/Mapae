@@ -391,7 +391,7 @@ the payment turned away as not-ready rather than judged (`/verify` 503
 charged, retry later. `/settle` gives the same answer: when the RPC dies in the
 pre-broadcast stage (simulation, gas estimate, fee query) it answers 200
 `facilitator_not_ready` and writes no ledger row — nothing was judged and nothing
-charged. A failure after the broadcast stays `settlement_unconfirmed`.
+charged. A failure after the broadcast stays `settlement_pending`, with its hash.
 
 ## Reproduction
 

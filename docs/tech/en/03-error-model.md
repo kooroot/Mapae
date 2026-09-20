@@ -103,13 +103,13 @@ outcome is unresolved is returned as `SETTLEMENT_UNKNOWN`.
 
 The judgment is isolated in a pure function, `decideSettlement()`
 (`packages/delegation/src/facilitator-contract.ts`), and the criterion string
-(`SETTLEMENT_UNCONFIRMED`) and the response type are taken from the same module
+(`SETTLEMENT_PENDING`) and the response type are taken from the same module
 by producer and consumer alike. The decision ladder leans toward `unknown`.
 
 | Observation | Result | Reason |
 |---|---|---|
 | No response received (connection refused, non-2xx, not JSON, timeout) | `unknown` 504 | "The request never arrived" and "the response was lost after broadcast" cannot be told apart |
-| `errorReason === SETTLEMENT_UNCONFIRMED` | `unknown` 504 (+hash) | Without the hash the caller has no way to verify |
+| `errorReason === SETTLEMENT_PENDING` | `unknown` 504 (+hash) | x402 v2 binds this reason to a hash — without it the caller has no way to verify |
 | `success !== true` | `failed` 422 | Explicit refusal — no funds moved |
 | `success === true`, payer mismatch | `unknown` 504 | A broadcast was claimed but the identity did not line up, and the balance was not confirmed |
 | `success === true`, payer match | `settled` 200 | |

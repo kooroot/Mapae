@@ -1,8 +1,8 @@
 import {Hono, type Context} from "hono";
 import type {Address, Hex} from "viem";
 import {GIWA_SEPOLIA_CAIP2, redactForLog} from "@mapae/shared";
-import {SETTLEMENT_UNCONFIRMED, type Erc7710SettleResponse} from "@mapae/delegation";
-import {describeFailure, SETTLE_NOT_READY, VERIFY_NOT_READY, SettlementUnconfirmed} from "./guards.js";
+import type {Erc7710SettleResponse} from "@mapae/delegation";
+import {describeFailure, SETTLE_NOT_READY, VERIFY_NOT_READY} from "./guards.js";
 
 /** Shared by production and the hermetic HTTP/Anvil harness; policy validation is mandatory. */
 export function createPaymentRoutes<P extends {payer: Address; paymentIntentId: Hex}>(service: {
@@ -19,8 +19,6 @@ export function createPaymentRoutes<P extends {payer: Address; paymentIntentId: 
         } catch (error) {
             console.error(`[verify] failed — ${redactForLog(error)}`);
             if (describeFailure(error).outcome === "not_ready") return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
-            // The seller preserves this explicit unknown as 504, even at verification.
-            if (error instanceof SettlementUnconfirmed) return c.json({isValid: false, invalidReason: SETTLEMENT_UNCONFIRMED});
             return c.json({isValid: false, invalidReason: "delegation_rejected"});
         }
     });
@@ -28,14 +26,16 @@ export function createPaymentRoutes<P extends {payer: Address; paymentIntentId: 
         try {
             const payment = service.validate(await readJson(c));
             const result = await service.settle(payment);
-            console.log(`[settle] intent=${payment.paymentIntentId} success=${result.success} tx=${result.transaction ?? "none"}`);
+            console.log(`[settle] intent=${payment.paymentIntentId} success=${result.success} tx=${result.transaction || "none"}`);
             return c.json(result);
         } catch (error) {
             console.error(`[settle] failed — ${redactForLog(error)}`);
             const failure = describeFailure(error);
             if (failure.outcome === "not_ready") return c.json(SETTLE_NOT_READY.body, SETTLE_NOT_READY.status);
+            // `transaction` is always present on the wire: the pending hash, or "" for a
+            // rejection that broadcast nothing.
             return c.json({success: false, network: GIWA_SEPOLIA_CAIP2,
-                transaction: failure.transaction ?? undefined, errorReason: failure.errorCode});
+                transaction: failure.transaction, errorReason: failure.errorCode});
         }
     });
     return app;
