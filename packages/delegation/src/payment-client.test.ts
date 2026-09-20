@@ -12,7 +12,11 @@ import {
     type PaymentRequired,
     type SettleResponse,
 } from "@mapae/shared";
-import {payForDelegatedResource, type DelegatedLeafProvider} from "./payment-client.js";
+import {
+    BEARER_REDACTION,
+    payForDelegatedResource,
+    type DelegatedLeafProvider,
+} from "./payment-client.js";
 
 const MANAGER = getAddress("0x4000000000000000000000000000000000000001");
 const OTHER_MANAGER = getAddress("0x4000000000000000000000000000000000000002");
@@ -721,14 +725,14 @@ describe("D5 Payment-Response receipt", () => {
 });
 
 describe("D5 non-JSON resources", () => {
-    test("a text/plain resource is returned as text, with its content type", async () => {
+    test("a text/plain resource is returned as text, with its media type and no parameters", async () => {
         const {impl} = scriptedFetch(textResponse("Your report.\n", "text/plain; charset=utf-8"));
         const result = await payForDelegatedResource(target, baseConfig(impl));
 
         expect(result.ok).toBe(true);
         if (!result.ok) throw new Error("unreachable");
         expect(result.resource).toBe("Your report.\n");
-        expect(result.contentType).toBe("text/plain; charset=utf-8");
+        expect(result.contentType).toBe("text/plain");
     });
 
     test("a bearer value echoed inside a text resource is redacted", async () => {
@@ -742,6 +746,42 @@ describe("D5 non-JSON resources", () => {
         expect(typeof result.resource).toBe("string");
         expect(result.resource as string).not.toContain(PERMISSION_CONTEXT);
         expect(result.resource as string).toContain("thanks, your context was ");
+    });
+
+    test("a bearer value echoed in the content type never reaches the result", async () => {
+        // The content type lands in MCP tool output like the body does, so it is held to
+        // the same invariant: neither the permission context nor the signature comes back
+        // from this function. A secret parked in a parameter goes with the parameters…
+        const {impl} = scriptedFetch(
+            jsonResponse(
+                200,
+                {invoice: "inv-001"},
+                {"content-type": `application/json; note=${PERMISSION_CONTEXT}`},
+            ),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        expect(result.contentType).toBe("application/json");
+        expect(result.resource).toEqual({invoice: "inv-001"});
+        expect(JSON.stringify(result)).not.toContain(PERMISSION_CONTEXT.slice(2));
+
+        // …and a seller that makes the media type itself the signature it was just sent,
+        // where there is no parameter to strip, meets the body's redaction.
+        let attempts = 0;
+        const reflecting = (async (_url: URL, init?: RequestInit) => {
+            attempts += 1;
+            if (attempts === 1) return jsonResponse(402, paymentRequired());
+            const submitted = (init?.headers as Record<string, string>)["Payment-Signature"]!;
+            return textResponse("Your report.\n", submitted);
+        }) as unknown as typeof fetch;
+        const reflected = await payForDelegatedResource(target, baseConfig(reflecting));
+
+        expect(reflected.ok).toBe(true);
+        if (!reflected.ok) throw new Error("unreachable");
+        expect(reflected.contentType).toBe(BEARER_REDACTION);
+        expect(reflected.resource).toBe("Your report.\n");
     });
 
     test("a +json media type is parsed like application/json; a JSON body without a JSON label is text", async () => {

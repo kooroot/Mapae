@@ -186,9 +186,12 @@ DelegationManager와 어긋나지 않는 첫 항목으로 결제한다 — 지�
 없으면 `SELLER_OFFER_INVALID`다. 2xx의 `Payment-Response` 헤더는 이 결제의
 영수증일 때만 읽는다 — `success: true`, 같은 네트워크, leaf를 서명한 payer —
 그때 `transaction`은 헤더 값이고, 헤더가 없거나 자기 모순이면 본문의
-`receipt.transaction`으로 물러난다. 헤더 안의 판매자 문자열은 결과에 싣지
-않는다. 자원은 content-type이 JSON일 때만 파싱하고 그 밖에는 문자열 그대로
-돌려주며, 어느 쪽이든 bearer 값은 가린다.
+`receipt.transaction`으로 물러난다. 헤더 안의 판매자
+문자열은 결과에 싣지 않는다. 자원은 content-type이 JSON일 때만 파싱하고 그
+밖에는 문자열 그대로 돌려주며, 어느 쪽이든 bearer 값은 가린다. 결과에 실리는
+content-type은 미디어 타입뿐이다 — 파라미터는 버린다. `Content-Type`도 판매자가
+쓴 문자열이고 MCP 도구 출력까지 가므로, 거기에 주차된 bearer 값이 따라오지
+못하게 한다.
 
 **온체인 pre-flight.** 서명 전에 enforcer의 회계를 직접 읽어, 성공할 수 없는
 결제를 미리 거른다. 한도는 어차피 온체인이 강제하므로 이 단계의 목적은 안전이

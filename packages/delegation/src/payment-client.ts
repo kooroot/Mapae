@@ -151,7 +151,11 @@ export type DelegatedPaymentResult =
           amount: string;
           payTo: Address;
           transaction?: Hex;
-          /** The resource response's `Content-Type`, when the seller sent one. */
+          /**
+           * The media type the seller labelled the resource with — `application/json`,
+           * `text/plain` — when it sent one. Parameters are dropped and the bearer
+           * values redacted, so this carries no seller prose.
+           */
           contentType?: string;
           /** Parsed when the content type is JSON, the body text otherwise. */
           resource: unknown;
@@ -266,9 +270,9 @@ function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function redactBearerSecrets(resource: unknown, secrets: string[]): unknown {
-    const serialized = JSON.stringify(resource);
-    if (serialized === undefined) return resource;
+function redactBearerSecrets<T>(value: T, secrets: string[]): T {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) return value;
     let cleaned = serialized;
     for (const secret of secrets) {
         if (secret.length < 32) continue;
@@ -282,7 +286,9 @@ function redactBearerSecrets(resource: unknown, secrets: string[]): unknown {
             cleaned = cleaned.split(secret).join(BEARER_REDACTION);
         }
     }
-    return cleaned === serialized ? resource : JSON.parse(cleaned);
+    // Replacing secrets inside a JSON document leaves its shape untouched — a string
+    // stays a string, an object keeps its keys — so the round-trip preserves `T`.
+    return cleaned === serialized ? value : (JSON.parse(cleaned) as T);
 }
 
 const TRANSACTION_HASH = /^0x[0-9a-fA-F]{64}$/;
@@ -388,10 +394,20 @@ function selectOffer(
     );
 }
 
+/**
+ * The media type a `Content-Type` names, without its parameters.
+ *
+ * Dropping the parameters is what keeps the header out of the result as a free-text
+ * channel: `charset=utf-8` tells the caller nothing `second.text()` has not already
+ * applied, and anything else a seller writes there is its own prose.
+ */
+function mediaType(contentType: string): string {
+    return contentType.split(";")[0]!.trim().toLowerCase();
+}
+
 /** `application/json` and every `+json` structured syntax (`application/problem+json`, `…/ld+json`). */
-function isJsonMediaType(contentType: string): boolean {
-    const mediaType = contentType.split(";")[0]!.trim().toLowerCase();
-    return mediaType === "application/json" || mediaType.endsWith("+json");
+function isJsonMediaType(type: string): boolean {
+    return type === "application/json" || type.endsWith("+json");
 }
 
 /**
@@ -450,7 +466,8 @@ function readSettlementReceipt(
  *   seller can reflect `Payment-Signature` back after we send a bearer permission
  *   context.
  * - The signed permission context and signature are never put into the result by
- *   this function, and are stripped from the seller's 2xx body if it echoes them.
+ *   this function, and are stripped from everything the seller's 2xx contributes to
+ *   it — the body and the content type alike — if it echoes them.
  * - Only a 2xx retry yields the resource body.
  */
 export async function payForDelegatedResource(
@@ -607,7 +624,15 @@ export async function payForDelegatedResource(
     // text, a document as markdown. Only a body the seller labels JSON is parsed;
     // anything else comes back as the text it is, and either way it passes the
     // redaction below.
-    const contentType = second.headers.get("content-type") ?? undefined;
+    //
+    // `Content-Type` is seller-controlled text like the body, and it reaches the caller,
+    // so it gets the same treatment: the bearer values are stripped first, then only the
+    // media type is kept. Without both a seller could park an authorization in a
+    // `Content-Type` parameter and have it land in MCP tool output.
+    const secrets = [leaf.permissionContext, paymentHeader];
+    const declared = second.headers.get("content-type");
+    const contentType =
+        declared === null ? undefined : mediaType(redactBearerSecrets(declared, secrets));
     let resource: unknown;
     try {
         resource =
@@ -622,7 +647,7 @@ export async function payForDelegatedResource(
     // and agent transcripts, and a seller that echoes `Payment-Signature` — or the raw
     // permission context — would park a bearer authorization there. We know the
     // exact values, so strip them instead of trusting the seller not to send them.
-    resource = redactBearerSecrets(resource, [leaf.permissionContext, paymentHeader]);
+    resource = redactBearerSecrets(resource, secrets);
     const receipt = readSettlementReceipt(
         second.headers.get(PAYMENT_RESPONSE_HEADER),
         payload.payload.delegator,
