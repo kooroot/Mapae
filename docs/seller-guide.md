@@ -55,7 +55,9 @@ Node라면 마지막 줄 대신 `@hono/node-server`의 `serve({fetch: app.fetch,
 | `description` | 에이전트가 402 오퍼와 매니페스트에서 읽는 한 줄 설명 |
 
 `facilitator`(기본 `https://facilitator.mapae.io`), `onSettled`(정산 콜백, §6),
-`extensions`(402 본문의 `extensions` 칸에 실을 객체 — 헤더에도 같이 실리니 작게),
+`extensions`(402 본문의 `extensions` 칸 — 확장 이름 → `{info, schema}` 맵이며 `info`가
+확장이 선언하는 내용, `schema`는 클라이언트가 에코할 형태를 기술하는 JSON Schema다.
+헤더에도 같이 실리니 작게),
 `baseUrl`(§2-1)은 선택이다.
 
 ### 2-1. 경로가 여럿이면 — `createMapae`

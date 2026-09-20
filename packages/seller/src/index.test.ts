@@ -232,8 +232,8 @@ describe("mapaePaywall — construction", () => {
     });
 
     test("rejects extensions JSON cannot carry — at boot, not in a buyer's 402", () => {
-        expect(() => paywall({extensions: {budget: 1n}})).toThrow();
-        expect(() => paywall({extensions: {mapae: {seller: "demo-cafe"}}})).not.toThrow();
+        expect(() => paywall({extensions: {budget: {info: 1n}}})).toThrow();
+        expect(() => paywall({extensions: {mapae: {info: {seller: "demo-cafe"}}}})).not.toThrow();
     });
 
     test("defaults to the public facilitator, and strips a trailing slash from a custom one", async () => {
@@ -403,12 +403,21 @@ describe("mapaePaywall — the 402 offer", () => {
         );
     });
 
-    test("carries extensions in the body and the Payment-Required header alike; absent, the slot is absent", async () => {
-        const extensions = {mapae: {seller: "demo-cafe", manifest: "https://shop.example/s/demo-cafe"}};
+    test("carries extensions in the spec envelope, in the body and the Payment-Required header alike; absent, the slot is absent", async () => {
+        // 스펙의 `extensions`는 확장 이름 → {info, schema} 맵이다. 불투명한 덩어리를
+        // 통째로 싣던 시절과 달리, 판매자가 선언하는 내용은 `info` 아래에 있고
+        // `schema`는 클라이언트가 에코할 형태를 기술할 때만 붙는다.
+        const extensions = {
+            mapae: {
+                info: {seller: "demo-cafe", manifest: "https://shop.example/s/demo-cafe"},
+                schema: {type: "object", properties: {seller: {type: "string"}}},
+            },
+        };
         const withThem = await seller(paywall({fetch: facilitator().fetch, extensions})).app.request(RESOURCE);
         expect(withThem.status).toBe(402);
         const body = await withThem.json();
         expect(body.extensions).toEqual(extensions);
+        expect(body.extensions.mapae.info.seller).toBe("demo-cafe");
         expect(decodePaymentRequiredHeader(withThem.headers.get(PAYMENT_REQUIRED_HEADER) ?? "")).toEqual(body);
 
         const without = await seller(paywall({fetch: facilitator().fetch})).app.request(RESOURCE);

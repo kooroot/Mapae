@@ -67,7 +67,7 @@ options as well, and makes a client of its own each time.
 | `price` | tUSDC as a decimal string, positive, up to 6 fractional digits — `"0.01"`. |
 | `description` | One line the buyer's agent reads in the 402 offer and in the manifest. |
 | `onSettled` | `(receipt) => void \| Promise<void>`, called once per settled payment, **before** your handler. Write your ledger here. A throw is logged; the buyer is still served. |
-| `extensions` | `Record<string, unknown>` placed in the 402 body's `extensions` slot — and in the `Payment-Required` header, which encodes the same document. Absent, the slot is absent. It travels in a header on every unpaid request: keep it small. |
+| `extensions` | `Record<string, PaymentExtension>` — the x402 extensions you publish, keyed by name, each one `{info, schema?}`: `info` is what your extension declares, `schema` an optional JSON Schema for what a client echoes back. They go in the 402 body's `extensions` slot — and in the `Payment-Required` header, which encodes the same document. Absent, the slot is absent. It travels in a header on every unpaid request: keep it small. |
 
 Without a payment header the request gets a **402** carrying the x402 v2 offer in the
 `Payment-Required` header and the JSON body. With one, the middleware asks the facilitator

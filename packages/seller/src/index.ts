@@ -22,6 +22,7 @@ import {
     type Erc7710PaymentPayload,
     type Erc7710PaymentRequirements,
     type Erc7710SupportedPayload,
+    type PaymentExtension,
     type PaymentRequired,
 } from "@mapae/shared";
 import {
@@ -95,11 +96,14 @@ export interface PaywallOptions {
      */
     onSettled?: (receipt: SettlementReceipt) => void | Promise<void>;
     /**
-     * Placed in the 402 body's `extensions` slot — and therefore in the `Payment-Required`
-     * header too, which encodes the same document. Absent, the slot stays absent. It
-     * travels in a header on every unpaid request, so keep it small.
+     * x402 extensions to publish, keyed by extension name. Each one is the spec's
+     * envelope: `info` is what your extension declares, `schema` an optional JSON Schema
+     * for what a client echoes back. They go in the 402 body's `extensions` slot — and
+     * therefore in the `Payment-Required` header too, which encodes the same document.
+     * Absent, the slot stays absent. It travels in a header on every unpaid request, so
+     * keep it small.
      */
-    extensions?: Record<string, unknown>;
+    extensions?: Record<string, PaymentExtension>;
 }
 
 /** Options of the one-liner {@link mapaePaywall}: a paywall plus the settings it is made with. */

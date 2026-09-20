@@ -165,8 +165,15 @@ describe("402 — the offer", () => {
         expect(body.accepts[0]?.amount).toBe(ONE.toString());
         expect(body.accepts[0]?.payTo).toBe(PAY_TO);
         expect(body.accepts[0]?.network).toBe(GIWA_SEPOLIA_CAIP2);
+        // 스펙의 확장 봉투: 확장 이름 → {info, schema}. 상점이 선언하는 내용은
+        // `info` 아래에 있고, 클라이언트가 에코할 형태를 요구하지 않으므로 `schema`는 없다.
         expect(body.extensions).toEqual({
-            mapae: {seller: {slug: "demo-cafe", name: "데모 카페"}, manifest: `${BASE_URL}/s/demo-cafe`},
+            mapae: {
+                info: {
+                    seller: {slug: "demo-cafe", name: "데모 카페"},
+                    manifest: `${BASE_URL}/s/demo-cafe`,
+                },
+            },
         });
         const header = response.headers.get(PAYMENT_REQUIRED_HEADER);
         expect(header).not.toBeNull();

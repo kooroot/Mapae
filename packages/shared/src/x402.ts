@@ -103,6 +103,19 @@ export interface ResourceInfo {
     mimeType?: string;
 }
 
+/**
+ * One entry of the 402 body's `extensions` map, keyed by the extension's name.
+ *
+ * The spec's envelope is two slots, not an opaque blob: `info` is what the extension
+ * itself declares, and `schema` is a JSON Schema describing the shape a client echoes
+ * back in its payload. Mapae publishes `info` only — nothing it serves asks the client
+ * to echo anything, so there is no shape to describe yet.
+ */
+export interface PaymentExtension {
+    info: unknown;
+    schema?: unknown;
+}
+
 /** The body a seller returns with HTTP 402. */
 export interface PaymentRequired<
     TRequirements extends AnyPaymentRequirements = PaymentRequirements,
@@ -112,7 +125,7 @@ export interface PaymentRequired<
     /** Resource metadata lives here in v2, not inside each requirement. */
     resource?: ResourceInfo;
     accepts: TRequirements[];
-    extensions?: Record<string, unknown>;
+    extensions?: Record<string, PaymentExtension>;
 }
 
 /* ------------------------------------------------------------------ *
@@ -148,13 +161,17 @@ export interface Erc7710DelegationPayload {
  * v2 payload. Note there is no top-level `scheme`/`network`: the chosen
  * requirements are embedded under `accepted`, which is how the facilitator
  * resolves which scheme handler to use.
+ *
+ * Nor is there an `extensions` slot. A client echoes only the extensions it actually
+ * *used*, and no payer in this repo uses one — the slot arrives together with the first
+ * extension that needs it, and writing the echo before then would be a guess about a
+ * shape no extension has asked for.
  */
 export interface PaymentPayload {
     x402Version: typeof X402_VERSION;
     accepted: PaymentRequirements;
     payload: Eip3009Payload;
     resource?: ResourceInfo;
-    extensions?: Record<string, unknown>;
 }
 
 export interface Erc7710PaymentPayload {
@@ -162,7 +179,6 @@ export interface Erc7710PaymentPayload {
     accepted: Erc7710PaymentRequirements;
     payload: Erc7710DelegationPayload;
     resource?: ResourceInfo;
-    extensions?: Record<string, unknown>;
 }
 
 export type AnyPaymentPayload = PaymentPayload | Erc7710PaymentPayload;

@@ -420,10 +420,15 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
             payTo: seller.payTo,
             price: fromTokenAmount(item.priceBase),
             description: `${seller.name} — ${item.name}`,
+            // 스펙의 확장 봉투: 확장 이름 → {info, schema}. 이 상점이 선언하는 내용은
+            // 전부 `info` 아래에 있고, 클라이언트가 에코할 형태를 요구하지 않으므로
+            // `schema`는 없다.
             extensions: {
                 mapae: {
-                    seller: {slug: seller.slug, name: seller.name},
-                    manifest: `${baseUrl}/s/${seller.slug}`,
+                    info: {
+                        seller: {slug: seller.slug, name: seller.name},
+                        manifest: `${baseUrl}/s/${seller.slug}`,
+                    },
                 },
             },
             // The one place an order is written. Money has moved when this runs; the

@@ -100,6 +100,16 @@ describe, so it is refused together with any unknown value. On the facilitator s
 value, so a payload that drops or rewrites the field accepted terms other than the
 ones offered, and is `invalid_payload`.
 
+**The 402's `extensions` is an envelope.** In the specification `extensions` is a map
+from extension name to `{info, schema}` — `info` is what the extension itself declares,
+`schema` a JSON Schema describing the shape a client echoes back in its payload. The
+hosted shop publishes one entry, `mapae`, and puts the seller and the manifest URL under
+its `info`. There is no `schema`: nothing there asks the client to echo anything. The
+payment **payload** has no `extensions` slot at all — a client echoes only the extensions
+it actually *used*, and no payer here uses one; the slot arrives with the first extension
+that needs it. `/supported`'s identically named `extensions` is a different thing: the
+**list** of extensions the facilitator supports, which today is empty.
+
 The sequence below shows three paths for one and the same delegation — a normal
 settlement, an over-cap refusal, and an expiry refusal. What decides a refusal is
 the on-chain caveat, not a backend.
