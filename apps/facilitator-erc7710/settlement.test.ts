@@ -5,7 +5,7 @@ import {GIWA_SEPOLIA_CAIP2} from "@mapae/shared";
 import {openStore, type MapaeStore, type SettlementRecord} from "@mapae/store";
 import {receiptFailure, settlementResponse, verifyKnownSettlement} from "./settlement.js";
 import {createPaymentRoutes} from "./routes.js";
-import {SettlementStorageUnavailable, describeFailure} from "./guards.js";
+import {SettlementPending, SettlementStorageUnavailable, describeFailure} from "./guards.js";
 const A = `0x${"1".repeat(40)}` as const, B = `0x${"2".repeat(40)}` as const;
 const TOKEN = `0x${"3".repeat(40)}` as const, ID = `0x${"a".repeat(64)}` as const, HASH = `0x${"b".repeat(64)}` as const;
 // Only the receipt validator's fields are used; no cryptographic validation is bypassed in production.
@@ -43,9 +43,9 @@ test("success requires the exact token Transfer; a successful call alone does no
 });
 
 test("only a replayed answer says so, and it is the only difference between the two bodies", () => {
-    // The seller counts one sale once. A recovered settlement is otherwise byte-identical
-    // to a fresh one, so the flag is the whole signal — and its absence must be the
-    // default, never an omitted `false` the seller could read either way.
+    // Only a call that did not perform the settlement says so. A recovered settlement is
+    // otherwise byte-identical to a fresh one, so the flag is the whole signal — and its
+    // absence must be the default, never an omitted `false` the seller could read either way.
     const s = openStore(":memory:");
     try {
         claimed(s);
@@ -116,6 +116,18 @@ test("a throw neither route expected is its own unexpected_*_error, with a trans
         errorReason: "unexpected_settle_error"});
     expect(describeFailure(new Error("boom"), "settle")).toEqual({outcome: "rejected",
         errorCode: "unexpected_settle_error", transaction: ""});
+});
+
+test("/verify copies only a rejection onto the wire, so a pending hash can never read as a refusal", async () => {
+    // `/verify` broadcasts nothing and has no producer of this throw. If one ever appears,
+    // the §9 word would go out without the transaction x402 v2 binds it to, and the seller
+    // ladder would read the body as a rejected delegation — "nobody was charged" asserted
+    // about a payment in doubt. Not-ready asserts nothing, which is what this route knows.
+    const app = createPaymentRoutes({validate: () => payment,
+        simulate: async () => {throw new SettlementPending(HASH);}, settle: async () => {throw new Error("not reached");}});
+    const verify = await app.request("/verify", {method: "POST", headers: JSON_HEADERS, body: "{}"});
+    expect(verify.status).toBe(503);
+    expect(await verify.json()).toEqual({isValid: false, invalidReason: "facilitator_not_ready"});
 });
 
 test("an unreadable recovery journal is not-ready on both routes: nothing examined, nothing charged, no hash to name", async () => {

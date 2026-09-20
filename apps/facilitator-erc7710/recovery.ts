@@ -21,11 +21,18 @@ export interface RecoveryOperations<T extends RecoveryReceipt> {
 }
 export type RecoveryPayment = Pick<SettlementInput, "paymentIntentId" | "payer" | "payTo" | "amountBase">;
 /**
- * A resolved row and whether it predates the call. `replayed` is true when the journal
- * already held this intent before the call began, terminal or not: the answer belongs to
- * an earlier attempt, and nothing new was broadcast — a resumed claim re-sends the bytes
- * that row already named, never a second transaction. Concurrent calls coalesced into one
- * operation share that operation's answer, so all of them read the first one's `replayed`.
+ * A resolved row and whether the answer was performed by some other call. `replayed` is
+ * true when the journal already held this intent before the call began, terminal or not:
+ * the answer belongs to an earlier attempt, and nothing new was broadcast — a resumed
+ * claim re-sends the bytes that row already named, never a second transaction. It is true
+ * for a concurrent call coalesced into another's operation too: that call performed
+ * nothing either, and it is handed the answer the operation produced. So at most one
+ * answer per intent is ever unmarked — the one call that settled it.
+ *
+ * What it is not is a delivery gate on its own: when the first attempt ends
+ * {@link SettlementPending} and a later call finishes the claim, *every* successful
+ * answer is marked. A seller that ships once per sale dedupes on its own record of the
+ * payment intent id; this flag only ever says "this call is not the one that did it".
  */
 export interface SettlementResult {record: SettlementRecord; replayed: boolean}
 
@@ -47,14 +54,22 @@ export class SettlementRecovery {
         catch (error) {throw new SettlementStorageUnavailable(error);}
     }
 
-    settle<T extends RecoveryReceipt>(payment: RecoveryPayment, operations: RecoveryOperations<T>): Promise<SettlementResult> {
-        return this.#inflight.run(payment.paymentIntentId, async () => {
+    async settle<T extends RecoveryReceipt>(payment: RecoveryPayment, operations: RecoveryOperations<T>): Promise<SettlementResult> {
+        let own = false;
+        const result = await this.#inflight.run(payment.paymentIntentId, async () => {
+            own = true;
             let replayed = false;
             // Serialize only preparation and the atomic claim, not receipt waiting.
             const preparing = this.#preparing.then(async () => {
                 const existing = this.known(payment.paymentIntentId);
                 if (existing) {replayed = true; return existing;}
-                const nonce = this.journal.nextNonce(this.signer, this.chainId, await operations.pendingNonce());
+                const pending = await operations.pendingNonce();
+                // Allocating the nonce is another read of the journal, and a journal that
+                // cannot be read is not-ready on either route — never a rejected delegation
+                // with a ledger row, which is what a raw throw from here would become.
+                let nonce: number;
+                try {nonce = this.journal.nextNonce(this.signer, this.chainId, pending);}
+                catch (error) {throw new SettlementStorageUnavailable(error);}
                 const serialized = await operations.prepare(nonce);
                 const tx = parseTransaction(serialized);
                 if (tx.type !== "eip1559" || tx.chainId !== this.chainId || tx.nonce !== nonce ||
@@ -100,5 +115,10 @@ export class SettlementRecovery {
                 throw new SettlementPending(record.txHash);
             }
         });
+        // A call coalesced into another's operation ran none of the above: it neither read
+        // the journal nor broadcast anything, and the answer it is handed was performed by
+        // the call that owns the operation. Leaving it unmarked would let two live requests
+        // for one payment both claim to be the settling one.
+        return own ? result : {...result, replayed: true};
     }
 }

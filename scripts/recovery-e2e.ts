@@ -82,6 +82,9 @@ try {
     assert.equal(found.success, true); assert.equal(found.transaction, unknown.transaction);
     const duplicate = await Promise.all(Array.from({length: 8}, () => post(url, body(4))));
     assert(duplicate.every(r => r.success && r.transaction === duplicate[0]!.transaction));
+    // Eight live requests, one operation, one broadcast: exactly one of them settled the
+    // intent, and the seven coalesced into it say so rather than each looking fresh.
+    assert.equal(duplicate.filter(r => r.replayed === undefined).length, 1, "only the call that settled is not a replay");
     const distinct = await Promise.all([post(url, body(5)), post(url, body(6))]);
     assert(distinct.every(r => r.success)); assert.notEqual(distinct[0]!.transaction, distinct[1]!.transaction);
     const revertTo = "0x0000000000000000000000000000000000005678";

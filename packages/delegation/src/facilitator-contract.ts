@@ -96,14 +96,19 @@ export interface Erc7710SettleResponse {
     /** `SETTLEMENT_PENDING` means the transaction named above is not yet resolved. */
     errorReason?: string;
     /**
-     * Present only when a journal row for this intent already existed before the call:
-     * the answer belongs to an earlier attempt, terminal or not, and this call broadcast
-     * nothing new — at most it re-sent the very bytes that row already named, which can
-     * only ever produce the same hash. Absent, this call is the one that settled the
-     * intent, or failed before broadcasting anything.
+     * Present when this call is not the one that performed the answer it carries: a
+     * journal row for the intent already existed when it began — terminal or not, and
+     * at most it re-sent the very bytes that row already named, which can only ever
+     * produce the same hash — or it was coalesced into a concurrent call's operation.
+     * Absent, this call is the one that settled the intent, or failed before
+     * broadcasting anything.
      *
-     * The seller reads it to tell one sale from two. Nothing else on the wire does: a
-     * recovered settlement and a fresh one are otherwise the same body.
+     * So at most one answer per intent is unmarked, and a recovered settlement is
+     * otherwise the same body as a fresh one. It is not a delivery gate by itself: when
+     * a first attempt ends `settlement_pending` and a later call finishes the claim,
+     * every successful answer is marked. A seller that ships once per sale dedupes on
+     * its own record of the payment intent id and reads this as what it says — "some
+     * other call did this".
      */
     replayed?: true;
 }

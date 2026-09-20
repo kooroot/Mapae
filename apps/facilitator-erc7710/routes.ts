@@ -19,7 +19,13 @@ export function createPaymentRoutes<P extends {payer: Address; paymentIntentId: 
         } catch (error) {
             console.error(`[verify] failed — ${redactForLog(error)}`);
             const failure = describeFailure(error, "verify");
-            if (failure.outcome === "not_ready") return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
+            // Only a rejection is copied onto the wire. `/verify` broadcasts nothing, so
+            // it has no producer of a pending hash — and were one to appear, the §9 word
+            // would go out without the transaction x402 v2 binds it to, and the seller
+            // would read it as a refused delegation: "nobody was charged", asserted about
+            // a payment in doubt. Not-ready says nothing about the payment, which is all
+            // this route knows in either case.
+            if (failure.outcome !== "rejected") return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
             return c.json({isValid: false, invalidReason: failure.errorCode});
         }
     });

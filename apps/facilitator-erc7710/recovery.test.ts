@@ -2,7 +2,7 @@ import {afterEach, expect, test} from "bun:test";
 import {mkdtempSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {openStore, type MapaeStore, type TransactionEnvelope} from "@mapae/store";
+import {openStore, type MapaeStore, type SettlementJournal, type TransactionEnvelope} from "@mapae/store";
 import {keccak256, parseTransaction, type Hex} from "viem";
 import {privateKeyToAccount} from "viem/accounts";
 import {SettlementRecovery, type RecoveryOperations, type RecoveryReceipt} from "./recovery.js";
@@ -42,7 +42,7 @@ test("successful receipt reconciles both budgets including L1 and terminal retry
     expect(first.replayed).toBe(false);
     expect(s.budget.load("2026-09-13")).toBe(103n);
     const again = await e.settle(payment, {...f.operations, receipt: async () => {throw Error("must not read");}});
-    // The same answer, marked as the earlier attempt's, so the seller reads one sale once.
+    // The same answer, marked as the earlier attempt's: this call performed nothing.
     expect(again.replayed).toBe(true);
     expect(again.record).toEqual(first.record);
     expect(f.sent).toHaveLength(1); expect(s.ledger.list()).toHaveLength(1);
@@ -94,8 +94,12 @@ test("tampered reconstruction never sends a new transaction", async () => {
 });
 test("same-intent concurrency coalesces; distinct intents reserve distinct durable nonces", async () => {
     const s = open(), f = ops(), e = engine(s);
-    await Promise.all([e.settle(payment, f.operations), e.settle(payment, f.operations)]);
+    const both = await Promise.all([e.settle(payment, f.operations), e.settle(payment, f.operations)]);
     expect(f.prepared).toEqual([0]); expect(f.sent).toHaveLength(1);
+    // One operation, one broadcast, so only the call that owns it may answer as the one
+    // that settled: the coalesced call performed nothing and reads as a replay. Two live
+    // requests for one payment must never both look like a fresh sale.
+    expect(both.map((r) => r.replayed).sort()).toEqual([false, true]);
     const a = ops(), b = ops();
     await Promise.all([e.settle({...payment, paymentIntentId: `0x${"b".repeat(64)}`}, a.operations),
         e.settle({...payment, paymentIntentId: `0x${"c".repeat(64)}`}, b.operations)]);
@@ -112,6 +116,16 @@ test("an unreadable journal is not-ready: it neither claims a prior payment was 
     await expect(engine(s).settle(payment, f.operations)).rejects.toBeInstanceOf(SettlementStorageUnavailable);
     expect(() => engine(s).known(ID)).toThrow(SettlementStorageUnavailable);
     expect(f.prepared).toHaveLength(0);
+});
+test("a journal that fails while allocating the nonce is not-ready, not a rejected delegation", async () => {
+    // `nextNonce` is a read like `get` and `claim` are writes: none of the three examined
+    // the delegation, so a failure in any of them owes the caller a retry, not a verdict
+    // — and not the `rejected` ledger row an unclassified throw would have written.
+    const s = open(), f = ops();
+    const journal: SettlementJournal = {...s.settlements, nextNonce: () => {throw new Error("disk gone");}};
+    const e = new SettlementRecovery(journal, account.address, 91342, {total: 10000n, payer: 5000n}, () => NOW);
+    await expect(e.settle(payment, f.operations)).rejects.toBeInstanceOf(SettlementStorageUnavailable);
+    expect(f.prepared).toHaveLength(0); expect(s.settlements.get(ID)).toBeNull(); expect(s.ledger.list()).toHaveLength(0);
 });
 test("every pending answer carries the hash the journal wrote before the broadcast", async () => {
     const s = open(), f = ops();
