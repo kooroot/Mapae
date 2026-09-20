@@ -213,6 +213,16 @@ export function validateDelegatedPayment(
     if (typeof requirements.amount !== "string" || !UINT_STRING.test(requirements.amount)) {
         throw refuse("invalid_payment_requirements", "amount must be an integer string");
     }
+    // 이 레일은 즉시 정산한다: `/verify` 다음에 `/settle`이 붙고 그 자리에서 redeem한다.
+    // 그래서 수행할 수 있는 흐름은 `upfront`와 스펙 기본값 `authorization`(부재·null이
+    // 뜻하는 값)뿐이고, `escrow`처럼 나중 청구를 약속한 오퍼는 여기서 떨어뜨린다 —
+    // 그 약속을 지킬 코드가 없는데 redeem하면 페이어는 자기가 읽은 선언과 다른 시점에
+    // 돈을 낸다. 클라이언트(`assertErc7710Offer`)와 같은 규칙이라 보호가 한쪽 경계에만
+    // 있지 않다. 타입은 좁지만 값은 호출자가 준 JSON이므로 `unknown`으로 읽는다.
+    const declaredFlow: unknown = requirements.extra.paymentFlow;
+    if (declaredFlow != null && declaredFlow !== "upfront" && declaredFlow !== "authorization") {
+        throw refuse("invalid_payment_requirements", "unsupported payment flow");
+    }
     const amount = BigInt(requirements.amount);
     if (amount <= 0n) throw refuse("invalid_payment_requirements", "amount must be positive");
     if (options.maxAmount !== undefined && amount > options.maxAmount) {

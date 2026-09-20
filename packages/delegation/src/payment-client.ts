@@ -180,8 +180,9 @@ function isExactErc7710OnGiwa(value: unknown): value is Erc7710PaymentRequiremen
 
 /**
  * Assert a seller's ERC-7710 offer is exactly what this agent is willing to pay.
- * Anything off — wrong scheme, network, asset, malformed amount, unsafe timeout —
- * throws, and the caller maps it to `SELLER_OFFER_INVALID`.
+ * Anything off — wrong scheme, network, asset, malformed amount, unsafe timeout, a
+ * payment flow this rail cannot pay — throws, and the caller maps it to
+ * `SELLER_OFFER_INVALID`.
  */
 export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
     if (!isExactErc7710OnGiwa(value)) {
@@ -203,21 +204,29 @@ export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
     // that OZ ERC20 would burn — an unsettleable bearer authorization minted for nothing.
     if (getAddress(req.payTo) === zeroAddress) throw new Error("seller payTo is the zero address");
     if (!/^[1-9]\d*$/.test(req.amount)) throw new Error("seller amount is malformed");
-    // 스펙 §6.1의 결제 흐름 선언. 셋 중 우리가 대응할 수 있는 것은 `upfront`뿐이고,
-    // 부재는 스펙 기본값 `authorization`이다.
+    // 스펙 §6.1의 결제 흐름 선언. 우리가 결제할 수 있는 흐름은 두 개다 — 이 레일의
+    // `upfront`와 스펙 기본값 `authorization` — 이고, 선언의 부재와 `null`은 그 기본값을
+    // 뜻한다(참조 구현 `@x402/core` 2.20.0의 스키마는 선택 칸의 null을 `.nullish()`로
+    // 부재와 같이 접는다).
     //
-    // 부재를 통과시키는 이유: `authorization`은 판매자가 먼저 자원을 주고 나중에
-    // 정산하는 흐름이라 정산 위험을 판매자가 스스로 진다. 우리 에이전트가 서명하는
-    // 일회용 leaf의 손실 가능성은 그대로이므로 거절할 근거가 없다 — 그리고 실제
-    // 카운터파티가 그렇게 생긴다: `@metamask/x402` 0.2.0의 supportedKind 흐름은
-    // 우리 /supported의 `extra`에서 `facilitatorAddresses`만 복사하므로, 그 경로로
-    // 만들어진 제3자 오퍼에는 선언이 아예 없다(x402-conformance.test.ts가 고정한
-    // 측정값). 부재를 거절하면 그 판매자 전부가 죽는다.
+    // `authorization`을 부재와 똑같이 통과시키는 이유: 그 흐름은 판매자가 먼저 자원을
+    // 주고 나중에 정산하는 것이라 정산 위험을 판매자가 스스로 진다. 우리 에이전트가
+    // 서명하는 일회용 leaf의 손실 가능성(금액·만료·redeemer)은 어느 쪽에서도 같으므로
+    // 거절할 근거가 없다. 부재만 허용하고 명시를 거절한다면 판정 기준이 흐름이 아니라
+    // "필드를 적었는지"가 되어, 같은 흐름을 성실히 선언한 판매자만 죽는다 — 그리고
+    // 이 키를 아는 참조 구현이 아직 없으니(`@x402/core` 2.20.0·`@metamask/x402` 0.2.0
+    // 어디에도 `paymentFlow` 문자열이 없다) 값을 싣는 쪽은 스펙을 직접 읽고 쓴
+    // 카운터파티다. 부재가 흔한 것도 측정된 사실이다: `@metamask/x402` 0.2.0의
+    // supportedKind 흐름은 우리 /supported의 `extra`에서 `facilitatorAddresses`만
+    // 복사하므로, 그 경로로 만들어진 제3자 오퍼에는 선언이 아예 없다
+    // (x402-conformance.test.ts가 고정한 측정값).
     //
     // 반면 `escrow`는 나중 청구라는 다른 흐름이고, 이 함수가 돌려주는 결과 유니온이
     // 그 사후 정산을 설명하지 못한다. 알 수 없는 값도 같은 이유로 거절한다.
+    //
+    // 타입은 좁지만 값은 아직 검증되지 않은 판매자 JSON이므로 `unknown`으로 읽는다.
     const declaredFlow: unknown = req.extra.paymentFlow;
-    if (declaredFlow !== undefined && declaredFlow !== "upfront") {
+    if (declaredFlow != null && declaredFlow !== "upfront" && declaredFlow !== "authorization") {
         // 판매자가 준 문자열을 메시지에 넣지 않는 이 파일의 규칙을 지킨다.
         throw new Error("seller declares an unsupported payment flow");
     }

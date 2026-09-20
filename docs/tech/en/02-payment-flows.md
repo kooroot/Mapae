@@ -39,38 +39,56 @@ recipient position in the ERC-20 `transfer` calldata. In manager-to-child
 re-delegation, the child's individual cap and the manager's aggregate cap apply
 simultaneously.
 
-**The offer's `extra`.** An ERC-7710 offer's `extra` carries four fields:
-`assetTransferMethod: "erc7710"` (exact-EVM's official transfer method),
-`facilitatorAddresses` (the trust gate — the agent refuses any offer that does not
-overlap its own allowlist), `delegationManager` (GIWA's manager is in no registry, so
-the in-band advertisement is the only channel a third-party integrator has), and
-`paymentFlow: "upfront"`. The last is the declaration §6.1 of the specification
+**The offer's `extra`.** An ERC-7710 offer's `extra` always carries two fields, plus two
+more when the facilitator advertises them. Always present:
+`assetTransferMethod: "erc7710"` (exact-EVM's official transfer method) and
+`paymentFlow: "upfront"`. The latter is the declaration §6.1 of the specification
 requires: any flow other than the default `authorization` MUST be declared, and Mapae
 hands over the resource only after `/verify` **and** `/settle` have both succeeded.
 Without the declaration a client reading the specification assumes `authorization`
-— served first, settled after — and computes the wrong moment of delivery. Every offer
-this repo builds carries the value, down to the `/supported` kind.
+— served first, settled after — and computes the wrong moment of delivery. The two
+conditional fields are `facilitatorAddresses` (the trust gate — the agent refuses any
+offer that does not overlap its own allowlist) and `delegationManager` (GIWA's manager is
+in no registry, so the in-band advertisement is the only channel a third-party integrator
+has); the middleware copies both verbatim from `/supported`. Every offer this repo builds
+declares the flow, down to the `/supported` kind.
 
-**The reading side tolerates the declaration's absence.** Absence is the default
-`authorization`, a flow in which the seller carries the settlement risk itself, so it
-does not change what a one-shot leaf our agent signs can lose. And absence is what a
-real counterparty produces: the supportedKind flow in `@metamask/x402` 0.2.0 copies
-only `facilitatorAddresses` out of `/supported`'s `extra`, so an offer built that way
-declares no flow at all (a measurement the conformance test pins). `escrow`, by
-contrast, is a different flow — a later claim — that this client's result cannot
-describe, so it is refused together with any unknown value. On the facilitator side
-`paymentFlow` is part of the echo comparison: our seller's offers always carry the
-value, so a payload that drops or rewrites the field accepted terms other than the
-ones offered, and is `invalid_payload`.
+**The reading side accepts the default flow in three shapes.** Two flows are payable —
+this rail's `upfront` and the specification's default `authorization` — and both an absent
+declaration and an explicit `null` mean that default (the reference schemas in
+`@x402/core` 2.20.0 fold a null optional field into absence with `.nullish()`).
+`authorization` has the seller serve first and settle after, so the seller carries the
+settlement risk itself and nothing changes about what a one-shot leaf our agent signs can
+lose. Splitting payment from refusal on whether the field was written would make the test
+"did you spell it out?" rather than "which flow is it?", and would kill only the sellers
+who declared the same flow honestly. Absence is also what a real counterparty produces:
+the supportedKind flow in `@metamask/x402` 0.2.0 copies only `facilitatorAddresses` out of
+`/supported`'s `extra`, so an offer built that way declares no flow at all (a measurement
+the conformance test pins). `escrow`, by contrast, is a different flow — a later claim —
+that this client's result cannot describe, so it is refused together with any unknown
+value.
+
+**The facilitator applies the same rule.** This rail settles in place — `/settle` follows
+`/verify` and redeems there — so there is no code that could perform `escrow`, and such an
+offer is refused as `invalid_payment_requirements` even when the offer and its echo agree.
+Were the protection on the client alone, we would settle on the spot a payment the seller
+declared as a later claim. `paymentFlow` is also part of the echo comparison: our seller's
+offers always carry the value, so a payload that drops or rewrites the field accepted
+terms other than the ones offered, and is `invalid_payload`.
 
 **The 402's `extensions` is an envelope.** In the specification `extensions` is a map
 from extension name to `{info, schema}` — `info` is what the extension itself declares,
 `schema` a JSON Schema describing the shape a client echoes back in its payload. The
 hosted shop publishes one entry, `mapae`, and puts the seller and the manifest URL under
 its `info`. There is no `schema`: nothing there asks the client to echo anything. The
-payment **payload** has no `extensions` slot at all — a client echoes only the extensions
-it actually *used*, and no payer here uses one; the slot arrives with the first extension
-that needs it. `/supported`'s identically named `extensions` is a different thing: the
+payment **payload** has no `extensions` slot at all, because nothing here produces one: the
+specification has a client echo only the extensions it actually *used*, and no payer here
+uses one, so the slot arrives with the first extension that needs it. The reference client
+is looser than that rule — `mergeExtensions` in `@x402/core` 2.20.0 returns the seller's
+whole map when the client adds nothing of its own, so a reference-stack payer paying the
+hosted shop echoes the `mapae` entry back unused. The facilitator's validator compares the
+fields it names instead of enumerating the object's keys, so that entry is ignored rather
+than refused. `/supported`'s identically named `extensions` is a different thing: the
 **list** of extensions the facilitator supports, which today is empty.
 
 The sequence below shows three paths for one and the same delegation — a normal

@@ -420,6 +420,40 @@ describe("x402 §9 refusal vocabulary at the D4 boundary", () => {
         }
     });
 
+    /** The control request carrying one flow declaration on the offer and on its echo alike. */
+    function flowingBothSides(paymentFlow: unknown): unknown {
+        const base = request();
+        const extra = {...base.paymentRequirements.extra, paymentFlow};
+        return {
+            ...base,
+            paymentRequirements: {...base.paymentRequirements, extra},
+            paymentPayload: {
+                ...base.paymentPayload,
+                accepted: {...base.paymentPayload.accepted, extra},
+            },
+        };
+    }
+
+    test("a flow this rail cannot perform is refused before any chain call", () => {
+        // 에코가 오퍼와 완전히 일치해도, 우리가 수행할 수 없는 흐름을 내건 오퍼는 조건이
+        // 틀린 것이다. 클라이언트만 escrow를 거절하고 이 경계가 받아주면, 판매자가 페이어
+        // 에게 "나중 청구"라고 선언한 오퍼를 우리가 그 자리에서 redeem하게 된다.
+        for (const paymentFlow of ["escrow", "upfront-ish", "", 1]) {
+            expect(reason(flowingBothSides(paymentFlow)), JSON.stringify(paymentFlow)).toBe(
+                "invalid_payment_requirements",
+            );
+        }
+    });
+
+    test("the spec's default flow is one this rail can perform", () => {
+        // authorization은 판매자가 먼저 주고 나중에 정산하는 흐름이라, 정산 요청이 왔을 때
+        // 이 경계가 할 일은 upfront와 같다. null은 참조 구현이 선택 칸에서 부재로 접는
+        // 값이다. 클라이언트도 같은 두 값을 결제한다.
+        for (const paymentFlow of ["authorization", null]) {
+            expect(reason(flowingBothSides(paymentFlow)), JSON.stringify(paymentFlow)).toBe("");
+        }
+    });
+
     test("both sides declaring nothing is still one offer", () => {
         // 선언이 전파되지 않은 제3자 오퍼: 퍼실리테이터는 오퍼와 에코가 서로 같은지만
         // 따지며, 흐름 선언을 요구하지는 않는다.

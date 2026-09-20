@@ -45,11 +45,21 @@ export interface Erc7710Extra {
      * `upfront`다. 선언이 없으면 스펙을 읽는 클라이언트는 기본값 `authorization`
      * — 먼저 주고 나중에 정산 — 을 가정하고, 받을 시점을 잘못 계산한다.
      *
-     * 이 저장소가 만드는 오퍼는 예외 없이 이 값을 싣는다. 그런데도 *읽는* 쪽이
-     * 부재를 허용하는 이유는 {@link Erc7710SupportedPayload}와 `assertErc7710Offer`의
-     * 주석에 적어 두었다.
+     * 이 저장소가 만드는 오퍼는 예외 없이 `"upfront"`를 싣고(빠뜨림은 `x402.test.ts`가
+     * `extra` 정확 일치로 잡는다), 그래서 *쓰는* 쪽에는 사실상 리터럴이다. 그런데도
+     * 타입이 선택이고 유니온인 것은 *읽는* 쪽의 사실을 적은 것이다 — 우리가 읽는
+     * 오퍼에는 이 세 모습이 모두 실제로 온다:
+     *
+     *   - 부재: `@metamask/x402` 0.2.0의 supportedKind 흐름은 `/supported`의 `extra`에서
+     *     `facilitatorAddresses`만 복사한다(`x402-conformance.test.ts`가 고정한 측정값).
+     *   - `null`: 참조 구현은 선택 칸의 null을 부재와 같이 접는다(`@x402/core` 2.20.0의
+     *     스키마는 `.nullish()`를 쓴다).
+     *   - `"authorization"`: 기본값을 성실히 적은 판매자.
+     *
+     * `escrow`는 이 유니온에 없다. `assertErc7710Offer`와 `validateDelegatedPayment`가
+     * 거절하는 값이라 검증을 통과한 오퍼에는 있을 수 없다.
      */
-    paymentFlow: "upfront";
+    paymentFlow?: "upfront" | "authorization" | null;
     /**
      * Optional facilitator redeemer allowlist. A delegated agent intersects this
      * list with its own allowlist before signing a payment-specific leaf delegation.
@@ -162,10 +172,17 @@ export interface Erc7710DelegationPayload {
  * requirements are embedded under `accepted`, which is how the facilitator
  * resolves which scheme handler to use.
  *
- * Nor is there an `extensions` slot. A client echoes only the extensions it actually
- * *used*, and no payer in this repo uses one — the slot arrives together with the first
- * extension that needs it, and writing the echo before then would be a guess about a
- * shape no extension has asked for.
+ * Nor is there an `extensions` slot, because nothing here produces one: the spec has a
+ * client echo the extensions it actually *used*, and no payer in this repo uses one. The
+ * slot arrives together with the first extension that needs it; writing the echo before
+ * then would be a guess about a shape no extension has asked for.
+ *
+ * The reference client is looser than that rule — `@x402/core` 2.20.0 `mergeExtensions`
+ * (dist/esm/client/index.mjs:283) returns the seller's whole map when the client adds
+ * nothing of its own, so a reference-stack payer paying our hosted shop echoes the
+ * `mapae` entry back without ever using it. That reaches us as an unnamed key, and the
+ * facilitator's validator compares the fields it names instead of enumerating the object,
+ * so it is ignored rather than refused.
  */
 export interface PaymentPayload {
     x402Version: typeof X402_VERSION;
