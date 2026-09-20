@@ -23,16 +23,44 @@
 
 | | 직접 결제 (`packages/shared` 오류 모델) | 위임 결제 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
-| 외부 응답 | `SettlementError._tag` + `describe()` 원인 | `delegation_rejected` / `settlement_unknown` 등 **불투명한 사유** |
+| 외부 응답 | `SettlementError._tag` + `describe()` 원인 | x402 v2 §9의 **닫힌 낱말** — `invalid_payload`, `settlement_pending`, `delegation_rejected` 등. 사유의 문장은 나가지 않는다 |
 | 상태 코드 | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |
 | 클라이언트 분기 | 태그 | `DelegatedPaymentFailureCode` (에이전트 측 자체 분류) |
 
-위임 경로가 불투명한 것은 위협 모델 때문이다. 실패 사유를 상세히 반환하면
+위임 경로가 낱말만 내보내는 것은 위협 모델 때문이다. 실패 사유를 문장으로 반환하면
 공격자가 응답만으로 caveat 경계 — 남은 한도, 만료 여부, 재위임 구조 — 를 탐색할
 수 있다. 원인은 서버 로그로 간다. `redactForLog`는 revert 사유
 (`ERC20PeriodTransferEnforcer:transfer-amount-exceeded`)는 남기고, viem이 에러에
 포함시키는 bearer 길이의 hex(서명된 permission context)는 크기만 남기고
 제거한다. 운영자는 원인을 보고, 호출자는 보지 못한다.
+
+## 거절 낱말은 §9의 것이다
+
+facilitator의 거절 사유는 x402 v2 §9 어휘에서만 고른다. `/verify`의 `invalidReason`,
+`/settle`의 `errorReason`, `/settle`이 원장에 남기는 `rejected` 행의 `errorCode`가 같은
+문자열이다 — 한 분류(`describeFailure`)를 세 소비자가 나눠 읽으므로, 구매자가 받은 이유와
+운영자가 세는 코드가 어긋날 수 없다.
+
+| 낱말 | 무엇이 내는가 |
+|---|---|
+| `invalid_x402_version` | 요청 또는 payload의 `x402Version`이 2가 아니다 |
+| `invalid_payload` | 요청이 스스로에 대해 하는 말이 틀렸다 — 객체가 아님, 본문을 읽을 수 없음(content-type·크기·`JSON.parse`), `paymentPayload`·`paymentRequirements`·`accepted`·`payload` 누락, `accepted`가 판매자 오퍼와 정확히 같지 않음, `delegationManager` 비허용, `delegator`·`permissionContext` 형식·디코드·루트 위임자, 주장한 delegator와 서명된 루트 payer 불일치 |
+| `invalid_payment_requirements` | 오퍼 자신의 조건 — 자산, `payTo`, `maxTimeoutSeconds`(1–300), `amount`, 안전 상한, 이 facilitator가 redeemer로 광고되지 않음 |
+| `unsupported_scheme` | `scheme`이 `exact`가 아니거나 `extra.assetTransferMethod`가 `erc7710`이 아니다 |
+| `invalid_network` | GIWA Sepolia가 아닌 체인 |
+| `invalid_transaction_state` | `/verify`만 낸다 — 이 결제의 정산이 이미 온체인에서 실패로 끝났다(채굴된 revert, 판매자 앞 `Transfer` 없는 영수증). 재시뮬레이션이 유효하게 만들 수 없다 |
+| `settlement_pending` | `/settle`만 낸다 — 원래 거래는 있고 결과를 모른다. 언제나 비어 있지 않은 `transaction`과 함께 |
+| `unexpected_verify_error` / `unexpected_settle_error` | 위 어디에도 속하지 않는 예외 — 우리 쪽 결함이다. 브로드캐스트 전에 던졌으므로 청구된 것은 없지만, 위임에 대한 판정도 아니다 |
+
+`delegation_rejected`는 §9 밖의 유일한 낱말이고, 그래서 정의가 좁다: facilitator가 라이브
+상태로 위임을 검사했고 체인이 redeem을 거부했다 — 디코드된 시뮬레이션 revert(노드가
+`-32000`으로 보고해 viem에 revert 데이터가 없는 `ExecutionRevertedError`까지), 또는
+`MAX_REDEMPTION_GAS`를 넘는 가스. "viem 오류면 전부"가 아니다: 우리 인코딩 실수 같은
+다른 viem 오류는 `unexpected_*_error`다 — 체인이 본 적 없는 위임을 구매자가 다시 서명하러
+가서는 안 된다. 그날 가스 예산이 모자란 `budget_exhausted`·`payer_budget_exhausted`도 §9
+밖이고, 위임이 아니라 우리 릴레이어의 하루가 거절한 것이다. `rate_limited`와
+`facilitator_not_ready`는 거절조차 아니라 "요청을 보지 않았다"이고, 판매자 사다리가
+503으로 읽는다.
 
 ## 상태 부재의 판정 규칙
 
@@ -102,6 +130,15 @@
 | `success !== true` | `failed` 422 | 명시적 거절 — 자금이 이동하지 않았다 |
 | `success === true`, payer 불일치 | `unknown` 504 | 브로드캐스트는 주장되었으나 신원이 어긋났고, 잔액은 확인되지 않았다 |
 | `success === true`, payer 일치 | `settled` 200 | |
+
+`transaction`은 모든 `/settle` 응답에 있다 — 브로드캐스트한 해시, 아무것도
+브로드캐스트하지 않았으면 `""`. x402 v2가 요구하는 모양이고, `settlement_pending`은 그
+필수 해시 없이 나갈 수 없다.
+
+`replayed: true`는 호출 전에 이미 그 결제의 저널 행이 있었다는 뜻이다 — 답은 앞선 시도의
+것이고 새로 브로드캐스트한 것은 없다(재개된 청구는 그 행이 이미 이름 댄 바이트를 다시
+보내므로 해시가 같다). 되찾은 정산과 갓 한 정산은 그 표시 말고는 같은 본문이라, 판매자는
+이것으로 한 판매를 한 번만 센다.
 
 이 경로는 fork에서 강제 재현할 수 있다 — facilitator의 영수증 대기를 1ms로
 줄이면 브로드캐스트 후 미확정 분기를 태운다.

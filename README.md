@@ -440,7 +440,9 @@ caps, and settlement are out of its reach by construction.
 Transaction hashes are persisted before submission; the original receipt is recovered
 across restarts, and successful ledger entries are counted once. Signed transactions
 and permission payloads are never stored. An uncertain send remains
-`settlement_pending`, with its hash, rather than authorizing another transaction. A facilitator
+`settlement_pending`, with its hash, rather than authorizing another transaction. A body
+answered out of that journal rather than from a fresh broadcast is marked `replayed`, so
+one sale is counted once. Every refusal is an x402 v2 §9 word. A facilitator
 signer still runs in one process. See the [service documentation](apps/facilitator-erc7710/README.md)
 for schema 6 rollout requirements and recovery boundaries.
 

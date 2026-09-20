@@ -49,6 +49,43 @@ payer는 위임이 허락하는 만큼 정산을 요구할 수 있다. 그래서
 언제나 해시와 함께 나간다: 저널이 브로드캐스트 전에 해시를 적으므로 해시 없는 미확정은
 존재하지 않는다.
 
+같은 결제의 저널 행이 호출 전에 이미 있었으면 응답에 `replayed: true`가 붙는다 —
+답은 앞선 시도의 것이고 새로 브로드캐스트한 것은 없다(재개된 청구는 그 행이 이미 이름 댄
+바이트를 다시 보내므로 해시가 같다). 없으면 이 호출이 정산한 것이거나 브로드캐스트 전에
+실패한 것이다. 되찾은 정산과 갓 한 정산은 이 표시 말고는 같은 본문이라, 판매자는 이것으로
+한 판매를 한 번만 센다. 같은 결제로 몰린 동시 호출은 하나의 작업으로 합쳐지므로 모두 첫
+호출의 값을 읽는다.
+
+## 거절 낱말
+
+거절 사유는 x402 v2 §9 어휘에서만 고른다. `/verify`의 `invalidReason`, `/settle`의
+`errorReason`, `/settle`이 원장에 남기는 `rejected` 행의 `errorCode`가 같은 문자열이다 —
+한 분류(`describeFailure`)를 세 소비자가 나눠 읽으므로 구매자가 받은 이유와 운영자가
+세는 코드가 어긋날 수 없다. 사유의 *문장*은 운영자 로그에만 남는다: 위임이 왜 거절됐는지
+배운 호출자는 그 위임의 caveat 경계를 배운다.
+
+| 낱말 | 무엇이 내는가 |
+| --- | --- |
+| `invalid_x402_version` | 요청 또는 payload의 `x402Version`이 2가 아니다 |
+| `invalid_payload` | 요청이 스스로에 대해 하는 말이 틀렸다 — 객체가 아님, 본문을 읽을 수 없음(content-type·크기·`JSON.parse`), `paymentPayload`·`paymentRequirements`·`accepted`·`payload` 누락, `accepted`가 판매자 오퍼와 정확히 같지 않음, `delegationManager` 비허용, `delegator`·`permissionContext` 형식·디코드·루트 위임자, 주장한 delegator와 서명된 루트 payer 불일치 |
+| `invalid_payment_requirements` | 오퍼 자신의 조건 — 자산, `payTo`, `maxTimeoutSeconds`(1–300), `amount`, `MAX_SETTLEMENT_AMOUNT` 안전 상한, 이 facilitator가 redeemer로 광고되지 않음 |
+| `unsupported_scheme` | `scheme`이 `exact`가 아니거나 `extra.assetTransferMethod`가 `erc7710`이 아니다 |
+| `invalid_network` | GIWA Sepolia가 아닌 체인 |
+| `invalid_transaction_state` | `/verify`만 낸다 — 이 결제의 정산이 이미 온체인에서 실패로 끝났다(채굴된 revert, 판매자 앞 `Transfer` 없는 영수증). 재시뮬레이션이 유효하게 만들 수 없다 |
+| `settlement_pending` | `/settle`만 낸다 — 원래 거래는 있고 결과를 모른다. 언제나 비어 있지 않은 `transaction`과 함께 |
+| `unexpected_verify_error` / `unexpected_settle_error` | 위 어디에도 속하지 않는 예외 — 우리 쪽 결함이다. 브로드캐스트 전에 던졌으므로 청구된 것은 없지만 위임에 대한 판정도 아니다 |
+| `delegation_rejected` | §9 밖의 유일한 낱말 — 아래 |
+| `rate_limited` / `facilitator_not_ready` | 거절이 아니라 "요청을 보지 않았다" — 위 "요청 제한", 아래 "`/health`" |
+| `budget_exhausted` / `payer_budget_exhausted` | 그날 가스 예산 — 위 "일일 가스 예산" |
+
+`delegation_rejected`는 §9 밖에 있으므로 정의가 좁다: facilitator가 라이브 상태로 위임을
+검사했고 체인이 redeem을 거부했다 — 디코드된 시뮬레이션 revert(노드가 `-32000`으로 보고해
+viem에 revert 데이터가 없는 `ExecutionRevertedError`까지), 또는 `MAX_REDEMPTION_GAS`를
+넘는 가스. "viem 오류면 전부"가 아니다: 우리 인코딩 실수 같은 다른 viem 오류는
+`unexpected_*_error`이고, 체인이 본 적 없는 위임을 구매자가 다시 서명하러 가서는 안 된다.
+낱말이 하나인 것도 의도다 — 어느 caveat이 걸렸는지는 revert 문장이 말하고, 그것은
+호출자가 탐색할 경계다.
+
 그날 쓴 총액은 `STORE_PATH`에 남아 재시작해도 이어진다. 죽였다 살린 뒤 `/metrics`가
 같은 값을 내는지는 `restart.test.ts`가 파일 스토어를 닫고 다시 열어 확인한다.
 
@@ -60,7 +97,10 @@ chain, signer)를 전송 전에 저장한다. 서명 원문·permission context�
 재서명하고, **해시가 원래 값과 정확히 같을 때만** 동일 거래를 재전송한다. 기록 후 전송 전
 프로세스가 죽어도 이 경로로 복구한다. 재시작 시 노드가 모르는 예약 nonce도 재사용하지 않는다.
 
-재요청의 `/verify`는 기록된 결제를 재시뮬레이션하지 않는다. `/settle`은 영수증 상태와
+재요청의 `/verify`는 기록된 결제를 재시뮬레이션하지 않는다 — 단, 그 행이 이미 온체인에서
+실패로 끝났으면(채굴된 revert, 판매자 앞 `Transfer` 없는 영수증) 그것이 판정이므로
+`invalid_transaction_state`로 거절한다. 성공한 행과 아직 미확정인 행은 `/settle`이 복구할
+몫으로 남긴다. `/settle`은 영수증 상태와
 판매자 앞 정확한 `Transfer`를 확인한다. 성공·채굴 revert·미입금 결과 모두 원장에 한 번만
 기록하고, 실제 비용(L1 수수료 포함)을 **최초 예약한 UTC 날짜**의 두 예산에 원자적으로
 반영한다. 자정이나 재시작 뒤에도 같다. 원장 쓰기 실패는 미확정 기록을 남겨 재시도한다.
@@ -209,7 +249,7 @@ bun run dev
 ## 검증
 
 ```bash
-bun test apps/facilitator-erc7710   # 요청 제한·payer 몫·정산 실패 분류·/health 분류 + /metrics 순수 함수·원장 보존 + 재시작 증명
+bun test apps/facilitator-erc7710   # 요청 제한·payer 몫·§9 거절 낱말·재생 표시·/health 분류 + /metrics 순수 함수·원장 보존 + 재시작 증명
 ```
 
 실제 프로세스 장애 검증은 저장소 루트에서 `bun run test:e2e:recovery`로 실행한다.

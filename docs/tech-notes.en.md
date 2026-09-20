@@ -495,17 +495,47 @@ gone; the model and its tests remain. The ERC-7710 delegated path behaves differ
 
 | | Direct payment (`packages/shared` error model) | Delegated payment (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
-| External response | `SettlementError._tag` + `describe()` cause | **Opaque reasons** such as `delegation_rejected` / `settlement_unknown` |
+| External response | `SettlementError._tag` + `describe()` cause | x402 v2 §9's **closed words** — `invalid_payload`, `settlement_pending`, `delegation_rejected` and the rest. The reason's sentence never goes out |
 | Status code | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |
 | Client branching | Tag | `DelegatedPaymentFailureCode` (the agent's own classification) |
 
-The delegated path is opaque because of the threat model. Returning detailed
-failure reasons would let an attacker probe the caveat boundaries — remaining
-allowance, expiry status, re-delegation structure — from responses alone. The
+The delegated path sends out words only because of the threat model. Returning
+failure reasons as sentences would let an attacker probe the caveat boundaries —
+remaining allowance, expiry status, re-delegation structure — from responses alone. The
 cause goes to the server log. `redactForLog` keeps the revert reason
 (`ERC20PeriodTransferEnforcer:transfer-amount-exceeded`) and removes the
 bearer-length hex viem embeds in the error (the signed permission context),
 leaving only its size. The operator sees the cause; the caller does not.
+
+### The refusal words are §9's
+
+The facilitator picks its refusal reasons from the x402 v2 §9 vocabulary and nowhere
+else. `/verify`'s `invalidReason`, `/settle`'s `errorReason` and the `errorCode` on the
+`rejected` row `/settle` writes to the ledger are the same string — one classification
+(`describeFailure`) read by three consumers, so the reason a buyer is given and the code
+an operator counts can never disagree.
+
+| Word | What produces it |
+|---|---|
+| `invalid_x402_version` | `x402Version` on the request or the payload is not 2 |
+| `invalid_payload` | Something the request says about itself is wrong — not an object, a body that cannot be read (content-type, size, `JSON.parse`), a missing `paymentPayload`/`paymentRequirements`/`accepted`/`payload`, an `accepted` that is not exactly the seller's offer, a `delegationManager` that is not allowlisted, the shape/decoding/root delegator of `delegator` and `permissionContext`, a claimed delegator that is not the signed root payer |
+| `invalid_payment_requirements` | The offer's own terms — asset, `payTo`, `maxTimeoutSeconds` (1–300), `amount`, the safety cap, this facilitator not being advertised as a redeemer |
+| `unsupported_scheme` | `scheme` is not `exact`, or `extra.assetTransferMethod` is not `erc7710` |
+| `invalid_network` | A chain that is not GIWA Sepolia |
+| `invalid_transaction_state` | `/verify` only — this payment's settlement already ended on chain as a failure (a mined revert, a receipt with no `Transfer` to the seller). Re-simulating cannot make it valid |
+| `settlement_pending` | `/settle` only — the original transaction exists and its result is unknown. Always with a non-empty `transaction` |
+| `unexpected_verify_error` / `unexpected_settle_error` | An exception that is none of the above — a defect of ours. It threw before the broadcast, so nobody was charged, but nothing about it is a verdict on the delegation either |
+
+`delegation_rejected` is the one word outside §9, and its definition is narrow for that
+reason: the facilitator examined the delegation against live state and the chain refused
+to redeem it — a decoded simulation revert (including the `ExecutionRevertedError` shape a
+node reports under a plain `-32000`, leaving viem no revert data to decode), or gas above
+`MAX_REDEMPTION_GAS`. It is not "any viem error": another viem error, such as an encoding
+mistake of ours, is `unexpected_*_error` — a buyer must not be sent to re-sign a grant the
+chain never saw. `budget_exhausted` and `payer_budget_exhausted`, the day's gas budget,
+are outside §9 too: what refused was our relayer's day, not the delegation. `rate_limited`
+and `facilitator_not_ready` are not refusals at all but "the request was never looked at",
+and the seller's ladder reads them as 503.
 
 ### How absent state is judged
 
@@ -583,6 +613,16 @@ by producer and consumer alike. The decision ladder leans toward `unknown`.
 | `success !== true` | `failed` 422 | Explicit refusal — no funds moved |
 | `success === true`, payer mismatch | `unknown` 504 | A broadcast was claimed but the identity did not line up, and the balance was not confirmed |
 | `success === true`, payer match | `settled` 200 | |
+
+`transaction` is on every `/settle` response — the broadcast hash, or `""` when nothing
+was broadcast. That is the shape x402 v2 requires, and `settlement_pending` cannot go out
+without the mandatory hash.
+
+`replayed: true` means a journal row for this payment already existed before the call: the
+answer belongs to an earlier attempt and nothing new was broadcast (a resumed claim
+re-sends the very bytes that row already named, so the hash is the same). A recovered
+settlement and a fresh one are otherwise the same body, so this is what lets the seller
+count one sale once.
 
 This path can be forced on a fork — shrinking the facilitator's receipt wait to
 1ms exercises the unconfirmed-after-broadcast branch.
