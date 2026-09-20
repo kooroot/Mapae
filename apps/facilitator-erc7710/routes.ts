@@ -1,7 +1,7 @@
 import {Hono, type Context} from "hono";
 import type {Address, Hex} from "viem";
 import {GIWA_SEPOLIA_CAIP2, redactForLog} from "@mapae/shared";
-import type {Erc7710SettleResponse} from "@mapae/delegation";
+import {PaymentValidationError, type Erc7710SettleResponse} from "@mapae/delegation";
 import {describeFailure, SETTLE_NOT_READY, VERIFY_NOT_READY} from "./guards.js";
 
 /** Shared by production and the hermetic HTTP/Anvil harness; policy validation is mandatory. */
@@ -18,8 +18,9 @@ export function createPaymentRoutes<P extends {payer: Address; paymentIntentId: 
             return c.json({isValid: true, payer: payment.payer});
         } catch (error) {
             console.error(`[verify] failed — ${redactForLog(error)}`);
-            if (describeFailure(error).outcome === "not_ready") return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
-            return c.json({isValid: false, invalidReason: "delegation_rejected"});
+            const failure = describeFailure(error, "verify");
+            if (failure.outcome === "not_ready") return c.json(VERIFY_NOT_READY.body, VERIFY_NOT_READY.status);
+            return c.json({isValid: false, invalidReason: failure.errorCode});
         }
     });
     app.post("/settle", async (c) => {
@@ -30,7 +31,7 @@ export function createPaymentRoutes<P extends {payer: Address; paymentIntentId: 
             return c.json(result);
         } catch (error) {
             console.error(`[settle] failed — ${redactForLog(error)}`);
-            const failure = describeFailure(error);
+            const failure = describeFailure(error, "settle");
             if (failure.outcome === "not_ready") return c.json(SETTLE_NOT_READY.body, SETTLE_NOT_READY.status);
             // `transaction` is always present on the wire: the pending hash, or "" for a
             // rejection that broadcast nothing.
@@ -40,11 +41,22 @@ export function createPaymentRoutes<P extends {payer: Address; paymentIntentId: 
     });
     return app;
 }
+
+/**
+ * A body that cannot be read is `invalid_payload` (x402 §9), answered as a 200 with the
+ * route's refusal shape like every other refusal: a 4xx from `/settle` would reach the
+ * seller as "the answer was lost" for a request that was never parsed.
+ */
 async function readJson(c: Context): Promise<unknown> {
-    if (!c.req.header("content-type")?.toLowerCase().startsWith("application/json")) throw new Error("content-type must be JSON");
+    const invalid = (message: string) => new PaymentValidationError("invalid_payload", message);
+    if (!c.req.header("content-type")?.toLowerCase().startsWith("application/json")) throw invalid("content-type must be JSON");
     const length = Number(c.req.header("content-length") ?? "0");
-    if (Number.isFinite(length) && length > 150000) throw new Error("request body too large");
+    if (Number.isFinite(length) && length > 150000) throw invalid("request body too large");
     const text = await c.req.text();
-    if (!text.length || text.length > 150000) throw new Error("request body empty or too large");
-    return JSON.parse(text) as unknown;
+    if (!text.length || text.length > 150000) throw invalid("request body empty or too large");
+    try {
+        return JSON.parse(text) as unknown;
+    } catch {
+        throw invalid("request body is not JSON");
+    }
 }

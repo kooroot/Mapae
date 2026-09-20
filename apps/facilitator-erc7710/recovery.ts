@@ -20,10 +20,18 @@ export interface RecoveryOperations<T extends RecoveryReceipt> {
     failure: (receipt: T) => string | undefined;
 }
 export type RecoveryPayment = Pick<SettlementInput, "paymentIntentId" | "payer" | "payTo" | "amountBase">;
+/**
+ * A resolved row and whether it predates the call. `replayed` is true when the journal
+ * already held this intent before the call began, terminal or not: the answer belongs to
+ * an earlier attempt, and nothing new was broadcast — a resumed claim re-sends the bytes
+ * that row already named, never a second transaction. Concurrent calls coalesced into one
+ * operation share that operation's answer, so all of them read the first one's `replayed`.
+ */
+export interface SettlementResult {record: SettlementRecord; replayed: boolean}
 
 /** Owns one signer's prepare/claim queue. The DB is the authority for nonces and budgets. */
 export class SettlementRecovery {
-    readonly #inflight = new PaymentIntentSingleFlight<SettlementRecord>();
+    readonly #inflight = new PaymentIntentSingleFlight<SettlementResult>();
     #preparing: Promise<unknown> = Promise.resolve();
     constructor(
         private readonly journal: SettlementJournal,
@@ -33,19 +41,19 @@ export class SettlementRecovery {
         private readonly now: () => number = Date.now,
     ) {}
 
-    transaction(intent: Hex): Hex | undefined {
-        try {return this.journal.get(intent)?.txHash;}
+    /** The journal's row for this intent, if any. An unreadable journal is not-ready, never a verdict. */
+    known(intent: Hex): SettlementRecord | null {
+        try {return this.journal.get(intent);}
         catch (error) {throw new SettlementStorageUnavailable(error);}
     }
 
-    settle<T extends RecoveryReceipt>(payment: RecoveryPayment, operations: RecoveryOperations<T>): Promise<SettlementRecord> {
+    settle<T extends RecoveryReceipt>(payment: RecoveryPayment, operations: RecoveryOperations<T>): Promise<SettlementResult> {
         return this.#inflight.run(payment.paymentIntentId, async () => {
+            let replayed = false;
             // Serialize only preparation and the atomic claim, not receipt waiting.
             const preparing = this.#preparing.then(async () => {
-                let existing: SettlementRecord | null;
-                try {existing = this.journal.get(payment.paymentIntentId);}
-                catch (error) {throw new SettlementStorageUnavailable(error);}
-                if (existing) return existing;
+                const existing = this.known(payment.paymentIntentId);
+                if (existing) {replayed = true; return existing;}
                 const nonce = this.journal.nextNonce(this.signer, this.chainId, await operations.pendingNonce());
                 const serialized = await operations.prepare(nonce);
                 const tx = parseTransaction(serialized);
@@ -64,7 +72,7 @@ export class SettlementRecovery {
             });
             this.#preparing = preparing.catch(() => {});
             const record = await preparing;
-            if (record.terminal) return record;
+            if (record.terminal) return {record, replayed};
             try {
                 let receipt = await operations.receipt(record.txHash);
                 if (!receipt) {
@@ -79,8 +87,9 @@ export class SettlementRecovery {
                 if (typeof receipt.gasUsed !== "bigint" || receipt.gasUsed <= 0n || typeof receipt.effectiveGasPrice !== "bigint") throw new Error("missing receipt fees");
                 const actualCost = readReceiptFeeField(receipt.gasUsed) * readReceiptFeeField(receipt.effectiveGasPrice)
                     + readReceiptFeeField(receipt.l1Fee);
-                return this.journal.finish(record.paymentIntentId, {at: this.now(), gasUsed: receipt.gasUsed,
+                const finished = this.journal.finish(record.paymentIntentId, {at: this.now(), gasUsed: receipt.gasUsed,
                     actualCost, errorCode: operations.failure(receipt)});
+                return {record: finished, replayed};
             } catch {
                 // The claim is durable and the transaction may be on the network; only
                 // our wait, our reconstruction, or the terminal write gave up. Includes

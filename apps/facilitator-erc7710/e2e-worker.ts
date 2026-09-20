@@ -2,6 +2,7 @@
 import {createPublicClient, createWalletClient, http, TransactionReceiptNotFoundError, type Hex} from "viem";
 import {privateKeyToAccount} from "viem/accounts";
 import {anvil} from "viem/chains";
+import {PaymentValidationError} from "@mapae/delegation";
 import {openStore} from "@mapae/store";
 import {SettlementRecovery} from "./recovery.js";
 import {createPaymentRoutes} from "./routes.js";
@@ -17,14 +18,16 @@ const recovery = new SettlementRecovery(store.settlements, account.address, anvi
 const app = createPaymentRoutes({
     validate(body: unknown) {
         const b = body as {id?: string; to?: string};
-        if (!b || !/^0x[0-9a-f]{64}$/.test(b.id ?? "") || !/^0x[0-9a-f]{40}$/.test(b.to ?? "")) throw new Error("invalid fixture");
+        if (!b || !/^0x[0-9a-f]{64}$/.test(b.id ?? "") || !/^0x[0-9a-f]{40}$/.test(b.to ?? "")) {
+            throw new PaymentValidationError("invalid_payload", "invalid fixture");
+        }
         return {paymentIntentId: b.id as Hex, payer: account.address, payTo: b.to as Hex, amountBase: 123n};
     },
     simulate: async () => {},
     async settle(payment) {
         const sign = (e: {nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint}) =>
             wallet.signTransaction({to: payment.payTo, value: payment.amountBase, type: "eip1559", ...e});
-        return settlementResponse(await recovery.settle(payment, {
+        const {record, replayed} = await recovery.settle(payment, {
             pendingNonce: () => client.getTransactionCount({address: account.address, blockTag: "pending"}),
             prepare: (nonce) => sign({nonce, gas: 50000n, maxFeePerGas: 2000000000n, maxPriorityFeePerGas: 1000000000n}),
             restore: sign,
@@ -33,7 +36,8 @@ const app = createPaymentRoutes({
             send: (serializedTransaction) => wallet.sendRawTransaction({serializedTransaction}),
             wait: (hash) => client.waitForTransactionReceipt({hash, timeout: 700, pollingInterval: 50}),
             failure: (receipt) => receipt.status === "reverted" ? "settlement_reverted" : undefined,
-        }));
+        });
+        return settlementResponse(record, replayed);
     },
 });
 const server = Bun.serve({hostname: "127.0.0.1", port: 0, fetch: app.fetch});

@@ -8,6 +8,7 @@ import {
     CLIENT_IP_HEADER,
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
+    PaymentValidationError,
     SETTLEMENT_PENDING,
     assertFrameworkAdminActive,
 } from "@mapae/delegation";
@@ -20,6 +21,7 @@ import {
     ContractFunctionRevertedError,
     ExecutionRevertedError,
     HttpRequestError,
+    InvalidAddressError,
     RpcRequestError,
     TimeoutError,
     type Address,
@@ -27,7 +29,9 @@ import {
 } from "viem";
 import {
     CachedProbe,
+    DELEGATION_REJECTED,
     RATE_WINDOW_MS,
+    RedemptionRejected,
     RpcUnreachableBeforeBroadcast,
     SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
@@ -402,7 +406,7 @@ describe("beforeBroadcast", () => {
                 throw revert;
             }),
         ).rejects.toBe(revert);
-        expect(describeFailure(revert)).toEqual({
+        expect(describeFailure(revert, "settle")).toEqual({
             outcome: "rejected",
             errorCode: "delegation_rejected",
             transaction: "",
@@ -410,13 +414,13 @@ describe("beforeBroadcast", () => {
     });
 
     test("a revert or the gas cap from the same stage passes through untouched — it is the verdict", async () => {
-        const revert = new Error("execution reverted: ERC20TransferAmountEnforcer:allowance-exceeded");
+        const revert = reverted("ERC20TransferAmountEnforcer:allowance-exceeded");
         await expect(
             beforeBroadcast(async () => {
                 throw revert;
             }),
         ).rejects.toBe(revert);
-        const capped = new Error("redemption gas 2000000 exceeds configured cap");
+        const capped = new RedemptionRejected("redemption gas 2000000 exceeds configured cap");
         await expect(
             beforeBroadcast(async () => {
                 throw capped;
@@ -436,6 +440,7 @@ describe("describeFailure", () => {
         const transport = new HttpRequestError({url: RPC, details: "fetch failed"});
         const failure = describeFailure(
             new RpcUnreachableBeforeBroadcast(new Error("simulation failed", {cause: transport})),
+            "settle",
         );
         expect(failure).toEqual({outcome: "not_ready"});
         // The route answers exactly what the readiness middleware answers.
@@ -457,16 +462,70 @@ describe("describeFailure", () => {
         ).toThrow(/settlement_events_outcome/);
     });
 
-    test("a revert from the same stage is a rejection, with a rejected row and no hash", () => {
-        expect(describeFailure(new Error("execution reverted: caveat"))).toEqual({
-            outcome: "rejected",
-            errorCode: "delegation_rejected",
-            transaction: "",
-        });
+    test("a revert or the gas cap is the delegation's own verdict, with a rejected row and no hash", () => {
+        // A decoded revert is the chain having answered, wherever viem nested it, and the
+        // gas cap is the same verdict reached one call later. Both are the Mapae profile's
+        // single word outside §9, because the revert text — which caveat fired — is the
+        // caller's boundary to probe, not ours to hand over.
+        for (const error of [
+            reverted("ERC20PeriodTransferEnforcer:transfer-amount-exceeded"),
+            simulationFailed(new ExecutionRevertedError({message: "execution reverted"})),
+            new RedemptionRejected("redemption gas 2000000 exceeds configured cap"),
+        ]) {
+            expect(describeFailure(error, "settle")).toEqual({
+                outcome: "rejected",
+                errorCode: DELEGATION_REJECTED,
+                transaction: "",
+            });
+        }
+        expect(DELEGATION_REJECTED).toBe("delegation_rejected");
+    });
+
+    test("a §9 refusal carries its own word onto the wire and into the rejected row", () => {
+        // One classification for both consumers, so the reason a buyer is given and the
+        // code the ledger keeps can never disagree about why the payment was refused.
+        for (const reason of [
+            "invalid_payload",
+            "invalid_payment_requirements",
+            "unsupported_scheme",
+            "invalid_network",
+            "invalid_x402_version",
+            "invalid_transaction_state",
+        ] as const) {
+            expect(describeFailure(new PaymentValidationError(reason, "a message for the log"), "verify")).toEqual({
+                outcome: "rejected",
+                errorCode: reason,
+                transaction: "",
+            });
+        }
+    });
+
+    test("anything else is the route's unexpected_*_error, never a verdict nobody formed", () => {
+        // A bug of ours — a bare throw, a viem error that is no revert, a rejection that is
+        // not an Error at all — charged nobody either, but calling it `delegation_rejected`
+        // would send a buyer to re-sign a grant the chain never refused. §9 has one word
+        // per route for exactly this, and which route asked is the only thing that picks it.
+        for (const error of [
+            new Error("boom"),
+            new InvalidAddressError({address: "0xzz"}),
+            "not an error",
+            undefined,
+        ]) {
+            expect(describeFailure(error, "verify")).toEqual({
+                outcome: "rejected",
+                errorCode: "unexpected_verify_error",
+                transaction: "",
+            });
+            expect(describeFailure(error, "settle")).toEqual({
+                outcome: "rejected",
+                errorCode: "unexpected_settle_error",
+                transaction: "",
+            });
+        }
     });
 
     test("a claim whose receipt was not seen is settlement_pending, and always carries its hash", () => {
-        expect(describeFailure(new SettlementPending(HASH))).toEqual({
+        expect(describeFailure(new SettlementPending(HASH), "settle")).toEqual({
             outcome: "error",
             errorCode: SETTLEMENT_PENDING,
             transaction: HASH,
@@ -478,18 +537,18 @@ describe("describeFailure", () => {
         // The journal writes the hash before the broadcast, so the only pending state
         // that ever lacked one was a journal that could not be read — a request that
         // examined nothing and charged nothing, which is what not-ready says.
-        expect(describeFailure(new SettlementStorageUnavailable(new Error("database is locked")))).toEqual({
+        expect(describeFailure(new SettlementStorageUnavailable(new Error("database is locked")), "settle")).toEqual({
             outcome: "not_ready",
         });
     });
 
     test("a budget refusal keeps its own code, as a rejection", () => {
-        expect(describeFailure(new SettlementBudgetExceeded("payer_budget_exhausted"))).toEqual({
+        expect(describeFailure(new SettlementBudgetExceeded("payer_budget_exhausted"), "settle")).toEqual({
             outcome: "rejected",
             errorCode: "payer_budget_exhausted",
             transaction: "",
         });
-        expect(describeFailure(new SettlementBudgetExceeded("budget_exhausted"))).toEqual({
+        expect(describeFailure(new SettlementBudgetExceeded("budget_exhausted"), "settle")).toEqual({
             outcome: "rejected",
             errorCode: "budget_exhausted",
             transaction: "",

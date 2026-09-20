@@ -22,7 +22,12 @@ import {
     decideVerification,
     isVerificationAccepted,
 } from "./facilitator-contract.js";
-import {PaymentIntentSingleFlight, buildDelegatedTransfer, validateDelegatedPayment} from "./x402.js";
+import {
+    PaymentIntentSingleFlight,
+    PaymentValidationError,
+    buildDelegatedTransfer,
+    validateDelegatedPayment,
+} from "./x402.js";
 
 const address = (suffix: number): Address =>
     getAddress(`0x${suffix.toString(16).padStart(40, "0")}`);
@@ -284,6 +289,152 @@ describe("D4 ERC-7710 facilitator boundary", () => {
 });
 
 /**
+ * Every refusal this boundary can form, by the x402 v2 §9 word it puts on the wire.
+ *
+ * The words are the whole vocabulary a caller gets: the messages asserted above stay in
+ * the operator's log, because a caller who learns *why* a delegation was refused learns
+ * its caveat boundaries. Pinning the mapping is what keeps a re-worded refusal from
+ * silently changing the answer — and what keeps a throw that is not one of these from
+ * reaching a route, where it can only be honestly called `unexpected_verify_error`.
+ */
+describe("x402 §9 refusal vocabulary at the D4 boundary", () => {
+    const OPTIONS = {delegationManager: MANAGER, facilitator: FACILITATOR};
+
+    /** The §9 word a refusal carried, or `""` when the validator accepted the request. */
+    function reason(
+        input: unknown,
+        options: Parameters<typeof validateDelegatedPayment>[1] = OPTIONS,
+    ): string {
+        try {
+            validateDelegatedPayment(input, options);
+            return "";
+        } catch (error) {
+            // Re-thrown rather than folded into a word: anything that is not one of these
+            // reaches the route as `unexpected_*_error`, which is a bug of ours and the one
+            // answer a request the boundary did examine must never get.
+            if (!(error instanceof PaymentValidationError)) throw error;
+            return error.reason;
+        }
+    }
+
+    /** The control request with the seller's offer overridden — the echo is left alone. */
+    function offer(overrides: Record<string, unknown>): unknown {
+        const base = request();
+        return {...base, paymentRequirements: {...base.paymentRequirements, ...overrides}};
+    }
+
+    /** The control request with the signed payload overridden. */
+    function signed(overrides: Record<string, unknown>): unknown {
+        const base = request();
+        return {
+            ...base,
+            paymentPayload: {...base.paymentPayload, payload: {...base.paymentPayload.payload, ...overrides}},
+        };
+    }
+
+    test("the control is accepted, so every word below belongs to its own mutation", () => {
+        expect(reason(request())).toBe("");
+    });
+
+    test("a version either envelope disagrees on is invalid_x402_version", () => {
+        expect(reason({...request(), x402Version: 1})).toBe("invalid_x402_version");
+        const base = request();
+        expect(reason({...base, paymentPayload: {...base.paymentPayload, x402Version: 1}})).toBe(
+            "invalid_x402_version",
+        );
+    });
+
+    test("another scheme or asset transfer method is unsupported_scheme, not a malformed field", () => {
+        // A client picks from `accepts` whatever it supports, so a facilitator that speaks
+        // only exact-EVM over ERC-7710 must say which of the two it does not speak — the
+        // caller then offers another kind instead of hunting a field it spelled correctly.
+        expect(reason(offer({scheme: "upto"}))).toBe("unsupported_scheme");
+        expect(
+            reason(offer({extra: {assetTransferMethod: "erc3009", facilitatorAddresses: [FACILITATOR]}})),
+        ).toBe("unsupported_scheme");
+    });
+
+    test("a chain this facilitator does not settle on is invalid_network", () => {
+        expect(reason(offer({network: "eip155:8453"}))).toBe("invalid_network");
+    });
+
+    test("the offer's own terms are invalid_payment_requirements", () => {
+        expect(reason(offer({asset: OTHER_PAYEE}))).toBe("invalid_payment_requirements");
+        expect(reason(offer({payTo: "0x1234"}))).toBe("invalid_payment_requirements");
+        for (const maxTimeoutSeconds of [0, 301, 1.5, "60"]) {
+            expect(reason(offer({maxTimeoutSeconds}))).toBe("invalid_payment_requirements");
+        }
+        for (const amount of ["1_000", "01", "-1", 1_000_000, "0"]) {
+            expect(reason(offer({amount}))).toBe("invalid_payment_requirements");
+        }
+        expect(reason(request(), {...OPTIONS, maxAmount: 999_999n})).toBe("invalid_payment_requirements");
+        // The redeemer list is the seller's. A facilitator absent from it was not asked to
+        // settle this offer, which is a fact about the offer, not about the signed payload.
+        expect(reason(request(), {...OPTIONS, facilitator: OTHER_FACILITATOR})).toBe(
+            "invalid_payment_requirements",
+        );
+    });
+
+    test("everything the request says about itself is invalid_payload", () => {
+        for (const input of [undefined, null, 42, "{}", true]) {
+            expect(reason(input)).toBe("invalid_payload");
+        }
+        const base = request();
+        expect(reason({x402Version: 2, paymentRequirements: base.paymentRequirements})).toBe("invalid_payload");
+        expect(reason({x402Version: 2, paymentPayload: base.paymentPayload})).toBe("invalid_payload");
+        for (const payload of [
+            {x402Version: 2, payload: base.paymentPayload.payload},
+            {x402Version: 2, accepted: base.paymentPayload.accepted},
+        ]) {
+            expect(reason({...base, paymentPayload: payload})).toBe("invalid_payload");
+        }
+        // The echo, the manager allowlist and the payer binding are all claims the payload
+        // makes about itself, against an offer and a signature that decide them.
+        const tampered = request();
+        tampered.paymentPayload.accepted = {...tampered.paymentPayload.accepted, amount: "2"};
+        expect(reason(tampered)).toBe("invalid_payload");
+        expect(reason(signed({delegationManager: OTHER_PAYEE}))).toBe("invalid_payload");
+        expect(reason(signed({delegator: "0x1234"}))).toBe("invalid_payload");
+        for (const permissionContext of ["0x", "not-hex", "0x1234", 7]) {
+            expect(reason(signed({permissionContext}))).toBe("invalid_payload");
+        }
+        const forged = request();
+        forged.paymentPayload.payload.delegator = OTHER_DELEGATOR;
+        expect(reason(forged)).toBe("invalid_payload");
+    });
+
+    test("an attacker-shaped echo is a payload defect, never an unexpected error", () => {
+        // Every address in `accepted` passes a predicate before `getAddress`, because
+        // `accepted` is attacker-controlled JSON and a `getAddress` throw out of the
+        // comparison would leave this boundary answering `unexpected_verify_error` for a
+        // request it did examine — with a rejected ledger row blaming our code for their
+        // JSON. The comparison answers false for garbage instead.
+        const base = request();
+        const erc7710 = {assetTransferMethod: "erc7710", facilitatorAddresses: [FACILITATOR]};
+        for (const accepted of [
+            {...base.paymentPayload.accepted, payTo: "0xzz"},
+            {...base.paymentPayload.accepted, asset: 7},
+            {...base.paymentPayload.accepted, extra: {...erc7710, facilitatorAddresses: ["nope"]}},
+            {...base.paymentPayload.accepted, extra: {...erc7710, facilitatorAddresses: "nope"}},
+            {...base.paymentPayload.accepted, extra: {...erc7710, delegationManager: "0xzz"}},
+            {...base.paymentPayload.accepted, extra: null},
+        ]) {
+            expect(reason({...base, paymentPayload: {...base.paymentPayload, accepted}})).toBe("invalid_payload");
+        }
+    });
+
+    test("the word rides on the error and the message stays behind it", () => {
+        // `reason` is what the route copies onto the wire; `message` is what the operator's
+        // log line is written from. Two fields, so neither can leak into the other.
+        const error = new PaymentValidationError("invalid_payload", "permissionContext is malformed or too large");
+        expect(error).toBeInstanceOf(Error);
+        expect(error.name).toBe("PaymentValidationError");
+        expect(error.reason).toBe("invalid_payload");
+        expect(error.message).toBe("permissionContext is malformed or too large");
+    });
+});
+
+/**
  * The seller's answer about a payment, pinned.
  *
  * This ladder had no test. It is decided in `apps/delegated-seller`, which had no test
@@ -304,7 +455,28 @@ describe("D5 settlement outcome ladder", () => {
         expect(decideSettlement({reachable: true, body: settled}, PAYER)).toEqual({
             kind: "settled",
             transaction: TX,
+            replayed: false,
         });
+    });
+
+    test("`replayed` is the facilitator's own word, and only that word makes it true", () => {
+        // The facilitator marks a body it answered out of its journal — an earlier
+        // attempt's recorded outcome — rather than one it just broadcast. The seller may
+        // not infer it: a missing field, or a truthy value that is not `true`, is a
+        // facilitator that never said so, and a replay read as a fresh settlement is a
+        // sale counted twice.
+        expect(decideSettlement({reachable: true, body: {...settled, replayed: true}}, PAYER)).toEqual({
+            kind: "settled",
+            transaction: TX,
+            replayed: true,
+        });
+        for (const replayed of [undefined, false, "true", 1]) {
+            expect(decideSettlement({reachable: true, body: {...settled, replayed}}, PAYER)).toEqual({
+                kind: "settled",
+                transaction: TX,
+                replayed: false,
+            });
+        }
     });
 
     test("verify: unreachable is 'unavailable', never a rejection of the delegation", () => {
@@ -477,7 +649,7 @@ describe("D5 settlement outcome ladder", () => {
     test("a malformed hash is dropped rather than echoed into a receipt", () => {
         for (const transaction of ["0xdeadbeef", "not-a-hash", 42, `0x${"ab".repeat(33)}`]) {
             expect(decideSettlement({reachable: true, body: {...settled, transaction}}, PAYER))
-                .toEqual({kind: "settled", transaction: undefined});
+                .toEqual({kind: "settled", transaction: undefined, replayed: false});
         }
     });
 

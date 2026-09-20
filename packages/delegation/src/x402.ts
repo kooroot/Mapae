@@ -52,6 +52,32 @@ export interface ValidatedDelegatedPayment {
     paymentIntentId: Hex;
 }
 
+/**
+ * The x402 v2 §9 words a facilitator may refuse a request with, as this profile uses
+ * them. They are the whole vocabulary the wire carries for a refused verification — the
+ * message stays in the operator's log, because a caller who learns *why* a delegation
+ * was refused learns its caveat boundaries.
+ *
+ * `invalid_transaction_state` is the one that is not about the request's text: the
+ * intent it names already ended on chain as a failure (a mined revert, a receipt with
+ * no `Transfer` to the seller), so re-verifying it cannot make it valid.
+ */
+export type PaymentValidationReason =
+    | "invalid_x402_version"
+    | "invalid_payload"
+    | "invalid_payment_requirements"
+    | "unsupported_scheme"
+    | "invalid_network"
+    | "invalid_transaction_state";
+
+/** A refusal formed before the chain was touched, carrying its §9 word and a log-only message. */
+export class PaymentValidationError extends Error {
+    constructor(readonly reason: PaymentValidationReason, message: string) {
+        super(message);
+        this.name = "PaymentValidationError";
+    }
+}
+
 const UINT_STRING = /^(0|[1-9]\d*)$/;
 
 /** Coalesces concurrent requests for one payment intent into one operation. */
@@ -75,36 +101,29 @@ export class PaymentIntentSingleFlight<T> {
     }
 }
 
-function sameRequirement(
-    a: Erc7710PaymentRequirements,
-    b: Erc7710PaymentRequirements,
-): boolean {
-    const aFacilitators = a.extra.facilitatorAddresses?.map(getAddress) ?? [];
-    const bFacilitators = b.extra.facilitatorAddresses?.map(getAddress) ?? [];
+/**
+ * Exact equality between the client's echoed `accepted` and the seller's offer.
+ *
+ * `a` is attacker-controlled JSON, so nothing in here may throw: every address goes
+ * through {@link sameAddress}, which answers false for garbage instead of letting
+ * `getAddress` raise a viem error out of a function whose whole job is to return
+ * true/false — and whose caller would otherwise classify that error as a verdict.
+ */
+function sameRequirement(a: Erc7710PaymentRequirements, b: Erc7710PaymentRequirements): boolean {
     return (
         a.scheme === b.scheme &&
         a.network === b.network &&
         a.amount === b.amount &&
         a.maxTimeoutSeconds === b.maxTimeoutSeconds &&
-        getAddress(a.payTo) === getAddress(b.payTo) &&
-        getAddress(a.asset) === getAddress(b.asset) &&
-        a.extra.assetTransferMethod === b.extra.assetTransferMethod &&
-        sameOptionalManager(a.extra.delegationManager, b.extra.delegationManager) &&
-        aFacilitators.length === bFacilitators.length &&
-        aFacilitators.every((address, index) => address === bFacilitators[index])
+        sameAddress(a.payTo, b.payTo) &&
+        sameAddress(a.asset, b.asset) &&
+        a.extra?.assetTransferMethod === b.extra.assetTransferMethod &&
+        sameOptionalManager(a.extra?.delegationManager, b.extra.delegationManager) &&
+        sameAddressList(a.extra?.facilitatorAddresses, b.extra.facilitatorAddresses)
     );
 }
 
-/**
- * Compare the advisory in-band DelegationManager on both offers. `a` is the client's
- * echoed `accepted`, i.e. attacker-controlled JSON, so `getAddress` is only reached
- * after `isAddress` — a bare `getAddress` throws on garbage out of a function whose
- * whole job is to return true/false. Both-absent is a match; present-vs-absent or a
- * value mismatch is not, because this function's contract is exact equality and its
- * failure message tells the caller the offer did not match.
- */
-function sameOptionalManager(a: unknown, b: unknown): boolean {
-    if (a === undefined && b === undefined) return true;
+function sameAddress(a: unknown, b: unknown): boolean {
     if (typeof a !== "string" || typeof b !== "string" || !isAddress(a) || !isAddress(b)) {
         return false;
     }
@@ -112,7 +131,32 @@ function sameOptionalManager(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Strict D4 trust-boundary validator. No chain call happens until this succeeds.
+ * Compare the advisory in-band DelegationManager on both offers. Both-absent is a match;
+ * present-vs-absent or a value mismatch is not, because this function's contract is
+ * exact equality and its failure message tells the caller the offer did not match.
+ */
+function sameOptionalManager(a: unknown, b: unknown): boolean {
+    if (a === undefined && b === undefined) return true;
+    return sameAddress(a, b);
+}
+
+/** An absent list and an empty one are the same offer: no redeemer was named. */
+function sameAddressList(a: unknown, b: unknown): boolean {
+    const left = a ?? [];
+    const right = b ?? [];
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((address, index) => sameAddress(address, right[index]));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+/**
+ * Strict D4 trust-boundary validator. No chain call happens until this succeeds, and
+ * every refusal is a {@link PaymentValidationError} whose reason is the §9 word the
+ * wire will carry: the request's own shape is `invalid_payload`, the offer's terms are
+ * `invalid_payment_requirements`, and the version, scheme and network each have theirs.
  */
 export function validateDelegatedPayment(
     input: unknown,
@@ -122,72 +166,88 @@ export function validateDelegatedPayment(
         maxAmount?: bigint;
     },
 ): ValidatedDelegatedPayment {
-    if (!input || typeof input !== "object") throw new Error("request must be an object");
+    const refuse = (reason: PaymentValidationReason, message: string) =>
+        new PaymentValidationError(reason, message);
+
+    if (input === null || typeof input !== "object") {
+        throw refuse("invalid_payload", "request must be an object");
+    }
     const request = input as Erc7710FacilitatorRequest;
-    if (request.x402Version !== X402_VERSION) throw new Error("unsupported x402Version");
+    if (request.x402Version !== X402_VERSION) {
+        throw refuse("invalid_x402_version", "unsupported x402Version");
+    }
 
     const requirements = request.paymentRequirements;
     const payment = request.paymentPayload;
-    if (!requirements || !payment || payment.x402Version !== X402_VERSION) {
-        throw new Error("paymentPayload and paymentRequirements are required");
+    if (!isRecord(requirements) || !isRecord(payment)) {
+        throw refuse("invalid_payload", "paymentPayload and paymentRequirements are required");
     }
-    if (
-        requirements.scheme !== "exact" ||
-        requirements.network !== GIWA_SEPOLIA_CAIP2 ||
-        requirements.extra?.assetTransferMethod !== "erc7710"
-    ) {
-        throw new Error("unsupported payment method or network");
+    if (payment.x402Version !== X402_VERSION) {
+        throw refuse("invalid_x402_version", "paymentPayload.x402Version is unsupported");
     }
+    if (!isRecord(payment.accepted) || !isRecord(payment.payload)) {
+        throw refuse("invalid_payload", "paymentPayload.accepted and paymentPayload.payload are required");
+    }
+    if (requirements.scheme !== "exact" || requirements.extra?.assetTransferMethod !== "erc7710") {
+        throw refuse("unsupported_scheme", "unsupported scheme or asset transfer method");
+    }
+    if (requirements.network !== GIWA_SEPOLIA_CAIP2) throw refuse("invalid_network", "unsupported network");
     if (!isAddress(requirements.asset) || getAddress(requirements.asset) !== MOCK_USDC.address) {
-        throw new Error("unsupported asset");
+        throw refuse("invalid_payment_requirements", "unsupported asset");
     }
-    if (!isAddress(requirements.payTo)) throw new Error("payTo must be an address");
+    if (!isAddress(requirements.payTo)) {
+        throw refuse("invalid_payment_requirements", "payTo must be an address");
+    }
     if (
         !Number.isInteger(requirements.maxTimeoutSeconds) ||
         requirements.maxTimeoutSeconds < 1 ||
         requirements.maxTimeoutSeconds > 300
     ) {
-        throw new Error("maxTimeoutSeconds must be between 1 and 300");
+        throw refuse("invalid_payment_requirements", "maxTimeoutSeconds must be between 1 and 300");
     }
-    if (!UINT_STRING.test(requirements.amount)) throw new Error("amount must be an integer string");
+    if (typeof requirements.amount !== "string" || !UINT_STRING.test(requirements.amount)) {
+        throw refuse("invalid_payment_requirements", "amount must be an integer string");
+    }
     const amount = BigInt(requirements.amount);
-    if (amount <= 0n) throw new Error("amount must be positive");
+    if (amount <= 0n) throw refuse("invalid_payment_requirements", "amount must be positive");
     if (options.maxAmount !== undefined && amount > options.maxAmount) {
-        throw new Error("amount exceeds facilitator safety cap");
+        throw refuse("invalid_payment_requirements", "amount exceeds facilitator safety cap");
     }
 
     if (!sameRequirement(payment.accepted, requirements)) {
-        throw new Error("accepted requirements do not exactly match the seller offer");
+        throw refuse("invalid_payload", "accepted requirements do not exactly match the seller offer");
     }
     if (
         !isAddress(payment.payload.delegationManager) ||
         getAddress(payment.payload.delegationManager) !==
             getAddress(options.delegationManager)
     ) {
-        throw new Error("delegationManager is not allowlisted");
+        throw refuse("invalid_payload", "delegationManager is not allowlisted");
     }
-    if (!isAddress(payment.payload.delegator)) throw new Error("delegator must be an address");
+    if (!isAddress(payment.payload.delegator)) {
+        throw refuse("invalid_payload", "delegator must be an address");
+    }
     if (
         !isHex(payment.payload.permissionContext) ||
         payment.payload.permissionContext.length <= 2 ||
         payment.payload.permissionContext.length > MAX_PERMISSION_CONTEXT_HEX_LENGTH
     ) {
-        throw new Error("permissionContext is malformed or too large");
+        throw refuse("invalid_payload", "permissionContext is malformed or too large");
     }
 
     let delegationChain;
     try {
         delegationChain = decodeDelegations(payment.payload.permissionContext);
     } catch {
-        throw new Error("permissionContext is not a valid delegation chain");
+        throw refuse("invalid_payload", "permissionContext is not a valid delegation chain");
     }
     const rootDelegation = delegationChain.at(-1);
     if (!rootDelegation || !isAddress(rootDelegation.delegator)) {
-        throw new Error("permissionContext must contain a root delegator");
+        throw refuse("invalid_payload", "permissionContext must contain a root delegator");
     }
     const payer = getAddress(rootDelegation.delegator);
     if (payer !== getAddress(payment.payload.delegator)) {
-        throw new Error("claimed delegator does not match the signed root payer");
+        throw refuse("invalid_payload", "claimed delegator does not match the signed root payer");
     }
 
     const facilitators = requirements.extra.facilitatorAddresses;
@@ -197,7 +257,7 @@ export function validateDelegatedPayment(
             (address) => isAddress(address) && getAddress(address) === getAddress(options.facilitator),
         )
     ) {
-        throw new Error("this facilitator is not advertised as a redeemer");
+        throw refuse("invalid_payment_requirements", "this facilitator is not advertised as a redeemer");
     }
 
     const paymentIntentId = derivePaymentIntentId({

@@ -38,6 +38,7 @@ import {privateKeyToAccount} from "viem/accounts";
 import {
     CachedProbe,
     RATE_WINDOW_MS,
+    RedemptionRejected,
     SETTLE_NOT_READY,
     SETTLE_RATE_LIMITED,
     VERIFY_NOT_READY,
@@ -51,7 +52,7 @@ import {
     type FrameworkHealthError,
 } from "./guards.js";
 import {createPaymentRoutes} from "./routes.js";
-import {receiptFailure, settlementResponse} from "./settlement.js";
+import {receiptFailure, settlementResponse, verifyKnownSettlement} from "./settlement.js";
 import {SettlementRecovery} from "./recovery.js";
 import {bearerTokenMatches, metricsReport, readMetricsToken, rejectedRetention} from "./metrics.js";
 
@@ -358,21 +359,23 @@ class SettlementCoordinator {
         });
         const gas = await facilitatorClient.estimateContractGas(simulation.request);
         if (gas > MAX_REDEMPTION_GAS) {
-            throw new Error(`redemption gas ${gas} exceeds configured cap`);
+            throw new RedemptionRejected(`redemption gas ${gas} exceeds configured cap`);
         }
         return {request: simulation.request, gas};
     }
 
     async simulate(payment: ValidatedDelegatedPayment): Promise<void> {
         // A retry resolves the original transaction in /settle. Re-simulation would
-        // reject an already consumed or expired leaf before its receipt can be recovered.
-        if (this.#recovery.transaction(payment.paymentIntentId)) return;
+        // reject an already consumed or expired leaf before its receipt can be recovered
+        // — unless the row already says the attempt failed on chain, which is a verdict.
+        const known = this.#recovery.known(payment.paymentIntentId);
+        if (known) return verifyKnownSettlement(known);
         await beforeBroadcast(() => this.#prepareRedemption(payment));
     }
 
     async settle(payment: ValidatedDelegatedPayment): Promise<Erc7710SettleResponse> {
         try {
-            const record = await this.#recovery.settle({paymentIntentId: payment.paymentIntentId,
+            const {record, replayed} = await this.#recovery.settle({paymentIntentId: payment.paymentIntentId,
                 payer: payment.payer, payTo: payment.paymentRequirements.payTo, amountBase: payment.amount}, {
                 pendingNonce: () => beforeBroadcast(() => publicClient.getTransactionCount({address: relayer.address, blockTag: "pending"})),
                 prepare: async (nonce) => {
@@ -392,9 +395,9 @@ class SettlementCoordinator {
                 wait: (hash) => publicClient.waitForTransactionReceipt({hash, confirmations: 1, timeout: RECEIPT_TIMEOUT_MS}),
                 failure: (receipt) => receiptFailure(receipt, payment),
             });
-            return settlementResponse(record);
+            return settlementResponse(record, replayed);
         } catch (error) {
-            const failure = describeFailure(error);
+            const failure = describeFailure(error, "settle");
             if (failure.outcome === "rejected") recordRejection({kind: "settle", payer: payment.payer,
                 payTo: payment.paymentRequirements.payTo, amountBase: payment.amount, at: Date.now(),
                 outcome: "rejected", errorCode: failure.errorCode});

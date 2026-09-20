@@ -48,7 +48,7 @@ async function start(now = beforeMidnight) {
 }
 async function stop() {worker?.kill("SIGKILL"); await worker?.exited; worker = undefined;}
 const body = (n: number, to = "0x0000000000000000000000000000000000001234") => ({id: `0x${n.toString(16).padStart(64, "0")}`, to});
-const post = async (url: string, value: ReturnType<typeof body>) => (await fetch(url, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(value)})).json() as Promise<{success: boolean; transaction: string; errorReason?: string}>;
+const post = async (url: string, value: ReturnType<typeof body>) => (await fetch(url, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(value)})).json() as Promise<{success: boolean; transaction: string; errorReason?: string; replayed?: true}>;
 async function until(check: () => Promise<boolean>) {
     for (let n = 0; n < 100; n++) {if (await check()) return; await Bun.sleep(30);}
     throw new Error("condition timeout");
@@ -65,6 +65,9 @@ try {
     url = await start(beforeMidnight + 120000);
     const recovered = await post(url, body(1));
     assert.equal(recovered.success, true);
+    // The claim predates this call, so the answer is the earlier attempt's: what went out
+    // was the bytes the journal already named, never a second transaction.
+    assert.equal(recovered.replayed, true, "a resumed claim answers replayed");
     assert.equal(await rpc("eth_getBalance", [body(1).to, "latest"]), "0x7b");
     assert.deepEqual(await post(url, body(1)), recovered);
     mode = "lose-answer";
@@ -85,7 +88,8 @@ try {
     await rpc("anvil_setCode", [revertTo, "0x60006000fd"]);
     const reverted = await post(url, body(7, revertTo));
     assert.equal(reverted.errorReason, "settlement_reverted"); assert(reverted.transaction);
-    assert.deepEqual(await post(url, body(7, revertTo)), reverted);
+    assert.equal(reverted.replayed, undefined, "the call that settled the intent is not a replay");
+    assert.deepEqual(await post(url, body(7, revertTo)), {...reverted, replayed: true});
     assert.equal(BigInt(await rpc("eth_getBalance", [body(1).to, "latest"]) as string), 6n * 123n);
     const db = new Database(dbPath, {readonly: true});
     const rows = db.query<{nonce: number; actual_cost: string; budget_day: string}, []>("SELECT nonce, actual_cost, budget_day FROM settlement_intents ORDER BY nonce").all();

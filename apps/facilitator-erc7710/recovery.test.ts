@@ -37,10 +37,21 @@ afterEach(() => {for (const s of stores.splice(0)) s.close(); for (const d of di
 test("successful receipt reconciles both budgets including L1 and terminal retry does not touch RPC", async () => {
     const s = open(), f = ops(), e = engine(s);
     const first = await e.settle(payment, f.operations);
-    expect(first.actualCost).toBe(103n); expect(first.terminal?.outcome).toBe("settled");
+    expect(first.record.actualCost).toBe(103n); expect(first.record.terminal?.outcome).toBe("settled");
+    // The journal held nothing when this call began, so the answer is this call's own.
+    expect(first.replayed).toBe(false);
     expect(s.budget.load("2026-09-13")).toBe(103n);
-    await e.settle(payment, {...f.operations, receipt: async () => {throw Error("must not read");}});
+    const again = await e.settle(payment, {...f.operations, receipt: async () => {throw Error("must not read");}});
+    // The same answer, marked as the earlier attempt's, so the seller reads one sale once.
+    expect(again.replayed).toBe(true);
+    expect(again.record).toEqual(first.record);
     expect(f.sent).toHaveLength(1); expect(s.ledger.list()).toHaveLength(1);
+});
+test("known() answers the journal, and an unseen intent is null rather than a guess", async () => {
+    const s = open(), f = ops(), e = engine(s);
+    expect(e.known(ID)).toBeNull();
+    const {record} = await e.settle(payment, f.operations);
+    expect(e.known(ID)).toEqual(record);
 });
 test("termination boundary after claim but before send recovers by re-signing exactly the same hash", async () => {
     const path = file(), first = open(path), f = ops();
@@ -50,13 +61,16 @@ test("termination boundary after claim but before send recovers by re-signing ex
     const second = open(path), next = ops();
     const r = await engine(second, NOW + 120000).settle(payment, next.operations);
     expect(next.prepared).toHaveLength(0); expect(keccak256(next.sent[0]!)).toBe(hash);
-    expect(r.actualCost).toBe(103n); expect(second.budget.load("2026-09-13")).toBe(103n);
+    // The claim predates this call, so the answer is marked replayed even though this call
+    // is the one that sent: what went out was the bytes the journal already named.
+    expect(r.replayed).toBe(true);
+    expect(r.record.actualCost).toBe(103n); expect(second.budget.load("2026-09-13")).toBe(103n);
     expect(second.budget.load("2026-09-14")).toBe(0n);
 });
 test("a lost send answer can still succeed from the original receipt", async () => {
     const s = open(), f = ops();
     const r = await engine(s).settle(payment, {...f.operations, send: async () => {throw Error("response lost");}});
-    expect(r.terminal?.outcome).toBe("settled");
+    expect(r.record.terminal?.outcome).toBe("settled");
 });
 test("an unconfirmed send can be resent after restart without changing bytes or reserving again", async () => {
     const path = file(), first = open(path), f = ops();
@@ -96,7 +110,7 @@ test("unreadable actual receipt fees preserve the reservation for a later correc
 test("an unreadable journal is not-ready: it neither claims a prior payment was rejected nor names a hash it cannot read", async () => {
     const s = open(), f = ops(); s.close();
     await expect(engine(s).settle(payment, f.operations)).rejects.toBeInstanceOf(SettlementStorageUnavailable);
-    expect(() => engine(s).transaction(ID)).toThrow(SettlementStorageUnavailable);
+    expect(() => engine(s).known(ID)).toThrow(SettlementStorageUnavailable);
     expect(f.prepared).toHaveLength(0);
 });
 test("every pending answer carries the hash the journal wrote before the broadcast", async () => {

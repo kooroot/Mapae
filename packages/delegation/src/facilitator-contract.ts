@@ -95,6 +95,17 @@ export interface Erc7710SettleResponse {
     payer?: Address;
     /** `SETTLEMENT_PENDING` means the transaction named above is not yet resolved. */
     errorReason?: string;
+    /**
+     * Present only when a journal row for this intent already existed before the call:
+     * the answer belongs to an earlier attempt, terminal or not, and this call broadcast
+     * nothing new — at most it re-sent the very bytes that row already named, which can
+     * only ever produce the same hash. Absent, this call is the one that settled the
+     * intent, or failed before broadcasting anything.
+     *
+     * The seller reads it to tell one sale from two. Nothing else on the wire does: a
+     * recovered settlement and a fresh one are otherwise the same body.
+     */
+    replayed?: true;
 }
 
 /**
@@ -111,12 +122,15 @@ export interface Erc7710SettleResponse {
  * Verification refusal is not one of them. It is a boolean answered before settlement is
  * ever attempted, so giving this union a `rejected` variant would add a case no producer
  * can reach and no test can reach either.
+ *
+ * `settled.replayed` is the facilitator's own word: true only when the body said so,
+ * i.e. the answer is a recorded earlier settlement rather than one this call performed.
  */
 export type SettlementOutcome =
     | {kind: "unavailable"}
     | {kind: "unknown"; transaction?: Hex}
     | {kind: "failed"}
-    | {kind: "settled"; transaction?: Hex};
+    | {kind: "settled"; transaction?: Hex; replayed: boolean};
 
 const TRANSACTION_HASH = /^0x[0-9a-fA-F]{64}$/;
 
@@ -220,7 +234,7 @@ export function decideSettlement(
     ) {
         return {kind: "unknown", transaction: readTransaction(body.transaction)};
     }
-    return {kind: "settled", transaction: readTransaction(body.transaction)};
+    return {kind: "settled", transaction: readTransaction(body.transaction), replayed: body.replayed === true};
 }
 
 /** The fields one exact payment is keyed on. Nothing else — no salt, no time, no resource. */

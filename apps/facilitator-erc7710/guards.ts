@@ -12,6 +12,7 @@ import {
     CLIENT_IP_HEADER,
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
+    PaymentValidationError,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     ipBucket,
@@ -224,11 +225,64 @@ export class SettlementPending extends Error {
 }
 
 /**
- * What a failed settle attempt says to the wire and to the ledger — one classification
- * for both consumers, so the two can never disagree about what happened.
+ * The Mapae profile's one refusal outside the x402 §9 vocabulary: the facilitator
+ * examined the delegation against live state and the chain would not redeem it — the
+ * simulation reverted, or the redemption priced above `MAX_REDEMPTION_GAS`. Neither is
+ * a defect in the request's text (§9 has words for those) nor an unexpected failure of
+ * ours; it is the verdict the delegation earned, and the seller reads it as a 403 for
+ * the buyer to re-sign. The reason stays this one word on purpose — the revert text
+ * names the caveat that fired, which is the caller's boundary to probe.
+ */
+export const DELEGATION_REJECTED = "delegation_rejected";
+
+/** The redemption priced above the configured gas cap: a verdict, before the reservation. */
+export class RedemptionRejected extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "RedemptionRejected";
+    }
+}
+
+/**
+ * viem nests the error it decoded as the `cause` of the action that was running, so both
+ * classifiers below walk the chain rather than read the top link. Eight is deeper than
+ * any shape either side raises, and bounds a cause cycle.
+ */
+function* causeChain(error: unknown): Generator<Error> {
+    let current: unknown = error;
+    for (let depth = 0; current instanceof Error && depth < 8; depth += 1) {
+        yield current;
+        current = current.cause;
+    }
+}
+
+/**
+ * True when the chain itself answered "no" to the redemption. Deliberately not "any viem
+ * error": `BaseError` covers our own encoding mistakes too, and calling one of those a
+ * rejected delegation would send a buyer to re-sign a grant the chain never saw. Only a
+ * decoded revert counts — with `ExecutionRevertedError` for the node that reports one
+ * under a plain `-32000`, leaving viem no revert data to decode.
+ */
+function isRedemptionRevert(error: unknown): boolean {
+    for (const link of causeChain(error)) {
+        if (link instanceof ContractFunctionRevertedError || link instanceof ExecutionRevertedError) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * What a failed attempt on either route says to the wire and to the ledger — one
+ * classification for both consumers, so the two can never disagree about what happened.
  *
- * `rejected`: nobody was charged (validation, simulation revert, gas cap, either budget).
- * Its `transaction` is the wire's `""` — nothing was broadcast.
+ * `rejected`: nobody was charged. The code is the §9 word a {@link PaymentValidationError}
+ * carries, a budget's own code, {@link DELEGATION_REJECTED} for a simulation revert or
+ * the gas cap, and the route's §9 `unexpected_verify_error` / `unexpected_settle_error`
+ * for anything else — a bug of ours, and the only honest thing to call it: every throw
+ * that reaches here happened before the broadcast, so the unexpected ones charged nobody
+ * either, but nothing about them is a verdict on the delegation. Its `transaction` is the
+ * wire's `""`.
  * `error`: the original transaction exists but its final result is unknown; the hash
  * always rides along. Mined failures are classified from the receipt by settlement.ts
  * and committed by the settlement journal, with their gas cost and transaction identity.
@@ -241,15 +295,16 @@ export type SettlementFailure =
     | {outcome: "rejected"; errorCode: string; transaction: ""}
     | {outcome: "error"; errorCode: typeof SETTLEMENT_PENDING; transaction: Hex};
 
-export function describeFailure(error: unknown): SettlementFailure {
+export function describeFailure(error: unknown, route: "verify" | "settle"): SettlementFailure {
     if (error instanceof RpcUnreachableBeforeBroadcast || error instanceof SettlementStorageUnavailable) return {outcome: "not_ready"};
     if (error instanceof SettlementPending) {
         return {outcome: "error", errorCode: SETTLEMENT_PENDING, transaction: error.transaction};
     }
-    if (error instanceof SettlementBudgetExceeded) {
-        return {outcome: "rejected", errorCode: error.errorCode, transaction: ""};
-    }
-    return {outcome: "rejected", errorCode: "delegation_rejected", transaction: ""};
+    const rejected = (errorCode: string): SettlementFailure => ({outcome: "rejected", errorCode, transaction: ""});
+    if (error instanceof PaymentValidationError) return rejected(error.reason);
+    if (error instanceof SettlementBudgetExceeded) return rejected(error.errorCode);
+    if (error instanceof RedemptionRejected || isRedemptionRevert(error)) return rejected(DELEGATION_REJECTED);
+    return rejected(route === "verify" ? "unexpected_verify_error" : "unexpected_settle_error");
 }
 
 // ── /health ─────────────────────────────────────────────────────────────────────────
@@ -282,15 +337,11 @@ export type FrameworkHealthError =
  * either.
  */
 export function isRpcUnreachable(error: unknown): boolean {
-    let current: unknown = error;
-    let depth = 0;
-    while (current instanceof Error && depth < 8) {
-        if (current instanceof ContractFunctionRevertedError || current instanceof ExecutionRevertedError) {
+    for (const link of causeChain(error)) {
+        if (link instanceof ContractFunctionRevertedError || link instanceof ExecutionRevertedError) {
             return false;
         }
-        if (current instanceof HttpRequestError || current instanceof TimeoutError) return true;
-        current = current.cause;
-        depth += 1;
+        if (link instanceof HttpRequestError || link instanceof TimeoutError) return true;
     }
     return isRateLimitError(error);
 }
