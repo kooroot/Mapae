@@ -128,6 +128,7 @@ server.registerTool(
             amount: `${fromTokenAmount(BigInt(result.amount))} mUSDC`,
             payTo: result.payTo,
             transaction: result.transaction,
+            contentType: result.contentType,
             resource: result.resource,
         });
     },

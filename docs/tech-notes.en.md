@@ -224,6 +224,19 @@ instead of throwing, and points at the cause with `SELLER_OFFER_INVALID`,
 `FACILITATOR_UNTRUSTED`, `MANAGER_MISMATCH`, `LIMIT_EXCEEDED`,
 `PERMISSION_INACTIVE`, `SIGNING_FAILED`, `PAYMENT_REJECTED`, and the like.
 
+**Offer selection and the receipt.** Every entry of the 402's `accepts` is walked in
+the seller's order, and the first that is exact ERC-7710 on GIWA, overlaps a trusted
+facilitator and does not contradict the verified DelegationManager is paid — a seller
+that lists EIP-3009 first for wallets and ERC-7710 second for delegated agents is
+paid as-is. When none qualifies, the reason is the first candidate's that was on the
+ERC-7710 rail at all; when no candidate was, it is `SELLER_OFFER_INVALID`. The 2xx
+`Payment-Response` header is read only when it is a receipt of this payment —
+`success: true`, the same network, the payer the leaf was signed for — and then
+`transaction` is the header's value; a missing or self-contradicting header falls
+back to the body's `receipt.transaction`. No seller string from the header reaches the
+result. The resource is parsed only when its content-type is JSON and returned as text
+otherwise, with the bearer values redacted either way.
+
 **On-chain pre-flight.** Before signing, the agent reads the enforcer's own
 accounting directly and filters out payments that cannot succeed. The chain enforces
 the cap either way, so the purpose of this step is not safety but **accuracy of the

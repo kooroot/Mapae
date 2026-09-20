@@ -178,6 +178,18 @@ relayer 공유 거부·타인 서명·high-s·배포·late binding·가스 회�
 `SELLER_OFFER_INVALID`·`FACILITATOR_UNTRUSTED`·`MANAGER_MISMATCH`·`LIMIT_EXCEEDED`·
 `PERMISSION_INACTIVE`·`SIGNING_FAILED`·`PAYMENT_REJECTED` 등으로 원인을 가리킨다.
 
+**오퍼 선택과 영수증.** 402의 `accepts`는 판매자가 나열한 순서대로 전부 훑고,
+exact·GIWA·ERC-7710이면서 신뢰하는 facilitator와 겹치고 검증된
+DelegationManager와 어긋나지 않는 첫 항목으로 결제한다 — 지갑용 EIP-3009를
+앞에, 위임 에이전트용 ERC-7710을 뒤에 둔 판매자도 그대로 결제된다. 통과하는
+항목이 없으면 ERC-7710 레일에 올라온 첫 후보의 사유를 돌려주고, 그런 후보조차
+없으면 `SELLER_OFFER_INVALID`다. 2xx의 `Payment-Response` 헤더는 이 결제의
+영수증일 때만 읽는다 — `success: true`, 같은 네트워크, leaf를 서명한 payer —
+그때 `transaction`은 헤더 값이고, 헤더가 없거나 자기 모순이면 본문의
+`receipt.transaction`으로 물러난다. 헤더 안의 판매자 문자열은 결과에 싣지
+않는다. 자원은 content-type이 JSON일 때만 파싱하고 그 밖에는 문자열 그대로
+돌려주며, 어느 쪽이든 bearer 값은 가린다.
+
 **온체인 pre-flight.** 서명 전에 enforcer의 회계를 직접 읽어, 성공할 수 없는
 결제를 미리 거른다. 한도는 어차피 온체인이 강제하므로 이 단계의 목적은 안전이
 아니라 **사유의 정확도**다 — 판매자까지 갔다가 403을 받는 대신

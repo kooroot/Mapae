@@ -4,10 +4,13 @@ import {
     GIWA_SEPOLIA_CAIP2,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
+    buildPaymentRequirements,
     decodePaymentHeader,
     encodePaymentRequiredHeader,
+    encodePaymentResponseHeader,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
+    type SettleResponse,
 } from "@mapae/shared";
 import {payForDelegatedResource, type DelegatedLeafProvider} from "./payment-client.js";
 
@@ -50,9 +53,27 @@ function jsonResponse(
     return {
         status,
         ok: status >= 200 && status < 300,
-        headers: new Headers(headers),
+        headers: new Headers({"content-type": "application/json", ...headers}),
         json: async () => body,
+        text: async () => JSON.stringify(body),
     } as unknown as Response;
+}
+
+/** A 2xx whose body is not JSON — what a seller of text, markdown or HTML serves. */
+function textResponse(body: string, contentType: string, headers: Record<string, string> = {}): Response {
+    return {
+        status: 200,
+        ok: true,
+        headers: new Headers({"content-type": contentType, ...headers}),
+        json: async () => {
+            throw new Error("json() must not be called on a non-JSON resource");
+        },
+        text: async () => body,
+    } as unknown as Response;
+}
+
+function receiptHeader(receipt: unknown): Record<string, string> {
+    return {"Payment-Response": encodePaymentResponseHeader(receipt as SettleResponse)};
 }
 
 /** A non-2xx response whose body throws if read — proves the caller never reads it. */
@@ -514,12 +535,13 @@ describe("D5 every failure returns a reason, never a throw", () => {
         expect(await codeFor(paymentRequired(), malformed)).toBe("MANAGER_MISMATCH");
     });
 
-    test("MALFORMED_RESOURCE is reachable — a paid resource that is not JSON", async () => {
+    test("MALFORMED_RESOURCE is reachable — a resource labelled JSON that is not JSON", async () => {
         // The payment succeeded here, so this is the one failure that arrives after money
         // moved. It must still be a code rather than a throw.
         const {impl} = scriptedFetch({
             status: 200,
             ok: true,
+            headers: new Headers({"content-type": "application/json"}),
             json: async () => {
                 throw new Error("not JSON");
             },
@@ -528,6 +550,222 @@ describe("D5 every failure returns a reason, never a throw", () => {
         expect(result.ok).toBe(false);
         if (result.ok) throw new Error("unreachable");
         expect(result.code).toBe("MALFORMED_RESOURCE");
+    });
+});
+
+/**
+ * The spec's selection rule: the client picks, from `accepts`, the requirements it
+ * supports. A seller that lists EIP-3009 first for wallets and ERC-7710 second for
+ * delegated agents must lose neither payer, and a list with several ERC-7710 entries
+ * must be walked past the ones this agent cannot use.
+ */
+describe("D5 the whole accepts list is considered", () => {
+    const eip3009 = () => buildPaymentRequirements({payTo: PAYEE, amount: 1_000_000n});
+    const erc7710 = (facilitators: Address[] = [FACILITATOR]) =>
+        buildErc7710PaymentRequirements({payTo: PAYEE, amount: 2_000_000n, facilitatorAddresses: facilitators});
+    const offerOf = (...accepts: unknown[]) => ({
+        x402Version: 2,
+        resource: {url: target.toString(), description: "test", mimeType: "application/json"},
+        accepts,
+    });
+
+    test("an ERC-7710 entry behind an EIP-3009 one is the one paid", async () => {
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}), offerOf(eip3009(), erc7710()));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        expect(result.amount).toBe("2000000"); // the ERC-7710 entry's price, not accepts[0]'s
+        const header = (calls[1]?.init?.headers as Record<string, string>)["Payment-Signature"]!;
+        expect(decodePaymentHeader(header).accepted).toEqual(erc7710());
+    });
+
+    test("no ERC-7710 entry at all is SELLER_OFFER_INVALID, counted", async () => {
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {}), offerOf(eip3009(), eip3009()));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("SELLER_OFFER_INVALID");
+        expect(result.detail).toBe("no exact ERC-7710 offer on GIWA among 2 accepts");
+        expect(calls).toHaveLength(1);
+    });
+
+    test("an empty or missing accepts list is SELLER_OFFER_INVALID", async () => {
+        for (const accepts of [[], undefined, "accepts"]) {
+            const {impl} = scriptedFetch(jsonResponse(200, {}), {...offerOf(), accepts});
+            const result = await payForDelegatedResource(target, baseConfig(impl));
+            expect(result.ok).toBe(false);
+            if (result.ok) throw new Error("unreachable");
+            expect(result.code).toBe("SELLER_OFFER_INVALID");
+            expect(result.detail).toBe("402 body has no accepts");
+        }
+    });
+
+    test("an ERC-7710 entry through an untrusted facilitator is passed over for a trusted one", async () => {
+        const {impl, calls} = scriptedFetch(
+            jsonResponse(200, {invoice: "inv-001"}),
+            offerOf(erc7710([UNTRUSTED]), erc7710([FACILITATOR])),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        expect(calls).toHaveLength(2);
+        const header = (calls[1]?.init?.headers as Record<string, string>)["Payment-Signature"]!;
+        expect(decodePaymentHeader(header).accepted).toEqual(erc7710([FACILITATOR]));
+    });
+
+    test("only untrusted ERC-7710 entries is FACILITATOR_UNTRUSTED — the rail's fault, not a missing rail", async () => {
+        // The first candidate on the ERC-7710 rail names the actionable reason. Reporting
+        // SELLER_OFFER_INVALID here would send an operator to look for a missing offer
+        // when the offer is there and its facilitator is the problem.
+        const {impl, calls} = scriptedFetch(
+            jsonResponse(200, {}),
+            offerOf(eip3009(), erc7710([UNTRUSTED]), erc7710([UNTRUSTED])),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("FACILITATOR_UNTRUSTED");
+        expect(calls).toHaveLength(1);
+    });
+});
+
+/**
+ * The 2xx receipt. The spec's `Payment-Response` header is the interoperable place a
+ * settlement hash lives; the body's `receipt.transaction` is what this repo's hosted
+ * shop and payment scheduler have relied on. The header wins when it is a receipt of
+ * this payment, and the body stays as the fallback — never a failure, because a 2xx
+ * means the resource was paid for and delivered.
+ */
+describe("D5 Payment-Response receipt", () => {
+    const OTHER_TX = `0x${"ef".repeat(32)}` as Hex;
+    const settled = (patch: Record<string, unknown> = {}) => ({
+        success: true,
+        network: GIWA_SEPOLIA_CAIP2,
+        payer: DELEGATOR,
+        transaction: TX,
+        ...patch,
+    });
+
+    test("a valid header names the transaction, ahead of the body", async () => {
+        const {impl} = scriptedFetch(
+            jsonResponse(200, {receipt: {transaction: OTHER_TX}}, receiptHeader(settled())),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        expect(result.transaction).toBe(TX);
+    });
+
+    test("a header naming another payer is ignored and the body fallback is used", async () => {
+        // A 2xx with a receipt that is not this payment's is the seller contradicting
+        // itself. The resource was still delivered and paid for, so it is returned, and
+        // the diagnostic header is simply not believed.
+        const {impl} = scriptedFetch(
+            jsonResponse(200, {receipt: {transaction: OTHER_TX}}, receiptHeader(settled({payer: PAYEE}))),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        expect(result.transaction).toBe(OTHER_TX);
+    });
+
+    test("success false, another network, garbage, and a non-hash transaction are all ignored", async () => {
+        for (const header of [
+            receiptHeader(settled({success: false, errorReason: "settlement_pending"})),
+            receiptHeader(settled({network: "eip155:8453"})),
+            receiptHeader(settled({transaction: "not-a-hash"})),
+            {"Payment-Response": "!!!not-base64!!!"},
+            {"Payment-Response": btoa("null")},
+        ]) {
+            const {impl} = scriptedFetch(jsonResponse(200, {receipt: {transaction: OTHER_TX}}, header));
+            const result = await payForDelegatedResource(target, baseConfig(impl));
+            expect(result.ok).toBe(true);
+            if (!result.ok) throw new Error("unreachable");
+            expect(result.transaction).toBe(OTHER_TX);
+            // Whatever the seller wrote in the header stays there.
+            expect(JSON.stringify(result)).not.toContain("settlement_pending");
+        }
+    });
+
+    test("a valid header with transaction \"\" means no hash — not the body's", async () => {
+        // The spec makes `transaction` required and writes "" for "none". A receipt that
+        // says so explicitly is believed over a body claiming otherwise.
+        for (const transaction of ["", undefined]) {
+            const {impl} = scriptedFetch(
+                jsonResponse(200, {receipt: {transaction: OTHER_TX}}, receiptHeader(settled({transaction}))),
+            );
+            const result = await payForDelegatedResource(target, baseConfig(impl));
+            expect(result.ok).toBe(true);
+            if (!result.ok) throw new Error("unreachable");
+            expect(result.transaction).toBeUndefined();
+        }
+    });
+
+    test("a header carrying UTF-8 text still decodes", async () => {
+        // The reference codec is base64 over UTF-8 bytes; a receipt with a non-ASCII
+        // field must not be dropped by a Latin-1 decoder.
+        const {impl} = scriptedFetch(
+            jsonResponse(200, {}, receiptHeader(settled({note: "정산 완료 — 🎉"}))),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        expect(result.transaction).toBe(TX);
+    });
+});
+
+describe("D5 non-JSON resources", () => {
+    test("a text/plain resource is returned as text, with its content type", async () => {
+        const {impl} = scriptedFetch(textResponse("Your report.\n", "text/plain; charset=utf-8"));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        expect(result.resource).toBe("Your report.\n");
+        expect(result.contentType).toBe("text/plain; charset=utf-8");
+    });
+
+    test("a bearer value echoed inside a text resource is redacted", async () => {
+        const {impl} = scriptedFetch(
+            textResponse(`thanks, your context was ${PERMISSION_CONTEXT}`, "text/markdown"),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        expect(typeof result.resource).toBe("string");
+        expect(result.resource as string).not.toContain(PERMISSION_CONTEXT);
+        expect(result.resource as string).toContain("thanks, your context was ");
+    });
+
+    test("a +json media type is parsed like application/json; a JSON body without a JSON label is text", async () => {
+        const parsed = await payForDelegatedResource(
+            target,
+            baseConfig(scriptedFetch(jsonResponse(200, {ticket: "T-1"}, {"content-type": "application/ticket+json"})).impl),
+        );
+        expect(parsed.ok && parsed.resource).toEqual({ticket: "T-1"});
+
+        const unlabelled = await payForDelegatedResource(
+            target,
+            baseConfig(scriptedFetch(textResponse('{"ticket":"T-1"}', "text/html")).impl),
+        );
+        expect(unlabelled.ok && unlabelled.resource).toBe('{"ticket":"T-1"}');
+    });
+
+    test("a JSON resource still reports its content type", async () => {
+        const {impl} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        expect(result.contentType).toBe("application/json");
+        expect(result.resource).toEqual({invoice: "inv-001"});
     });
 });
 

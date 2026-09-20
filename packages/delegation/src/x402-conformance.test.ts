@@ -230,7 +230,7 @@ describe("x402 conformance — full client loop against reference-built wire byt
             return {
                 status: 200,
                 ok: true,
-                headers: new Headers(),
+                headers: new Headers({"content-type": "application/json"}),
                 json: async () => ({invoice: "inv-001"}),
             } as unknown as Response;
         }) as unknown as typeof fetch;

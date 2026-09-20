@@ -2,10 +2,12 @@ import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
     PAYMENT_REQUIRED_HEADER,
+    PAYMENT_RESPONSE_HEADER,
     PAYMENT_SIGNATURE_HEADER,
     X402_VERSION,
     buildErc7710PaymentPayload,
     decodePaymentRequiredHeader,
+    decodePaymentResponseHeader,
     encodePaymentHeader,
     redactForLog,
     type Erc7710PaymentRequirements,
@@ -144,8 +146,33 @@ export interface DelegatedPaymentConfig {
 }
 
 export type DelegatedPaymentResult =
-    | {ok: true; amount: string; payTo: Address; transaction?: Hex; resource: unknown}
+    | {
+          ok: true;
+          amount: string;
+          payTo: Address;
+          transaction?: Hex;
+          /** The resource response's `Content-Type`, when the seller sent one. */
+          contentType?: string;
+          /** Parsed when the content type is JSON, the body text otherwise. */
+          resource: unknown;
+      }
     | {ok: false; code: DelegatedPaymentFailureCode; status?: number; detail: string};
+
+/**
+ * The rail this agent pays on: exact scheme, GIWA, ERC-7710 transfer. An offer past
+ * this gate is one the seller meant for a delegated agent, whatever else is wrong with
+ * it; one that fails it was meant for some other payer.
+ */
+function isExactErc7710OnGiwa(value: unknown): value is Erc7710PaymentRequirements {
+    const req = value as Partial<Erc7710PaymentRequirements> | null | undefined;
+    return (
+        typeof req === "object" &&
+        req !== null &&
+        req.scheme === "exact" &&
+        req.network === GIWA_SEPOLIA_CAIP2 &&
+        req.extra?.assetTransferMethod === "erc7710"
+    );
+}
 
 /**
  * Assert a seller's ERC-7710 offer is exactly what this agent is willing to pay.
@@ -153,15 +180,10 @@ export type DelegatedPaymentResult =
  * throws, and the caller maps it to `SELLER_OFFER_INVALID`.
  */
 export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
-    const req = value as Erc7710PaymentRequirements;
-    if (
-        !req ||
-        req.scheme !== "exact" ||
-        req.network !== GIWA_SEPOLIA_CAIP2 ||
-        req.extra?.assetTransferMethod !== "erc7710"
-    ) {
+    if (!isExactErc7710OnGiwa(value)) {
         throw new Error("seller did not offer exact ERC-7710 on GIWA");
     }
+    const req = value;
     if (!isAddress(req.asset) || getAddress(req.asset) !== MOCK_USDC.address) {
         // Never interpolate the raw attacker-controlled value: this message becomes the
         // MCP tool `detail` returned to the driving agent, the one failure channel the
@@ -263,12 +285,158 @@ function redactBearerSecrets(resource: unknown, secrets: string[]): unknown {
     return cleaned === serialized ? resource : JSON.parse(cleaned);
 }
 
+const TRANSACTION_HASH = /^0x[0-9a-fA-F]{64}$/;
+
+/** The hash a seller's own body names — the receipt the hosted shop's ticket carries. */
 function extractTransaction(resource: unknown): Hex | undefined {
     if (resource && typeof resource === "object" && "receipt" in resource) {
         const tx = (resource as {receipt?: {transaction?: unknown}}).receipt?.transaction;
-        if (typeof tx === "string" && /^0x[0-9a-fA-F]{64}$/.test(tx)) return tx as Hex;
+        if (typeof tx === "string" && TRANSACTION_HASH.test(tx)) return tx as Hex;
     }
     return undefined;
+}
+
+type OfferSelection =
+    | {ok: true; accepted: Erc7710PaymentRequirements}
+    | {
+          ok: false;
+          code: "SELLER_OFFER_INVALID" | "FACILITATOR_UNTRUSTED" | "MANAGER_MISMATCH";
+          detail: string;
+      };
+
+/**
+ * One candidate from `accepts`, judged the way a single offer always was: shape, then
+ * facilitator overlap, then the advertised manager.
+ */
+function judgeOffer(
+    candidate: unknown,
+    config: Pick<DelegatedPaymentConfig, "trustedFacilitators" | "delegationManager">,
+): OfferSelection {
+    let accepted: Erc7710PaymentRequirements;
+    try {
+        accepted = assertErc7710Offer(candidate);
+    } catch (error) {
+        return {ok: false, code: "SELLER_OFFER_INVALID", detail: errorMessage(error)};
+    }
+
+    const advertised = accepted.extra.facilitatorAddresses ?? [];
+    const overlaps = config.trustedFacilitators.some((trusted) =>
+        advertised.some(
+            (facilitator) =>
+                typeof facilitator === "string" &&
+                isAddress(facilitator) &&
+                getAddress(facilitator) === trusted,
+        ),
+    );
+    if (!overlaps) {
+        return {
+            ok: false,
+            code: "FACILITATOR_UNTRUSTED",
+            detail: "seller and trusted facilitator signer lists do not overlap",
+        };
+    }
+
+    // The in-band manager advertisement is advisory — settlement authority stays with
+    // the manager in the signed payload — but when it is present and disagrees with the
+    // deployment this agent verified, every leaf we could sign is one the facilitator
+    // must reject. Refuse before signing: a leaf that cannot settle is still a bearer
+    // authorization, and the code should name the fault line, not a downstream symptom.
+    const advertisedManager = accepted.extra.delegationManager;
+    if (
+        advertisedManager !== undefined &&
+        getAddress(advertisedManager) !== getAddress(config.delegationManager)
+    ) {
+        return {
+            ok: false,
+            code: "MANAGER_MISMATCH",
+            detail: "seller advertises a different DelegationManager than the verified deployment",
+        };
+    }
+    return {ok: true, accepted};
+}
+
+/**
+ * The first offer in `accepts` this agent can pay, in the seller's order — the spec's
+ * rule (the client selects, from `accepts`, the requirements it supports), and what
+ * lets a seller list EIP-3009 first for wallets and ERC-7710 second for delegated
+ * agents without losing either payer.
+ *
+ * When nothing qualifies, the reason reported is the first candidate's that was on the
+ * ERC-7710 rail at all: that is the offer the seller meant for this agent, so its fault
+ * is the actionable one — an untrusted facilitator, a foreign manager, a malformed
+ * field. A list with no such candidate is a seller that does not offer this rail.
+ */
+function selectOffer(
+    accepts: unknown,
+    config: Pick<DelegatedPaymentConfig, "trustedFacilitators" | "delegationManager">,
+): OfferSelection {
+    if (!Array.isArray(accepts) || accepts.length === 0) {
+        return {ok: false, code: "SELLER_OFFER_INVALID", detail: "402 body has no accepts"};
+    }
+    let onRail: OfferSelection | undefined;
+    for (const candidate of accepts) {
+        const verdict = judgeOffer(candidate, config);
+        if (verdict.ok) return verdict;
+        if (onRail === undefined && isExactErc7710OnGiwa(candidate)) onRail = verdict;
+    }
+    return (
+        onRail ?? {
+            ok: false,
+            code: "SELLER_OFFER_INVALID",
+            detail: `no exact ERC-7710 offer on GIWA among ${accepts.length} accepts`,
+        }
+    );
+}
+
+/** `application/json` and every `+json` structured syntax (`application/problem+json`, `…/ld+json`). */
+function isJsonMediaType(contentType: string): boolean {
+    const mediaType = contentType.split(";")[0]!.trim().toLowerCase();
+    return mediaType === "application/json" || mediaType.endsWith("+json");
+}
+
+/**
+ * The settlement receipt in `Payment-Response`, when it is a receipt *of this payment*:
+ * `success: true`, this network, and the payer the leaf was signed for. `transaction`
+ * is the hash it names, or absent when the receipt names none (`""`, as the spec
+ * writes it, or omitted).
+ *
+ * Anything else — no header, undecodable, `success: false`, another network or
+ * payer, a transaction that is not a hash — is `undefined`, and the caller falls back
+ * to the body. Deliberately not a failure: the seller served the resource with a 2xx,
+ * so the payment went through and the resource is what the caller paid for; a header
+ * that contradicts that is the seller disagreeing with itself, and a paid resource is
+ * not thrown away over a diagnostic header. The header's own strings (`errorReason`
+ * and the like) are seller-controlled and never reach the result.
+ */
+function readSettlementReceipt(
+    header: string | null,
+    delegator: Address,
+): {transaction?: Hex} | undefined {
+    if (header === null) return undefined;
+    let decoded: unknown;
+    try {
+        decoded = decodePaymentResponseHeader(header);
+    } catch {
+        return undefined;
+    }
+    const receipt = decoded as
+        | {success?: unknown; network?: unknown; payer?: unknown; transaction?: unknown}
+        | null;
+    if (
+        receipt === null ||
+        typeof receipt !== "object" ||
+        receipt.success !== true ||
+        receipt.network !== GIWA_SEPOLIA_CAIP2 ||
+        typeof receipt.payer !== "string" ||
+        !isAddress(receipt.payer) ||
+        getAddress(receipt.payer) !== getAddress(delegator)
+    ) {
+        return undefined;
+    }
+    const transaction = receipt.transaction ?? "";
+    if (transaction === "") return {};
+    if (typeof transaction !== "string" || !TRANSACTION_HASH.test(transaction)) return undefined;
+    return {transaction: transaction as Hex};
 }
 
 /**
@@ -346,44 +514,9 @@ export async function payForDelegatedResource(
         return failure("UNSUPPORTED_X402_VERSION", `unsupported x402 version ${body.x402Version}`);
     }
 
-    let accepted: Erc7710PaymentRequirements;
-    try {
-        accepted = assertErc7710Offer(body.accepts?.[0]);
-    } catch (error) {
-        return failure("SELLER_OFFER_INVALID", errorMessage(error));
-    }
-
-    const advertised = accepted.extra.facilitatorAddresses ?? [];
-    const overlaps = config.trustedFacilitators.some((trusted) =>
-        advertised.some(
-            (candidate) =>
-                typeof candidate === "string" &&
-                isAddress(candidate) &&
-                getAddress(candidate) === trusted,
-        ),
-    );
-    if (!overlaps) {
-        return failure(
-            "FACILITATOR_UNTRUSTED",
-            "seller and trusted facilitator signer lists do not overlap",
-        );
-    }
-
-    // The in-band manager advertisement is advisory — settlement authority stays with
-    // the manager in the signed payload — but when it is present and disagrees with the
-    // deployment this agent verified, every leaf we could sign is one the facilitator
-    // must reject. Refuse before signing: a leaf that cannot settle is still a bearer
-    // authorization, and the code should name the fault line, not a downstream symptom.
-    const advertisedManager = accepted.extra.delegationManager;
-    if (
-        advertisedManager !== undefined &&
-        getAddress(advertisedManager) !== getAddress(config.delegationManager)
-    ) {
-        return failure(
-            "MANAGER_MISMATCH",
-            "seller advertises a different DelegationManager than the verified deployment",
-        );
-    }
+    const selected = selectOffer(body.accepts, config);
+    if (!selected.ok) return failure(selected.code, selected.detail);
+    const {accepted} = selected;
 
     if (config.preflight) {
         let verdict: PreflightVerdict;
@@ -470,11 +603,19 @@ export async function payForDelegatedResource(
         );
     }
 
+    // A paid resource is whatever the seller serves — a ticket as JSON, a report as
+    // text, a document as markdown. Only a body the seller labels JSON is parsed;
+    // anything else comes back as the text it is, and either way it passes the
+    // redaction below.
+    const contentType = second.headers.get("content-type") ?? undefined;
     let resource: unknown;
     try {
-        resource = await second.json();
+        resource =
+            contentType !== undefined && isJsonMediaType(contentType)
+                ? await second.json()
+                : await second.text();
     } catch (error) {
-        return failure("MALFORMED_RESOURCE", `resource is not JSON: ${errorMessage(error)}`);
+        return failure("MALFORMED_RESOURCE", `resource could not be read: ${errorMessage(error)}`);
     }
     // The payment succeeded, so this body is what the caller paid for and has to
     // come back. It is still seller-controlled text that lands in MCP tool output
@@ -482,11 +623,16 @@ export async function payForDelegatedResource(
     // permission context — would park a bearer authorization there. We know the
     // exact values, so strip them instead of trusting the seller not to send them.
     resource = redactBearerSecrets(resource, [leaf.permissionContext, paymentHeader]);
+    const receipt = readSettlementReceipt(
+        second.headers.get(PAYMENT_RESPONSE_HEADER),
+        payload.payload.delegator,
+    );
     return {
         ok: true,
         amount: accepted.amount,
         payTo: getAddress(accepted.payTo),
-        transaction: extractTransaction(resource),
+        transaction: receipt ? receipt.transaction : extractTransaction(resource),
+        ...(contentType === undefined ? {} : {contentType}),
         resource,
     };
 }
