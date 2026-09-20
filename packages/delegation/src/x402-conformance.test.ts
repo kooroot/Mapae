@@ -117,8 +117,12 @@ describe("x402 conformance — 402 offer against the reference implementation", 
         // The schema must not strip the open extra fields this rail depends on:
         // facilitatorAddresses is the trust gate, delegationManager the in-band
         // discovery channel for chains absent from every registry.
+        // paymentFlow is the §6.1 declaration this rail is not `authorization`; the
+        // reference schema must carry it through untouched, or a counterparty validating
+        // against the schema would read Mapae as serve-first-settle-later.
         expect(verdict.data.accepts[0]?.extra).toEqual({
             assetTransferMethod: "erc7710",
+            paymentFlow: "upfront",
             facilitatorAddresses: [FACILITATOR],
             delegationManager: MANAGER,
         });
@@ -206,9 +210,12 @@ describe("x402 conformance — supportedKind flow against the reference implemen
         expect(accepted.extra.facilitatorAddresses).toEqual([FACILITATOR]);
         // Measured behavior of @metamask/x402 0.2.0, pinned so an upgrade that starts
         // propagating more of kinds[].extra announces itself here: the flow copies
-        // ONLY facilitatorAddresses — the in-band manager does not survive it, which
-        // is exactly why the seller's own offer is the load-bearing channel.
+        // ONLY facilitatorAddresses — neither the in-band manager nor the §6.1 flow
+        // declaration survives it, which is exactly why the seller's own offer is the
+        // load-bearing channel, and why the client below must accept an offer that
+        // declares no flow at all: this is what a real counterparty produces.
         expect("delegationManager" in accepted.extra).toBe(false);
+        expect("paymentFlow" in accepted.extra).toBe(false);
     });
 });
 

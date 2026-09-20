@@ -279,6 +279,8 @@ describe("mapaePaywall — the 402 offer", () => {
         const body = await response.json();
         expect(body.accepts[0].extra).toEqual({
             assetTransferMethod: "erc7710",
+            // 흐름 선언은 판매자의 것이고, 퍼실리테이터가 무엇을 광고하든 오퍼에 실린다.
+            paymentFlow: "upfront",
             facilitatorAddresses: [FACILITATOR],
         });
     });

@@ -203,6 +203,24 @@ export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
     // that OZ ERC20 would burn — an unsettleable bearer authorization minted for nothing.
     if (getAddress(req.payTo) === zeroAddress) throw new Error("seller payTo is the zero address");
     if (!/^[1-9]\d*$/.test(req.amount)) throw new Error("seller amount is malformed");
+    // 스펙 §6.1의 결제 흐름 선언. 셋 중 우리가 대응할 수 있는 것은 `upfront`뿐이고,
+    // 부재는 스펙 기본값 `authorization`이다.
+    //
+    // 부재를 통과시키는 이유: `authorization`은 판매자가 먼저 자원을 주고 나중에
+    // 정산하는 흐름이라 정산 위험을 판매자가 스스로 진다. 우리 에이전트가 서명하는
+    // 일회용 leaf의 손실 가능성은 그대로이므로 거절할 근거가 없다 — 그리고 실제
+    // 카운터파티가 그렇게 생긴다: `@metamask/x402` 0.2.0의 supportedKind 흐름은
+    // 우리 /supported의 `extra`에서 `facilitatorAddresses`만 복사하므로, 그 경로로
+    // 만들어진 제3자 오퍼에는 선언이 아예 없다(x402-conformance.test.ts가 고정한
+    // 측정값). 부재를 거절하면 그 판매자 전부가 죽는다.
+    //
+    // 반면 `escrow`는 나중 청구라는 다른 흐름이고, 이 함수가 돌려주는 결과 유니온이
+    // 그 사후 정산을 설명하지 못한다. 알 수 없는 값도 같은 이유로 거절한다.
+    const declaredFlow: unknown = req.extra.paymentFlow;
+    if (declaredFlow !== undefined && declaredFlow !== "upfront") {
+        // 판매자가 준 문자열을 메시지에 넣지 않는 이 파일의 규칙을 지킨다.
+        throw new Error("seller declares an unsupported payment flow");
+    }
     if (
         !Number.isInteger(req.maxTimeoutSeconds) ||
         req.maxTimeoutSeconds < 1 ||

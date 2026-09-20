@@ -403,6 +403,41 @@ describe("x402 §9 refusal vocabulary at the D4 boundary", () => {
         expect(reason(forged)).toBe("invalid_payload");
     });
 
+    test("an echo that drops or rewrites the declared flow is not the seller's offer", () => {
+        // 흐름 선언은 오퍼의 조건이다. 우리 판매자의 오퍼는 예외 없이 upfront를 싣기
+        // 때문에, 그 칸을 빼거나 바꿔 에코한 payload는 판매자가 내건 것과 다른 것을
+        // 승낙한 셈이고 기존 에코 불일치 경로에서 떨어진다 — 새 거절 사유는 없다.
+        for (const paymentFlow of [undefined, "authorization", "escrow", 1, null]) {
+            const base = request();
+            const extra = {...base.paymentPayload.accepted.extra} as Record<string, unknown>;
+            if (paymentFlow === undefined) delete extra.paymentFlow;
+            else extra.paymentFlow = paymentFlow;
+            const accepted = {...base.paymentPayload.accepted, extra};
+            expect(
+                reason({...base, paymentPayload: {...base.paymentPayload, accepted}}),
+                JSON.stringify(paymentFlow),
+            ).toBe("invalid_payload");
+        }
+    });
+
+    test("both sides declaring nothing is still one offer", () => {
+        // 선언이 전파되지 않은 제3자 오퍼: 퍼실리테이터는 오퍼와 에코가 서로 같은지만
+        // 따지며, 흐름 선언을 요구하지는 않는다.
+        const base = request();
+        const extra = {...base.paymentRequirements.extra} as Record<string, unknown>;
+        delete extra.paymentFlow;
+        expect(
+            reason({
+                ...base,
+                paymentRequirements: {...base.paymentRequirements, extra},
+                paymentPayload: {
+                    ...base.paymentPayload,
+                    accepted: {...base.paymentPayload.accepted, extra},
+                },
+            }),
+        ).toBe("");
+    });
+
     test("an attacker-shaped echo is a payload defect, never an unexpected error", () => {
         // Every address in `accepted` passes a predicate before `getAddress`, because
         // `accepted` is attacker-controlled JSON and a `getAddress` throw out of the
@@ -410,7 +445,14 @@ describe("x402 §9 refusal vocabulary at the D4 boundary", () => {
         // request it did examine — with a rejected ledger row blaming our code for their
         // JSON. The comparison answers false for garbage instead.
         const base = request();
-        const erc7710 = {assetTransferMethod: "erc7710", facilitatorAddresses: [FACILITATOR]};
+        // 판매자 오퍼의 extra를 그대로 재현한다 — 흐름 선언까지. 한 칸이라도 빠지면
+        // 아래 변형들이 각자 노리는 가비지 주소가 아니라 에코 불일치에서 떨어져,
+        // 무엇을 고정한 테스트인지 알 수 없게 된다.
+        const erc7710 = {
+            assetTransferMethod: "erc7710",
+            paymentFlow: "upfront",
+            facilitatorAddresses: [FACILITATOR],
+        };
         for (const accepted of [
             {...base.paymentPayload.accepted, payTo: "0xzz"},
             {...base.paymentPayload.accepted, asset: 7},

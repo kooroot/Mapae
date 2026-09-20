@@ -40,6 +40,17 @@ export interface Erc7710Extra {
     [key: string]: unknown;
     assetTransferMethod: "erc7710";
     /**
+     * 정산 순서 선언. 스펙 §6.1은 흐름이 `authorization`이 아니면 이 값을 반드시 싣게
+     * 하는데, Mapae는 `/verify`와 `/settle`이 **모두** 성공한 뒤에야 자원을 넘기는
+     * `upfront`다. 선언이 없으면 스펙을 읽는 클라이언트는 기본값 `authorization`
+     * — 먼저 주고 나중에 정산 — 을 가정하고, 받을 시점을 잘못 계산한다.
+     *
+     * 이 저장소가 만드는 오퍼는 예외 없이 이 값을 싣는다. 그런데도 *읽는* 쪽이
+     * 부재를 허용하는 이유는 {@link Erc7710SupportedPayload}와 `assertErc7710Offer`의
+     * 주석에 적어 두었다.
+     */
+    paymentFlow: "upfront";
+    /**
      * Optional facilitator redeemer allowlist. A delegated agent intersects this
      * list with its own allowlist before signing a payment-specific leaf delegation.
      */
@@ -210,6 +221,7 @@ export function buildErc7710PaymentRequirements(params: {
         asset: MOCK_USDC.address,
         extra: {
             assetTransferMethod: "erc7710",
+            paymentFlow: "upfront",
             ...(params.facilitatorAddresses
                 ? {facilitatorAddresses: params.facilitatorAddresses}
                 : {}),
@@ -227,6 +239,15 @@ export interface Erc7710SupportedPayload {
         network: typeof GIWA_SEPOLIA_CAIP2;
         extra: {
             assetTransferMethod: "erc7710";
+            /**
+             * 이 레일이 정산 후 제공임을 /supported에서도 선언한다. `@metamask/x402`
+             * 0.2.0의 supportedKind 흐름은 `extra`에서 `facilitatorAddresses`만
+             * 복사하므로 이 값은 제3자 판매자의 오퍼까지 전파되지 않는다 — 그래서
+             * 실제 카운터파티가 만든 오퍼에는 선언이 빠져 있고, 읽는 쪽이 부재를
+             * 허용해야 그 오퍼가 산다. 그래도 /supported는 통합자가 레일의 흐름을
+             * 질의할 수 있는 유일한 문서다.
+             */
+            paymentFlow: "upfront";
             facilitatorAddresses: Address[];
             delegationManager?: Address;
         };
@@ -263,6 +284,7 @@ export function buildErc7710SupportedPayload(params: {
                 network: GIWA_SEPOLIA_CAIP2,
                 extra: {
                     assetTransferMethod: "erc7710",
+                    paymentFlow: "upfront",
                     facilitatorAddresses: params.facilitatorAddresses,
                     ...(params.delegationManager
                         ? {delegationManager: params.delegationManager}

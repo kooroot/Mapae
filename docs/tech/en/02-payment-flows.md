@@ -39,6 +39,30 @@ recipient position in the ERC-20 `transfer` calldata. In manager-to-child
 re-delegation, the child's individual cap and the manager's aggregate cap apply
 simultaneously.
 
+**The offer's `extra`.** An ERC-7710 offer's `extra` carries four fields:
+`assetTransferMethod: "erc7710"` (exact-EVM's official transfer method),
+`facilitatorAddresses` (the trust gate — the agent refuses any offer that does not
+overlap its own allowlist), `delegationManager` (GIWA's manager is in no registry, so
+the in-band advertisement is the only channel a third-party integrator has), and
+`paymentFlow: "upfront"`. The last is the declaration §6.1 of the specification
+requires: any flow other than the default `authorization` MUST be declared, and Mapae
+hands over the resource only after `/verify` **and** `/settle` have both succeeded.
+Without the declaration a client reading the specification assumes `authorization`
+— served first, settled after — and computes the wrong moment of delivery. Every offer
+this repo builds carries the value, down to the `/supported` kind.
+
+**The reading side tolerates the declaration's absence.** Absence is the default
+`authorization`, a flow in which the seller carries the settlement risk itself, so it
+does not change what a one-shot leaf our agent signs can lose. And absence is what a
+real counterparty produces: the supportedKind flow in `@metamask/x402` 0.2.0 copies
+only `facilitatorAddresses` out of `/supported`'s `extra`, so an offer built that way
+declares no flow at all (a measurement the conformance test pins). `escrow`, by
+contrast, is a different flow — a later claim — that this client's result cannot
+describe, so it is refused together with any unknown value. On the facilitator side
+`paymentFlow` is part of the echo comparison: our seller's offers always carry the
+value, so a payload that drops or rewrites the field accepted terms other than the
+ones offered, and is `invalid_payload`.
+
 The sequence below shows three paths for one and the same delegation — a normal
 settlement, an over-cap refusal, and an expiry refusal. What decides a refusal is
 the on-chain caveat, not a backend.

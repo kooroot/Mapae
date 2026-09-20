@@ -37,6 +37,28 @@ facilitator → DelegationManager.redeemDelegations
 `transfer` calldata의 수취인 위치도 고정한다. Manager→Child 재위임에서는
 child의 개별 한도와 manager의 합산 한도가 동시에 적용된다.
 
+**오퍼의 `extra`.** ERC-7710 오퍼의 `extra`는 네 칸을 싣는다.
+`assetTransferMethod: "erc7710"`(exact-EVM의 공식 전송 방식),
+`facilitatorAddresses`(신뢰 게이트 — 에이전트는 자기 허용 목록과 겹치지 않는 오퍼를
+거절한다), `delegationManager`(GIWA의 manager는 어느 레지스트리에도 없어 대역 내
+광고가 제3자 통합의 유일한 통로다), 그리고 `paymentFlow: "upfront"`다. 마지막 칸은
+스펙 §6.1이 요구하는 선언이다 — 흐름이 기본값 `authorization`이 아니면 반드시
+선언해야 하고, Mapae는 `/verify`와 `/settle`이 **모두** 성공한 뒤에 자원을 준다.
+선언이 없으면 스펙을 읽는 클라이언트는 `authorization`(선제공·후정산)을 가정하고
+받을 시점을 잘못 계산한다. 우리가 만드는 오퍼는 `/supported`의 kind까지 예외 없이
+이 값을 싣는다.
+
+**읽는 쪽은 선언의 부재를 허용한다.** 부재는 기본값 `authorization`이고, 그 흐름은
+판매자가 정산 위험을 스스로 지는 것이라 우리 에이전트가 서명하는 일회용 leaf의 손실
+가능성을 바꾸지 않는다. 그리고 그것이 실제 카운터파티의 모습이다 —
+`@metamask/x402` 0.2.0의 supportedKind 흐름은 `/supported`의 `extra`에서
+`facilitatorAddresses`만 복사하므로, 그 경로로 만들어진 제3자 오퍼에는 선언이 아예
+없다(컨포먼스 테스트가 고정한 측정값). 반면 `escrow`는 나중 청구라는 다른 흐름이고
+이 클라이언트가 돌려주는 결과가 그 사후 정산을 설명하지 못하므로, 알 수 없는 값과
+함께 거절한다. facilitator 쪽에서는 `paymentFlow`도 에코 비교의 대상이다 — 우리
+판매자의 오퍼는 항상 값을 싣기 때문에, 그 칸을 빼거나 바꿔 에코한 payload는 판매자가
+내건 조건과 다른 것을 승낙한 셈이고 `invalid_payload`가 된다.
+
 아래 시퀀스는 같은 위임 하나에 대한 세 경로 — 정상 정산, 주기 한도 초과 거절,
 만료 거절 — 를 보여준다. 거절의 판정 주체는 백엔드가 아니라 온체인 caveat이다.
 

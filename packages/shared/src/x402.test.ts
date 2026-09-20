@@ -22,6 +22,24 @@ const MANAGER = getAddress("0x4000000000000000000000000000000000000001");
 const DELEGATOR = getAddress("0x5000000000000000000000000000000000000001");
 
 describe("x402 v2 ERC-7710 wire types", () => {
+    test("every offer declares the settle-then-serve flow, with or without the optional extras", () => {
+        // 스펙 §6.1: 흐름이 authorization이 아니면 반드시 선언해야 한다. 선언이 없으면
+        // 클라이언트는 기본값 authorization(선제공·후정산)을 가정하고, Mapae는 /verify와
+        // /settle이 모두 성공한 뒤에 자원을 준다 — 다른 레일을 읽는 셈이 된다.
+        expect(buildErc7710PaymentRequirements({payTo: PAYEE, amount: 1n}).extra).toEqual({
+            assetTransferMethod: "erc7710",
+            paymentFlow: "upfront",
+        });
+        expect(
+            buildErc7710PaymentRequirements({
+                payTo: PAYEE,
+                amount: 1n,
+                facilitatorAddresses: [FACILITATOR],
+                delegationManager: MANAGER,
+            }).extra.paymentFlow,
+        ).toBe("upfront");
+    });
+
     test("round-trips the opaque permission context without changing D2 codecs", () => {
         const accepted = buildErc7710PaymentRequirements({
             payTo: PAYEE,
@@ -39,6 +57,7 @@ describe("x402 v2 ERC-7710 wire types", () => {
         expect(decoded.x402Version).toBe(X402_VERSION);
         expect(decoded.accepted.extra).toEqual({
             assetTransferMethod: "erc7710",
+            paymentFlow: "upfront",
             facilitatorAddresses: [FACILITATOR],
         });
         expect(decoded.payload).toEqual(payload.payload);
@@ -52,7 +71,7 @@ describe("x402 v2 ERC-7710 wire types", () => {
         const payload = buildErc7710PaymentPayload({
             accepted: {
                 ...buildErc7710PaymentRequirements({payTo: PAYEE, amount: 1_000_000n}),
-                extra: {assetTransferMethod: "erc7710", note: "한글 메모 — 🎉"},
+                extra: {assetTransferMethod: "erc7710", paymentFlow: "upfront", note: "한글 메모 — 🎉"},
             },
             delegationManager: MANAGER,
             permissionContext: "0x1234",
@@ -80,6 +99,10 @@ describe("ERC-7710 /supported payload", () => {
         // read `signers`. The two channels must never drift, or an offer built
         // from one is refused by a component reading the other.
         expect(kind?.extra.facilitatorAddresses).toEqual([FACILITATOR]);
+        // /supported도 레일의 결제 흐름을 선언한다. 참조 구현의 supportedKind 흐름은
+        // 이 키를 오퍼로 복사하지 않지만(x402-conformance.test.ts가 고정한 측정값),
+        // 통합자가 흐름을 질의할 수 있는 문서는 여기뿐이다.
+        expect(kind?.extra.paymentFlow).toBe("upfront");
         expect(payload.signers[GIWA_SEPOLIA_CAIP2]).toEqual([FACILITATOR]);
         expect(payload.extensions).toEqual([]);
     });

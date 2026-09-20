@@ -966,3 +966,79 @@ describe("offer-advertised DelegationManager", () => {
         expect(calls).toHaveLength(1);
     });
 });
+
+describe("declared payment flow", () => {
+    /** 오퍼의 `extra.paymentFlow`만 바꾼 402 본문. */
+    const offerFlowing = (flow: unknown) => {
+        const body = paymentRequired();
+        const extra = body.accepts[0]!.extra as Record<string, unknown>;
+        if (flow === undefined) delete extra.paymentFlow;
+        else extra.paymentFlow = flow;
+        return body;
+    };
+
+    function countingProvider(): {provider: DelegatedLeafProvider; signed: () => number} {
+        let signed = 0;
+        return {
+            provider: async () => {
+                signed += 1;
+                return {
+                    delegationManager: MANAGER,
+                    permissionContext: PERMISSION_CONTEXT,
+                    delegator: DELEGATOR,
+                };
+            },
+            signed: () => signed,
+        };
+    }
+
+    test("our seller's own offer declares upfront, and the agent pays it", async () => {
+        const body = paymentRequired();
+        expect((body.accepts[0]!.extra as Record<string, unknown>).paymentFlow).toBe("upfront");
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}), body);
+        expect((await payForDelegatedResource(target, baseConfig(impl))).ok).toBe(true);
+        expect(calls).toHaveLength(2);
+    });
+
+    test("an offer that declares no flow at all is still paid", async () => {
+        // 부재는 스펙 기본값 authorization — 판매자가 먼저 주고 나중에 정산하며 정산
+        // 위험을 스스로 지는 흐름이다. 우리 에이전트가 서명하는 일회용 leaf의 손실
+        // 가능성은 달라지지 않으므로 거절할 근거가 없다. 그리고 이것이 실제 카운터파티의
+        // 모습이다: @metamask/x402 0.2.0의 supportedKind 흐름은 /supported의 extra에서
+        // facilitatorAddresses만 복사하므로 그 경로로 만들어진 오퍼에는 선언이 없다.
+        const {impl, calls} = scriptedFetch(
+            jsonResponse(200, {invoice: "inv-001"}),
+            offerFlowing(undefined),
+        );
+        expect((await payForDelegatedResource(target, baseConfig(impl))).ok).toBe(true);
+        expect(calls).toHaveLength(2);
+    });
+
+    test("escrow and unknown flows are refused before anything is signed", async () => {
+        // escrow는 나중 청구라는 다른 흐름이고, 이 함수의 결과 유니온이 그 사후 정산을
+        // 설명하지 못한다. 알 수 없는 값도 무엇을 약속한 것인지 읽을 수 없으니 같다.
+        for (const flow of ["escrow", "authorization", "upfront-ish", "", 1, null, {}]) {
+            const label = JSON.stringify(flow);
+            const {provider, signed} = countingProvider();
+            const {impl, calls} = scriptedFetch(jsonResponse(200, {}), offerFlowing(flow));
+            const result = await payForDelegatedResource(target, baseConfig(impl, provider));
+
+            expect(result.ok, label).toBe(false);
+            if (result.ok) throw new Error("unreachable");
+            expect(result.code, label).toBe("SELLER_OFFER_INVALID");
+            expect(signed(), label).toBe(0);
+            expect(calls, label).toHaveLength(1);
+        }
+    });
+
+    test("the refusal names no seller-supplied string", async () => {
+        // 이 detail은 MCP 도구 출력으로 구동 에이전트에게 그대로 돌아간다.
+        const {impl} = scriptedFetch(jsonResponse(200, {}), offerFlowing("escrow-내-문자열"));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.detail).toBe("Error: seller declares an unsupported payment flow");
+        expect(result.detail).not.toContain("내 문자열");
+        expect(result.detail).not.toContain("escrow-");
+    });
+});

@@ -531,7 +531,11 @@ function requirements(ctx: Ctx, payTo: Address, amount: bigint): Erc7710PaymentR
         // 300s (the validator max) so leaves survive the period-reset case's evm_increaseTime,
         // which permanently advances the node clock ahead of the wall-clock the leaf expiry uses.
         maxTimeoutSeconds: 300,
-        extra: {assetTransferMethod: "erc7710", facilitatorAddresses: [ctx.relayerAddress]},
+        extra: {
+            assetTransferMethod: "erc7710",
+            paymentFlow: "upfront",
+            facilitatorAddresses: [ctx.relayerAddress],
+        },
     };
 }
 
@@ -956,7 +960,11 @@ async function run(ctx: Ctx): Promise<void> {
             amount: "1000000",
             payTo: OTHER_PAYEE,
             maxTimeoutSeconds: 60,
-            extra: {assetTransferMethod: "erc7710", facilitatorAddresses: [ctx.relayerAddress]},
+            extra: {
+                assetTransferMethod: "erc7710",
+                paymentFlow: "upfront",
+                facilitatorAddresses: [ctx.relayerAddress],
+            },
         };
         const forged = buildErc7710PaymentPayload({
             accepted: req,

@@ -118,6 +118,11 @@ function sameRequirement(a: Erc7710PaymentRequirements, b: Erc7710PaymentRequire
         sameAddress(a.payTo, b.payTo) &&
         sameAddress(a.asset, b.asset) &&
         a.extra?.assetTransferMethod === b.extra.assetTransferMethod &&
+        // 결제 흐름 선언도 오퍼의 조건이다. 우리 판매자의 오퍼는 예외 없이
+        // `paymentFlow: "upfront"`를 싣기 때문에, 그 칸을 빼거나 바꿔 에코한 payload는
+        // 판매자가 내건 조건과 다른 것을 승낙한 셈이고 여기서 떨어진다. 둘 다 없는
+        // 경우(선언이 전파되지 않은 제3자 오퍼)는 일치다.
+        a.extra?.paymentFlow === b.extra.paymentFlow &&
         sameOptionalManager(a.extra?.delegationManager, b.extra.delegationManager) &&
         sameAddressList(a.extra?.facilitatorAddresses, b.extra.facilitatorAddresses)
     );

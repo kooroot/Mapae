@@ -91,13 +91,17 @@ Payment-Required: eyJ4NDAyVmVyc2lvbiI6Miwi…
 {"x402Version":2,"resource":{"url":"http://127.0.0.1:3000/api/report","description":"일일 리포트"},
  "accepts":[{"scheme":"exact","network":"eip155:91342","amount":"10000",
    "payTo":"0x…","asset":"0xcfeb694719A09caeb80798e2011298F29CDa4e92",
-   "extra":{"assetTransferMethod":"erc7710","facilitatorAddresses":["0x…"],"delegationManager":"0x…"}}]}
+   "extra":{"assetTransferMethod":"erc7710","paymentFlow":"upfront",
+     "facilitatorAddresses":["0x…"],"delegationManager":"0x…"}}]}
 ```
 
 사람과 `curl`에게 402는 정상이다. `network`는 GIWA Sepolia(`eip155:91342`),
 `amount`는 최소 단위(tUSDC는 6자리라 `0.01` = `10000`), `asset`은 tUSDC 컨트랙트다.
 `facilitatorAddresses`와 `delegationManager`는 미들웨어가 facilitator의 `/supported`에서
-읽어 그대로 복사한다 — 로컬 배포 파일이 필요 없는 이유다. `resource.url`은 요청이
+읽어 그대로 복사한다 — 로컬 배포 파일이 필요 없는 이유다. `paymentFlow`는 이 레일이
+**정산 후 제공**임을 선언한다 — 마패는 `/verify`와 `/settle`이 모두 성공한 뒤에
+핸들러를 부른다. x402 v2 §6.1은 기본값 `authorization`(선제공·후정산)이 아닌 흐름을
+반드시 선언하게 하며, 미들웨어가 알아서 싣는다. `resource.url`은 요청이
 들어온 URL이고, `baseUrl`을 두었다면 그 주소 + 경로다.
 
 ## 4. 매니페스트 — `/.well-known/mapae.json`
