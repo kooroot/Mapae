@@ -441,9 +441,11 @@ Transaction hashes are persisted before submission; the original receipt is reco
 across restarts, and successful ledger entries are counted once. Signed transactions
 and permission payloads are never stored. An uncertain send remains
 `settlement_pending`, with its hash, rather than authorizing another transaction. A body
-answered out of that journal rather than from a fresh broadcast is marked `replayed`, so
-one sale is counted once. Every refusal is an x402 v2 §9 word. A facilitator
-signer still runs in one process. See the [service documentation](apps/facilitator-erc7710/README.md)
+answered by a call that did not perform the settlement itself — the journal already held
+the payment when the call began, or the call was coalesced into a concurrent one — is
+marked `replayed`; a resumed claim re-sends the bytes that row already named, never a
+second transaction. Every refusal formed before the broadcast is an x402 v2 §9 word except
+`delegation_rejected`. A facilitator signer still runs in one process. See the [service documentation](apps/facilitator-erc7710/README.md)
 for schema 6 rollout requirements and recovery boundaries.
 
 See the [technical documentation](https://docs.mapae.io) for the threat model and the

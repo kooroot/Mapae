@@ -49,20 +49,26 @@ payer는 위임이 허락하는 만큼 정산을 요구할 수 있다. 그래서
 언제나 해시와 함께 나간다: 저널이 브로드캐스트 전에 해시를 적으므로 해시 없는 미확정은
 존재하지 않는다.
 
-같은 결제의 저널 행이 호출 전에 이미 있었으면 응답에 `replayed: true`가 붙는다 —
-답은 앞선 시도의 것이고 새로 브로드캐스트한 것은 없다(재개된 청구는 그 행이 이미 이름 댄
-바이트를 다시 보내므로 해시가 같다). 없으면 이 호출이 정산한 것이거나 브로드캐스트 전에
-실패한 것이다. 되찾은 정산과 갓 한 정산은 이 표시 말고는 같은 본문이라, 판매자는 이것으로
-한 판매를 한 번만 센다. 같은 결제로 몰린 동시 호출은 하나의 작업으로 합쳐지므로 모두 첫
-호출의 값을 읽는다.
+`replayed: true`는 "이 호출이 그 답을 만든 호출이 아니다"라는 뜻이다. 호출이 시작될 때
+이미 그 결제의 저널 행이 있었거나(재개된 청구는 그 행이 이미 이름 댄 바이트를 다시 보내므로
+해시가 같다 — 새 거래가 아니다), 같은 결제로 몰린 동시 호출이 하나의 작업으로 합쳐져 그
+작업의 답을 받았거나다. 표시가 없으면 이 호출이 정산한 것이거나 브로드캐스트 전에 실패한
+것이다. 그래서 한 결제에 표시 없는 답은 많아야 하나다.
+
+이 표시만으로 배송을 막을 수는 없다: 첫 시도가 `settlement_pending`으로 끝나고 나중 호출이
+그 청구를 마무리하면 성공한 답은 *전부* `replayed`다. 한 판매를 한 번만 배송하려는 판매자는
+결제 intent id를 자기 쪽에 기록해 중복을 막고, 이 표시는 말 그대로 "다른 호출이 한 일"로만
+읽는다.
 
 ## 거절 낱말
 
-거절 사유는 x402 v2 §9 어휘에서만 고른다. `/verify`의 `invalidReason`, `/settle`의
-`errorReason`, `/settle`이 원장에 남기는 `rejected` 행의 `errorCode`가 같은 문자열이다 —
-한 분류(`describeFailure`)를 세 소비자가 나눠 읽으므로 구매자가 받은 이유와 운영자가
-세는 코드가 어긋날 수 없다. 사유의 *문장*은 운영자 로그에만 남는다: 위임이 왜 거절됐는지
-배운 호출자는 그 위임의 caveat 경계를 배운다.
+브로드캐스트 전에 형성된 거절은 한 분류(`describeFailure`)에서 나온다. `/verify`의
+`invalidReason`, `/settle`의 `errorReason`, `/settle`이 원장에 남기는 `rejected` 행의
+`errorCode`가 그 한 값이라, 구매자가 받은 이유와 운영자가 세는 코드가 어긋날 수 없다.
+낱말은 `delegation_rejected` 하나를 빼면 모두 x402 v2 §9 어휘다. 채굴된 뒤에 실패한
+결과(`settlement_reverted`, `vendor_not_credited`)는 이 분류를 거치지 않는다 — 영수증을
+읽은 저널이 terminal 행에 적고 `/settle`이 그 행을 그대로 싣는다. 사유의 *문장*은 운영자
+로그에만 남는다: 위임이 왜 거절됐는지 배운 호출자는 그 위임의 caveat 경계를 배운다.
 
 | 낱말 | 무엇이 내는가 |
 | --- | --- |
@@ -74,15 +80,18 @@ payer는 위임이 허락하는 만큼 정산을 요구할 수 있다. 그래서
 | `invalid_transaction_state` | `/verify`만 낸다 — 이 결제의 정산이 이미 온체인에서 실패로 끝났다(채굴된 revert, 판매자 앞 `Transfer` 없는 영수증). 재시뮬레이션이 유효하게 만들 수 없다 |
 | `settlement_pending` | `/settle`만 낸다 — 원래 거래는 있고 결과를 모른다. 언제나 비어 있지 않은 `transaction`과 함께 |
 | `unexpected_verify_error` / `unexpected_settle_error` | 위 어디에도 속하지 않는 예외 — 우리 쪽 결함이다. 브로드캐스트 전에 던졌으므로 청구된 것은 없지만 위임에 대한 판정도 아니다 |
-| `delegation_rejected` | §9 밖의 유일한 낱말 — 아래 |
+| `delegation_rejected` | 거절 판정 중 §9 밖의 유일한 낱말 — 아래 |
 | `rate_limited` / `facilitator_not_ready` | 거절이 아니라 "요청을 보지 않았다" — 위 "요청 제한", 아래 "`/health`" |
-| `budget_exhausted` / `payer_budget_exhausted` | 그날 가스 예산 — 위 "일일 가스 예산" |
+| `budget_exhausted` / `payer_budget_exhausted` | 거절이지만 §9 밖이다 — 위임이 아니라 그날 가스 예산이 거절했다(위 "일일 가스 예산") |
+| `settlement_reverted` / `vendor_not_credited` | 거절이 아니라 채굴된 terminal 결과 — `describeFailure`가 아니라 영수증을 읽은 저널이 내고, 가스는 이미 썼다(위 표) |
 
 `delegation_rejected`는 §9 밖에 있으므로 정의가 좁다: facilitator가 라이브 상태로 위임을
 검사했고 체인이 redeem을 거부했다 — 디코드된 시뮬레이션 revert(노드가 `-32000`으로 보고해
 viem에 revert 데이터가 없는 `ExecutionRevertedError`까지), 또는 `MAX_REDEMPTION_GAS`를
 넘는 가스. "viem 오류면 전부"가 아니다: 우리 인코딩 실수 같은 다른 viem 오류는
-`unexpected_*_error`이고, 체인이 본 적 없는 위임을 구매자가 다시 서명하러 가서는 안 된다.
+`unexpected_*_error`다 — facilitator는 체인이 본 적 없는 위임을 거절됐다고 말하지 않는다.
+구매자를 재서명으로 보내는 마지막 판단은 판매자 사다리의 몫이고, 그쪽은 아직 `/verify`의
+`invalidReason`을 `rate_limited`·`facilitator_not_ready` 말고는 모두 거절로 읽는다.
 낱말이 하나인 것도 의도다 — 어느 caveat이 걸렸는지는 revert 문장이 말하고, 그것은
 호출자가 탐색할 경계다.
 

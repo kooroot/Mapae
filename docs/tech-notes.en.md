@@ -495,7 +495,7 @@ gone; the model and its tests remain. The ERC-7710 delegated path behaves differ
 
 | | Direct payment (`packages/shared` error model) | Delegated payment (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
-| External response | `SettlementError._tag` + `describe()` cause | x402 v2 §9's **closed words** — `invalid_payload`, `settlement_pending`, `delegation_rejected` and the rest. The reason's sentence never goes out |
+| External response | `SettlementError._tag` + `describe()` cause | x402 v2 §9's **closed words** — `invalid_payload`, `settlement_pending` and the rest, plus `delegation_rejected` from outside §9. The reason's sentence never goes out |
 | Status code | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |
 | Client branching | Tag | `DelegatedPaymentFailureCode` (the agent's own classification) |
 
@@ -509,11 +509,14 @@ leaving only its size. The operator sees the cause; the caller does not.
 
 ### The refusal words are §9's
 
-The facilitator picks its refusal reasons from the x402 v2 §9 vocabulary and nowhere
-else. `/verify`'s `invalidReason`, `/settle`'s `errorReason` and the `errorCode` on the
-`rejected` row `/settle` writes to the ledger are the same string — one classification
-(`describeFailure`) read by three consumers, so the reason a buyer is given and the code
-an operator counts can never disagree.
+A facilitator refusal formed before the broadcast comes out of one classification
+(`describeFailure`), and every word of it but `delegation_rejected` is from the x402 v2 §9
+vocabulary. `/verify`'s `invalidReason`, `/settle`'s `errorReason` and the `errorCode` on
+the `rejected` row `/settle` writes to the ledger are that one value, so the reason a
+buyer is given and the code an operator counts can never disagree. A result that failed
+after it was mined (`settlement_reverted`, `vendor_not_credited`) does not pass through
+that classification — the journal writes it onto the terminal row from the receipt, and
+`/settle` carries that row verbatim (last line of the table below).
 
 | Word | What produces it |
 |---|---|
@@ -525,15 +528,21 @@ an operator counts can never disagree.
 | `invalid_transaction_state` | `/verify` only — this payment's settlement already ended on chain as a failure (a mined revert, a receipt with no `Transfer` to the seller). Re-simulating cannot make it valid |
 | `settlement_pending` | `/settle` only — the original transaction exists and its result is unknown. Always with a non-empty `transaction` |
 | `unexpected_verify_error` / `unexpected_settle_error` | An exception that is none of the above — a defect of ours. It threw before the broadcast, so nobody was charged, but nothing about it is a verdict on the delegation either |
+| `settlement_reverted` / `vendor_not_credited` | Not a refusal but a mined terminal result — the journal produces it from the receipt, not `describeFailure`, and the gas is already spent |
 
-`delegation_rejected` is the one word outside §9, and its definition is narrow for that
-reason: the facilitator examined the delegation against live state and the chain refused
-to redeem it — a decoded simulation revert (including the `ExecutionRevertedError` shape a
-node reports under a plain `-32000`, leaving viem no revert data to decode), or gas above
-`MAX_REDEMPTION_GAS`. It is not "any viem error": another viem error, such as an encoding
-mistake of ours, is `unexpected_*_error` — a buyer must not be sent to re-sign a grant the
-chain never saw. `budget_exhausted` and `payer_budget_exhausted`, the day's gas budget,
-are outside §9 too: what refused was our relayer's day, not the delegation. `rate_limited`
+`delegation_rejected` is the one refusal word outside §9, and its definition is narrow for
+that reason: the facilitator examined the delegation against live state and the chain
+refused to redeem it — a decoded simulation revert (including the `ExecutionRevertedError`
+shape a node reports under a plain `-32000`, leaving viem no revert data to decode), or gas
+above `MAX_REDEMPTION_GAS`. It is not "any viem error": another viem error, such as an
+encoding mistake of ours, is `unexpected_*_error` — the facilitator does not call a grant
+the chain never saw a rejected one. The last call on sending a buyer back to re-sign
+belongs to the seller's ladder, and its `decideVerification` still reads every `/verify`
+`invalidReason` but `rate_limited` and `facilitator_not_ready` as `rejected` (a 403
+`delegation_rejected`); telling `unexpected_verify_error` and `invalid_transaction_state`
+apart is work left on the seller SDK. `budget_exhausted` and `payer_budget_exhausted`, the
+day's gas budget, are outside §9 too: what refused was our relayer's day, not the
+delegation. `rate_limited`
 and `facilitator_not_ready` are not refusals at all but "the request was never looked at",
 and the seller's ladder reads them as 503.
 
@@ -618,11 +627,15 @@ by producer and consumer alike. The decision ladder leans toward `unknown`.
 was broadcast. That is the shape x402 v2 requires, and `settlement_pending` cannot go out
 without the mandatory hash.
 
-`replayed: true` means a journal row for this payment already existed before the call: the
-answer belongs to an earlier attempt and nothing new was broadcast (a resumed claim
-re-sends the very bytes that row already named, so the hash is the same). A recovered
-settlement and a fresh one are otherwise the same body, so this is what lets the seller
-count one sale once.
+`replayed: true` means "this call is not the one that produced the answer it carries":
+either a journal row for the payment already existed when the call began (a resumed claim
+re-sends the very bytes that row already named, so the hash is the same — not a second
+transaction), or the call was coalesced into a concurrent call's operation and handed that
+operation's answer. At most one answer per payment is therefore unmarked. It is not a
+delivery gate on its own: when a first attempt ends `settlement_pending` and a later call
+finishes that claim, every successful answer is marked. A seller dedupes on its own record
+of the payment intent id and reads this flag as exactly what it says — "some other call
+did this".
 
 This path can be forced on a fork — shrinking the facilitator's receipt wait to
 1ms exercises the unconfirmed-after-broadcast branch.
