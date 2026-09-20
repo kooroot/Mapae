@@ -125,7 +125,13 @@ describe("x402 v2 transport headers", () => {
             transaction: `0x${"cd".repeat(32)}` as const,
         };
         expect(decodePaymentResponseHeader(encodePaymentResponseHeader(settled))).toEqual(settled);
-        const unnamed = {success: true, network: GIWA_SEPOLIA_CAIP2, payer: DELEGATOR};
+        // `transaction` is required; "no on-chain transaction" is spelled `""`.
+        const unnamed = {
+            success: true,
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: DELEGATOR,
+            transaction: "",
+        } as const;
         expect(decodePaymentResponseHeader(encodePaymentResponseHeader(unnamed))).toEqual(unnamed);
     });
 });

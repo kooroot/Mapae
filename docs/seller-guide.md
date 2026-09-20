@@ -132,7 +132,8 @@ Payment-Required: eyJ4NDAyVmVyc2lvbiI6Miwi…
 3. 같은 경로를 `Payment-Signature` 헤더와 함께 다시 부른다.
 4. 미들웨어가 facilitator에 `/verify`(시뮬레이션) → `/settle`(브로드캐스트)을 차례로
    묻고, 정산이 확인된 뒤에야 핸들러를 실행한다 — **settle-before-serve**.
-5. 응답에는 핸들러의 본문과 `Payment-Response` 헤더(정산 tx 해시)가 같이 실린다.
+5. 응답에는 핸들러의 본문과 `Payment-Response` 헤더(정산 tx 해시, facilitator가
+   해시를 주지 않았으면 스펙대로 `""`)가 같이 실린다.
 
 에이전트는 호출마다 서명하지 않아도 되는 손님이다 — 소유자가 정한 기간 한도 안에서
 반복 결제한다. 그 손님을 만드는 쪽의 절차가 [MCP 연결 가이드](mcp-guide.md)다.

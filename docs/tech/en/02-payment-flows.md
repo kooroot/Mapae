@@ -195,8 +195,8 @@ paid as-is. When none qualifies, the reason is the first candidate's that was on
 ERC-7710 rail at all; when no candidate was, it is `SELLER_OFFER_INVALID`. The 2xx
 `Payment-Response` header is read only when it is a receipt of this payment —
 `success: true`, the same network, the payer the leaf was signed for — and then
-`transaction` is the header's value; a missing or self-contradicting header falls back
-to the body's `receipt.transaction`. No
+`transaction` is the header's value (`""`, as the spec writes it, meaning no hash); a
+missing or self-contradicting header falls back to the body's `receipt.transaction`. No
 seller string from the header reaches the result. The resource is parsed only when its
 content-type is JSON and returned as text otherwise, with the bearer values redacted
 either way. Of the content type only the media type comes back — the parameters are

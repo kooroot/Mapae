@@ -619,7 +619,7 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
         expect(seen.receipt?.intent).toBe(validated.paymentIntentId);
     });
 
-    test("a settlement without a transaction hash still serves, with no transaction field", async () => {
+    test("a settlement without a transaction hash still serves, and the receipt says \"\"", async () => {
         const remote = facilitator({
             "/settle": json({success: true, network: GIWA_SEPOLIA_CAIP2, payer: PAYER}),
         });
@@ -627,10 +627,12 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
         const response = await pay(app);
         expect(response.status).toBe(200);
         expect(seen.receipt).not.toHaveProperty("transaction", expect.anything());
+        // The wire receipt still carries the key: the spec's "no hash" is `""`.
         expect(JSON.parse(atob(response.headers.get(PAYMENT_RESPONSE_HEADER) ?? ""))).toEqual({
             success: true,
             network: GIWA_SEPOLIA_CAIP2,
             payer: PAYER,
+            transaction: "",
         });
     });
 

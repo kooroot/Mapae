@@ -340,16 +340,18 @@ export const PAYMENT_RESPONSE_HEADER = "Payment-Response";
 
 /**
  * Settlement receipt a resource server returns in `Payment-Response` beside a 2xx — the
- * x402 v2 `SettleResponse`. The spec makes `transaction` required and `""` when no
- * on-chain transaction can be named; `@mapae/seller` still omits the field when its
- * facilitator reported none, and the agent reads both forms as "no hash".
+ * x402 v2 `SettleResponse`. `transaction` is required, and `""` when no on-chain
+ * transaction can be named: a counterparty validating against the reference schema
+ * rejects a receipt that simply omits the field.
+ *
+ * This is the shape we *write*. What arrives from someone else is `unknown` until the
+ * reader has checked it, which is why the decoder below does not claim this type.
  */
 export interface SettleResponse {
     success: boolean;
     network: string;
     payer: Address;
-    transaction?: Hex | "";
-    errorReason?: string;
+    transaction: Hex | "";
 }
 
 /* ------------------------------------------------------------------ *
@@ -406,6 +408,12 @@ export function encodePaymentResponseHeader(receipt: SettleResponse): string {
     return encodeBase64Json(receipt);
 }
 
-export function decodePaymentResponseHeader(header: string): SettleResponse {
-    return decodeBase64Json(header) as SettleResponse;
+/**
+ * A receipt is written by the counterparty, so the decoded value is `unknown`: the only
+ * guarantee the codec gives is that the bytes were base64 UTF-8 JSON. The reader
+ * (`readSettlementReceipt` in `@mapae/delegation`) decides field by field what it
+ * believes, and casting to `SettleResponse` here would only hide that it has to.
+ */
+export function decodePaymentResponseHeader(header: string): unknown {
+    return decodeBase64Json(header);
 }

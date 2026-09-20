@@ -589,7 +589,9 @@ function buildPaywall(
                 success: true,
                 network: requirements.network,
                 payer,
-                transaction: outcome.transaction,
+                // The spec writes "no hash" as `""`, not as a missing field: a
+                // counterparty validating the reference schema needs the key present.
+                transaction: outcome.transaction ?? "",
             }),
         );
     };
