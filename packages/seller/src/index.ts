@@ -6,17 +6,17 @@ import type {Address, Hex} from "viem";
 import {getAddress, isAddress, isHex, zeroAddress} from "viem";
 import {
     GIWA_SEPOLIA_CAIP2,
-    LEGACY_PAYMENT_RESPONSE_HEADER,
     MOCK_USDC,
     PAYMENT_REQUIRED_HEADER,
     PAYMENT_RESPONSE_HEADER,
+    PAYMENT_SIGNATURE_HEADER,
     X402_VERSION,
     buildErc7710PaymentRequirements,
-    decodeAnyPaymentHeader,
+    decodePaymentHeader,
     encodePaymentRequiredHeader,
+    encodePaymentResponseHeader,
     fromTokenAmount,
     isLoopbackHost,
-    readInboundPaymentHeader,
     redactForLog,
     toTokenAmount,
     type Erc7710PaymentPayload,
@@ -165,8 +165,8 @@ export interface MapaeSeller {
      *   the answer was lost. The buyer may have been charged and must not re-sign blindly.
      * - 422 `settlement_failed` — the facilitator reports the transfer did not happen.
      *
-     * On success the receipt rides in `Payment-Response` (and the legacy
-     * `X-PAYMENT-RESPONSE`), `c.get("mapaeReceipt")` holds it, and `onSettled` has run.
+     * On success the receipt rides in `Payment-Response`, `c.get("mapaeReceipt")` holds
+     * it, and `onSettled` has run.
      *
      * The facilitator rate-limits `/verify` and `/settle` per client address, and reads
      * `X-Mapae-Client-IP` only from a caller whose own address it cannot see — one on
@@ -408,7 +408,7 @@ type DecodedPayment = {ok: true; payload: Erc7710PaymentPayload} | {ok: false; d
 function readDelegatedPayment(header: string): DecodedPayment {
     let decoded: unknown;
     try {
-        decoded = decodeAnyPaymentHeader(header);
+        decoded = decodePaymentHeader(header);
     } catch {
         return {ok: false, detail: "invalid base64 JSON"};
     }
@@ -475,13 +475,13 @@ function buildPaywall(
 
         // Whatever is wrong with the header itself is answered before the facilitator
         // is involved: a bad header costs nobody a network call.
-        const payment = readInboundPaymentHeader((name) => c.req.header(name));
+        const header = c.req.header(PAYMENT_SIGNATURE_HEADER);
         let payload: Erc7710PaymentPayload | undefined;
-        if (payment) {
-            if (payment.value.length > MAX_PAYMENT_HEADER_LENGTH) {
+        if (header !== undefined) {
+            if (header.length > MAX_PAYMENT_HEADER_LENGTH) {
                 return c.json({error: "malformed_payment", detail: "header too large"}, 400);
             }
-            const decoded = readDelegatedPayment(payment.value);
+            const decoded = readDelegatedPayment(header);
             if (!decoded.ok) {
                 return c.json({error: "malformed_payment", detail: decoded.detail}, 400);
             }
@@ -580,20 +580,18 @@ function buildPaywall(
 
         await next();
 
-        // Built from fields this middleware validated, not by echoing the facilitator's
-        // body. Every field is ASCII by construction — a CAIP-2 constant, a checksummed
-        // address, a hex hash already matched against /^0x[0-9a-fA-F]{64}$/ — so `btoa`
-        // cannot throw here, after settlement, where a throw would be a paid 500.
-        const receiptHeader = btoa(
-            JSON.stringify({
+        // Built from fields this middleware validated — a CAIP-2 constant, a checksummed
+        // address, a hex hash already matched against /^0x[0-9a-fA-F]{64}$/ — not by
+        // echoing the facilitator's body.
+        c.header(
+            PAYMENT_RESPONSE_HEADER,
+            encodePaymentResponseHeader({
                 success: true,
                 network: requirements.network,
                 payer,
                 transaction: outcome.transaction,
             }),
         );
-        c.header(PAYMENT_RESPONSE_HEADER, receiptHeader);
-        c.header(LEGACY_PAYMENT_RESPONSE_HEADER, receiptHeader);
     };
     const descriptor: PaywallDescriptor = {price: options.price.trim(), description, payTo};
     return Object.assign(paywall, {[PAYWALL]: descriptor});

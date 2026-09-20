@@ -180,7 +180,7 @@ describe("judgePreflight", () => {
 
 /**
  * The MCP tool takes a resource path from whatever is driving the agent, which in
- * D5 is a model. A path that resolves to another origin would send `X-PAYMENT` —
+ * D5 is a model. A path that resolves to another origin would send `Payment-Signature` —
  * a bearer authorization — somewhere the operator never configured, so this is a
  * security boundary rather than input tidying.
  */

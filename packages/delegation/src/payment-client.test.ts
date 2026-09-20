@@ -4,6 +4,7 @@ import {
     GIWA_SEPOLIA_CAIP2,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
+    decodePaymentHeader,
     encodePaymentRequiredHeader,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
@@ -96,7 +97,7 @@ function baseConfig(fetchImpl: typeof fetch, provider: DelegatedLeafProvider = o
 }
 
 describe("D5 payForDelegatedResource", () => {
-    test("happy path: 402 → sign → retry with X-PAYMENT → resource + tx", async () => {
+    test("happy path: 402 → sign → retry with Payment-Signature → resource + tx", async () => {
         const {impl, calls} = scriptedFetch(
             jsonResponse(200, {
                 invoice: "inv-001",
@@ -112,10 +113,10 @@ describe("D5 payForDelegatedResource", () => {
         expect(result.amount).toBe("1000000");
         expect(getAddress(result.payTo)).toBe(PAYEE);
 
-        // The retry — and only the retry — carries the bearer X-PAYMENT header.
+        // The retry — and only the retry — carries the bearer Payment-Signature header.
         expect(calls).toHaveLength(2);
-        expect((calls[0]?.init?.headers as Record<string, string> | undefined)?.["X-PAYMENT"]).toBeUndefined();
-        expect((calls[1]?.init?.headers as Record<string, string>)["X-PAYMENT"]).toBeTypeOf("string");
+        expect((calls[0]?.init?.headers as Record<string, string> | undefined)?.["Payment-Signature"]).toBeUndefined();
+        expect((calls[1]?.init?.headers as Record<string, string>)["Payment-Signature"]).toBeTypeOf("string");
     });
 
     test("accepts an offer whose extra is copied verbatim from /supported kinds[].extra", async () => {
@@ -162,39 +163,36 @@ describe("D5 payForDelegatedResource", () => {
         expect(calls).toHaveLength(2);
     });
 
-    test("a header-transported offer is paid with Payment-Signature alone", async () => {
-        // Negotiated, not dual-sent, exactly like the reference client. An ERC-7710
-        // payload carries a full permission context, and the same value under two
-        // header names crossed the HTTP server's total-header limit — the seller
-        // answered 431 before the handler's own size check ever ran (measured on the
-        // fork e2e). The 402's own transport is the negotiation signal.
+    test("Payment-Signature is the one submission header, whichever way the offer arrived", async () => {
+        // Never a second name beside it: an ERC-7710 payload carries a full permission
+        // context, and the same value under two header names crossed the HTTP server's
+        // total-header limit — the seller answered 431 before the handler's own size
+        // check ever ran (measured on the fork e2e). And no v1 alias: the v1 transport
+        // cannot carry an ERC-7710 offer, so a seller reading only `X-PAYMENT` has
+        // nothing this agent could pay for.
         const header = encodePaymentRequiredHeader(
             paymentRequired() as PaymentRequired<Erc7710PaymentRequirements>,
         );
-        const {impl, calls} = scriptedFetch(
-            jsonResponse(200, {invoice: "inv-001"}),
-            null,
-            {"Payment-Required": header},
-        );
-        const result = await payForDelegatedResource(target, baseConfig(impl));
+        for (const [firstBody, firstHeaders] of [
+            [null, {"Payment-Required": header}],
+            [paymentRequired(), {}],
+        ] as const) {
+            const {impl, calls} = scriptedFetch(
+                jsonResponse(200, {invoice: "inv-001"}),
+                firstBody,
+                firstHeaders,
+            );
+            const result = await payForDelegatedResource(target, baseConfig(impl));
 
-        expect(result.ok).toBe(true);
-        const headers = calls[1]?.init?.headers as Record<string, string>;
-        expect(headers["Payment-Signature"]).toBeTypeOf("string");
-        expect(headers["X-PAYMENT"]).toBeUndefined();
-    });
-
-    test("a body-transported offer is paid with X-PAYMENT alone", async () => {
-        // The already-deployed v1-transport seller answers with a body-only 402 and
-        // reads only X-PAYMENT; sending it the v2 name would waste the same header
-        // budget the test above protects.
-        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}));
-        const result = await payForDelegatedResource(target, baseConfig(impl));
-
-        expect(result.ok).toBe(true);
-        const headers = calls[1]?.init?.headers as Record<string, string>;
-        expect(headers["X-PAYMENT"]).toBeTypeOf("string");
-        expect(headers["Payment-Signature"]).toBeUndefined();
+            expect(result.ok).toBe(true);
+            const headers = calls[1]?.init?.headers as Record<string, string>;
+            expect(Object.keys(headers)).toEqual(["Payment-Signature"]);
+            expect(decodePaymentHeader(headers["Payment-Signature"]!).payload).toEqual({
+                delegationManager: MANAGER,
+                permissionContext: PERMISSION_CONTEXT,
+                delegator: DELEGATOR,
+            });
+        }
     });
 
     test("falls back to the 402 JSON body when the Payment-Required header is malformed", async () => {
@@ -411,9 +409,8 @@ describe("D5 payForDelegatedResource", () => {
  *
  * Every case below threw an unstructured exception out of `payForDelegatedResource`
  * before these guards existed — verified by running the real function against these exact
- * responses. A thrown DOMException or TypeError is not a reason: it names no field, no
- * seller, and nothing the caller can act on, and for one of them it arrives *after* the
- * leaf delegation has been signed.
+ * responses. A thrown TypeError is not a reason: it names no field, no seller, and
+ * nothing the caller can act on.
  */
 describe("D5 every failure returns a reason, never a throw", () => {
     async function codeFor(firstBody: unknown, provider = okProvider): Promise<string> {
@@ -476,60 +473,23 @@ describe("D5 every failure returns a reason, never a throw", () => {
         );
     });
 
-    /**
-     * The sharpest of the group.
-     *
-     * `X-PAYMENT` is base64 via `btoa`, which is Latin-1 only, and the header echoes the
-     * seller's whole requirements object — including fields the agent never reads. One
-     * character above U+00FF and the encode throws. That encode happens *after* the leaf
-     * is signed, so the failure used to leave a bearer authorization in existence and hand
-     * the caller a DOMException naming no field at all.
-     *
-     * It is one refactor away from firing in this very repo: the seller's own descriptions
-     * contain an em dash and today sit at the 402 top level. Moving them into `accepts[0]`
-     * — the v1-shaped layout CLAUDE.md flags as the most common trap — would kill every
-     * payment.
-     */
-    describe("an offer that cannot be header-encoded is refused before signing", () => {
-        for (const [label, note] of [
-            ["Hangul", "한글 메모"],
-            ["em dash", "invoice — one"],
-            ["emoji (astral, surrogate pair)", "paid 🎉"],
-            ["a single U+0100", "Ā"],
-        ] as const) {
-            test(label, async () => {
-                const offer = paymentRequired();
-                // A field the agent never reads: the point is that *any* byte in the
-                // object reaches btoa, not just the ones that are validated.
-                (offer.accepts[0] as unknown as {extra: Record<string, unknown>}).extra.note = note;
-                expect(await codeFor(offer)).toBe("SELLER_OFFER_INVALID");
-            });
+    test("an offer carrying non-Latin-1 text is paid, and the header echoes it back intact", async () => {
+        // The header echoes the seller's whole requirements object, fields the agent
+        // never reads included. Under the Latin-1 `btoa` codec a Korean note here threw
+        // *after* the leaf was signed, so the agent refused such offers up front; the
+        // UTF-8 codec the reference implementation uses carries them, and the echoed
+        // `accepted` block the facilitator compares against the seller's offer must
+        // come back byte for byte — a corrupted note is a mismatched offer.
+        for (const note of ["한글 메모", "invoice — one", "paid 🎉", "Ā"]) {
+            const offer = paymentRequired();
+            (offer.accepts[0] as unknown as {extra: Record<string, unknown>}).extra.note = note;
+            const {impl, calls} = scriptedFetch(jsonResponse(200, {ok: true}), offer);
+            const result = await payForDelegatedResource(target, baseConfig(impl));
+
+            expect(result.ok, note).toBe(true);
+            const header = (calls[1]?.init?.headers as Record<string, string>)["Payment-Signature"]!;
+            expect(decodePaymentHeader(header).accepted.extra, note).toEqual(offer.accepts[0]!.extra);
         }
-
-        test("U+00FF itself is still accepted — the boundary is not off by one", async () => {
-            const offer = paymentRequired();
-            (offer.accepts[0] as unknown as {extra: Record<string, unknown>}).extra.note = "ÿ";
-            expect(await codeFor(offer)).toBe("ok");
-        });
-
-        test("the refusal happens before the provider is ever asked to sign", async () => {
-            // This is the property that matters. A guard at the encoder would also stop
-            // the throw, but only a guard here stops a bearer authorization from existing
-            // for a payment that can never be sent.
-            let signed = 0;
-            const counting: DelegatedLeafProvider = async () => {
-                signed += 1;
-                return {
-                    delegationManager: MANAGER,
-                    permissionContext: PERMISSION_CONTEXT,
-                    delegator: DELEGATOR,
-                };
-            };
-            const offer = paymentRequired();
-            (offer.accepts[0] as unknown as {extra: Record<string, unknown>}).extra.note = "한";
-            expect(await codeFor(offer, counting)).toBe("SELLER_OFFER_INVALID");
-            expect(signed).toBe(0);
-        });
     });
 
     test("a provider returning a malformed address is reported, not raised", async () => {

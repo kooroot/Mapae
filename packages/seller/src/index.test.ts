@@ -5,8 +5,6 @@ import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {getAddress, type Address, type Hex} from "viem";
 import {
     GIWA_SEPOLIA_CAIP2,
-    LEGACY_PAYMENT_HEADER,
-    LEGACY_PAYMENT_RESPONSE_HEADER,
     MOCK_USDC,
     PAYMENT_REQUIRED_HEADER,
     PAYMENT_RESPONSE_HEADER,
@@ -15,7 +13,7 @@ import {
     buildErc7710PaymentPayload,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
-    decodeAnyPaymentHeader,
+    decodePaymentHeader,
     decodePaymentRequiredHeader,
     encodePaymentHeader,
     type Erc7710DelegationPayload,
@@ -189,8 +187,8 @@ function seller(middleware: ReturnType<typeof mapaePaywall>) {
     return {app, seen};
 }
 
-const pay = (app: Hono, header = paymentHeader(), name = PAYMENT_SIGNATURE_HEADER) =>
-    app.request(RESOURCE, {headers: {[name]: header}});
+const pay = (app: Hono, header = paymentHeader()) =>
+    app.request(RESOURCE, {headers: {[PAYMENT_SIGNATURE_HEADER]: header}});
 
 describe("mapaePaywall — construction", () => {
     test("rejects a payTo that is not a usable public address", () => {
@@ -383,14 +381,6 @@ describe("mapaePaywall — the 402 offer", () => {
         await app.request(RESOURCE);
         await pay(app);
         expect(remote.paths()).toEqual(["/supported", "/verify", "/settle"]);
-    });
-
-    test("reads the legacy X-PAYMENT header as well as Payment-Signature", async () => {
-        const remote = facilitator();
-        const {app, seen} = seller(paywall({fetch: remote.fetch}));
-        const response = await pay(app, paymentHeader(), LEGACY_PAYMENT_HEADER);
-        expect(response.status).toBe(200);
-        expect(seen.served).toBe(1);
     });
 
     test("advertises baseUrl + path as the resource, so a server behind a tunnel names its public URL", async () => {
@@ -587,14 +577,11 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
 
         const wire = {success: true, network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX};
         expect(JSON.parse(atob(response.headers.get(PAYMENT_RESPONSE_HEADER) ?? ""))).toEqual(wire);
-        expect(response.headers.get(LEGACY_PAYMENT_RESPONSE_HEADER)).toBe(
-            response.headers.get(PAYMENT_RESPONSE_HEADER),
-        );
 
         // What the facilitator was sent: the decoded header and our own offer, as JSON.
         const request = {
             x402Version: X402_VERSION,
-            paymentPayload: decodeAnyPaymentHeader(header),
+            paymentPayload: decodePaymentHeader(header),
             paymentRequirements: OFFER,
         };
         expect(remote.calls.slice(1)).toEqual([
@@ -623,7 +610,7 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
         const validated = validateDelegatedPayment(
             {
                 x402Version: X402_VERSION,
-                paymentPayload: decodeAnyPaymentHeader(header),
+                paymentPayload: decodePaymentHeader(header),
                 paymentRequirements: OFFER,
             },
             {delegationManager: MANAGER, facilitator: FACILITATOR},

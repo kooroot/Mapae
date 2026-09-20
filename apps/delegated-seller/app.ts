@@ -9,9 +9,9 @@ import type {MapaeEnv, MapaeSeller, SettlementReceipt} from "@mapae/seller";
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
-    decodeAnyPaymentHeader,
+    PAYMENT_SIGNATURE_HEADER,
+    decodePaymentHeader,
     fromTokenAmount,
-    readInboundPaymentHeader,
     toTokenAmount,
 } from "@mapae/shared";
 import type {Item, MapaeStore, Order, Seller} from "@mapae/store";
@@ -300,7 +300,7 @@ type Delegation = Pick<PaymentIntent, "delegationManager" | "permissionContext">
 function readDelegation(header: string): Delegation | undefined {
     let decoded: unknown;
     try {
-        decoded = decodeAnyPaymentHeader(header);
+        decoded = decodePaymentHeader(header);
     } catch {
         return undefined;
     }
@@ -345,8 +345,8 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
      * finds nothing; one nothing bought finds nothing and goes on to pay.
      */
     const paidOrder = (c: Context<ShopEnv>, seller: Seller, item: Item): Order | null => {
-        const header = readInboundPaymentHeader((header) => c.req.header(header));
-        const delegation = header && readDelegation(header.value);
+        const header = c.req.header(PAYMENT_SIGNATURE_HEADER);
+        const delegation = header === undefined ? undefined : readDelegation(header);
         if (!delegation) return null;
         return store.orders.getByIntent(
             derivePaymentIntentId({

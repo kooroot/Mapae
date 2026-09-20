@@ -104,7 +104,7 @@ describe("the per-payment leaf the agent mints", () => {
 
         // This is the fact that makes every assertion below load-bearing. The leaf
         // does NOT name the facilitator as its delegate; it carries ANY_DELEGATE, so
-        // the manager performs no caller check at all. A signed X-PAYMENT header is
+        // the manager performs no caller check at all. A signed Payment-Signature header is
         // therefore only as safe as the RedeemerEnforcer caveat asserted next.
         expect(getAddress(leaf!.delegate)).toBe(ANY_DELEGATE);
     });
@@ -114,7 +114,7 @@ describe("the per-payment leaf the agent mints", () => {
         const terms = termsFor(leaf!.caveats, REDEEMER_ENFORCER);
 
         // Combined with ANY_DELEGATE above, this caveat is the only thing standing
-        // between a signed X-PAYMENT header and anyone who observes it.
+        // between a signed Payment-Signature header and anyone who observes it.
         expect(terms).toBeDefined();
         expect(size(terms!)).toBe(40); // two 20-byte addresses, nothing else
         expect(getAddress(slice(terms!, 0, 20))).toBe(FACILITATOR);

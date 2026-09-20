@@ -635,7 +635,7 @@ facilitator와 같은 공개 호스트는 `/bootstrap` 경로로 온보딩 스�
 | 릴레이어 권한 | 금액·수취인이 서명에 고정되어 변경 불가 |
 | 서명 로그 노출 | facilitator 오류 로그에는 signature·전체 payload를 남기지 않고 체인·자산·금액·주소·nonce 메타데이터만 기록 |
 | facilitator 공격면 | API를 loopback/사설망에만 노출하고, 컨테이너 이미지를 digest로 고정하며 read-only·cap-drop·no-new-privileges 적용 |
-| 리다이렉트 탈취 | agent와 seller의 결제 요청은 HTTP redirect를 거부해 결제 헤더(`Payment-Signature`/`X-PAYMENT`)의 authorization이 다른 origin으로 전달되지 않게 함 |
+| 리다이렉트 탈취 | agent와 seller의 결제 요청은 HTTP redirect를 거부해 결제 헤더(`Payment-Signature`)의 authorization이 다른 origin으로 전달되지 않게 함 |
 | 악성 DelegationManager | GIWA 배포 아티팩트에서 단일 manager allowlist, canonical EntryPoint와 필수 enforcer 주소 검증 |
 | permission context 노출 | Git 제외, 크기 제한, 로그·오류 상세 미출력 |
 | payer 영수증 위조 | `permissionContext`의 마지막/root delegator를 canonical payer로 도출하고 wire claim 불일치 거절 |

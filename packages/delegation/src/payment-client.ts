@@ -1,6 +1,5 @@
 import {
     GIWA_SEPOLIA_CAIP2,
-    LEGACY_PAYMENT_HEADER,
     MOCK_USDC,
     PAYMENT_REQUIRED_HEADER,
     PAYMENT_SIGNATURE_HEADER,
@@ -8,7 +7,6 @@ import {
     buildErc7710PaymentPayload,
     decodePaymentRequiredHeader,
     encodePaymentHeader,
-    isLatin1,
     redactForLog,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
@@ -199,18 +197,6 @@ export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
     if (advertisedManager != null && !isAddress(advertisedManager)) {
         throw new Error("seller delegationManager is malformed");
     }
-    // The whole requirements object is echoed back inside the payment header, which is
-    // base64 via `btoa` — Latin-1 only. Any character above U+00FF anywhere in here,
-    // including in a field we never read, makes that encoding throw.
-    //
-    // Checking it *here* rather than at the encoder is the entire point: the encode
-    // happens after the leaf delegation is signed, so a late failure would leave a bearer
-    // authorization in existence and hand the caller a DOMException naming no field. The
-    // seller reasons about this same hazard on its own response header; this is the
-    // matching guard on the agent's side.
-    if (!isLatin1(JSON.stringify(req))) {
-        throw new Error("seller offer contains characters that cannot be header-encoded");
-    }
     return req;
 }
 
@@ -287,14 +273,14 @@ function extractTransaction(resource: unknown): Hex | undefined {
 
 /**
  * Autonomous ERC-7710 payment: GET → 402 → sign a payment-specific leaf → retry
- * with `Payment-Signature` (+ `X-PAYMENT` alias) → resource. This is the reusable
- * core shared by the CLI agent
- * and the D5 MCP server; the caller owns env/file loading, deployment verification,
- * and provider construction.
+ * with `Payment-Signature` → resource. This is the reusable core shared by the CLI
+ * agent and the D5 MCP server; the caller owns env/file loading, deployment
+ * verification, and provider construction.
  *
  * Security invariants (preserved from the CLI agent):
  * - On a failed retry the seller's body is neither read nor returned. A malicious
- *   seller can reflect `X-PAYMENT` back after we send a bearer permission context.
+ *   seller can reflect `Payment-Signature` back after we send a bearer permission
+ *   context.
  * - The signed permission context and signature are never put into the result by
  *   this function, and are stripped from the seller's 2xx body if it echoes them.
  * - Only a 2xx retry yields the resource body.
@@ -324,19 +310,17 @@ export async function payForDelegatedResource(
     }
 
     // v2 transport carries the offer in the Payment-Required header and may leave the
-    // body empty; the JSON body is the v1-transport form this repo shipped first. Header
+    // body empty; a JSON body alone is how this repo's own seller shipped first. Header
     // first, body as fallback — including when a header is present but unusable, which
     // mirrors the reference client (`x402-reqwest`) rather than failing a payment the
     // body can still carry.
     let body: PaymentRequired<Erc7710PaymentRequirements> | undefined;
-    let offerFromHeader = false;
     const offerHeader = first.headers.get(PAYMENT_REQUIRED_HEADER);
     if (offerHeader !== null) {
         try {
             body = decodePaymentRequiredHeader(
                 offerHeader,
             ) as PaymentRequired<Erc7710PaymentRequirements>;
-            offerFromHeader = true;
         } catch {
             body = undefined;
         }
@@ -443,20 +427,16 @@ export async function payForDelegatedResource(
 
     const paymentHeader = encodePaymentHeader(payload);
 
-    // Negotiated from the 402's own transport, exactly like the reference client: an
-    // offer that arrived in the Payment-Required header marks a v2-transport seller
-    // (Payment-Signature), a body-only offer marks the v1 transport this repo shipped
-    // first (X-PAYMENT). Never both — an ERC-7710 payload carries a full permission
-    // context, and duplicating it across two header names crossed the HTTP server's
-    // total-header limit: the seller answered 431 before its own size check ran
-    // (measured on the fork e2e).
-    const submissionHeader = offerFromHeader ? PAYMENT_SIGNATURE_HEADER : LEGACY_PAYMENT_HEADER;
+    // One submission header, whichever way the offer arrived. An ERC-7710 payload
+    // carries a full permission context, and the same value under a second header name
+    // crossed the HTTP server's total-header limit: the seller answered 431 before its
+    // own size check ran (measured on the fork e2e).
     let second: Response;
     try {
         second = await doFetch(target, {
             redirect: "error",
             signal: AbortSignal.timeout(timeoutMs),
-            headers: {[submissionHeader]: paymentHeader},
+            headers: {[PAYMENT_SIGNATURE_HEADER]: paymentHeader},
         });
     } catch (error) {
         // The header is already on the wire. A connection that dies now says nothing
@@ -467,8 +447,8 @@ export async function payForDelegatedResource(
         return failure("SETTLEMENT_UNKNOWN", `no answer after the payment was sent: ${errorMessage(error)}`);
     }
     if (!second.ok) {
-        // Do not read the body: a malicious seller can reflect X-PAYMENT after we
-        // have sent a bearer permission context. Report the status class only.
+        // Do not read the body: a malicious seller can reflect Payment-Signature after
+        // we have sent a bearer permission context. Report the status class only.
         if (SETTLEMENT_UNKNOWN_STATUSES.has(second.status)) {
             return failure(
                 "SETTLEMENT_UNKNOWN",
@@ -498,7 +478,7 @@ export async function payForDelegatedResource(
     }
     // The payment succeeded, so this body is what the caller paid for and has to
     // come back. It is still seller-controlled text that lands in MCP tool output
-    // and agent transcripts, and a seller that echoes `X-PAYMENT` — or the raw
+    // and agent transcripts, and a seller that echoes `Payment-Signature` — or the raw
     // permission context — would park a bearer authorization there. We know the
     // exact values, so strip them instead of trusting the seller not to send them.
     resource = redactBearerSecrets(resource, [leaf.permissionContext, paymentHeader]);

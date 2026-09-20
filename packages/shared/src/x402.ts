@@ -320,117 +320,92 @@ export function toWireAuthorization(auth: TransferAuthorization): Eip3009Authori
 }
 
 /* ------------------------------------------------------------------ *
- * Header codec
- * ------------------------------------------------------------------ */
-
-/**
- * `btoa` is Latin-1 only — one character above U+00FF anywhere in the payload and it
- * throws a bare `DOMException: The string contains invalid characters.`
- *
- * That matters here more than it looks. The payload echoes the seller's own requirements
- * object back, so the offending byte is attacker-controlled, and on the agent's path this
- * call happens *after* the leaf delegation has been signed: the throw would leave a bearer
- * authorization in existence while the caller received an opaque DOM error naming neither
- * the seller nor the field. The seller already reasons about exactly this hazard on its
- * own side (`apps/delegated-seller/index.ts`, X-PAYMENT-RESPONSE).
- *
- * This guard is the backstop, not the fix — callers should refuse an unencodable offer
- * before they sign anything. It exists so that any *other* caller gets a message that
- * names the problem instead of a DOMException.
- */
-export function encodePaymentHeader(payload: AnyPaymentPayload): string {
-    const json = JSON.stringify(payload);
-    if (!isLatin1(json)) {
-        throw new Error(
-            "payment payload is not Latin-1 encodable, so it cannot be base64 header-encoded",
-        );
-    }
-    return btoa(json);
-}
-
-/**
- * Every code unit within `btoa`'s range. Surrogate halves are above U+00FF, so an emoji
- * or any astral character fails here rather than at the codec.
- */
-export function isLatin1(value: string): boolean {
-    // Written with explicit escapes: a literal range would put the very characters
-    // this guards against into the file that defines the guard.
-    return !/[^\u0000-\u00FF]/u.test(value);
-}
-
-export function decodePaymentHeader(header: string): PaymentPayload {
-    return JSON.parse(atob(header)) as PaymentPayload;
-}
-
-export function decodeAnyPaymentHeader(header: string): AnyPaymentPayload {
-    return JSON.parse(atob(header)) as AnyPaymentPayload;
-}
-
-/* ------------------------------------------------------------------ *
  * v2 transport headers
  * ------------------------------------------------------------------ */
 
 /**
- * x402 v2 moved the whole exchange into HTTP headers: the 402 offer rides in
- * `Payment-Required`, the payment in `Payment-Signature`, and the settlement receipt
- * in `Payment-Response` — names taken from the reference implementation
- * (`x402-axum`/`x402-reqwest`), not from the spec prose, because the reference is what
- * third-party counterparties actually run. `X-PAYMENT`/`X-PAYMENT-RESPONSE` are the v1
- * transport this repo shipped first and stay alive as aliases: sellers keep reading and
- * emitting them. The client does NOT send both submission headers at once — an ERC-7710
- * payload carries a full permission context, and duplicating it across two header names
- * crossed the server's total-header limit (a 431 measured on the fork e2e). It negotiates
- * exactly one from the 402's own transport instead: a header-borne offer is answered with
- * `Payment-Signature`, a body-only offer with `X-PAYMENT`.
+ * x402 v2 carries the whole exchange in HTTP headers: the 402 offer in
+ * `Payment-Required`, the payment in `Payment-Signature`, the settlement receipt in
+ * `Payment-Response`. Names and codec are the reference implementation's (`@x402/core`,
+ * `x402-axum`/`x402-reqwest`), because the reference is what third-party counterparties
+ * actually run. There is exactly one submission header: an ERC-7710 payload carries a
+ * full permission context, and duplicating it under a second name crossed the HTTP
+ * server's total-header limit (a 431 measured on the fork e2e) — and the v1 `X-PAYMENT`
+ * transport it used to be duplicated into cannot carry an ERC-7710 offer at all, the
+ * method being v2-only.
  */
 export const PAYMENT_REQUIRED_HEADER = "Payment-Required";
 export const PAYMENT_SIGNATURE_HEADER = "Payment-Signature";
 export const PAYMENT_RESPONSE_HEADER = "Payment-Response";
-export const LEGACY_PAYMENT_HEADER = "X-PAYMENT";
-export const LEGACY_PAYMENT_RESPONSE_HEADER = "X-PAYMENT-RESPONSE";
 
 /**
- * Base64 over UTF-8 bytes — deliberately not `btoa`, which encodes Latin-1 and throws
- * past U+00FF. The payment payload codec above lives with that limit because every field
- * it carries is ASCII by construction and a guard enforces it before signing. The 402
- * offer is different: `resource.description` is human-facing text (Korean, em dashes),
- * and the reference implementation base64-encodes the raw UTF-8 JSON bytes
- * (`serde_json::to_vec`), so matching it is what makes the header readable by a
- * counterparty that is not this repo.
+ * Settlement receipt a resource server returns in `Payment-Response` beside a 2xx — the
+ * x402 v2 `SettleResponse`. The spec makes `transaction` required and `""` when no
+ * on-chain transaction can be named; `@mapae/seller` still omits the field when its
+ * facilitator reported none, and the agent reads both forms as "no hash".
  */
-export function encodePaymentRequiredHeader(
-    body: PaymentRequired<AnyPaymentRequirements>,
-): string {
-    const bytes = new TextEncoder().encode(JSON.stringify(body));
+export interface SettleResponse {
+    success: boolean;
+    network: string;
+    payer: Address;
+    transaction?: Hex | "";
+    errorReason?: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * Header codec
+ * ------------------------------------------------------------------ */
+
+/**
+ * Base64 over UTF-8 bytes — the reference codec (`@x402/core` `safeBase64Encode`:
+ * `TextEncoder` → `btoa`), shared by every header above. Not bare `btoa`, which encodes
+ * Latin-1 and throws past U+00FF: the 402 offer carries human-facing text (Korean, em
+ * dashes) and the payment payload echoes that offer back verbatim, so one codec for both
+ * directions is what keeps a header this repo writes readable by a counterparty that is
+ * not this repo.
+ */
+function encodeBase64Json(value: unknown): string {
+    const bytes = new TextEncoder().encode(JSON.stringify(value));
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
     return btoa(binary);
 }
 
+/**
+ * `fatal` matters: the default decoder swaps invalid sequences for U+FFFD and reports
+ * success, which would hand the caller a plausibly-shaped value whose strings are
+ * silently corrupted. A malformed header must be a refusal.
+ */
+function decodeBase64Json(text: string): unknown {
+    const binary = atob(text);
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes));
+}
+
+export function encodePaymentRequiredHeader(
+    body: PaymentRequired<AnyPaymentRequirements>,
+): string {
+    return encodeBase64Json(body);
+}
+
 export function decodePaymentRequiredHeader(
     header: string,
 ): PaymentRequired<AnyPaymentRequirements> {
-    const binary = atob(header);
-    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
-    // `fatal` matters: the default decoder swaps invalid sequences for U+FFFD and
-    // reports success, which would hand the caller a plausibly-shaped offer whose
-    // strings are silently corrupted. A malformed header must be a refusal.
-    const json = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
-    return JSON.parse(json) as PaymentRequired<AnyPaymentRequirements>;
+    return decodeBase64Json(header) as PaymentRequired<AnyPaymentRequirements>;
 }
 
-/**
- * Resolve the inbound payment submission header, v2 name first. Takes a getter rather
- * than a Headers object so both Hono (`c.req.header`) and fetch (`headers.get`) sides
- * can share the one implementation the alias order is tested against. The name comes
- * back with the value so error reports can say which header actually carried the bytes.
- */
-export function readInboundPaymentHeader(
-    get: (name: string) => string | undefined,
-): {name: string; value: string} | undefined {
-    const v2 = get(PAYMENT_SIGNATURE_HEADER);
-    if (v2 !== undefined) return {name: PAYMENT_SIGNATURE_HEADER, value: v2};
-    const v1 = get(LEGACY_PAYMENT_HEADER);
-    if (v1 !== undefined) return {name: LEGACY_PAYMENT_HEADER, value: v1};
-    return undefined;
+export function encodePaymentHeader(payload: AnyPaymentPayload): string {
+    return encodeBase64Json(payload);
+}
+
+export function decodePaymentHeader(header: string): AnyPaymentPayload {
+    return decodeBase64Json(header) as AnyPaymentPayload;
+}
+
+export function encodePaymentResponseHeader(receipt: SettleResponse): string {
+    return encodeBase64Json(receipt);
+}
+
+export function decodePaymentResponseHeader(header: string): SettleResponse {
+    return decodeBase64Json(header) as SettleResponse;
 }

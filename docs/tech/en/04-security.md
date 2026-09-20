@@ -89,7 +89,7 @@ griefing spread into a settlement outage.
 | Relayer authority | Amount and recipient are fixed in the signature and cannot be changed |
 | Signature exposure in logs | Facilitator error logs never record the signature or the full payload — only chain, asset, amount, address, and nonce metadata |
 | Facilitator attack surface | The API is exposed only on loopback/private networks; the container image is pinned by digest with read-only, cap-drop, and no-new-privileges applied |
-| Redirect hijacking | Payment requests from the agent and seller refuse HTTP redirects, so the authorization in the payment headers (`Payment-Signature`/`X-PAYMENT`) never travels to another origin |
+| Redirect hijacking | Payment requests from the agent and seller refuse HTTP redirects, so the authorization in the payment header (`Payment-Signature`) never travels to another origin |
 | Malicious DelegationManager | Single-manager allowlist from the GIWA deployment artifacts; canonical EntryPoint and required enforcer addresses verified |
 | Permission context exposure | Excluded from Git, size-limited, never printed in logs or error detail |
 | Forged payer receipts | The canonical payer is derived from the last/root delegator in the `permissionContext`; a mismatched wire claim is refused |

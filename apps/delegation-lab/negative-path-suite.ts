@@ -807,7 +807,7 @@ async function run(ctx: Ctx): Promise<void> {
 
     // ── facilitator trust boundary ────────────────────────────────────────────
     // Threat model: the facilitator is fully compromised. It holds the relayer key, it
-    // holds a valid X-PAYMENT the agent signed (1 mUSDC → FIXED_VENDOR), and it is the
+    // holds a valid Payment-Signature the agent signed (1 mUSDC → FIXED_VENDOR), and it is the
     // redeemer that leaf pins — so every identity check passes. It then submits an
     // execution of its own choosing. Each case names one way it could profit and asserts
     // the enforcer that refuses it, by exact revert string.

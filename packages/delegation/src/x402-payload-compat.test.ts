@@ -25,7 +25,7 @@ import {
     X402_VERSION,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
-    decodeAnyPaymentHeader,
+    decodePaymentHeader,
     type Erc7710PaymentPayload,
     type Erc7710PaymentRequirements,
 } from "@mapae/shared";
@@ -137,7 +137,7 @@ describe("payload compat — the leaf our payer signs, through the reference cli
         expect(PaymentPayloadV2Schema.safeParse(wire).success).toBe(true);
         const referenceHeader = referenceEncodePaymentSignature(wire as never);
         expect(referenceDecodePaymentSignature(referenceHeader)).toEqual(wire as never);
-        expect(decodeAnyPaymentHeader(referenceHeader)).toEqual(wire);
+        expect(decodePaymentHeader(referenceHeader)).toEqual(wire);
 
         const validated = validateDelegatedPayment(
             {x402Version: X402_VERSION, paymentPayload: wire, paymentRequirements: offer},

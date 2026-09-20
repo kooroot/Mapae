@@ -9,7 +9,7 @@ import {
     buildErc7710PaymentPayload,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
-    decodeAnyPaymentHeader,
+    decodePaymentHeader,
     decodePaymentRequiredHeader,
     encodePaymentHeader,
     encodePaymentRequiredHeader,
@@ -176,7 +176,7 @@ describe("x402 conformance — payment payload against the reference implementat
         expect(referenceDecodePaymentSignature(encodePaymentHeader(payload))).toEqual(
             payload as never,
         );
-        expect(decodeAnyPaymentHeader(referenceEncodePaymentSignature(payload as never))).toEqual(
+        expect(decodePaymentHeader(referenceEncodePaymentSignature(payload as never))).toEqual(
             payload,
         );
     });
