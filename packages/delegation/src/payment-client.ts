@@ -20,6 +20,7 @@ import {
     FACILITATOR_NOT_READY,
     INVALID_PAYLOAD,
     PAYMENT_IDENTIFIER_CONFLICT,
+    PAYMENT_IDENTIFIER_SETTLED,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     UNEXPECTED_SETTLE_ERROR,
@@ -205,6 +206,11 @@ const SELLER_REFUSAL_CODES: ReadonlyMap<string, SellerRefusalCode> = new Map<str
     // id로는 영원히 같은 답이 온다. 고칠 곳은 판매자도 위임도 아니라 호출자의 멱등성
     // 사용법이라, 위임을 들여다보게 하는 `PAYMENT_REJECTED`가 맞는 칸이다.
     [PAYMENT_IDENTIFIER_CONFLICT, "PAYMENT_REJECTED"],
+    // 같은 409의 다른 절반: 그 id로는 이미 정산이 끝나 있다. 상태(409)만 읽으면
+    // `PAYMENT_REJECTED`로 떨어지고, 그 칸의 문장은 "아무것도 정산되지 않았다"라 새 id로
+    // 다시 내라는 말이 된다 — 방금 낸 돈을 모른 채. 낱말이 상태보다 조심스러운 쪽으로만
+    // 움직인다는 이 표의 규칙이 정확히 이런 답을 위해 있다.
+    [PAYMENT_IDENTIFIER_SETTLED, "SETTLEMENT_UNKNOWN"],
     ...X402_REFUSAL_WORDS.map((word): [string, SellerRefusalCode] => [word, "PAYMENT_REJECTED"]),
 ]);
 

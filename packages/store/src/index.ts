@@ -233,6 +233,20 @@ export interface Orders {
 /** Which half of the binding a second attempt changed. */
 export type PaymentIdentifierConflict = "fingerprint" | "payment_intent";
 
+/**
+ * A refused attempt, and what the identifier it named had already done.
+ *
+ * `settled` is not about the attempt being refused — that one settled nothing, whichever
+ * half it changed. It is about the row: `null` means no payment under this identifier ever
+ * moved money, and a {@link RecordedPayment} means one did, and names it. The caller needs
+ * both halves to answer honestly, because "this attempt was refused" and "nothing was
+ * charged under this name" are different claims and the second one can be false.
+ */
+export interface PaymentIdentifierRefusal {
+    reason: PaymentIdentifierConflict;
+    settled: RecordedPayment | null;
+}
+
 /** What the facilitator confirmed about a settled payment, as the buyer gets it back. */
 export interface RecordedPayment {
     payer: HexString;
@@ -242,7 +256,7 @@ export interface RecordedPayment {
 export type PaymentIdentifierBindResult =
     | {kind: "new"}
     | {kind: "settled"; settled: RecordedPayment}
-    | {kind: "conflict"; reason: PaymentIdentifierConflict};
+    | ({kind: "conflict"} & PaymentIdentifierRefusal);
 
 /**
  * How many unsettled bindings are kept, and how long. Both bounds apply, exactly as
@@ -990,11 +1004,16 @@ function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
             if (!existing) {
                 throw new Error("payment_identifiers: duplicate id vanished before read");
             }
-            if (existing.fingerprint !== print) return {kind: "conflict", reason: "fingerprint"};
-            if (existing.payment_intent_id !== paymentIntentId) {
-                return {kind: "conflict", reason: "payment_intent"};
-            }
+            // Read once, and report it with every answer: a refusal has to be able to say
+            // whether this identifier already paid for something, which is the difference
+            // between "try again with a new name" and "you may already have been charged".
             const settled = settledHalf(existing);
+            if (existing.fingerprint !== print) {
+                return {kind: "conflict", reason: "fingerprint", settled};
+            }
+            if (existing.payment_intent_id !== paymentIntentId) {
+                return {kind: "conflict", reason: "payment_intent", settled};
+            }
             if (settled === null) return {kind: "new"};
             return {kind: "settled", settled};
         },

@@ -34,6 +34,7 @@ import {
     FACILITATOR_NOT_READY,
     INVALID_PAYLOAD,
     PAYMENT_IDENTIFIER_CONFLICT,
+    PAYMENT_IDENTIFIER_SETTLED,
     SETTLEMENT_PENDING,
     VENDOR_NOT_CREDITED,
     decideSettlement,
@@ -114,7 +115,21 @@ export interface RecordedPayment {
 export type PaymentIdentifierBindResult =
     | {kind: "new"}
     | {kind: "settled"; settled: RecordedPayment}
-    | {kind: "conflict"; reason: PaymentIdentifierConflict};
+    | {
+          kind: "conflict";
+          reason: PaymentIdentifierConflict;
+          /**
+           * 이 **id**가 이미 정산한 결제. 거절당한 이 시도의 이야기가 아니다 — 그 시도는
+           * 무엇이든 정산하지 않았다.
+           *
+           * `null`이면 이 이름으로 움직인 돈이 아직 없다는 뜻이고, 값이 있으면 있다는
+           * 뜻이다. 판매자가 이 둘을 구별하지 못하면 409의 영수증이 "아무것도 청구되지
+           * 않았다"고 말하게 되는데, `payment_intent` 충돌은 첫 시도가
+           * `settlement_pending`으로 끝난 구매자가 다시 낼 때 오는 모습이라 그 말이 곧
+           * "새 id로 다시 내라" — 즉 두 번째 결제 — 로 읽힌다.
+           */
+          settled: RecordedPayment | null;
+      };
 
 /**
  * 내구성 있는 (결제 식별자 → 결제) 바인딩. 주면 `payment-identifier` 확장이 살아난다.
@@ -865,10 +880,30 @@ function buildPaywall(
                 paymentIntentId: intent,
             });
             if (bound.kind === "conflict") {
-                writeFailureReceipt(c, PAYMENT_IDENTIFIER_CONFLICT, payer);
+                // 409 둘의 차이는 "이 id로 이미 청구됐는가"다.
+                //
+                // 같은 요청에 다른 리프(`payment_intent`)인데 그 id가 이미 정산돼 있다면,
+                // 이것은 첫 답을 못 받은 구매자가 새로 서명해 다시 낸 모습이다 — 즉 돈은
+                // 이미 움직였다. 여기에 `payment_identifier_conflict`를 대면 구매자의
+                // 클라이언트가 그것을 "아무것도 청구되지 않았다"로 읽고 새 id로 또 낸다.
+                // 그래서 낱말을 나누고, 저장된 지불자와 해시를 영수증에 싣는다: 해시는
+                // 구매자가 스스로 확인할 유일한 수단이고, 지불자는 이 호출이 주장한
+                // delegator가 아니라 퍼실리테이터가 확인한 이름이다.
+                //
+                // 지문이 다른 충돌은 그 칸이 아니다. 그것은 이 요청과 무관한 다른 자원의
+                // 결제이고, **이 요청으로는** 아무것도 청구되지 않았다 — 새 id로 다시 내는
+                // 것이 맞는 답이다.
+                const charged = bound.reason === "payment_intent" ? bound.settled : null;
+                const word = charged ? PAYMENT_IDENTIFIER_SETTLED : PAYMENT_IDENTIFIER_CONFLICT;
+                writeFailureReceipt(
+                    c,
+                    word,
+                    charged ? charged.payer : payer,
+                    charged?.transaction ?? "",
+                );
                 // 오퍼를 다시 싣지 않는다. 402는 "이대로 다시 내라"는 말이고, 이 id로는
                 // 무엇을 내도 같은 409다 — 낼 뜻이 있는 구매자는 새 id를 들고 온다.
-                return c.json({error: PAYMENT_IDENTIFIER_CONFLICT, detail: bound.reason}, 409);
+                return c.json({error: word, detail: bound.reason}, 409);
             }
             if (bound.kind === "settled") {
                 // 프로세스와 함께 죽지 않는 재생 가드: 정산을 다시 하지 않고 저장된

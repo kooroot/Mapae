@@ -5,10 +5,12 @@ import {
     MOCK_USDC,
     PAYMENT_IDENTIFIER_EXTENSION,
     PAYMENT_REQUIRED_HEADER,
+    PAYMENT_RESPONSE_HEADER,
     PAYMENT_SIGNATURE_HEADER,
     buildPaymentIdentifierEcho,
     decodePaymentHeader,
     decodePaymentRequiredHeader,
+    decodePaymentResponseHeader,
     encodePaymentHeader,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
@@ -605,9 +607,18 @@ describe("payment-identifier — 같은 이름으로 다른 결제는 받지 않
         // 다르다 — 주문 표는 이것을 같은 결제로 보지 못한다. 18행의 구멍이 여기다.
         const retry = await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_B), ID));
         expect(retry.status).toBe(409);
+        // 그 id로는 이미 정산이 끝났다는 낱말. 영수증이 대는 지불자와 해시는 저장소에
+        // 남은 값이고, 그 둘이 여기까지 왔다는 것이 `record`가 디스크에 썼다는 증거다.
         expect(await retry.json()).toEqual({
-            error: "payment_identifier_conflict",
+            error: "payment_identifier_settled",
             detail: "payment_intent",
+        });
+        expect(decodePaymentResponseHeader(retry.headers.get(PAYMENT_RESPONSE_HEADER) ?? "")).toEqual({
+            success: false,
+            errorReason: "payment_identifier_settled",
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: PAYER,
+            transaction: TX,
         });
         // 정산은 다시 시도되지 않았고, 주문도 늘지 않았다.
         expect(stub.paths).toEqual(SETTLED_ONCE);

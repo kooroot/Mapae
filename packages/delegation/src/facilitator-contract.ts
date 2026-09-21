@@ -145,6 +145,27 @@ export const SETTLEMENT_REVERTED = "settlement_reverted";
 export const PAYMENT_IDENTIFIER_CONFLICT = "payment_identifier_conflict";
 
 /**
+ * 같은 `payment-identifier`에 다른 **리프**가 왔는데, 그 id로는 이미 정산이 끝나 있다 —
+ * 판매자의 409 중 돈이 움직인 쪽.
+ *
+ * {@link PAYMENT_IDENTIFIER_CONFLICT}와 상태(409)는 같고 뜻은 반대다. 그쪽은 "이 이름으로
+ * 청구된 것은 없다"이고 이쪽은 "이 이름으로 이미 청구됐다"이다. 한 낱말로 뭉치면 후자가
+ * 전자의 문장을 입는데, 그 문장은 `no settlement was attempted` — 구매자에게 새 id로 다시
+ * 내라는 말이고, 그 구매자는 방금 낸 돈을 모른 채 두 번 낸다. 이 낱말이 오는 자리는 첫 시도가
+ * `settlement_pending`(504)으로 끝난 구매자가 새 leaf를 서명해 같은 id로 다시 내는 순간이고,
+ * 확장이 막으려 한 이중 지불이 정확히 거기 있다.
+ *
+ * 그래서 `payment-client.ts`는 이것을 {@link SETTLEMENT_PENDING}과 같은 칸
+ * (`SETTLEMENT_UNKNOWN` — "청구됐을 수 있다")으로 읽는다. 낱말이 상태보다 더 조심스러운
+ * 쪽으로만 움직인다는 그쪽의 규칙 그대로다. 지문이 다른 충돌은 여기 오지 않는다: 그것은 이
+ * 요청과 무관한 다른 자원의 결제이고, 이 요청으로는 아무것도 청구되지 않았다.
+ *
+ * {@link PAYMENT_IDENTIFIER_CONFLICT}와 같은 이유로 {@link KNOWN_REFUSAL_REASONS}에는 없다 —
+ * 퍼실리테이터는 id를 보지 않으므로 이 낱말을 만들 수 없다.
+ */
+export const PAYMENT_IDENTIFIER_SETTLED = "payment_identifier_settled";
+
+/**
  * §9's words for a failure that is ours rather than the request's, one per route.
  *
  * Neither is a verdict, so neither reaches the seller as one. `unexpected_verify_error` is

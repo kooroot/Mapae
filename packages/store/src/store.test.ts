@@ -1086,7 +1086,8 @@ describe("payment identifiers", () => {
             at: T0,
         });
         // A different request under the same name: answering it from this row would deliver
-        // the wrong thing.
+        // the wrong thing. `settled: null` is the second half of every refusal — this name
+        // has paid for nothing yet, so the seller may tell the buyer to present a fresh one.
         expect(
             store.paymentIdentifiers.bind({
                 id: ID,
@@ -1094,7 +1095,7 @@ describe("payment identifiers", () => {
                 paymentIntentId: INTENT,
                 at: T0,
             }),
-        ).toEqual({kind: "conflict", reason: "fingerprint"});
+        ).toEqual({kind: "conflict", reason: "fingerprint", settled: null});
         // The same request paid with a different leaf: settling it charges a second time.
         expect(
             store.paymentIdentifiers.bind({
@@ -1103,7 +1104,7 @@ describe("payment identifiers", () => {
                 paymentIntentId: OTHER_INTENT,
                 at: T0,
             }),
-        ).toEqual({kind: "conflict", reason: "payment_intent"});
+        ).toEqual({kind: "conflict", reason: "payment_intent", settled: null});
         // Neither refusal touched the row: the payment it was bound to still binds.
         expect(
             store.paymentIdentifiers.bind({
@@ -1113,6 +1114,37 @@ describe("payment identifiers", () => {
                 at: T0 + HOUR,
             }),
         ).toEqual({kind: "new"});
+    });
+
+    test("a refusal also says whether that identifier already paid for something", () => {
+        const store = open();
+        store.paymentIdentifiers.bind({
+            id: ID,
+            fingerprint: PRINT,
+            paymentIntentId: INTENT,
+            at: T0,
+        });
+        store.paymentIdentifiers.record({id: ID, payer: ALICE, txHash: TX, at: T0});
+        const settled = {payer: ALICE, txHash: TX} as const;
+        // Neither attempt settles anything — and yet money did move under this name. The
+        // caller needs both facts to answer without telling a buyer who has already paid
+        // that nothing was charged.
+        expect(
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: OTHER_INTENT,
+                at: T0 + HOUR,
+            }),
+        ).toEqual({kind: "conflict", reason: "payment_intent", settled});
+        expect(
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: OTHER_PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + HOUR,
+            }),
+        ).toEqual({kind: "conflict", reason: "fingerprint", settled});
     });
 
     test("keeps a settled payment's payer: recording twice refuses instead of overwriting", () => {
@@ -1244,7 +1276,7 @@ describe("payment identifiers", () => {
                 paymentIntentId: INTENT,
                 at: T0 + 9 * HOUR,
             }),
-        ).toEqual({kind: "conflict", reason: "fingerprint"});
+        ).toEqual({kind: "conflict", reason: "fingerprint", settled: null});
         expect(
             store.paymentIdentifiers.bind({
                 id: id(1),

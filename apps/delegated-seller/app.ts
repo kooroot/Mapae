@@ -9,6 +9,7 @@ import type {
     MapaeEnv,
     MapaeSeller,
     PaymentIdentifierBinding,
+    RecordedPayment,
     SettlementReceipt,
 } from "@mapae/seller";
 import {
@@ -20,7 +21,13 @@ import {
     redactForLog,
     toTokenAmount,
 } from "@mapae/shared";
-import type {Item, MapaeStore, Order, Seller} from "@mapae/store";
+import type {
+    Item,
+    MapaeStore,
+    Order,
+    RecordedPayment as StoredPayment,
+    Seller,
+} from "@mapae/store";
 
 /**
  * The hosted shop: one server, many sellers, every seller read from the store.
@@ -425,13 +432,20 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
             // 새 행보다 먼저 정리한다 — 방금 묶은 결제가 자기 정리의 후보가 되지 않게.
             if (bindings++ % BINDING_PRUNE_EVERY === 0) pruneBindings(now);
             const bound = store.paymentIdentifiers.bind({...payment, at: now});
-            if (bound.kind !== "settled") return bound;
+            // 저장소는 해시 없음을 `null`로, 페이월은 칸 없음으로 적는다. 정산됐다는
+            // 사실과 해시를 댔다는 사실은 다른 것이라 그 둘을 뭉개지 않는다.
+            const recorded = (settled: StoredPayment): RecordedPayment => ({
+                payer: getAddress(settled.payer),
+                ...(settled.txHash === null ? {} : {transaction: settled.txHash}),
+            });
+            if (bound.kind === "new") return bound;
+            if (bound.kind === "settled") return {kind: "settled", settled: recorded(bound.settled)};
             return {
-                kind: "settled",
-                settled: {
-                    payer: bound.settled.payer,
-                    ...(bound.settled.txHash === null ? {} : {transaction: bound.settled.txHash}),
-                },
+                kind: "conflict",
+                reason: bound.reason,
+                // 이 id로 이미 움직인 돈이 있으면 그대로 넘긴다. 페이월이 그 사실로 409의
+                // 낱말을 고르고, 구매자는 해시를 받는다.
+                settled: bound.settled === null ? null : recorded(bound.settled),
             };
         },
         record: ({id, payer, transaction}) =>

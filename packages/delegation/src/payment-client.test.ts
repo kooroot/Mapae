@@ -14,7 +14,11 @@ import {
     type PaymentRequired,
     type SettleResponse,
 } from "@mapae/shared";
-import {INVALID_PAYLOAD, PAYMENT_IDENTIFIER_CONFLICT} from "./facilitator-contract.js";
+import {
+    INVALID_PAYLOAD,
+    PAYMENT_IDENTIFIER_CONFLICT,
+    PAYMENT_IDENTIFIER_SETTLED,
+} from "./facilitator-contract.js";
 import {
     BEARER_REDACTION,
     payForDelegatedResource,
@@ -1327,5 +1331,36 @@ describe("payment-identifier 확장", () => {
         expect(result.detail).toContain(PAYMENT_IDENTIFIER_CONFLICT);
         expect(result.detail).toContain("no settlement was attempted");
         expect(result.paymentIdentifier).toMatch(/^pay_[0-9a-f]{32}$/);
+    });
+
+    test("409 payment_identifier_settled는 SETTLEMENT_UNKNOWN — 그 id로는 이미 냈다", async () => {
+        // 같은 409의 다른 절반이다. 첫 시도가 504로 끝나 새 leaf로 다시 낸 구매자가 받는
+        // 답이고, 그 id로는 돈이 이미 움직였다. 상태만 읽으면 PAYMENT_REJECTED("아무것도
+        // 정산되지 않았다")가 되는데, 그 문장은 새 id로 또 내라는 말이다.
+        const result = await payForDelegatedResource(
+            target,
+            baseConfig(
+                scriptedFetch(
+                    poisonedResponse(
+                        409,
+                        receiptHeader({
+                            success: false,
+                            errorReason: PAYMENT_IDENTIFIER_SETTLED,
+                            network: GIWA_SEPOLIA_CAIP2,
+                            payer: DELEGATOR,
+                            // 해시 없이도 낱말만으로 이 칸에 와야 한다 — 퍼실리테이터가
+                            // 해시를 대지 않고 확인한 정산이 있다.
+                            transaction: "",
+                        }),
+                    ),
+                ).impl,
+            ),
+        );
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("SETTLEMENT_UNKNOWN");
+        expect(result.status).toBe(409);
+        expect(result.detail).toContain(PAYMENT_IDENTIFIER_SETTLED);
+        expect(result.detail).toContain("the payer may already be charged");
     });
 });

@@ -27,6 +27,7 @@ import {
     FACILITATOR_NOT_READY,
     INVALID_PAYLOAD,
     PAYMENT_IDENTIFIER_CONFLICT,
+    PAYMENT_IDENTIFIER_SETTLED,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     SETTLEMENT_REVERTED,
@@ -1101,14 +1102,19 @@ function binding() {
                 rows.set(id, {fingerprint, intent: paymentIntentId});
                 return {kind: "new"};
             }
-            if (row.fingerprint !== fingerprint) return {kind: "conflict", reason: "fingerprint"};
-            if (row.intent !== paymentIntentId) return {kind: "conflict", reason: "payment_intent"};
+            // 거절에도 실어 보낸다: 이 **id**로 이미 움직인 돈이 있는지는 거절당한 시도와
+            // 별개의 사실이고, 판매자가 그것으로 409의 낱말을 고른다.
+            const settled = row.settled ?? null;
+            if (row.fingerprint !== fingerprint) {
+                return {kind: "conflict", reason: "fingerprint", settled};
+            }
+            if (row.intent !== paymentIntentId) {
+                return {kind: "conflict", reason: "payment_intent", settled};
+            }
             // 같은 id·같은 요청·같은 리프인데 정산 기록이 없다 = 앞선 라운드가 돈을 옮기지
             // 못했다. 다시 정산해도 되는 유일한 경우이고, 그 라운드의 이중 청구는
             // 퍼실리테이터의 intent 장부가 막는다.
-            return row.settled === undefined
-                ? {kind: "new"}
-                : {kind: "settled", settled: row.settled};
+            return settled === null ? {kind: "new"} : {kind: "settled", settled};
         },
         record({id, payer, transaction}) {
             const row = rows.get(id);
@@ -1203,6 +1209,8 @@ describe("mapaePaywall — payment-identifier 확장", () => {
             error: PAYMENT_IDENTIFIER_CONFLICT,
             detail: "fingerprint",
         });
+        // 지문이 다른 충돌은 이 요청과 무관한 다른 자원의 결제다. 그 id로 이미 돈이
+        // 움직였더라도 **이 요청으로는** 아무것도 청구되지 않았으므로 낱말은 그대로다.
         expect(failureReceipt(conflict)).toEqual({
             success: false,
             errorReason: PAYMENT_IDENTIFIER_CONFLICT,
@@ -1217,7 +1225,7 @@ describe("mapaePaywall — payment-identifier 확장", () => {
         expect(remote.paths()).not.toContain("/verify");
     });
 
-    test("같은 id에 다른 리프가 오면 409 — 앞선 시도의 결말을 모른 채 또 정산하지 않는다", async () => {
+    test("이미 정산된 id에 다른 리프가 오면 409 — 청구됐다는 사실을 낱말과 해시로 말한다", async () => {
         const {port} = binding();
         const remote = facilitator();
         const {app, seen} = seller(paywall({fetch: remote.fetch, paymentIdentifiers: port}));
@@ -1225,14 +1233,53 @@ describe("mapaePaywall — payment-identifier 확장", () => {
         remote.calls.length = 0;
 
         // 같은 경로·같은 값이므로 지문은 같다. 다른 것은 서명된 권한 — 즉 다른 결제다.
+        // 첫 시도가 504로 끝난 구매자가 새로 서명해 다시 내면 정확히 이 모습이 온다.
         const conflict = await pay(app, identified(IDENTIFIER, {permissionContext: "0xbeef"}));
         expect(conflict.status).toBe(409);
+        expect(await conflict.json()).toEqual({
+            error: PAYMENT_IDENTIFIER_SETTLED,
+            detail: "payment_intent",
+        });
+        // 낱말이 `payment_identifier_conflict`였다면 구매자의 클라이언트가 그것을 "아무것도
+        // 청구되지 않았다"로 읽고 새 id로 또 낸다. 저장된 지불자와 해시가 함께 가는 이유도
+        // 같다: 해시는 구매자가 스스로 확인할 유일한 수단이다.
+        expect(failureReceipt(conflict)).toEqual({
+            success: false,
+            errorReason: PAYMENT_IDENTIFIER_SETTLED,
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: PAYER,
+            transaction: TX,
+        });
+        expect(remote.paths()).toEqual([]);
+        expect(seen.served).toBe(1);
+    });
+
+    test("아직 정산되지 않은 id에 다른 리프가 오면 409 — 그 이름으로 움직인 돈은 없다", async () => {
+        const {port, rows} = binding();
+        // 첫 시도는 정산을 확인하지 못하고 504로 끝난다: 행은 묶였고 결과는 없다.
+        const lost = facilitator({"/settle": refused});
+        const first = seller(paywall({fetch: lost.fetch, paymentIdentifiers: port}));
+        expect((await pay(first.app, identified(IDENTIFIER))).status).toBe(504);
+        expect(rows.get(IDENTIFIER)?.settled).toBeUndefined();
+
+        const remote = facilitator();
+        const {app} = seller(paywall({fetch: remote.fetch, paymentIdentifiers: port}));
+        const conflict = await pay(app, identified(IDENTIFIER, {permissionContext: "0xbeef"}));
+        expect(conflict.status).toBe(409);
+        // 청구된 것이 없으니 낱말도 그 사실을 말한다 — 구매자는 새 id로 내면 된다.
         expect(await conflict.json()).toEqual({
             error: PAYMENT_IDENTIFIER_CONFLICT,
             detail: "payment_intent",
         });
-        expect(remote.paths()).toEqual([]);
-        expect(seen.served).toBe(1);
+        expect(failureReceipt(conflict)).toEqual({
+            success: false,
+            errorReason: PAYMENT_IDENTIFIER_CONFLICT,
+            network: GIWA_SEPOLIA_CAIP2,
+            // 저장된 지불자가 없으므로 이 호출이 주장한 delegator를 댄다.
+            payer: PAYER,
+            transaction: "",
+        });
+        expect(remote.paths()).toEqual(["/supported"]);
     });
 
     test("정산된 id를 다시 내면 정산하지 않고 저장된 영수증으로 자원을 낸다", async () => {
