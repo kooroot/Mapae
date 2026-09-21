@@ -47,13 +47,25 @@ the same sentence.
   (`apps/web`) displays are restricted to three sources: direct chain reads,
   mined hashes, and revert reasons checked by the negative-path suite
 
+The settlement ledger, the daily gas budget and transaction-hash recovery for the same
+payment are implemented in SQLite. Hashes are stored before sending, a restart looks up the
+original receipt, and a success is counted once. This is locally regression-tested code,
+separate from evidence of a production rollout. One facilitator process per signer is
+required, for that signer's nonce and budget handling.
+
+Settlement automation's triggers, scheduler, execution history and retry policy are
+implemented in `apps/payment-scheduler` (§1): interval slots and `nextAt`, the
+`payment_runs` history with its `runs` query, `maxAttempts`/`retryDelayMs`, and the rule
+that only failures finished before the payment header left the process
+(`TRANSPORT_ERROR`, `SELLER_UNAVAILABLE`) are retried automatically. A slot whose outcome
+is unresolved keeps its reservation, stops, and is never resumed automatically.
+
 To be built:
 
-- **Settlement automation** — triggers and schedulers, task-level compound delegations,
-  execution history and retry policies. The SQLite ledger, daily gas budgets and
-  transaction-hash recovery already exist: hashes are stored before sending and
-  successful retries are counted once. This is locally tested code, not evidence of
-  a production rollout. One facilitator process per signer is still required.
+- **Task-level compound delegation** — binding one task made of several sellers and
+  resources into a single delegation. Today every payment signs a fresh leaf out of the
+  root period delegation, so the task's boundary is written in the schedule row rather
+  than in the delegation
 - **KYC and attestation verification path** — Dojang KYC gate + EAS
   contract/receipt schemas + resolvers
 - **Fulfillment verification** — an optimistic structure (default pass,

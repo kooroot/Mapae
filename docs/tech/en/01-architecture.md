@@ -12,6 +12,7 @@
 | `apps/delegated-agent` | Builds a payment-specific leaf from a parent delegation | Bun |
 | `apps/delegated-seller` | ERC-7710 hosted shop — shop manifests, paywalled tickets, the orders ledger | Bun + Hono |
 | `apps/agent-mcp` | Exposes the payment loop as an MCP tool | Bun + MCP SDK (stdio) |
+| `apps/payment-scheduler` | Buys the same seller resource at a fixed interval — slots, budget, run history and retries live in a DB, and each claim is one payment | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | Receives an owner-signed revocation UserOp → `handleOps` — two modes: pinned (single payer, loopback) / sponsored (public, sponsor-funded deposit) | Bun + Hono |
 | `apps/account-bootstrap` | Recovers the owner from a pre-deployment signature → sponsored CREATE2 deploy of the payer account + mUSDC mint | Bun + Hono |
 | `apps/delegation-lab` | Deployment previews, negative-path and e2e suites, fork orchestration | Bun |

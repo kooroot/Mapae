@@ -12,6 +12,7 @@
 | `apps/delegated-agent` | parent 위임에서 결제별 leaf 생성 | Bun |
 | `apps/delegated-seller` | ERC-7710 호스티드 상점 — 가게 매니페스트·유료 티켓·주문 장부 | Bun + Hono |
 | `apps/agent-mcp` | 결제 루프를 MCP tool로 노출 | Bun + MCP SDK (stdio) |
+| `apps/payment-scheduler` | 같은 판매자 리소스를 고정 간격으로 구매 — 슬롯·예산·실행 이력·재시도를 DB에 들고 claim 단위로 결제 | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` — 핀(단일 payer·loopback) / 스폰서드(공개, 예치금 대납) 두 모드 | Bun + Hono |
 | `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 + mUSDC 민팅 | Bun + Hono |
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |

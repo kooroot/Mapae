@@ -271,6 +271,45 @@ inactive reason takes precedence over the cap** (reporting a permission that can
 spend any amount as `LIMIT_EXCEEDED` sends the operator adjusting the cap, which is
 not the cause), and **the cap is the chain's minimum, not the root's value.**
 
+**Two layers of spending limit.** An on-chain caveat is a **period** cap — it holds
+several days' budget in one cell, and every individual payment inside it is legitimate.
+Nothing on chain stops a single mistaken resource path from spending that whole budget in
+one session. So the agent runtime lays three limits on top of it, from env
+(`createAgentSpendGate`): a per-call cap `AGENT_MAX_PAYMENT_MUSDC`, a session total
+`AGENT_SESSION_BUDGET_MUSDC`, and a recipient allowlist `AGENT_ALLOWED_PAY_TO`. Unset
+means that limit does not exist, and the code substitutes no default of its own — leave
+all three empty and the only cap is the on-chain caveat, which is the original behaviour.
+The final limit is the chain either way.
+
+Enforcement happens in exactly **one** place, immediately before the leaf is signed:
+inside the gate that wraps the provider, where the verdict and the reservation sit in the
+same synchronous block with no await between them — which is why concurrent calls share
+one budget rather than each getting it. Split the verdict from the accounting into two
+calls and that gap opens, and the session cap weakens in proportion to the number of
+concurrent calls (a budget of 1.0 with five simultaneous calls signed all five: 5.0 tUSDC
+measured). The gate wraps the provider so that a new call path cannot forget the
+enforcement — as a separate method to call, a path that never called it would still
+compile.
+
+What the total counts is **signatures**, not charges. A signed leaf is a bearer
+authorization, so the facilitator can redeem it even when the seller never delivered the
+resource — counting only successful settlements would revive the budget on every failed
+round trip, and a cap that grows back is not a cap. There is exactly one rollback: when
+the signing itself threw. A leaf that does not exist cannot be redeemed.
+
+A refusal has two names. The pre-flight the payment loop asks before signing (`judge`)
+changes no state, and its refusal becomes the legible code `SPEND_POLICY_REFUSED`. The
+reservation is not made there because pre-flight and signing are not guaranteed to be a
+pair: the executor in `apps/payment-scheduler` checks its own schedule conditions inside
+its provider and can refuse there, and had the pre-flight reserved, every such refusal
+would strand a slice of the budget for good. So a payment that passed pre-flight and then
+lost the budget to another call is caught at the signing point and reported as
+`SIGNING_FAILED`, with `detail` naming which limit it was — the enforcement is not late,
+the reporting is one step removed. A session is the lifetime of the runtime instance, that
+is of the MCP server process; a budget that must outlive a restart is the one
+`apps/payment-scheduler` keeps in its DB. The per-variable verdicts and the operational
+rules are in the [MCP connection guide](../../mcp-guide.md) §3.1.
+
 Two runtime behaviours:
 
 - **Runtime loading is lazy and caches only success.** An env or network failure at

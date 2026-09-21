@@ -23,6 +23,7 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 | `apps/delegated-agent` | parent 위임에서 결제별 leaf 생성 | Bun |
 | `apps/delegated-seller` | ERC-7710 호스티드 상점 — 가게 매니페스트·유료 티켓·주문 장부 | Bun + Hono |
 | `apps/agent-mcp` | 결제 루프를 MCP tool로 노출 | Bun + MCP SDK (stdio) |
+| `apps/payment-scheduler` | 같은 판매자 리소스를 고정 간격으로 구매 — 슬롯·예산·실행 이력·재시도를 DB에 들고 claim 단위로 결제 | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` — 핀(단일 payer·loopback) / 스폰서드(공개, 예치금 대납) 두 모드 | Bun + Hono |
 | `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 + mUSDC 민팅 | Bun + Hono |
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
@@ -290,6 +291,40 @@ pre-flight 판정(`judgePreflight`)은 순수 함수로 분리되어 있고, 체
 우선한다**(어떤 금액으로도 쓸 수 없는 permission을 `LIMIT_EXCEEDED`로 보고하면
 운영자가 원인이 아닌 한도를 조정하게 된다), 그리고 **한도는 체인의 최솟값이지
 root의 값이 아니다.**
+
+**지출 한도의 두 층.** 온체인 caveat은 **기간** 한도다 — 며칠치 예산을 한 칸에
+담고 있고, 그 안의 개별 결제는 전부 합법이다. 잘못 든 자원 경로 하나가 한 세션에
+그 예산 전부를 쓰는 것을 체인은 막지 않는다. 그래서 에이전트 런타임이 그 위에 세
+한도를 env로 얹는다(`createAgentSpendGate`): 호출당 상한
+`AGENT_MAX_PAYMENT_MUSDC`, 세션 누적 `AGENT_SESSION_BUDGET_MUSDC`, 수취처
+허용목록 `AGENT_ALLOWED_PAY_TO`. 미설정은 그 한도가 없다는 뜻이고 코드가 임의의
+기본값을 넣지 않는다 — 셋을 다 비우면 한도는 온체인 caveat 하나이며 그것이 원래
+동작이다. 최종 한도는 어느 경우에도 체인이다.
+
+강제는 leaf 서명 직전 **한 곳**이다. provider를 감싼 게이트 안이고, 판정과 예약이
+같은 동기 블록에 있어 그 사이에 대기가 없다 — 그래서 동시 호출도 같은 예산을
+나눠 쓴다. 판정과 누적을 두 호출로 나누면 그 틈이 생기고, 그때 세션 한도는 동시
+호출 수에 비례해 무력해진다(예산 1.0에 5개 호출을 동시에 넣어 다섯 건 모두 서명된
+측정값 5.0 tUSDC). provider를 감싸는 형태인 것은 새 호출 경로가 강제를 잊을 수
+없게 하려는 것이다 — 판정을 부르는 별도 메서드였다면 그것을 부르지 않는 경로도
+컴파일된다.
+
+누적의 기준은 청구가 아니라 **서명**이다. 서명된 leaf는 bearer 권한이므로 판매자가
+자원을 주지 못했더라도 facilitator는 그것을 청구할 수 있다 — 정산 성공만 세면
+실패한 왕복마다 예산이 되살아나 한도가 한도가 아니게 된다. 되돌리는 경우는
+하나뿐이다: 서명 자체가 던진 경우. 존재하지 않는 leaf는 청구될 수 없다.
+
+거절의 이름은 두 가지다. 결제 루프가 서명 전에 물어보는 선판정(`judge`)은 상태를
+바꾸지 않고, 그 거절이 읽을 수 있는 코드 `SPEND_POLICY_REFUSED`가 된다. 예약을
+선판정에서 하지 않는 이유는 선판정→서명이 한 쌍이라는 보장이 없어서다 —
+`apps/payment-scheduler`의 실행기는 자기 provider 안에서 스케줄 조건을 먼저 보고
+거절할 수 있고, 선판정이 예약했다면 그 거절마다 예산이 한 조각씩 영구히 사라진다.
+그래서 선판정을 통과한 뒤 다른 호출이 예산을 먼저 가져간 결제는 서명 직전에 걸려
+`SIGNING_FAILED`로 보고되고, `detail`이 어느 한도였는지 이름으로 말한다 — 강제가
+늦은 것이 아니라 보고가 한 단계 거친 것이다. 세션은 런타임 인스턴스의 수명, 즉 MCP
+서버 프로세스의 수명이며, 재시작을 넘겨 남아야 하는 예산은 `apps/payment-scheduler`가
+DB에 들고 있다. 변수별 판정과 운영 규칙은
+[MCP 연결 가이드](mcp-guide.md) §3.1에 있다.
 
 런타임 동작 두 가지:
 
@@ -917,9 +952,17 @@ payload와 permission context는 bearer 권한이므로 로그·오류 상세에
 집계한다. 이는 로컬 회귀 테스트로 검증한 코드 상태이며 운영 배포 증거와는 별개다.
 서명자 하나의 nonce·예산 처리를 위해 facilitator는 단일 프로세스로 운영한다.
 
+정산 자동화의 트리거·스케줄러·실행 이력·재시도 정책은 `apps/payment-scheduler`에
+구현되어 있다(§1): 간격 슬롯과 `nextAt`, `payment_runs` 이력과 `runs` 조회,
+`maxAttempts`·`retryDelayMs`, 그리고 결제 헤더가 프로세스를 떠나기 전에 끝난
+실패(`TRANSPORT_ERROR`·`SELLER_UNAVAILABLE`)만 자동 재시도하는 규칙까지. 결과가
+미확정인 슬롯은 예약을 유지한 채 멈추고 자동 재개하지 않는다.
+
 앞으로 만들 것:
 
-- **정산 자동화** — 트리거·스케줄러, 작업 단위 복합 위임과 실행 이력, 재시도 정책
+- **작업 단위 복합 위임** — 여러 판매자·여러 리소스로 이루어진 한 작업을 위임 하나로
+  묶는 것. 지금은 결제마다 root 기간 위임에서 leaf를 하나씩 새로 서명하므로, 작업의
+  경계는 위임에 적혀 있지 않고 스케줄 작업 행에만 있다
 - **KYC·증명 검증 경로** — Dojang KYC 게이트 + EAS 계약/영수증 스키마 + 리졸버
 - **이행검증** — optimistic 구조(기본 통과·이의제기 창·본드). 최종 판정자가
   재실행이 아닌 중재이므로 trustless가 아님을 전제로 설계
