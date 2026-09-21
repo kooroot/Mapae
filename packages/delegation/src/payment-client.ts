@@ -93,10 +93,13 @@ export type DelegatedPaymentFailureCode =
      *
      * Separate from `PAYMENT_REJECTED` because the two demand opposite responses: a
      * rejection invites a retry, and retrying this one can pay twice. Measured on GIWA —
-     * a settlement that outlived the seller's connection timeout reported
-     * `PAYMENT_REJECTED 403` while the transfer had already been mined
+     * a settlement that outlived the seller's connection timeout was reported to the
+     * caller as `PAYMENT_REJECTED` while the transfer had already been mined
      * (`0x533c5cb2…9964c`, block 31634935). Nothing about the reported code told the
-     * caller that 1.00 mUSDC had moved.
+     * caller that 1.00 mUSDC had moved. The 403 the seller answered it with that day is
+     * gone from the ladder — an unsettled payment is 504 `settlement_unknown` now, and a
+     * refused one a 402 that re-issues the offer — but the reading below is what keeps the
+     * loss from returning under some other status.
      */
     | "SETTLEMENT_UNKNOWN"
     | "MALFORMED_RESOURCE"

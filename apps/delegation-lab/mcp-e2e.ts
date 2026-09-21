@@ -577,7 +577,8 @@ async function provePickupLookup(tickets: Ticket[]): Promise<void> {
  * Set `SETTLEMENT_RECEIPT_TIMEOUT_MS=1` and the facilitator gives up on the receipt of a
  * transaction it has already broadcast. That is the one case where the payer is charged
  * and nobody can yet say so, and the seller must answer 504 `settlement_unknown` — never
- * 422, which asserts a balance nobody checked.
+ * the 402 that re-issues the offer, which is the ladder's way of saying "nothing was
+ * charged, pay again with a new leaf" and would turn one sale into two payments here.
  *
  * The knob existed before this function and only forwarded the variable. Setting it made
  * the run *fail* at the `body.ok !== true` guard, so the escape hatch that was documented
@@ -904,7 +905,8 @@ async function main(): Promise<void> {
         RELAYER_DAILY_WEI: "100000000000000000",
         RELAYER_PAYER_DAILY_WEI: "10000000000000000",
         // Set SETTLEMENT_RECEIPT_TIMEOUT_MS=1 to force the broadcast-but-unconfirmed
-        // path: the seller must answer 504 settlement_unknown, never 422.
+        // path: the seller must answer 504 settlement_unknown, never the 402 that
+        // re-issues the offer.
         ...(process.env.SETTLEMENT_RECEIPT_TIMEOUT_MS
             ? {SETTLEMENT_RECEIPT_TIMEOUT_MS: process.env.SETTLEMENT_RECEIPT_TIMEOUT_MS}
             : {}),
