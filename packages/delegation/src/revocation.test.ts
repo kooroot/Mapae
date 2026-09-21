@@ -237,9 +237,12 @@ describe("revocation UserOperation", () => {
         expect(hashTypedData(built.typedData)).toBe(expected);
     });
 
+    // 골든 값은 취소하려는 위임의 해시까지 포함하므로, `open-agent` 정책의 caveat 구성이
+    // 바뀌면 함께 움직인다(평생 총액 caveat이 붙은 것이 그 예다). 그때는 다시 재는 것이
+    // 맞고, 그 외의 이동은 도메인·필드 순서·패킹이 드리프트한 것이다.
     test("the digest is stable — any drift in domain, field order, or packing moves it", () => {
         expect(hashTypedData(build().typedData)).toBe(
-            "0xd2b79a5c85515b753ab5a2239ac94848d86624baab7dd41040eaef280fb18db4",
+            "0x0d7320d4371f010f74f64b7c5c9b0f9bbcc241a07278cf5b765e3cfea8558fd0",
         );
     });
 
