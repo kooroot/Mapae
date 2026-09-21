@@ -47,6 +47,12 @@ async function printPlan(): Promise<void> {
                         role,
                         {
                             periodAmount: fromTokenAmount(policy.periodAmount),
+                            // 기간 상한이 갱신될 때마다 다시 열리는 것과, 이 위임이 평생
+                            // 내보낼 수 있는 총액은 다른 숫자다. 검토 출력에 둘 다 적는다.
+                            lifetimeTotalAmount:
+                                policy.lifetimeTotalAmount === undefined
+                                    ? "none"
+                                    : fromTokenAmount(policy.lifetimeTotalAmount),
                             token: policy.token,
                             periodDurationSeconds: policy.periodDurationSeconds,
                             expiresAfterSeconds: policy.expiresAfterSeconds,

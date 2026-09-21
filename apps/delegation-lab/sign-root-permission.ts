@@ -369,8 +369,13 @@ async function prepare(): Promise<void> {
     };
     await writeAtomically(requestPath(role), `${bigintAwareStringify(requestFile)}\n`);
 
+    // 소유자가 읽고 서명하는 한 줄이다. caveat으로 들어가는 한도가 여기 적혀 있지 않으면
+    // 소유자는 자기가 승인한 줄에 없는 제약에 서명한다 — 총액도 기간 상한과 같이 적는다.
     const humanSummary =
         `${policy.periodAmount} base units per ${policy.periodDurationSeconds}s, ` +
+        (policy.lifetimeTotalAmount !== undefined
+            ? `${policy.lifetimeTotalAmount} base units in total for this grant, `
+            : "") +
         `expires ${policy.expiresAfterSeconds}s after ${startDate}` +
         (policy.recipient ? `, only to ${policy.recipient}` : "");
     const fullTypedData = fullSignTypedDataV4(request.typedData);
@@ -393,6 +398,13 @@ async function prepare(): Promise<void> {
     console.log(`  delegator (smart account)${account}`);
     console.log(`  delegate (agent session) ${delegate}`);
     console.log(`  period amount            ${policy.periodAmount} base units / ${policy.periodDurationSeconds}s`);
+    console.log(
+        `  lifetime total           ${
+            policy.lifetimeTotalAmount === undefined
+                ? "none (period cap only)"
+                : `${policy.lifetimeTotalAmount} base units, never refreshes`
+        }`,
+    );
     console.log(`  expires after            ${policy.expiresAfterSeconds}s from ${startDate}`);
     console.log(`  request saved            ${requestPath(role)}`);
     console.log(`  EIP-712 digest           ${digest}`);

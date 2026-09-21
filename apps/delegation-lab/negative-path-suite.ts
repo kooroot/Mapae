@@ -46,10 +46,19 @@ import {
 } from "@metamask/smart-accounts-kit";
 import {DelegationManager} from "@metamask/smart-accounts-kit/contracts";
 import {
+    decodeDelegations,
     deploySmartAccountsEnvironment,
     encodeDelegations,
+    hashDelegation,
 } from "@metamask/smart-accounts-kit/utils";
-import {GIWA_SEPOLIA_CAIP2, MOCK_USDC, giwaSepolia, redactUrls} from "@mapae/shared";
+import {ERC20TransferAmountEnforcer as ERC20TransferAmountEnforcerAbi} from "@metamask/delegation-abis";
+import {
+    GIWA_SEPOLIA_CAIP2,
+    MOCK_USDC,
+    giwaSepolia,
+    redactUrls,
+    toTokenAmount,
+} from "@mapae/shared";
 import {startForkSourceProxy} from "./fork-source-proxy";
 import {
     createPublicClient,
@@ -762,6 +771,62 @@ async function run(ctx: Ctx): Promise<void> {
         const leaf = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
         await settle(ctx, leaf.permissionContext, OTHER_PAYEE, 1_000_000n);
         return "settled again in the next period";
+    });
+
+    /**
+     * 위의 period-reset이 증명한 갱신은 곧 기간 상한만으로는 평생 총액이 없다는 뜻이다:
+     * 위임이 살아 있는 동안 기간이 갱신될 때마다 같은 금액을 다시 쓸 수 있다. 총액 caveat은
+     * 그 갱신을 따라가지 않는다 — `ERC20TransferAmountEnforcer`의 `spentMap`은 위임 해시
+     * 하나당 한 칸이고 되돌아가지 않기 때문이다.
+     *
+     * 총액은 4 mUSDC로 좁혀 잡는다. 시연 정책의 12 mUSDC를 그대로 쓰면 기간을 네 번
+     * 채우는 열두 번의 상환이 필요한데, 증명하는 사실은 같다.
+     *
+     * 마지막 거절이 부모의 caveat에서 나온 것임을 메시지만으로는 가릴 수 없다(리프도 같은
+     * enforcer를 쓴다). 그래서 거절 직전에 부모 위임 해시의 `spentMap`을 직접 읽어 총액이
+     * 이미 가득 찼음을 확인한다. 리프는 매번 새 salt라 자기 칸은 항상 0에서 시작한다.
+     */
+    await testCase("lifetime-total: the total does not refresh with the period", async () => {
+        const acct = await freshOwnerAccount(ctx, owner, "lifetime-total");
+        const start = (await chainNow(ctx)) - 1;
+        const total = toTokenAmount("4");
+        const cappedPolicy: PeriodPolicy = {...openPolicy, lifetimeTotalAmount: total};
+        const root = await signedRoot(ctx, acct, agent.address, cappedPolicy, start);
+        for (let i = 0; i < 3; i += 1) {
+            const leaf = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
+            await settle(ctx, leaf.permissionContext, OTHER_PAYEE, 1_000_000n);
+        }
+        await rpc(ctx.rpcUrl, "evm_increaseTime", [61]);
+        await rpc(ctx.rpcUrl, "evm_mine", []);
+        // 기간은 새로 열렸다: 기간 상한만 있었다면 이 결제는 통과한다.
+        const fourth = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
+        await settle(ctx, fourth.permissionContext, OTHER_PAYEE, 1_000_000n);
+
+        const rootDelegation = decodeDelegations(root)[0];
+        if (!rootDelegation) throw new Error("root permission context decoded to nothing");
+        const enforcer = ctx.environment.caveatEnforcers["ERC20TransferAmountEnforcer"];
+        if (!enforcer) throw new Error("ERC20TransferAmountEnforcer missing from the environment");
+        const spent = (await ctx.publicClient.readContract({
+            address: getAddress(enforcer),
+            abi: ERC20TransferAmountEnforcerAbi,
+            functionName: "spentMap",
+            args: [getAddress(ctx.environment.DelegationManager), hashDelegation(rootDelegation)],
+        })) as bigint;
+        if (spent !== total) throw new Error(`parent spentMap is ${spent}, expected ${total}`);
+
+        const overflow = await buildLeaf(ctx, AGENT_KEY, root, OTHER_PAYEE, 1_000_000n);
+        return expectRevert(
+            "lifetime-total",
+            "ERC20TransferAmountEnforcer:allowance-exceeded",
+            () =>
+                simulateRedeem(
+                    ctx,
+                    ctx.relayer,
+                    overflow.permissionContext,
+                    OTHER_PAYEE,
+                    1_000_000n,
+                ),
+        );
     });
 
     await testCase("expiry: expired root is rejected", async () => {
