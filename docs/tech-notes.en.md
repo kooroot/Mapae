@@ -1054,10 +1054,13 @@ required, for that signer's nonce and budget handling.
 
 Settlement automation's triggers, scheduler, execution history and retry policy are
 implemented in `apps/payment-scheduler` (§1): interval slots and `nextAt`, the
-`payment_runs` history with its `runs` query, `maxAttempts`/`retryDelayMs`, and the rule
-that only failures finished before the payment header left the process
-(`TRANSPORT_ERROR`, `SELLER_UNAVAILABLE`) are retried automatically. A slot whose outcome
-is unresolved keeps its reservation, stops, and is never resumed automatically.
+`payment_runs` history with its `runs` query, `maxAttempts`/`retryDelayMs`, and the two
+failures that are retried automatically. Their reasons differ: `TRANSPORT_ERROR` is a
+connection that died before the payment header left the process, while `SELLER_UNAVAILABLE`
+is the seller answering 503 — the header did go out, and the answer says nothing was charged.
+What makes the second safe to retry after the header is on the wire is that its ground is the
+seller's answer rather than the transport. A slot whose outcome is unresolved keeps its
+reservation, stops, and is never resumed automatically.
 
 To be built:
 
