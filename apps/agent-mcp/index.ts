@@ -4,6 +4,7 @@ import {
     loadDelegatedAgentRuntime,
     payForDelegatedResource,
     resolveResourceTarget,
+    type AgentSpendPolicy,
     type DelegatedAgentRuntime,
 } from "@mapae/delegation";
 import {GIWA_SEPOLIA_CAIP2, fromTokenAmount, redactForLog} from "@mapae/shared";
@@ -60,6 +61,27 @@ function errorMessage(error: unknown): string {
     return redactForLog(error);
 }
 
+/**
+ * 지출 한도를 구동 에이전트가 읽을 수 있는 형태로 옮긴다.
+ *
+ * `limit` 한 줄("enforced on-chain by the parent caveat")을 대체한다. 그 문장은 이제
+ * 사실의 일부만 말한다 — 온체인 caveat 위에 운영자가 정한 세 한도가 얹혀 있고, 그중
+ * 하나에 걸린 거절은 체인을 봐서는 설명되지 않는다. 미설정은 `null`로 보낸다: 키를 빼면
+ * "한도가 없다"와 "이 서버가 그 한도를 모른다"가 구분되지 않는다.
+ */
+function spendLimits(policy: AgentSpendPolicy) {
+    return {
+        perPayment: policy.maxPerPaymentBase === undefined
+            ? null
+            : fromTokenAmount(policy.maxPerPaymentBase),
+        sessionTotal: policy.maxSessionTotalBase === undefined
+            ? null
+            : fromTokenAmount(policy.maxSessionTotalBase),
+        allowedPayTo: policy.allowedPayTo ?? null,
+        onChain: "parent erc20PeriodTransfer caveat — the final bound either way",
+    };
+}
+
 function textResult(payload: unknown, isError = false) {
     return {
         content: [{type: "text" as const, text: JSON.stringify(payload, null, 2)}],
@@ -78,7 +100,9 @@ server.registerTool(
             "payment-specific ERC-7710 leaf delegation within the on-chain spending " +
             "caveat and retry. Returns the resource on success, or a structured " +
             "reason on failure. Never broadcasts a transaction itself — the " +
-            "facilitator settles and pays gas.",
+            "facilitator settles and pays gas. The operator may also cap what this " +
+            "server will sign per payment, per session, and to which recipients; " +
+            "mapae_status reports those limits and SPEND_POLICY_REFUSED names them.",
         inputSchema: {
             resource: z
                 .string()
@@ -155,7 +179,7 @@ server.registerTool(
                 delegationManager: loaded.delegationManager,
                 trustedFacilitators: loaded.trustedFacilitators,
                 frameworkVerified: true,
-                limit: "enforced on-chain by the parent erc20PeriodTransfer caveat",
+                limits: spendLimits(loaded.spendPolicy),
             });
         } catch (error) {
             return textResult(

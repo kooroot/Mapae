@@ -44,6 +44,10 @@ test("advertises exactly the two D5 automation tools", async () => {
 
     const pay = tools.find((tool) => tool.name === "mapae_pay_for_resource");
     expect(pay?.inputSchema?.properties).toHaveProperty("resource");
+    // 구동 에이전트는 이 설명만 읽고 tool을 쓴다. 운영자가 정한 한도에 걸릴 수 있다는
+    // 사실과 그때 돌아오는 코드가 거기 없으면, 모델은 정상 거절을 고장으로 읽고
+    // 같은 결제를 다시 시도한다.
+    expect(pay?.description).toContain("SPEND_POLICY_REFUSED");
 });
 
 test("an unconfigured runtime returns a reason instead of killing the server", async () => {

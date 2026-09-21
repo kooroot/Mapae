@@ -51,6 +51,20 @@ export type DelegatedPaymentFailureCode =
     | "MANAGER_MISMATCH"
     /** The on-chain period cap cannot cover this payment. */
     | "LIMIT_EXCEEDED"
+    /**
+     * 이 에이전트 런타임의 지출 정책이 거절했다 — 호출당 상한, 세션 누적 상한, 또는
+     * 수취처 허용목록.
+     *
+     * `LIMIT_EXCEEDED`와 일부러 다른 코드다. 그것은 체인의 회계가 말하는 거절이라
+     * 운영자를 체인으로 보내지만, 이것은 운영자 자신이 env에 적은 한도이고 체인에는
+     * 아무 문제가 없다. 하나로 합치면 운영자가 정상인 기간 잔량을 들여다보게 된다.
+     *
+     * 허용목록 위반까지 이 코드에 담는 이유: 셋 모두 "운영자가 설정한 정책이 서명을
+     * 막았다"는 같은 사실이고 대응도 같은 파일(`.env`)이다. `detail`이 어느 한도인지
+     * 이름으로 말한다. 이름이 `..._EXCEEDED`가 아닌 것도 그래서다 — 허용목록 밖의
+     * 수취처는 무엇을 초과한 것이 아니다.
+     */
+    | "SPEND_POLICY_REFUSED"
     /** The permission is revoked, expired, or not yet active. */
     | "PERMISSION_INACTIVE"
     /**
@@ -194,12 +208,16 @@ export type DelegatedLeafProvider = (
     requirements: Erc7710PaymentRequirements,
 ) => Promise<{delegationManager: Address; permissionContext: Hex; delegator: Address}>;
 
-/** Verdict from an optional on-chain check made before any payment is attempted. */
+/** Verdict from an optional check made before any payment is attempted. */
 export type PreflightVerdict =
     | {ok: true}
     | {
           ok: false;
-          code: "LIMIT_EXCEEDED" | "PERMISSION_INACTIVE" | "PERMISSION_EMPTY";
+          code:
+              | "LIMIT_EXCEEDED"
+              | "PERMISSION_INACTIVE"
+              | "PERMISSION_EMPTY"
+              | "SPEND_POLICY_REFUSED";
           detail: string;
       };
 
@@ -210,14 +228,20 @@ export interface DelegatedPaymentConfig {
     /** Facilitator redeemer addresses this agent already trusts. */
     trustedFacilitators: Address[];
     /**
-     * Optional check against the enforcer's own accounting, run before signing.
+     * Optional check run before signing, against the enforcer's own accounting and
+     * against whatever spending policy the agent's operator configured.
      *
      * The cap is enforced on-chain either way; this exists so an agent that cannot
      * afford the payment says so — `LIMIT_EXCEEDED` — instead of walking into a
      * seller's generic rejection and reporting a status code. Kept as a callback so
      * the payment core itself stays chain-independent and unit-testable.
+     *
+     * It receives the whole selected offer rather than its amount. A policy that has
+     * anything to say about *who* is being paid — a recipient allowlist — cannot be
+     * asked with a `bigint`, and a judgement that cannot be asked before signing is one
+     * that arrives after the leaf is already a bearer authorization.
      */
-    preflight?: (amount: bigint) => Promise<PreflightVerdict>;
+    preflight?: (requirements: Erc7710PaymentRequirements) => Promise<PreflightVerdict>;
     /** Injectable for tests; defaults to the global fetch. */
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
@@ -691,7 +715,7 @@ export async function payForDelegatedResource(
     if (config.preflight) {
         let verdict: PreflightVerdict;
         try {
-            verdict = await config.preflight(BigInt(accepted.amount));
+            verdict = await config.preflight(accepted);
         } catch (error) {
             return failure("TRANSPORT_ERROR", `preflight read failed: ${errorMessage(error)}`);
         }

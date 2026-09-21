@@ -4,7 +4,8 @@
 노출한다. Claude Code, Claude Desktop 등 MCP를 지원하는 에이전트에 등록하면
 tool 호출 한 번으로 402 수신 → leaf 서명 → 재요청 → 정산이 사람 개입 없이
 완료된다. 서버 자신은 트랜잭션을 브로드캐스트하지 않는다 — 정산과 가스는
-facilitator의 relayer가 담당하고, 지출 한도는 온체인 caveat이 강제한다.
+facilitator의 relayer가 담당하고, 지출 한도는 온체인 caveat이 강제한다. 그 위에
+운영자가 호출당·세션 누적·수취처 한도를 env로 더 좁힐 수 있다(§3.1).
 
 설계 근거는 [기술자료 §2 에이전트 자동화](tech/02-payment-flows.md)에 있고,
 이 문서는 설치와 사용만 다룬다.
@@ -16,12 +17,14 @@ facilitator의 relayer가 담당하고, 지출 한도는 온체인 caveat이 강
 | tool | 입력 | 반환 |
 |---|---|---|
 | `mapae_pay_for_resource` | `resource` — 판매자 origin의 절대 경로 (예: `/s/demo-cafe/americano`) | 성공: `resourceUrl`·`amount`·`payTo`·`resource`(content-type이 JSON이면 파싱한 값, 아니면 본문 문자열), 그리고 판매자 응답에 있을 때 `transaction`(tx 해시)과 `contentType`(미디어 타입만, 파라미터는 버린다). 실패: `code`·`detail`, 해당 시 `status` |
-| `mapae_status` | 없음 | 네트워크, 세션키 주소, seller/facilitator 엔드포인트, DelegationManager, 신뢰 signer 목록, 한도 강제 주체(`limit`) |
+| `mapae_status` | 없음 | 네트워크, 세션키 주소, seller/facilitator 엔드포인트, DelegationManager, 신뢰 signer 목록, 그리고 설정된 지출 한도(`limits`) |
 
 `mapae_status`는 키 원문과 서명된 permission context를 반환하지 않는다 — 둘 다
 bearer 권한이므로 tool 결과로 내보내지 않도록 설계되어 있다. 응답의
 `frameworkVerified`는 도구가 답하는 한 항상 `true`다 — 검증에 실패한 배포는
 값이 `false`로 나오는 것이 아니라 `RUNTIME_UNAVAILABLE`로 거절된다.
+`limits`의 각 칸은 설정되지 않았을 때 `null`이다 — 키를 빼면 "한도가 없다"와
+"이 서버가 그 한도를 모른다"가 구분되지 않는다.
 
 ## 2. 사전 조건
 
@@ -107,9 +110,45 @@ URL로 지정한다. 표의 기본값은 loopback으로, 셀프호스팅(§2)에
 | `DELEGATION_DEPLOYMENT_PATH` | | `../../deployments/giwa-sepolia.framework.json` |
 | `DELEGATION_MANIFEST_PATH` | | `../../deployments/giwa-sepolia.framework-manifest.json` |
 | `PARENT_PERMISSION_CONTEXT_PATH` | | `./open-agent.permission.json` |
+| `AGENT_MAX_PAYMENT_MUSDC` | | 미설정 — 호출당 상한(tUSDC 십진, 소수 6자리까지) |
+| `AGENT_SESSION_BUDGET_MUSDC` | | 미설정 — 세션 누적 상한(tUSDC 십진) |
+| `AGENT_ALLOWED_PAY_TO` | | 미설정 — 쉼표로 구분한 수취처 허용목록 |
 
 URL 값은 loopback이 아니면 HTTPS를 강제하고, userinfo가 든 URL은 거부한다.
 경로 기본값은 실행 디렉터리 기준 상대 경로다.
+
+### 3.1 지출 한도 세 개
+
+온체인 caveat은 **기간** 한도다 — 며칠치 예산을 한 칸에 담고 있고, 그 안의 개별
+결제는 전부 합법이다. 잘못 든 자원 경로 하나가 한 세션에 그 예산 전부를 쓰는
+것을 체인은 막지 않는다. 아래 세 값이 그 폭을 좁힌다.
+
+| 변수 | 판정 |
+|---|---|
+| `AGENT_MAX_PAYMENT_MUSDC` | 이 금액을 넘는 오퍼는 서명하지 않는다. 경계값(정확히 같은 금액)은 통과한다 |
+| `AGENT_SESSION_BUDGET_MUSDC` | 이 런타임 인스턴스가 서명한 leaf 금액의 합이 이 값을 넘게 되는 결제를 서명하지 않는다 |
+| `AGENT_ALLOWED_PAY_TO` | 목록이 설정되어 있으면 그 밖의 `payTo`는 서명하지 않는다. 대소문자는 무관하다 |
+
+네 가지를 분명히 해 둔다.
+
+- **판정은 leaf 서명 전에 일어난다.** 서명된 leaf는 bearer 권한이므로, 사후 거절은
+  아무것도 되돌리지 못한다 — 판매자가 자원을 주지 못했더라도 facilitator는 그
+  leaf를 청구할 수 있다.
+- **세션은 런타임 인스턴스의 수명, 즉 MCP 서버 프로세스의 수명이다.** 프로세스를
+  다시 띄우면 누적은 0에서 시작한다. 재시작을 넘겨 남는 예산이 필요하면
+  `apps/payment-scheduler`가 그 예산을 DB에 들고 있다.
+- **누적에 더하는 기준은 서명이지 청구가 아니다.** 정산에 성공한 것만 세면
+  실패한 왕복마다 예산이 되살아나 한도가 한도가 아니게 된다. 서명 자체가
+  실패한 금액(parent permission이 깨진 경우)은 leaf가 없으므로 세지 않는다.
+- **미설정은 그 한도가 없다는 뜻이다.** 세 값을 모두 비워 두면 한도는 온체인
+  caveat 하나이고, 그것이 원래 동작이다. 코드가 임의의 기본 숫자를 넣지 않는
+  것은 의도다 — 운영자가 정한 적 없는 예산에 걸린 거절은 그 원인이 어디에도
+  적혀 있지 않다.
+
+잘못된 값(음수, `0`, 소수 7자리 이상, 주소가 아닌 항목, 항목이 하나도 없는 목록)은
+부팅에서 실패해 `RUNTIME_UNAVAILABLE`로 변수 이름을 지목한다. 한도를 끄는 방법은
+변수를 비우는 것 하나뿐이다 — 조용히 무제한으로 도는 런타임은 밖에서 한도가 걸린
+런타임과 구분되지 않는다.
 
 ## 4. 클라이언트 등록
 
@@ -155,9 +194,12 @@ Claude Desktop 등 JSON 설정 클라이언트 (`mcpServers`):
 - **로딩 시점에 검증이 실행된다.** 배포 아티팩트의 38유닛 Framework를 체인
   바이트코드와 대조하고, facilitator `/supported`에서 신뢰할 signer 목록을
   가져온다. 전부 읽기 전용이다.
-- **서명 전에 온체인 pre-flight가 실행된다.** enforcer의 회계를 직접 읽어 성공할 수
-  없는 결제를 서명 전에 거르고, 사유를 체인의 값으로 말한다
-  (`payment of 2500000 exceeds 2000000 left in this period`).
+- **서명 전에 두 판정이 차례로 실행된다.** 먼저 §3.1의 런타임 지출 정책 — 체인을
+  읽지 않고 답할 수 있으므로 거절할 결제에 RPC 왕복을 쓰지 않는다. 그것을 통과하면
+  enforcer의 회계를 직접 읽어 성공할 수 없는 결제를 거르고, 사유를 체인의 값으로
+  말한다(`payment of 2500000 exceeds 2000000 left in this period`). 순서가 이런 것은
+  두 거절이 운영자를 다른 곳으로 보내기 때문이다 — 하나는 `.env`에서 고칠 수 있고,
+  다른 하나는 새 서명이나 다음 기간을 기다리는 일이다.
 - **tool 호출 타임아웃은 50초다.** 안쪽의 판매자(45초)·facilitator(35초)·영수증
   대기(25초)보다 길고, 일반적인 MCP 클라이언트의 60초 한도보다 짧다 — 바깥
   계층일수록 길어야 정산 중인 결제를 끊고도 결과를 모르는 상태가 생기지 않는다
@@ -172,6 +214,7 @@ Claude Desktop 등 JSON 설정 클라이언트 (`mcpServers`):
 |---|---|---|
 | `RUNTIME_UNAVAILABLE` | env·파일·네트워크·배포 검증 실패 | `detail`이 지목한 항목을 고치고 재호출 |
 | `INVALID_RESOURCE` | 경로가 판매자 origin을 벗어남 | `/`로 시작하는 절대 경로로 수정 |
+| `SPEND_POLICY_REFUSED` | §3.1의 런타임 한도 하나가 거절 — 호출당·세션 누적·수취처 | **체인은 정상이다.** `detail`이 지목한 env 변수를 확인한다. 세션 누적이면 프로세스 재시작으로도 초기화된다 |
 | `LIMIT_EXCEEDED` | 이번 주기 잔량 부족 | 주기가 돌아온 뒤 재시도 — 정상 동작이다 |
 | `PERMISSION_INACTIVE` | 회수·만료·미개시 | permission 재서명 또는 체인 상태 확인 |
 | `PAYMENT_REJECTED` | 판매자·facilitator가 명시적으로 거절 | 자금 불변. `detail` 확인 |
@@ -210,6 +253,9 @@ facilitator·판매자 각각의 `.env`. 빠진 항목은 수트가 시작 시�
 - 세션키가 탈취되어도 지출은 온체인 caveat의 주기 한도·만료·수취인 제약 안에
   갇힌다 — 최대 피해의 상한은 [§4 보안 고려](tech/04-security.md)가 케이스로
   증명한다.
+- §3.1의 세 한도는 그 상한을 더 좁히지만 **체인의 제약을 대체하지는 않는다.**
+  런타임 안에서만 판정되므로, 같은 permission으로 다른 프로세스를 띄우면 그
+  프로세스의 누적은 0에서 시작한다. 절대적인 상한은 여전히 체인에 있다.
 - 서명된 permission context는 bearer 권한이다. 로그·채팅·이슈에 붙여넣지 않는다.
 - tool 결과의 에러 메시지는 URL을 origin까지만 남기고 경로를 `/<redacted>`로
   치환해 반환한다 — 경로에 API 키가 든 사설 RPC를 쓰더라도 클라이언트 쪽

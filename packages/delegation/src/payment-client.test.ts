@@ -342,10 +342,10 @@ describe("D5 payForDelegatedResource", () => {
         const {impl, calls} = scriptedFetch(jsonResponse(200, {}));
         const result = await payForDelegatedResource(target, {
             ...baseConfig(impl, countingProvider),
-            preflight: async (amount) => ({
+            preflight: async (requirements) => ({
                 ok: false,
                 code: "LIMIT_EXCEEDED",
-                detail: `payment of ${amount} exceeds 500000 left in this period`,
+                detail: `payment of ${requirements.amount} exceeds 500000 left in this period`,
             }),
         });
 
@@ -379,17 +379,19 @@ describe("D5 payForDelegatedResource", () => {
         const {impl, calls} = scriptedFetch(
             jsonResponse(200, {receipt: {transaction: TX}}),
         );
-        const seen: bigint[] = [];
+        const seen: Erc7710PaymentRequirements[] = [];
         const result = await payForDelegatedResource(target, {
             ...baseConfig(impl),
-            preflight: async (amount) => {
-                seen.push(amount);
+            preflight: async (requirements) => {
+                seen.push(requirements);
                 return {ok: true};
             },
         });
 
         expect(result.ok).toBe(true);
-        expect(seen).toEqual([1_000_000n]); // the amount actually being paid
+        // The offer actually being paid, not a summary of it: the amount *and* the
+        // recipient, which is what a spending policy has to see before a leaf is signed.
+        expect(seen.map((offer) => [offer.amount, offer.payTo])).toEqual([["1000000", PAYEE]]);
         expect(calls).toHaveLength(2);
     });
 
