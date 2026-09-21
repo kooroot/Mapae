@@ -173,13 +173,23 @@ export interface Erc7710DelegationPayload {
  * requirements are embedded under `accepted`, which is how the facilitator
  * resolves which scheme handler to use.
  *
+ * No `extensions` here, unlike {@link Erc7710PaymentPayload}: nothing in this repository
+ * signs an EIP-3009 authorization, so nothing would fill it. Reading a counterparty's
+ * envelope does not need it either — {@link readPaymentIdentifier} takes `unknown` and walks
+ * the document, because what arrives on the wire is whatever the sender wrote.
+ */
+export interface PaymentPayload {
+    x402Version: typeof X402_VERSION;
+    accepted: PaymentRequirements;
+    payload: Eip3009Payload;
+    resource?: ResourceInfo;
+}
+
+/**
  * `extensions` is the same envelope map the 402 carries, on the payer's side: the spec has
  * a client echo the extensions it actually *used*. The slot was absent while nothing here
  * produced one; `payment-identifier` is the first, and `payForDelegatedResource` fills it on
- * every payment (see {@link buildPaymentIdentifierEcho}). It is declared on both payload
- * shapes because it is a property of the v2 payload wire rather than of one scheme — the
- * decoded header is `AnyPaymentPayload`, and a counterparty may echo an extension on either
- * rail.
+ * every payment (see {@link buildPaymentIdentifierEcho}).
  *
  * The reference client is looser than the "only what you used" rule — `@x402/core` 2.20.0
  * `mergeExtensions` (dist/esm/client/index.mjs:283) returns the seller's whole map when the
@@ -188,14 +198,6 @@ export interface Erc7710DelegationPayload {
  * facilitator's validator compares the fields it names instead of enumerating the object,
  * so it is ignored rather than refused.
  */
-export interface PaymentPayload {
-    x402Version: typeof X402_VERSION;
-    accepted: PaymentRequirements;
-    payload: Eip3009Payload;
-    resource?: ResourceInfo;
-    extensions?: Record<string, PaymentExtension>;
-}
-
 export interface Erc7710PaymentPayload {
     x402Version: typeof X402_VERSION;
     accepted: Erc7710PaymentRequirements;
