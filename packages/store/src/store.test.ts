@@ -1032,7 +1032,6 @@ describe("payment identifiers", () => {
 
     test("binds an identifier once and replays the settled result after that", () => {
         const store = open();
-        expect(store.paymentIdentifiers.get(ID)).toBeNull();
         expect(
             store.paymentIdentifiers.bind({
                 id: ID,
@@ -1052,14 +1051,6 @@ describe("payment identifiers", () => {
                 at: T0 + HOUR,
             }),
         ).toEqual({kind: "new"});
-        expect(store.paymentIdentifiers.get(ID)).toEqual({
-            id: ID,
-            fingerprint: PRINT,
-            paymentIntentId: INTENT,
-            // The first bind dated the row; a later attempt does not move it.
-            boundAt: T0,
-            settled: null,
-        });
 
         store.paymentIdentifiers.record({id: ID, payer: ALICE, txHash: TX, at: T0 + 2 * HOUR});
         expect(
@@ -1070,11 +1061,20 @@ describe("payment identifiers", () => {
                 at: T0 + 3 * HOUR,
             }),
         ).toEqual({kind: "settled", settled: {payer: ALICE, txHash: TX}});
-        expect(store.paymentIdentifiers.get(ID)?.settled).toEqual({
-            payer: ALICE,
-            txHash: TX,
-            at: T0 + 2 * HOUR,
-        });
+    });
+
+    test("the first attempt dates the row — a later one does not push the cutoff out", () => {
+        const store = open();
+        const bind = (at: number): unknown =>
+            store.paymentIdentifiers.bind({id: ID, fingerprint: PRINT, paymentIntentId: INTENT, at});
+        bind(T0);
+        bind(T0 + HOUR);
+        // `bound_at` is still T0, which is the only way a prune can bound a table whose rows
+        // a client could otherwise keep alive by presenting the same identifier forever.
+        expect(
+            store.paymentIdentifiers.prune({unsettledBefore: T0 + 1, keepUnsettled: 10}),
+        ).toBe(1);
+        expect(bind(T0 + 2 * HOUR)).toEqual({kind: "new"});
     });
 
     test("names which half of the binding a second attempt changed", () => {
@@ -1104,14 +1104,15 @@ describe("payment identifiers", () => {
                 at: T0,
             }),
         ).toEqual({kind: "conflict", reason: "payment_intent"});
-        // Neither refusal touched the row.
-        expect(store.paymentIdentifiers.get(ID)).toEqual({
-            id: ID,
-            fingerprint: PRINT,
-            paymentIntentId: INTENT,
-            boundAt: T0,
-            settled: null,
-        });
+        // Neither refusal touched the row: the payment it was bound to still binds.
+        expect(
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + HOUR,
+            }),
+        ).toEqual({kind: "new"});
     });
 
     test("keeps a settled payment's payer: recording twice refuses instead of overwriting", () => {
@@ -1123,16 +1124,19 @@ describe("payment identifiers", () => {
             at: T0,
         });
         store.paymentIdentifiers.record({id: ID, payer: ALICE, at: T0});
+        const read = (): unknown =>
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + HOUR,
+            });
         // No hash is a legitimate settlement — a facilitator may confirm without naming one.
-        expect(store.paymentIdentifiers.get(ID)?.settled).toEqual({
-            payer: ALICE,
-            txHash: null,
-            at: T0,
-        });
+        expect(read()).toEqual({kind: "settled", settled: {payer: ALICE, txHash: null}});
         expect(() => store.paymentIdentifiers.record({id: ID, payer: BOB, at: T0})).toThrow(
             /already settled/,
         );
-        expect(store.paymentIdentifiers.get(ID)?.settled?.payer).toBe(ALICE);
+        expect(read()).toEqual({kind: "settled", settled: {payer: ALICE, txHash: null}});
     });
 
     test("refuses to settle an identifier nothing bound", () => {
@@ -1177,7 +1181,6 @@ describe("payment identifiers", () => {
         expect(() => bind(ID, PRINT.toUpperCase())).toThrow(TypeError);
         expect(() => bind(ID, `0x${PRINT}`)).toThrow(TypeError);
         expect(() => bind(ID, "abc")).toThrow(TypeError);
-        expect(() => store.paymentIdentifiers.get("pay_short")).toThrow(TypeError);
         expect(() =>
             store.paymentIdentifiers.bind({
                 id: ID,
@@ -1186,5 +1189,105 @@ describe("payment identifiers", () => {
                 at: -1,
             }),
         ).toThrow(TypeError);
+        // A retention nothing computed is not a licence to delete everything.
+        expect(() =>
+            store.paymentIdentifiers.prune({unsettledBefore: -1, keepUnsettled: 10}),
+        ).toThrow(TypeError);
+        expect(() =>
+            store.paymentIdentifiers.prune({unsettledBefore: T0, keepUnsettled: 0}),
+        ).toThrow(TypeError);
+    });
+
+    /**
+     * 이 표는 퍼실리테이터를 부르기 **전에** 행을 쓴다. 그래서 서명을 아무도 확인하지 않은
+     * 요청도 행 하나를 남기고, 정리 장치가 없으면 원장이 `prune`으로 막은 그 성장이 여기서
+     * 되살아난다. 정산된 행은 재생 가드이므로 절대 지우지 않는다.
+     */
+    test("prune drops unsettled bindings past the cutoff and never a settled one", () => {
+        const store = open();
+        const id = (n: number): string => `pay_unsettled_${String(n).padStart(16, "0")}`;
+        const paid = "pay_settled_00000000000";
+        store.paymentIdentifiers.bind({
+            id: paid,
+            fingerprint: PRINT,
+            paymentIntentId: INTENT,
+            at: T0,
+        });
+        store.paymentIdentifiers.record({id: paid, payer: ALICE, txHash: TX, at: T0});
+        for (const n of [1, 2, 3]) {
+            store.paymentIdentifiers.bind({
+                id: id(n),
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + n * HOUR,
+            });
+        }
+
+        // Two of the three are older than the cutoff; the settled row is older than all of
+        // them and stays, because money moved under it.
+        expect(
+            store.paymentIdentifiers.prune({unsettledBefore: T0 + 3 * HOUR, keepUnsettled: 10}),
+        ).toBe(2);
+        expect(
+            store.paymentIdentifiers.bind({
+                id: paid,
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + 9 * HOUR,
+            }),
+        ).toEqual({kind: "settled", settled: {payer: ALICE, txHash: TX}});
+        // The survivor is the newest unsettled one; the two that went are free again.
+        expect(
+            store.paymentIdentifiers.bind({
+                id: id(3),
+                fingerprint: OTHER_PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + 9 * HOUR,
+            }),
+        ).toEqual({kind: "conflict", reason: "fingerprint"});
+        expect(
+            store.paymentIdentifiers.bind({
+                id: id(1),
+                fingerprint: OTHER_PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + 9 * HOUR,
+            }),
+        ).toEqual({kind: "new"});
+        // Nothing left to drop, and the count says so.
+        expect(
+            store.paymentIdentifiers.prune({unsettledBefore: T0, keepUnsettled: 10}),
+        ).toBe(0);
+    });
+
+    test("prune keeps only the newest unsettled bindings when the cap is the tighter bound", () => {
+        const store = open();
+        const id = (n: number): string => `pay_unsettled_${String(n).padStart(16, "0")}`;
+        for (const n of [1, 2, 3, 4]) {
+            store.paymentIdentifiers.bind({
+                id: id(n),
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + n * HOUR,
+            });
+        }
+        // Every row is inside the cutoff, so the cap is what fires — and it keeps the two a
+        // buyer might still be in the middle of.
+        expect(store.paymentIdentifiers.prune({unsettledBefore: T0, keepUnsettled: 2})).toBe(2);
+        for (const [n, kind] of [
+            [1, "new"],
+            [2, "new"],
+            [3, "conflict"],
+            [4, "conflict"],
+        ] as const) {
+            expect(
+                store.paymentIdentifiers.bind({
+                    id: id(n),
+                    fingerprint: OTHER_PRINT,
+                    paymentIntentId: INTENT,
+                    at: T0 + 9 * HOUR,
+                }),
+                id(n),
+            ).toMatchObject({kind});
+        }
     });
 });

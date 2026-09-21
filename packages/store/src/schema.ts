@@ -30,7 +30,12 @@
  * extension. It is a table and not a column on `orders` because the two answer different
  * questions and live for different lengths of time: a row here exists from the first
  * attempt a buyer makes under an identifier, including every attempt that never became an
- * order, and an order exists only after money moved.
+ * order, and an order exists only after money moved. Because that includes attempts nobody
+ * verified, the unsettled rows are pruned like the ledger's refusals — `orders` is not.
+ *
+ * A file written by an earlier build is refused rather than migrated (`index.ts`
+ * `migrate`), which for an operator means: move the old store aside and re-seed. The
+ * hosted-shop guide says so in the same words.
  */
 export const SCHEMA_VERSION = 7;
 
@@ -165,6 +170,11 @@ CREATE INDEX orders_seller_created_at ON orders (seller_slug, created_at);
 -- written whole: a payer with no settled_at, or the reverse, would be a row that cannot say
 -- whether the money moved, which is the one thing it exists to say. No amount, asset or
 -- recipient is kept — the fingerprint already pins them, and the paywall holds the offer.
+--
+-- A row is claimed before the facilitator is asked anything, so unverified attempts claim
+-- one too. bound_at is indexed for the prune that bounds them -- PaymentIdentifiers.prune
+-- in index.ts, the only query that reads the column: unsettled rows past a cutoff or past
+-- a cap are deleted, settled ones never.
 CREATE TABLE payment_identifiers (
     id TEXT PRIMARY KEY,
     fingerprint TEXT NOT NULL,

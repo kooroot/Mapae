@@ -17,6 +17,7 @@ import {
     PAYMENT_SIGNATURE_HEADER,
     decodePaymentHeader,
     fromTokenAmount,
+    redactForLog,
     toTokenAmount,
 } from "@mapae/shared";
 import type {Item, MapaeStore, Order, Seller} from "@mapae/store";
@@ -73,6 +74,23 @@ const CONTENT_SECURITY_POLICY = [
     "form-action 'none'",
     "frame-ancestors 'none'",
 ].join("; ");
+
+/**
+ * 정산되지 않은 결제 식별자 바인딩을 얼마나 오래 들고 있는가.
+ *
+ * 정산까지의 예산은 초 단위다(페이월이 `/settle`에 35초). 한 시간이 지난 미정산 행은
+ * 아무도 더 이어 가지 않는 시도이고, 지워도 잃는 것이 없다 — 같은 헤더를 다시 내면 새로
+ * 묶이고, 그 라운드의 이중 청구는 리프의 일회성 allowance와 퍼실리테이터의 저널이 막는다.
+ * 정산된 행은 이 정리가 건드리지 않는다.
+ */
+export const UNSETTLED_BINDING_TTL_MS = 3_600_000;
+/** 시간 기준과 함께 걸리는 두 번째 상한. 원장의 `keepRejected`와 같은 역할이다. */
+const UNSETTLED_BINDINGS_KEPT = 5_000;
+/**
+ * 몇 번의 바인딩마다 정리를 한 번 하는가. `guards.ts`의 `SWEEP_EVERY`와 같은 값이고 같은
+ * 이유다: 행을 만드는 호출이 정리도 물려야 표의 크기가 요청 수와 무관하게 묶인다.
+ */
+const BINDING_PRUNE_EVERY = 256;
 
 export interface ShopAppOptions {
     store: MapaeStore;
@@ -370,6 +388,29 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
     };
 
     /**
+     * 정리를 부르는 자리. 행은 `bind`를 통해서만 생기므로, 세는 것도 거기다 — 시계가
+     * 아니라 `bind` 횟수가 이 표의 유일한 성장 원인이다. 그래서 타이머를 두지 않는다:
+     * `apps/facilitator-erc7710`의 원장은 시간이 지나기만 해도 자라는 표라 부팅 + 매시간
+     * 타이머가 맞지만, 이 표는 요청이 와야 자란다. 첫 바인딩에서 한 번(=부팅 직후 첫
+     * 결제), 그 뒤 {@link BINDING_PRUNE_EVERY}번마다 한 번이면 재시작마다 옛 행이
+     * 정리되고, 표의 크기는 `keepUnsettled + BINDING_PRUNE_EVERY`로 묶인다.
+     * `apps/facilitator-erc7710/guards.ts`가 요청 제한 창을 쓸어내는 방식과 같다.
+     */
+    let bindings = 0;
+    const pruneBindings = (now: number): void => {
+        try {
+            store.paymentIdentifiers.prune({
+                unsettledBefore: now - UNSETTLED_BINDING_TTL_MS,
+                keepUnsettled: UNSETTLED_BINDINGS_KEPT,
+            });
+        } catch (error) {
+            // 살림은 결제를 막지 않는다. 지우지 못한 것은 운영자의 문제이고, 여기서
+            // 던지면 다음 손님이 500을 받는다.
+            console.error(`[shop] payment identifier bindings not pruned — ${redactForLog(error)}`);
+        }
+    };
+
+    /**
      * 페이월이 쓰는 결제 식별자 바인딩. 표가 둘인 이유는 질문이 둘이기 때문이다:
      * `orders`는 "무엇이 팔렸는가"에 답하고 — 돈이 옮겨진 뒤에만 생기는 행이다 —
      * `payment_identifiers`는 "이것이 같은 결제인가"에 답한다. 두 번째 질문은 첫
@@ -380,7 +421,10 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
      */
     const paymentIdentifiers: PaymentIdentifierBinding = {
         bind: (payment) => {
-            const bound = store.paymentIdentifiers.bind({...payment, at: Date.now()});
+            const now = Date.now();
+            // 새 행보다 먼저 정리한다 — 방금 묶은 결제가 자기 정리의 후보가 되지 않게.
+            if (bindings++ % BINDING_PRUNE_EVERY === 0) pruneBindings(now);
+            const bound = store.paymentIdentifiers.bind({...payment, at: now});
             if (bound.kind !== "settled") return bound;
             return {
                 kind: "settled",

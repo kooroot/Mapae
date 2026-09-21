@@ -245,11 +245,26 @@ export type PaymentIdentifierBindResult =
     | {kind: "conflict"; reason: PaymentIdentifierConflict};
 
 /**
+ * How many unsettled bindings are kept, and how long. Both bounds apply, exactly as
+ * {@link LedgerRetention} applies both of its: rows bound before the cutoff go, and of
+ * what remains only the newest `keepUnsettled` stay. The cutoff is the caller's — the
+ * store never reads the clock.
+ */
+export interface PaymentIdentifierRetention {
+    /** Epoch milliseconds; an **unsettled** row bound before this is dropped. */
+    unsettledBefore: number;
+    /** The most unsettled rows left on file, newest bound first. */
+    keepUnsettled: number;
+}
+
+/**
  * The x402 `payment-identifier` bindings on disk.
  *
  * Structurally the `PaymentIdentifierBinding` that `@mapae/seller`'s paywall takes, except
- * for the timestamps: nothing here reads the clock, so the caller dates the row. A guard
- * that dies with the process is not a guard — this is why the extension is stored at all.
+ * for the timestamps and {@link PaymentIdentifiers.prune}: nothing here reads the clock, so
+ * the caller dates the row, and the paywall has no business deciding how long a file keeps
+ * what it wrote. A guard that dies with the process is not a guard — this is why the
+ * extension is stored at all.
  */
 export interface PaymentIdentifiers {
     /**
@@ -273,16 +288,22 @@ export interface PaymentIdentifiers {
     }): PaymentIdentifierBindResult;
     /** Write the settled half. Only after the transfer is confirmed; never before. */
     record(settlement: {id: string; payer: HexString; txHash?: HexString | null; at: number}): void;
-    /** The stored binding, for an operator reading back why an identifier was refused. */
-    get(id: string): PaymentIdentifierRow | null;
-}
-
-export interface PaymentIdentifierRow {
-    id: string;
-    fingerprint: string;
-    paymentIntentId: HexString;
-    boundAt: number;
-    settled: (RecordedPayment & {at: number}) | null;
+    /**
+     * Drop unsettled bindings beyond the retention and return how many went.
+     *
+     * A row is written **before** the facilitator is asked anything, so every request that
+     * reaches a priced route with a well-formed identifier claims one — including the ones
+     * no signature ever backed. Without this the file would grow with refusals, which is
+     * the same unbounded growth {@link Ledger.prune} exists to stop; there the sentence is
+     * "a refusal charged nobody, so it is the one outcome something outside the store can
+     * bound", and an unsettled binding is that same refusal seen from this table.
+     *
+     * Settled rows are never touched. They are the durable replay guard: dropping one
+     * turns a buyer's second presentation of a paid header back into a settlement attempt,
+     * and the only thing standing between that and a second charge would be the leaf's
+     * one-shot allowance on chain.
+     */
+    prune(retention: PaymentIdentifierRetention): number;
 }
 
 /**
@@ -905,22 +926,13 @@ interface PaymentIdentifierDbRow {
     settled_at: number | null;
 }
 
-function toPaymentIdentifier(row: PaymentIdentifierDbRow): PaymentIdentifierRow {
-    return {
-        id: row.id,
-        fingerprint: row.fingerprint,
-        paymentIntentId: row.payment_intent_id as HexString,
-        boundAt: row.bound_at,
-        // The CHECK constraint keeps the two columns together, so one test answers for both.
-        settled:
-            row.settled_at === null
-                ? null
-                : {
-                      payer: row.payer as HexString,
-                      txHash: row.tx_hash as HexString | null,
-                      at: row.settled_at,
-                  },
-    };
+/**
+ * The settled half of a row, or `null` while the payment has none. The CHECK constraint
+ * keeps `payer` and `settled_at` together, so one column answers for both.
+ */
+function settledHalf(row: PaymentIdentifierDbRow): RecordedPayment | null {
+    if (row.settled_at === null) return null;
+    return {payer: row.payer as HexString, txHash: row.tx_hash as HexString | null};
 }
 
 function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
@@ -939,6 +951,27 @@ function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
     const settle = db.query<never, Params>(
         `UPDATE payment_identifiers SET payer = $payer, tx_hash = $txHash, settled_at = $at
          WHERE id = $id AND settled_at IS NULL`,
+    );
+    // Both deletes name `settled_at IS NULL` first: a settled row is the replay guard and
+    // never a prune candidate. `bound_at` is what orders them, which is the query the
+    // `payment_identifiers_bound_at` index exists for.
+    const dropUnsettledBefore = db.query<never, Params>(
+        `DELETE FROM payment_identifiers WHERE settled_at IS NULL AND bound_at < $before`,
+    );
+    // The survivors are the newest bindings, so what stays is what a buyer still in the
+    // middle of a payment presented. `id` breaks a tie inside one millisecond.
+    const dropUnsettledBeyond = db.query<never, Params>(
+        `DELETE FROM payment_identifiers
+         WHERE settled_at IS NULL AND id NOT IN (
+            SELECT id FROM payment_identifiers WHERE settled_at IS NULL
+            ORDER BY bound_at DESC, id DESC LIMIT $keep
+         )`,
+    );
+    // One transaction, so the count is of one consistent pass and a crash between the two
+    // deletes leaves the file as it was — the same shape as `Ledger.prune`.
+    const prune = db.transaction(
+        (before: number, keep: number) =>
+            dropUnsettledBefore.run({before}).changes + dropUnsettledBeyond.run({keep}).changes,
     );
     return {
         bind({id, fingerprint, paymentIntentId, at}) {
@@ -961,9 +994,9 @@ function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
             if (existing.payment_intent_id !== paymentIntentId) {
                 return {kind: "conflict", reason: "payment_intent"};
             }
-            const settled = toPaymentIdentifier(existing).settled;
+            const settled = settledHalf(existing);
             if (settled === null) return {kind: "new"};
-            return {kind: "settled", settled: {payer: settled.payer, txHash: settled.txHash}};
+            return {kind: "settled", settled};
         },
         record({id, payer, txHash, at}) {
             const {changes} = settle.run({
@@ -979,9 +1012,11 @@ function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
                 throw new Error(`payment_identifiers: ${id} is not bound, or is already settled`);
             }
         },
-        get(id) {
-            const row = byId.get({id: identifierKey(id)});
-            return row ? toPaymentIdentifier(row) : null;
+        prune({unsettledBefore, keepUnsettled}) {
+            return prune(
+                millis(unsettledBefore, "unsettledBefore"),
+                positiveInteger(keepUnsettled, "keepUnsettled"),
+            );
         },
     };
 }

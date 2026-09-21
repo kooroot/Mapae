@@ -19,6 +19,7 @@ import {
     PICKUP_LINE,
     TICKET_LINE,
     TRIAL_NOTICE,
+    UNSETTLED_BINDING_TTL_MS,
     createShopApp,
     displayAmount,
     type ShopManifest,
@@ -629,19 +630,47 @@ describe("payment-identifier — 같은 이름으로 다른 결제는 받지 않
         expect(store.orders.listBySeller("demo-cafe")).toHaveLength(1);
     });
 
-    test("바인딩은 정산 뒤 디스크에 남는다 — 프로세스와 함께 죽는 가드는 가드가 아니다", async () => {
-        const {store, pay} = shop();
-        await ticketOf(await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID)));
-        expect(store.paymentIdentifiers.get(ID)?.settled).toEqual({
-            payer: PAYER,
-            txHash: TX,
-            at: expect.any(Number),
-        });
+    test("같은 헤더를 다시 내밀어도 주문은 하나다", async () => {
+        const {store, stub, pay} = shop();
+        const header = identified(paymentHeader(ONE, LEAF_A), ID);
+        const first = await ticketOf(await pay(AMERICANO, header));
+        const again = await ticketOf(await pay(AMERICANO, header));
+        // 이 답은 바인딩이 아니라 주문 표에서 온다: 산 것을 그대로 내주는 칸이 페이월보다
+        // 앞이라 식별자는 읽히지도 않는다. 두 경로 중 어느 쪽이 답하든 주문은 하나다.
+        expect(again.ticket.code).toBe(first.ticket.code);
+        expect(stub.paths).toEqual(SETTLED_ONCE);
+        expect(store.orders.listBySeller("demo-cafe")).toHaveLength(1);
     });
 
     test("식별자 없이 내는 결제는 지금까지와 똑같다", async () => {
         const {stub, pay} = shop();
         await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
         expect(stub.paths).toEqual(SETTLED_ONCE);
+    });
+
+    /**
+     * 바인딩은 퍼실리테이터를 부르기 전에 쓰인다 — 서명을 아무도 확인하지 않은 요청도 행
+     * 하나를 남긴다. 그래서 상점은 원장과 같은 정리 장치를 물린다.
+     */
+    test("정산되지 않은 옛 바인딩은 정리된다", async () => {
+        const {store, pay} = shop();
+        const stale = "pay_stale_000000000000000";
+        const print = (c: string): string => c.repeat(64);
+        const bind = (fingerprint: string, at: number): unknown =>
+            store.paymentIdentifiers.bind({
+                id: stale,
+                fingerprint,
+                paymentIntentId: `0x${"11".repeat(32)}`,
+                at,
+            });
+        bind(print("c"), Date.now() - UNSETTLED_BINDING_TTL_MS - 1);
+
+        // 첫 바인딩이 정리를 한 번 물고 간다 — 재시작 뒤 첫 결제가 곧 부팅 청소다.
+        await ticketOf(await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID)));
+        // 그 행은 갔다: 같은 이름을 다른 지문으로 묶어도 충돌이 아니다.
+        expect(bind(print("d"), Date.now())).toEqual({kind: "new"});
+        // 방금 정산된 행은 남는다. 재생 가드를 지우는 정리는 정리가 아니다.
+        const retry = await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_B), ID));
+        expect(retry.status).toBe(409);
     });
 });
