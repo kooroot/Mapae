@@ -28,6 +28,7 @@ facilitator is not a third party.
 | Redeem the same leaf again | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
 | Redeem after expiry | `TimestampEnforcer` | `expired-delegation` |
 | Accumulate beyond the period cap | `ERC20PeriodTransferEnforcer` | `transfer-amount-exceeded` |
+| Exceed the lifetime total after the period refreshed | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
 
 The self-target case is the least obvious. Because execution happens through
 `IDeleGatorCore(root.delegator).executeFromExecutor`

@@ -28,6 +28,7 @@ calldata로 공급한다(`DelegationManager.sol:126-133`). 침해된 facilitator
 | 같은 leaf 재상환 | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
 | 만료 후 상환 | `TimestampEnforcer` | `expired-delegation` |
 | 주기 상한 초과 누적 | `ERC20PeriodTransferEnforcer` | `transfer-amount-exceeded` |
+| 기간 갱신 뒤 평생 총액 초과 | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
 
 self-target 케이스가 가장 비자명하다. 실행은
 `IDeleGatorCore(root.delegator).executeFromExecutor`로 일어나므로

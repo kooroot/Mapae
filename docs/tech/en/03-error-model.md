@@ -101,16 +101,16 @@ distinct reason — never satisfaction.**
   chain for revocation or expiry. The guard sits in both places: boot validation
   (`loadDelegatedAgentRuntime`) and the judgment function
   (`judgePreflight`).
-- **Absent period caveat.** If the link carries no `ERC20PeriodTransferEnforcer`
-  caveat, the remaining balance stays `undefined`. Two consumers judge that
-  state differently because they ask different questions.
+- **Absent spending caveat.** If the link carries neither a period cap nor a
+  lifetime total, the remaining balance stays `undefined`. Two consumers judge
+  that state differently because they ask different questions.
 
 | | Question | `tightest === undefined` |
 |---|---|---|
 | `judgePreflight` (runtime) | Will the chain refuse this payment? | Pass — without a cap it is not refused |
 | `giwa-preflight` (human gate) | Does the configuration match the intent? | Fail — there is no value to check against |
 
-  The computation (`tightestPeriodRemaining`) is shared in
+  The computation (`tightestRemaining`) is shared in
   `packages/delegation`; each side keeps its own judgment, and the two are
   linked by cross-reference comments.
 - **Absent input to the fee judgment.** `judgeSubmissionReadiness` refuses the

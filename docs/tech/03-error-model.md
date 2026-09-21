@@ -88,16 +88,16 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
   지시가 다르기 때문이다 — 전자는 아티팩트 재생성, 후자는 체인에서 회수·만료
   확인. 가드는 부팅 검증(`loadDelegatedAgentRuntime`)과 판정 함수
   (`judgePreflight`) 양쪽에 있다.
-- **주기 caveat 부재.** 링크에 `ERC20PeriodTransferEnforcer` caveat이 없으면
-  남은 잔량이 `undefined`로 남는다. 이 상태를 두 소비자가 서로 다르게 판정하는
-  것은 질문이 다르기 때문이다.
+- **지출 caveat 부재.** 링크에 기간 상한도 평생 총액도 없으면 남은 잔량이
+  `undefined`로 남는다. 이 상태를 두 소비자가 서로 다르게 판정하는 것은 질문이
+  다르기 때문이다.
 
 | | 질문 | `tightest === undefined` |
 |---|---|---|
 | `judgePreflight` (런타임) | 체인이 이 결제를 거절하는가 | 통과 — 한도가 없으면 거절되지 않는다 |
 | `giwa-preflight` (사람 게이트) | 설정이 의도와 일치하는가 | 실패 — 대조할 값이 없다 |
 
-  계산(`tightestPeriodRemaining`)은 `packages/delegation`에서 공유하고, 판정은
+  계산(`tightestRemaining`)은 `packages/delegation`에서 공유하고, 판정은
   각자 유지하며 상호 참조 주석으로 연결되어 있다.
 - **수수료 판정의 입력 부재.** `judgeSubmissionReadiness`는 base fee를 읽지
   못한 상태를 `base_fee_unreadable`로 거절한다. `fee_below_basefee`와 사유를

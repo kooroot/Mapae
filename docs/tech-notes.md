@@ -74,6 +74,16 @@ facilitator → DelegationManager.redeemDelegations
 `transfer` calldata의 수취인 위치도 고정한다. Manager→Child 재위임에서는
 child의 개별 한도와 manager의 합산 한도가 동시에 적용된다.
 
+부모 위임의 caveat은 넷이다 — 네이티브 값 0 고정(`ValueLteEnforcer`)과 기간
+상한(`ERC20PeriodTransferEnforcer`)은 scope가 붙이고, 유효
+창(`TimestampEnforcer`)과 평생 총액(`ERC20TransferAmountEnforcer`)은 정책이
+붙인다. 고정 벤더 정책은 여기에 수취인 핀(`AllowedCalldataEnforcer`)이 더해져
+다섯이다. 기간 상한은 속도이지 예산이 아니어서 기간이 갱신될 때마다 같은 금액을
+다시 쓸 수 있고(60초·30분 창이면 기간 상한의 30배), 총액은 그 갱신을 따라가지
+않는다 — `ERC20TransferAmountEnforcer`가 위임 해시 하나당 되돌아가지 않는
+칸(`spentMap(delegationManager, delegationHash)`)을 들기 때문이다. 건당 상한은
+부모에 없다: 리프가 이미 오퍼 금액에 묶여 있다.
+
 **오퍼의 `extra`.** ERC-7710 오퍼의 `extra`는 두 칸을 항상 싣고, 퍼실리테이터가
 광고했을 때 두 칸을 더 싣는다. 항상 있는 것은 `assetTransferMethod: "erc7710"`
 (exact-EVM의 공식 전송 방식)과 `paymentFlow: "upfront"`다. 뒤엣것은 스펙 §6.1이
@@ -320,15 +330,21 @@ pre-flight 판정(`judgePreflight`)은 순수 함수로 분리되어 있고, 체
 놓친다. 판정 규칙 두 가지가 테스트로 고정되어 있다: **비활성 사유가 한도보다
 우선한다**(어떤 금액으로도 쓸 수 없는 permission을 `LIMIT_EXCEEDED`로 보고하면
 운영자가 원인이 아닌 한도를 조정하게 된다), 그리고 **한도는 체인의 최솟값이지
-root의 값이 아니다.**
+root의 값이 아니다.** 최솟값은 링크 사이에서만 취하지 않는다 — 링크마다 기간
+잔량과 평생 총액 잔량 중 작은 쪽을 먼저 취하고(`tightestRemaining`), 그 값들의
+최솟값이 한도다. 거절 사유는 둘을 구분해 적는다: 기간이면 기다리면 열리고,
+총액이면 새 grant를 서명해야 한다.
 
-**지출 한도의 두 층.** 온체인 caveat은 **기간** 한도다 — 며칠치 예산을 한 칸에
-담고 있고, 그 안의 개별 결제는 전부 합법이다. 잘못 든 자원 경로 하나가 한 세션에
-그 예산 전부를 쓰는 것을 체인은 막지 않는다. 그래서 에이전트 런타임이 그 위에 세
-한도를 env로 얹는다(`createAgentSpendGate`): 호출당 상한
+**지출 한도의 세 층.** 온체인 caveat이 그중 두 층이다 — 기간
+상한(`ERC20PeriodTransferEnforcer`)이 **속도**를, 평생
+총액(`ERC20TransferAmountEnforcer`)이 이 위임이 통틀어 내보낼 수 있는 **예산**을
+정한다. 기간 상한 한 칸은 며칠치를 담을 수 있고, 총액은 그 예산이 한 세션에 전부
+나가는 것을 막지 않는다 — 각 결제가 개별적으로는 전부 합법이기 때문에, 잘못 든
+자원 경로 하나가 그렇게 쓰는 것을 체인은 여전히 막지 않는다. 그래서 에이전트
+런타임이 그 위에 세 한도를 env로 얹는다(`createAgentSpendGate`): 호출당 상한
 `AGENT_MAX_PAYMENT_MUSDC`, 세션 누적 `AGENT_SESSION_BUDGET_MUSDC`, 수취처
 허용목록 `AGENT_ALLOWED_PAY_TO`. 미설정은 그 한도가 없다는 뜻이고 코드가 임의의
-기본값을 넣지 않는다 — 셋을 다 비우면 한도는 온체인 caveat 하나이며 그것이 원래
+기본값을 넣지 않는다 — 셋을 다 비우면 한도는 온체인 caveat 둘이며 그것이 원래
 동작이다. 최종 한도는 어느 경우에도 체인이다.
 
 강제는 leaf 서명 직전 **한 곳**이다. provider를 감싼 게이트 안이고, 판정과 예약이
@@ -637,16 +653,16 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
   지시가 다르기 때문이다 — 전자는 아티팩트 재생성, 후자는 체인에서 회수·만료
   확인. 가드는 부팅 검증(`loadDelegatedAgentRuntime`)과 판정 함수
   (`judgePreflight`) 양쪽에 있다.
-- **주기 caveat 부재.** 링크에 `ERC20PeriodTransferEnforcer` caveat이 없으면
-  남은 잔량이 `undefined`로 남는다. 이 상태를 두 소비자가 서로 다르게 판정하는
-  것은 질문이 다르기 때문이다.
+- **지출 caveat 부재.** 링크에 기간 상한도 평생 총액도 없으면 남은 잔량이
+  `undefined`로 남는다. 이 상태를 두 소비자가 서로 다르게 판정하는 것은 질문이
+  다르기 때문이다.
 
 | | 질문 | `tightest === undefined` |
 |---|---|---|
 | `judgePreflight` (런타임) | 체인이 이 결제를 거절하는가 | 통과 — 한도가 없으면 거절되지 않는다 |
 | `giwa-preflight` (사람 게이트) | 설정이 의도와 일치하는가 | 실패 — 대조할 값이 없다 |
 
-  계산(`tightestPeriodRemaining`)은 `packages/delegation`에서 공유하고, 판정은
+  계산(`tightestRemaining`)은 `packages/delegation`에서 공유하고, 판정은
   각자 유지하며 상호 참조 주석으로 연결되어 있다.
 - **수수료 판정의 입력 부재.** `judgeSubmissionReadiness`는 base fee를 읽지
   못한 상태를 `base_fee_unreadable`로 거절한다. `fee_below_basefee`와 사유를
@@ -816,6 +832,7 @@ calldata로 공급한다(`DelegationManager.sol:126-133`). 침해된 facilitator
 | 같은 leaf 재상환 | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
 | 만료 후 상환 | `TimestampEnforcer` | `expired-delegation` |
 | 주기 상한 초과 누적 | `ERC20PeriodTransferEnforcer` | `transfer-amount-exceeded` |
+| 기간 갱신 뒤 평생 총액 초과 | `ERC20TransferAmountEnforcer` | `allowance-exceeded` |
 
 self-target 케이스가 가장 비자명하다. 실행은
 `IDeleGatorCore(root.delegator).executeFromExecutor`로 일어나므로

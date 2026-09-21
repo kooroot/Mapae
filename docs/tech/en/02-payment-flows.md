@@ -39,6 +39,17 @@ recipient position in the ERC-20 `transfer` calldata. In manager-to-child
 re-delegation, the child's individual cap and the manager's aggregate cap apply
 simultaneously.
 
+A parent delegation carries four caveats: the native-value floor (`ValueLteEnforcer`)
+and the period cap (`ERC20PeriodTransferEnforcer`) come from the scope; the validity
+window (`TimestampEnforcer`) and the lifetime total (`ERC20TransferAmountEnforcer`) come
+from the policy. A fixed-vendor policy adds the recipient pin
+(`AllowedCalldataEnforcer`), making five. The period cap is a rate, not a budget: it
+refills every period, so a 60s/30min grant can move thirty times its period cap. The
+lifetime total does not refill, because `ERC20TransferAmountEnforcer` keeps one
+never-decreasing slot per delegation hash (`spentMap(delegationManager,
+delegationHash)`). The per-payment cap is not on the parent — the leaf is already bound
+to the offer amount on chain.
+
 **The offer's `extra`.** An ERC-7710 offer's `extra` always carries two fields, plus two
 more when the facilitator advertises them. Always present:
 `assetTransferMethod: "erc7710"` (exact-EVM's official transfer method) and
@@ -306,17 +317,24 @@ chain reads injected as callbacks. Status lookup runs `readDelegationStatus` ove
 narrower cap of a re-delegated child. Two verdict rules are pinned by tests: **an
 inactive reason takes precedence over the cap** (reporting a permission that cannot
 spend any amount as `LIMIT_EXCEEDED` sends the operator adjusting the cap, which is
-not the cause), and **the cap is the chain's minimum, not the root's value.**
+not the cause), and **the cap is the chain's minimum, not the root's value.** The
+minimum is not taken across links alone — for each link the smaller of the period
+allowance and the lifetime-total allowance is taken first (`tightestRemaining`), and the
+cap is the minimum of those. The refusal says which one bound: a period allowance reopens
+if you wait, a lifetime total does not, and a new grant has to be signed.
 
-**Two layers of spending limit.** An on-chain caveat is a **period** cap — it holds
-several days' budget in one cell, and every individual payment inside it is legitimate.
-Nothing on chain stops a single mistaken resource path from spending that whole budget in
-one session. So the agent runtime lays three limits on top of it, from env
-(`createAgentSpendGate`): a per-call cap `AGENT_MAX_PAYMENT_MUSDC`, a session total
-`AGENT_SESSION_BUDGET_MUSDC`, and a recipient allowlist `AGENT_ALLOWED_PAY_TO`. Unset
-means that limit does not exist, and the code substitutes no default of its own — leave
-all three empty and the only cap is the on-chain caveat, which is the original behaviour.
-The final limit is the chain either way.
+**Three layers of spending limit.** Two of them are on chain: the period cap
+(`ERC20PeriodTransferEnforcer`) sets the **rate**, and the lifetime total
+(`ERC20TransferAmountEnforcer`) sets the **budget** this delegation can ever move. One
+period cell can hold several days' worth, and the total does not stop that budget from
+leaving in a single session — every individual payment inside is legitimate, so nothing
+on chain stops one mistaken resource path from spending it. So the agent runtime lays
+three limits on top, from env (`createAgentSpendGate`): a per-call cap
+`AGENT_MAX_PAYMENT_MUSDC`, a session total `AGENT_SESSION_BUDGET_MUSDC`, and a recipient
+allowlist `AGENT_ALLOWED_PAY_TO`. Unset means that limit does not exist, and the code
+substitutes no default of its own — leave all three empty and the only caps are the two
+on-chain caveats, which is the original behaviour. The final limit is the chain either
+way.
 
 Enforcement happens in exactly **one** place, immediately before the leaf is signed:
 inside the gate that wraps the provider, where the verdict and the reservation sit in the
