@@ -652,7 +652,7 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 | `504 settlement_unknown` | `/settle` 결과를 모른다: 응답 유실, `settlement_pending`, `unexpected_settle_error`, payer 불일치, 그리고 **해시를 댄 실패의 낱말이 채굴 실패 낱말이 아닐 때** | 아니오 — 청구됐을 수 있다 | `settlement_pending`, 지불자, 그리고 해시가 있으면 해시 |
 | `502 settlement_misdirected` | `vendor_not_credited` — 채굴됐고 우리 `payTo`가 아닌 곳을 채웠다 | 아니오 — 잔고가 이미 움직였다 | `vendor_not_credited`, 지불자, 해시 |
 
-**결제를 시도한** 요청을 거절하는 응답은 모두 `Payment-Response`에 x402 v2
+결제 헤더를 **읽은** 뒤 거절하는 응답은 모두 `Payment-Response`에 x402 v2
 `SettleResponse`를 싣는다: `success: false`, `network`, §9 낱말 하나, 그리고 아는 경우의
 지불자. 해시가 있으면(504의 `settlement_pending`, 502의 `vendor_not_credited`) 반드시 함께
 간다 — 구매자가 스스로 확인할 유일한 수단이다.
@@ -664,8 +664,16 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 optional로 두지만, 우리 프로필은 나가는 낱말을 언제나 닫힌 어휘로 접어 갖고 있으므로
 optional로 두면 "이유 없는 실패 영수증"이라는 생산자 없는 상태가 타입에 생긴다.
 
-영수증이 아예 없는 응답은 결제 헤더를 보내지 않은 요청 하나뿐이다 — 그 요청은 결제가
-아니라 값을 물은 것이고, 없는 결제에 대한 영수증은 발명이다. 그리고 모든 응답에
+낱말과 칸은 일대일이 아니다. `invalid_payload`는 판매자가 읽지 못한 헤더에 스스로 대는
+400의 낱말이면서, facilitator가 오퍼와 어긋나는 `accepted`나 서명된 root와 다른 위임자에
+대는 낱말이기도 하고, 그것은 `KNOWN_REFUSAL_REASONS`를 그대로 통과해 지불자를 실은 402로
+나온다. 칸은 상태로 읽고 낱말로 읽지 않는다.
+
+영수증이 아예 없는 응답은 둘이다. 결제 헤더를 보내지 않은 요청 — 그 요청은 결제가
+아니라 값을 물은 것이고, 없는 결제에 대한 영수증은 발명이다. 그리고 404 — 페이월이
+헤더를 읽기 전에 떠나는 칸이므로 결제를 실은 요청도 영수증을 받지 못한다. 예외가 아니라
+그 칸 자신의 규칙이다: 어차피 그 결제를 받아 줄 핸들러가 없었으니 값이 매겨진 적이 없고,
+값이 매겨지지 않은 결제의 영수증도 발명이다. 그리고 모든 응답에
 `Cache-Control: no-store`와 `Vary: Payment-Signature`가 붙는다 — 캐시가 결제한 본문을
 미결제 요청에 주거나 미결제 402를 결제 요청에 주는 것을 막는다.
 

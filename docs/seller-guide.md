@@ -215,15 +215,21 @@ curl -s https://facilitator.mapae.io/supported
 | `502 settlement_misdirected` | 정산이 채굴됐지만 `payTo`가 아닌 곳을 채웠다. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 오퍼를 다시 주지 않는다 |
 | `404` | 페이월 뒤에 핸들러가 없다 | 미들웨어는 아무도 안 받는 경로에 값을 매기지 않는다. 라우트를 확인 |
 
-**결제를 시도한** 요청을 거절하는 응답은 모두 x402 v2 `SettleResponse`를
+결제를 **읽은** 뒤 거절하는 응답은 모두 x402 v2 `SettleResponse`를
 `Payment-Response` 헤더(base64 UTF-8 JSON)에 함께 싣는다 — `success: false`와 §9 낱말
 하나(`invalid_payload`, `settlement_pending`, `rate_limited`, `delegation_rejected` …).
 성공 영수증과 실패 영수증은 모양이 다르다: `payer`는 성공에 항상 있고(움직인 돈이 누가
 냈는지 모를 수는 없다) 실패에서는 없을 수 있다 — 400 칸은 읽히지 않은 헤더에 답하는
 칸이고 지불자의 이름이 그 안에 있었다. `errorReason`은 그 거울상으로 실패에 항상 있고
-성공에는 없다. 영수증이 아예 없는 응답은 결제 헤더를 보내지 않은 요청 하나뿐이다 —
-영수증이 될 결제가 없다. 모든 응답에 — 404까지 — `Cache-Control: no-store`와
-`Vary: Payment-Signature`도 붙어, 캐시가 결제한 본문을 미결제 요청에 주는 일이 없다.
+성공에는 없다. 칸은 상태로 읽고 낱말로 읽지 않는다: `invalid_payload`는 400의 낱말이면서
+facilitator가 오퍼와 어긋나는 `accepted`에 답하는 낱말이기도 해서, 지불자를 실은 402로
+돌아오기도 한다.
+
+영수증이 아예 없는 응답은 둘이다: 결제 헤더를 보내지 않은 요청(영수증이 될 결제가 없다),
+그리고 `404` — 헤더를 읽기 전에 떠나므로 결제를 실은 요청도 여기서는 영수증을 받지 못한다.
+어차피 그 결제를 받아 줄 핸들러가 없었기 때문이다. 모든 응답에 — 404까지 —
+`Cache-Control: no-store`와 `Vary: Payment-Signature`도 붙어, 캐시가 결제한 본문을
+미결제 요청에 주는 일이 없다.
 
 해시를 댄 실패에는 오퍼를 다시 싣지 않는다. `vendor_not_credited`는 502, 그 밖은 504다 —
 402 칸에 닿을 수 있는 낱말은 모두 "브로드캐스트 전에 거절됐다"고 주장하는데 해시는 그래도

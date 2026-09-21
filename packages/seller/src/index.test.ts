@@ -608,6 +608,10 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
         const cases: Array<[unknown, string]> = [
             ["invalid_transaction_state", "invalid_transaction_state"],
             ["payer_budget_exhausted", "payer_budget_exhausted"],
+            // The seller's own word for the 400 rung is also one the facilitator produces,
+            // for an `accepted` block that disagrees with the offer, and the fold passes it
+            // through. So one word spans two rungs and the rung is read off the status.
+            [INVALID_PAYLOAD, INVALID_PAYLOAD],
             ["ERC20PeriodTransferEnforcer:allowance-exceeded", DELEGATION_REJECTED],
             [undefined, DELEGATION_REJECTED],
         ];
@@ -617,6 +621,22 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
             expect(response.status, String(invalidReason)).toBe(402);
             expect(failureReceipt(response).errorReason, String(invalidReason)).toBe(expected);
         }
+    });
+
+    test("invalid_payload on the 402 rung names the payer the 400 rung cannot", async () => {
+        // Same word, two rungs: the 400 answers a header nothing could read, so its receipt
+        // names nobody, while a facilitator refusing a header that parsed leaves the payer
+        // known. A client that read the rung off the word would confuse the two.
+        const remote = facilitator({"/verify": json({isValid: false, invalidReason: INVALID_PAYLOAD})});
+        const refused = await pay(seller(paywall({fetch: remote.fetch})).app);
+        expect(refused.status).toBe(402);
+        expect(failureReceipt(refused)).toEqual({
+            success: false,
+            errorReason: INVALID_PAYLOAD,
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: PAYER,
+            transaction: "",
+        });
     });
 
     test("504 settlement_unknown when /settle is unreachable, pending, or names another payer", async () => {
@@ -961,11 +981,14 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
         // every answer: the 404 is the one that leaves before the ladder starts.
         expect(unpriced.headers.get("cache-control")).toBe("no-store");
         expect(unpriced.headers.get("vary")).toBe(PAYMENT_SIGNATURE_HEADER);
-        expect(
-            (await app.request("http://seller.test/api/nothing", {
-                headers: {[PAYMENT_SIGNATURE_HEADER]: paymentHeader()},
-            })).status,
-        ).toBe(404);
+        // A request that did carry a payment gets the same 404 and no receipt: this rung
+        // returns before the header is read, so it is the second answer without one. The
+        // docs claim two such answers, not "only the request that sent no payment".
+        const withPayment = await app.request("http://seller.test/api/nothing", {
+            headers: {[PAYMENT_SIGNATURE_HEADER]: paymentHeader()},
+        });
+        expect(withPayment.status).toBe(404);
+        expect(withPayment.headers.get(PAYMENT_RESPONSE_HEADER)).toBeNull();
         expect(remote.calls).toEqual([]);
         expect((await app.request("http://seller.test/api/thing")).status).toBe(402);
     });

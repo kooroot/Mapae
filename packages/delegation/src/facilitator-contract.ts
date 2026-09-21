@@ -88,8 +88,14 @@ export const FACILITATOR_NOT_READY = "facilitator_not_ready";
  * read it: the seller writes it and `payment-client.ts` matches it as a §9 refusal. A word
  * spelled out twice is a word that can be renamed on one side only.
  *
- * It is the one word the seller reaches on its own, before any facilitator call — so it is
- * never a folded reason, and the facilitator never produces it.
+ * The seller reaches it on its own, before any facilitator call, and there the receipt names
+ * no payer. But it is not a word that belongs to that rung: the facilitator produces it too
+ * — `apps/facilitator-erc7710/routes.ts` for a body it cannot read, `x402.ts` for an
+ * `accepted` block that disagrees with the offer or a delegator that is not the signed root
+ * — and it is a member of {@link KNOWN_REFUSAL_REASONS}, so {@link foldRefusalReason} passes
+ * it through and the same word arrives on a 402 that re-issues the offer, with a payer. Both
+ * ends reaching one word for two different rungs is the reason it is declared here; the rung
+ * itself is read from the status, never from the word.
  */
 export const INVALID_PAYLOAD = "invalid_payload";
 
@@ -154,14 +160,18 @@ export const UNEXPECTED_SETTLE_ERROR = "unexpected_settle_error";
  * {@link UNEXPECTED_VERIFY_ERROR} / {@link UNEXPECTED_SETTLE_ERROR} (no verdict at all,
  * and on `/settle` no claim about the broadcast either).
  *
- * Every word admitted here is answered with a 402 that re-issues the offer, the four that
- * name a defect in the request's own text included (`unsupported_scheme`,
- * `invalid_network`, `invalid_payment_requirements`, `invalid_x402_version`). That is
+ * Every word admitted here is answered with a 402 that re-issues the offer, the five that
+ * name a defect in the request's own text included (`unsupported_scheme`, `invalid_network`,
+ * {@link INVALID_PAYLOAD}, `invalid_payment_requirements`, `invalid_x402_version`). That is
  * deliberate rather than an oversight of the spec's 400 mapping: 400 is this profile's
  * answer to a payment it could not *read*, and a payload that parsed but disagrees with
  * the offer is fixed by reading the offer that comes back with the 402 — which is exactly
  * what a buyer who signed against a stale or misread offer needs. The seller's docs state
  * the rung, so a client that loops on 402 loops against a corrected offer, not a blank one.
+ *
+ * {@link INVALID_PAYLOAD} is in that list, so one word spans two rungs: the seller's own 400
+ * for a header it could not read, and this fold's 402 for a facilitator that read the body
+ * and refused its text. A client reads the rung off the status, never off the word.
  */
 const KNOWN_REFUSAL_REASONS: ReadonlySet<string> = new Set([
     // x402 v2 §9, every word that names a refusal formed before any broadcast.

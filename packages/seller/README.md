@@ -108,9 +108,15 @@ Every refusal of an *attempted* payment carries the x402 v2 `SettleResponse` in
 A success receipt and a failure receipt are shaped differently: `payer` is always present on
 a success — money that moved cannot fail to name who paid it — and may be absent on a
 failure, because the 400 rung answers a header it could not read and the payer's name was
-inside it. `errorReason` is the mirror image: always on a failure, never on a success. The
-one answer with no receipt at all is a request that sent no payment header, since there is no
-payment for it to be the receipt of. Every answer, failing or not — the 404 included —
+inside it. `errorReason` is the mirror image: always on a failure, never on a success. Read
+the rung off the status, never off the word: `invalid_payload` is the 400's word, and it is
+also what the facilitator answers for an `accepted` block that disagrees with the offer, which
+comes back as a 402 with a payer.
+
+Two answers carry no receipt: a request that sent no payment header, since there is no payment
+for it to be the receipt of, and the `404`, which leaves before the header is read — so even a
+request that did pay gets none there, because no route would have served it either way. Every
+answer, failing or not — the 404 included —
 carries `Cache-Control: no-store` and `Vary: Payment-Signature`, so no shared cache hands a
 paid body to a request that did not pay.
 

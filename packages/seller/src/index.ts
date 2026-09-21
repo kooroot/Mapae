@@ -197,11 +197,11 @@ export interface MapaeSeller {
      * it, and `onSettled` has run.
      *
      * Every one of those answers also carries `Cache-Control: no-store` and
-     * `Vary: Payment-Signature`, and every refusal of an *attempted* payment carries the
-     * x402 v2 `SettleResponse` in `Payment-Response` — `success: false` plus the §9 word
-     * for why, and the payer whenever the header parsed far enough to name one. A request
-     * that carried no payment header gets no receipt: there is no payment for one to be
-     * about.
+     * `Vary: Payment-Signature`, and every refusal that read a payment carries the x402 v2
+     * `SettleResponse` in `Payment-Response` — `success: false` plus the §9 word for why,
+     * and the payer whenever the header parsed far enough to name one. Two answers carry no
+     * receipt: a request that sent no payment header, which is no payment for one to be
+     * about, and the 404 below, which leaves before the header is read at all.
      *
      * The facilitator rate-limits `/verify` and `/settle` per client address, and reads
      * `X-Mapae-Client-IP` only from a caller whose own address it cannot see — one on
@@ -500,9 +500,13 @@ function paywallDescriptor(handler: unknown): PaywallDescriptor | undefined {
  *
  * `payer` is left out when the header never parsed, because an unreadable header names
  * nobody. The receipt still goes out: the buyer's agent has to decide whether to fix the
- * header or sign a new leaf, and that is a decision it makes by machine. The only rung
- * without a receipt is the request that carried no payment at all — see the `/supported`
- * branch below.
+ * header or sign a new leaf, and that is a decision it makes by machine.
+ *
+ * Two rungs carry no receipt. The request that sent no payment header at all — see the
+ * `/supported` branch below — and the 404, which leaves before this middleware reads the
+ * header, so a request that did carry one is answered without a receipt too. That is the
+ * 404's own rule rather than an exception to this one: no route would have served the
+ * payment either way, so nothing here priced it and nothing can be the receipt of it.
  */
 function writeFailureReceipt(
     c: Context<MapaeEnv>,
@@ -543,7 +547,9 @@ function buildPaywall(
 
         // Never price, let alone settle, a route nothing will serve. When this
         // middleware is the last matched route, `next()` would be a 404 — a buyer
-        // must not pay for one.
+        // must not pay for one. This leaves before the header is read, so a request that
+        // did carry a payment gets no receipt here either: the receipt is written by the
+        // rung that priced the payment, and this rung never priced anything.
         if (c.req.routeIndex === matchedRoutes(c).length - 1) return c.notFound();
 
         // Whatever is wrong with the header itself is answered before the facilitator

@@ -149,7 +149,7 @@ established" becomes a double payment. The seller's ladder says which in its sta
 | `504 settlement_unknown` | the `/settle` outcome is unknown: answer lost, `settlement_pending`, `unexpected_settle_error`, payer mismatch, and **a failure that names a hash under a word that is not a mined-failure word** | No — the buyer may be charged | `settlement_pending`, the payer, and the hash when there is one |
 | `502 settlement_misdirected` | `vendor_not_credited` — mined, and it credited someone who is not this `payTo` | No — the balance has already moved | `vendor_not_credited`, the payer, the hash |
 
-Every refusal of an *attempted* payment carries the x402 v2 `SettleResponse` in
+Every refusal that *read* the payment header carries the x402 v2 `SettleResponse` in
 `Payment-Response`: `success: false`, `network`, one §9 word, and the payer where it is
 known. The hash rides along whenever there is one (`settlement_pending` on the 504,
 `vendor_not_credited` on the 502) — it is the buyer's only way to find out for themselves.
@@ -163,9 +163,19 @@ all three optional; this profile always holds a word folded onto a closed vocabu
 it answers, so leaving `errorReason` optional would put "a failure receipt with no reason" —
 a state nothing here produces — into the type.
 
-The one answer with no receipt at all is a request that sent no payment header: that request
-asked what the resource costs rather than paying for it, and a receipt for a payment nobody
-made is an invention. Every answer also carries `Cache-Control: no-store` and `Vary:
+Words and rungs are not one to one. `invalid_payload` is the word the seller reaches on its
+own for a header it could not read, on the 400, and it is also what the facilitator answers
+for an `accepted` block that disagrees with the offer or a delegator that is not the signed
+root — which passes straight through `KNOWN_REFUSAL_REASONS` and arrives as a 402 with a
+payer. Read the rung off the status, never off the word.
+
+Two answers carry no receipt. A request that sent no payment header: that request asked what
+the resource costs rather than paying for it, and a receipt for a payment nobody made is an
+invention. And the 404, the rung the paywall leaves before it reads the header, so a request
+that did carry a payment gets none either. That is the rung's own rule rather than an
+exception to this one: no route would have served the payment, so nothing priced it, and a
+receipt for a payment nothing priced is the same invention. Every answer also carries
+`Cache-Control: no-store` and `Vary:
 Payment-Signature`, so no shared cache hands a paid body to a request that did not pay, or an
 unpaid 402 to one that did.
 
