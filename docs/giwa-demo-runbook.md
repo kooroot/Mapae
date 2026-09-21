@@ -86,9 +86,15 @@ cd apps/delegation-lab && bun run preflight:giwa /s/demo-cafe/americano
 fork를 상대로 통과한 GO는 GO가 아니라 거짓 안심이기 때문이다. (`mcp-e2e.ts`가 loopback만
 허용하는 것과 정확히 대칭인 가드다.)
 
-확인 항목: head block · 38-unit 구성 · 위임 체인 회수/유효창/주기 잔량 · 결제액이 잔량
-안인지 · payer mUSDC · payer ETH(0이어야 정상) · relayer ETH가 최악 가스비보다 큰지 ·
-facilitator가 광고하는 signer가 `FACILITATOR_SIGNER_ADDRESS`와 같은지 · 판매자 402의 금액/네트워크/payTo.
+확인 항목: head block · 38-unit 구성 · 위임 체인 회수/유효창/주기 잔량/평생 총액 잔량 ·
+결제액이 잔량 안인지 · payer mUSDC · payer ETH(0이어야 정상) · relayer ETH가 최악 가스비보다
+큰지 · facilitator가 광고하는 signer가 `FACILITATOR_SIGNER_ADDRESS`와 같은지 ·
+판매자 402의 금액/네트워크/payTo.
+
+잔량은 **두 줄**로 나온다. 주기 잔량은 기간마다 다시 열리고, 평생 총액 잔량은 열리지
+않는다(`ERC20TransferAmountEnforcer`가 위임 해시 하나당 되돌아가지 않는 칸을 든다).
+결제액과 대조하는 값은 둘 중 **작은 쪽**이며, 어느 쪽이 좁은지도 같은 줄에 적힌다 —
+주기가 좁으면 기다리면 열리고, 총액이 좁으면 새 permission을 서명해야 한다.
 
 ## 4. 드라이런
 
@@ -129,7 +135,8 @@ cd apps/delegation-lab && bun run run:giwa -- --broadcast
 
 | 증상 | 원인 | 대응 |
 |---|---|---|
-| `LIMIT_EXCEEDED` | 이번 주기 잔량 부족 | 60초 기다렸다 재실행. **정상 동작이다** |
+| `LIMIT_EXCEEDED` (`left in this period`) | 이번 주기 잔량 부족 | 60초 기다렸다 재실행. **정상 동작이다** |
+| `LIMIT_EXCEEDED` (`lifetime total`) | 이 permission의 평생 총액 소진 — 기간과 달리 다시 열리지 않는다 | 기다려도 열리지 않는다. permission 재서명 필요 |
 | `PERMISSION_INACTIVE` | 만료/미개시/회수 | permission 재서명 필요 |
 | `PERMISSION_EMPTY` | permission 파일이 위임 0개로 디코드됨 | 체인 상태가 아니라 **아티팩트가 잘못됐다.** 서명 절차를 다시 밟을 것 |
 | `SELLER_UNAVAILABLE` | 판매자가 결제를 받지 못함(503/429) — facilitator의 요청 제한·준비 안 됨 | 자금 불변. `SETTLEMENT_UNKNOWN`과 달리 **재시도해도 된다** |

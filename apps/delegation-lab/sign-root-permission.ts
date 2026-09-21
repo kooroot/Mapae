@@ -38,13 +38,17 @@ import {
 } from "viem";
 
 const ERC1271_MAGIC_VALUE = "0x1626ba7e";
-const ROLES: readonly D3Role[] = [
-    "open-agent",
-    "vendor-agent",
-    "team-manager",
-    "child-a",
-    "child-b",
-];
+/**
+ * 소유자가 직접 서명하는 root 역할만 받는다.
+ *
+ * `child-a`·`child-b`는 `team-manager` 아래로 **재위임**되는 역할이고, 그 재위임은
+ * 매니저의 세션키가 서명한다(`negative-path-suite.ts`의 `signChildPeriodPermission`).
+ * 이 명령은 부모 없는 root를 만들므로, 자식 역할을 받아 주면 매니저 아래에 있어야 할
+ * 위임이 소유자 계정에 직접 붙은 root가 된다 — 그리고 자식 정책에는 평생 총액이 없으므로
+ * (`buildD3Policies`가 부모가 덮는다는 근거로 빼 두었다) 기간마다 되채워지는 상한만 든
+ * 소유자 grant가 만들어진다. 목록을 좁히는 것이 그 근거를 구조적으로 참이 되게 한다.
+ */
+const ROLES: readonly D3Role[] = ["open-agent", "vendor-agent", "team-manager"];
 
 interface SigningRequestFile {
     schemaVersion: 1;
@@ -232,7 +236,10 @@ function buildSigningPage(input: {
 function readRole(): D3Role {
     const value = (process.argv[3] ?? "open-agent").trim();
     if (!ROLES.includes(value as D3Role)) {
-        throw new Error(`role must be one of ${ROLES.join(", ")}`);
+        throw new Error(
+            `role must be one of ${ROLES.join(", ")} — child roles are re-delegated under ` +
+                "team-manager, not signed as roots by the owner",
+        );
     }
     return value as D3Role;
 }
@@ -314,8 +321,15 @@ async function writeAtomically(pathInput: string, contents: string): Promise<voi
  * The committed policy default is a conservative 30-minute session-key window
  * (BASE_POLICY.expiresAfterSeconds). For a repeatable demo or pitch that window is
  * impractical — it expires mid-run — so PERMISSION_TTL_SECONDS lets an operator widen
- * it without weakening the default. The real spending control is the per-period cap,
- * which is unaffected; this only extends how long the session key stays valid.
+ * it without weakening the default.
+ *
+ * 이 값은 **유효 창 하나만** 바꾼다. 세 층은 각자 다른 것을 정한다: 유효 창은 언제까지
+ * 쓸 수 있는가, 기간 상한은 얼마나 빨리 나갈 수 있는가, 평생 총액은 이 grant로 통틀어
+ * 얼마가 나갈 수 있는가. 이 명령이 서명하는 세 역할은 전부 총액을 들고 있으므로
+ * (`buildD3Policies`), 창을 7일로 넓혀도 맡긴 돈은 늘지 않는다 — 넓어지는 것은 남은
+ * 총액을 쓸 수 있는 시간이고, 넓힌 창에서는 기간 상한이 아니라 그 총액이 먼저 문다.
+ * 예: open-agent는 3 mUSDC/60초에 총액 12 mUSDC이므로, 창이 며칠이든 네 기간치를 쓰고
+ * 멈춘다. 그때 필요한 것은 기다림이 아니라 새 grant 서명이다.
  */
 function applyPermissionTtlOverride<T extends {expiresAfterSeconds: number}>(base: T): T {
     const raw = process.env.PERMISSION_TTL_SECONDS?.trim();

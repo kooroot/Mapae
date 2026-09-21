@@ -340,6 +340,14 @@ async function reportConsoleState(forkRpc: string, fromBlock: bigint): Promise<v
             `[console] remaining   ${fromTokenAmount(status.remaining)} mUSDC (period ${status.currentPeriod})`,
         );
     }
+    // 총액을 든 permission 이면 그 잔량도 적는다. 위의 한 줄만 보이면 기간이 갱신될 때마다
+    // 가득 찬 숫자가 "남은 돈"으로 읽힌다.
+    if (status.lifetimeRemaining !== undefined && status.lifetimeTotal) {
+        console.log(
+            `[console] lifetime    ${fromTokenAmount(status.lifetimeRemaining)} mUSDC left of ` +
+                `${fromTokenAmount(status.lifetimeTotal.maxAmount)} (never refreshes)`,
+        );
+    }
     if (status.validity) {
         console.log(`[console] expires     ${new Date(Number(status.validity.notAfter) * 1000).toISOString()}`);
     }

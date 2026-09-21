@@ -18,7 +18,7 @@ import {
     parseFrameworkDeploymentManifestJson,
     readDelegationStatus,
     throttledHttp,
-    tightestPeriodRemaining,
+    tightestRemaining,
     verifyActiveFrameworkDeployment,
 } from "@mapae/delegation";
 import {
@@ -162,9 +162,19 @@ async function main(): Promise<void> {
                 `${fromTokenAmount(status.remaining)} mUSDC` +
                 (status.limit ? ` / ${fromTokenAmount(status.limit.periodAmount)} per ${status.limit.periodDuration}s` : ""));
         }
+        // 총액 잔량을 적지 않으면 위의 주기 잔량 한 줄이 "남은 돈"으로 읽힌다. 총액이
+        // 가득 찬 위임에서 그 줄은 다음 기간마다 가득 찬 숫자로 되살아나고, 그 숫자를 읽은
+        // 사람은 체인이 되돌릴 브로드캐스트를 승인하게 된다.
+        if (status.lifetimeRemaining !== undefined) {
+            record(true, `${tag} 총액 잔량`,
+                `${fromTokenAmount(status.lifetimeRemaining)} mUSDC` +
+                (status.lifetimeTotal
+                    ? ` / ${fromTokenAmount(status.lifetimeTotal.maxAmount)} 평생 총액 (갱신 없음)`
+                    : ""));
+        }
     }
 
-    // 주기 caveat 이 어느 링크에도 없으면 이 조건은 "충족"이 아니라 **답할 수 없음**이다.
+    // 지출 caveat 이 어느 링크에도 없으면 이 조건은 "충족"이 아니라 **답할 수 없음**이다.
     //
     // 예전에는 `tightest === undefined` 를 통과로 기록했다. 이 게이트는 사람이 되돌릴 수
     // 없는 브로드캐스트를 결정하기 직전에 읽는 것이고, 마지막 줄이
@@ -174,13 +184,19 @@ async function main(): Promise<void> {
     // `judgePreflight` 는 같은 `undefined` 를 통과로 둔다. 일부러 다르다: 그쪽 질문은
     // "체인이 이 결제를 거절하는가"이고 한도가 없으면 답은 "아니오"다. 이쪽 질문은
     // "내가 생각한 설정이 맞는가"다.
-    const tightest = tightestPeriodRemaining(statuses);
+    //
+    // 비교 대상은 기간 잔량과 총액 잔량 중 **작은 쪽**이다. 한 상환에 두 caveat 이 함께
+    // 걸리므로, 기간만 보면 총액이 가득 찬 위임에 GO 가 나간다.
+    const tightest = tightestRemaining(statuses);
     record(
-        tightest !== undefined && amount <= tightest,
+        tightest !== undefined && amount <= tightest.amount,
         "한도 대비 결제액",
         tightest === undefined
-            ? "주기 caveat 없음 — 이 permission 에는 주기 한도가 없다. 대조할 값이 없다"
-            : `${price} ≤ ${fromTokenAmount(tightest)} mUSDC`,
+            ? "지출 caveat 없음 — 이 permission 에는 주기 한도도 총액도 없다. 대조할 값이 없다"
+            : `${price} ${amount <= tightest.amount ? "≤" : ">"} ${fromTokenAmount(tightest.amount)} mUSDC ` +
+              (tightest.source === "period"
+                  ? "(주기 잔량이 더 좁다 — 다음 기간에 다시 열린다)"
+                  : "(평생 총액 잔량이 더 좁다 — 기간이 갱신돼도 열리지 않는다)"),
     );
 
     console.log(`\n── 자금 ────────────────────────────────────────────────`);

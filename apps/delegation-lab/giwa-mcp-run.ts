@@ -23,6 +23,9 @@ import {
     readDelegationStatus,
     reconcileSettlement,
     throttledHttp,
+    tightestRemaining,
+    type DelegationStatus,
+    type RemainingAllowance,
 } from "@mapae/delegation";
 import {
     MOCK_USDC,
@@ -73,7 +76,10 @@ interface Snapshot {
     vendorMusdc: bigint;
     relayerEth: bigint;
     relayerNonce: number;
-    remaining: bigint | undefined;
+    periodRemaining: bigint | undefined;
+    lifetimeRemaining: bigint | undefined;
+    /** 두 잔량 중 실제로 이 결제를 막는 쪽. 게이트와 거절 문구가 이 하나를 읽는다. */
+    allowance: RemainingAllowance | undefined;
 }
 
 async function snapshot(
@@ -81,10 +87,10 @@ async function snapshot(
     payer: Address,
     vendor: Address,
     relayer: Address,
-    readRemaining: () => Promise<bigint | undefined>,
+    readRootStatus: () => Promise<DelegationStatus>,
 ): Promise<Snapshot> {
     const musdc = getAddress(MOCK_USDC.address);
-    const [block, payerMusdc, payerEth, vendorMusdc, relayerEth, relayerNonce, remaining] =
+    const [block, payerMusdc, payerEth, vendorMusdc, relayerEth, relayerNonce, status] =
         await Promise.all([
             publicClient.getBlockNumber(),
             publicClient.readContract({address: musdc, abi: balanceOfAbi, functionName: "balanceOf", args: [payer]}),
@@ -92,9 +98,19 @@ async function snapshot(
             publicClient.readContract({address: musdc, abi: balanceOfAbi, functionName: "balanceOf", args: [vendor]}),
             publicClient.getBalance({address: relayer}),
             publicClient.getTransactionCount({address: relayer}),
-            readRemaining(),
+            readRootStatus(),
         ]);
-    return {block, payerMusdc, payerEth, vendorMusdc, relayerEth, relayerNonce, remaining};
+    return {
+        block,
+        payerMusdc,
+        payerEth,
+        vendorMusdc,
+        relayerEth,
+        relayerNonce,
+        periodRemaining: status.remaining,
+        lifetimeRemaining: status.lifetimeRemaining,
+        allowance: tightestRemaining([status]),
+    };
 }
 
 function report(label: string, before: bigint, after: bigint, fmt: (v: bigint) => string): void {
@@ -138,9 +154,8 @@ async function main(): Promise<void> {
     if (!root) throw new Error("permission context has no root delegation");
 
     const payer = getAddress(root.delegator);
-    const readRemaining = async () =>
-        (await readDelegationStatus({publicClient, environment: deployment.environment, delegation: root}))
-            .remaining;
+    const readRootStatus = () =>
+        readDelegationStatus({publicClient, environment: deployment.environment, delegation: root});
 
     // 판매자에게 402를 받아 실제 수취 주소를 확인한다. .env의 PAY_TO를 믿는 대신
     // 대금이 갈 주소를 판매자 자신이 말하게 한다 — 대조는 그 주소에 대해서만 뜻이 있다.
@@ -161,12 +176,21 @@ async function main(): Promise<void> {
     console.log(`[run] ${BROADCAST ? "⚠️  실제 브로드캐스트" : "드라이런 (--broadcast 없음)"}`);
     console.log(`[run] ${RESOURCE} = ${price} mUSDC · ${payer.slice(0, 10)}… → ${vendor.slice(0, 10)}…\n`);
 
-    const before = await snapshot(publicClient, payer, vendor, relayer, readRemaining);
-    console.log(`[run] before  block ${before.block} · 주기 잔량 ${before.remaining === undefined ? "n/a" : fromTokenAmount(before.remaining)} mUSDC`);
+    const before = await snapshot(publicClient, payer, vendor, relayer, readRootStatus);
+    console.log(
+        `[run] before  block ${before.block}` +
+            ` · 주기 잔량 ${before.periodRemaining === undefined ? "n/a" : fromTokenAmount(before.periodRemaining)} mUSDC` +
+            ` · 총액 잔량 ${before.lifetimeRemaining === undefined ? "n/a" : fromTokenAmount(before.lifetimeRemaining)} mUSDC`,
+    );
 
-    if (before.remaining !== undefined && amount > before.remaining) {
+    // 게이트는 두 잔량 중 작은 쪽을 본다. 기간 잔량만 보면 총액이 다 찬 grant 로도 기간이
+    // 갱신된 직후에 브로드캐스트가 승인되고, 체인이 `allowance-exceeded` 로 되돌린다.
+    // 처방이 다르므로 문구도 갈라 적는다 — 총액은 기다려도 열리지 않는다.
+    if (before.allowance !== undefined && amount > before.allowance.amount) {
         throw new Error(
-            `${price} exceeds the ${fromTokenAmount(before.remaining)} mUSDC left in this period — wait for the next one`,
+            before.allowance.source === "period"
+                ? `${price} exceeds the ${fromTokenAmount(before.allowance.amount)} mUSDC left in this period — wait for the next one`
+                : `${price} exceeds the ${fromTokenAmount(before.allowance.amount)} mUSDC left in this grant's lifetime total — it does not refresh with the period, so sign a new grant`,
         );
     }
 
@@ -215,7 +239,7 @@ async function main(): Promise<void> {
 
     const txHash = String(body.transaction) as Hex;
     const receipt = await publicClient.waitForTransactionReceipt({hash: txHash});
-    const after = await snapshot(publicClient, payer, vendor, relayer, readRemaining);
+    const after = await snapshot(publicClient, payer, vendor, relayer, readRootStatus);
 
     console.log(`\n── 온체인 대조 ─────────────────────────────────────────────────────────────`);
     report("payer mUSDC", before.payerMusdc, after.payerMusdc, fromTokenAmount);
@@ -223,8 +247,11 @@ async function main(): Promise<void> {
     report("payer ETH", before.payerEth, after.payerEth, formatEther);
     report("relayer ETH", before.relayerEth, after.relayerEth, formatEther);
     console.log(`  ${"relayer nonce".padEnd(22)} ${String(before.relayerNonce).padStart(24)} → ${String(after.relayerNonce).padStart(24)}`);
-    if (before.remaining !== undefined && after.remaining !== undefined) {
-        report("주기 잔량", before.remaining, after.remaining, fromTokenAmount);
+    if (before.periodRemaining !== undefined && after.periodRemaining !== undefined) {
+        report("주기 잔량", before.periodRemaining, after.periodRemaining, fromTokenAmount);
+    }
+    if (before.lifetimeRemaining !== undefined && after.lifetimeRemaining !== undefined) {
+        report("총액 잔량", before.lifetimeRemaining, after.lifetimeRemaining, fromTokenAmount);
     }
 
     // 판정은 정산 경로가 보고한 값이 아니라 그 바깥에서 두 번 읽은 체인 상태의 차이에서
@@ -268,8 +295,12 @@ async function main(): Promise<void> {
         gasUsed: receipt.gasUsed.toString(),
         gasPaidByRelayer: formatEther(gasPaid),
         payerGasSpent: formatEther(before.payerEth - after.payerEth),
-        periodRemainingBefore: before.remaining === undefined ? null : fromTokenAmount(before.remaining),
-        periodRemainingAfter: after.remaining === undefined ? null : fromTokenAmount(after.remaining),
+        periodRemainingBefore: before.periodRemaining === undefined ? null : fromTokenAmount(before.periodRemaining),
+        periodRemainingAfter: after.periodRemaining === undefined ? null : fromTokenAmount(after.periodRemaining),
+        lifetimeRemainingBefore:
+            before.lifetimeRemaining === undefined ? null : fromTokenAmount(before.lifetimeRemaining),
+        lifetimeRemainingAfter:
+            after.lifetimeRemaining === undefined ? null : fromTokenAmount(after.lifetimeRemaining),
         capturedAtBlock: after.block.toString(),
     };
     const evidencePath = `${REPO}/apps/delegation-lab/giwa-mcp-run.evidence.json`;
