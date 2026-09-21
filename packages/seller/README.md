@@ -98,7 +98,7 @@ for. Dedupe on `intent` — one row per intent — and read this as "some other 
 | `400 malformed_payment` | header is not a usable ERC-7710 payment |
 | `503 facilitator_unavailable` | `/supported` or `/verify` unreachable, or the facilitator would not look at the payment — its rate limit, or a readiness check it failed — on `/verify` or `/settle`; nothing charged, retry later with the same payment |
 | `402` (offer re-issued) | the facilitator refused the delegation (expired, over limit, over the 10.00 cap, offer mismatch), or the settlement failed without charging anybody. A new leaf can pay, so the offer rides along |
-| `504 settlement_unknown` | broadcast but no receipt seen — the buyer **may** have been charged; do not re-sign blindly |
+| `504 settlement_unknown` | the outcome is not established — no answer, `settlement_pending`, `unexpected_settle_error`, or a failure that names a transaction hash under a word that does not mean a mined failure. The buyer **may** have been charged; no offer is re-issued and the hash goes out with the receipt |
 | `502 settlement_misdirected` | the redemption was mined and credited someone who is not this `payTo` — the buyer **may** have been charged, so no offer is re-issued |
 | `404` | the paywall is the last matched route — it never prices a route nothing serves |
 
@@ -106,9 +106,16 @@ Every failing answer also carries the x402 v2 `SettleResponse` in `Payment-Respo
 (base64 UTF-8 JSON): `success: false` plus one §9 word — `invalid_payload`,
 `settlement_pending`, `rate_limited`, `delegation_rejected` and the rest. The two rungs
 before a payer is known (400, and 503 with no header) are the exception: a receipt names the
-payer of the payment it answers, and those name nobody. Every answer, failing or not, carries
-`Cache-Control: no-store` and `Vary: Payment-Signature`, so no shared cache hands a paid body
-to a request that did not pay.
+payer of the payment it answers, and those name nobody. Every answer, failing or not — the
+404 included — carries `Cache-Control: no-store` and `Vary: Payment-Signature`, so no shared
+cache hands a paid body to a request that did not pay.
+
+The offer is never re-issued beside a transaction hash. A `/settle` failure that names one is
+answered 502 for `vendor_not_credited` and 504 otherwise, because every word that could reach
+the 402 rung claims a refusal formed before any broadcast, and a hash says something went out
+anyway — the one exception is `settlement_reverted`, a mined revert that moved no asset. A
+buyer's agent reads the same rule off the receipt: a hash in a failing one means "check this,
+do not pay again".
 
 Two routes at the same price and `payTo` share one offer (the offer carries no path), so a
 header bought for one opens the other. Use distinct prices, or check `receipt.intent` against

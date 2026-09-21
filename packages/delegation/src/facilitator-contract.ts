@@ -108,9 +108,18 @@ export const SETTLEMENT_REVERTED = "settlement_reverted";
 /**
  * §9's words for a failure that is ours rather than the request's, one per route.
  *
- * `unexpected_verify_error` is not a verdict on anything. It reaches the seller as
- * {@link VerificationOutcome} `unavailable`, never `rejected` — see
- * {@link decideVerification}.
+ * Neither is a verdict, so neither reaches the seller as one. `unexpected_verify_error` is
+ * {@link VerificationOutcome} `unavailable` — nothing about the delegation was decided,
+ * and `/verify` never broadcasts, so nothing is in doubt either (see
+ * {@link decideVerification}).
+ *
+ * `unexpected_settle_error` is {@link SettlementOutcome} `unknown`. "An unexpected error
+ * while settling" is, by its own name, a failure whose place in the sequence is not known,
+ * and a wire that cannot say whether it broadcast cannot claim nobody was charged. This
+ * facilitator raises it only before the broadcast — `guards.ts` `describeFailure`, always
+ * with `transaction: ""` — but `@mapae/seller` is pointed at whichever facilitator its
+ * operator configured, and the cheap mistake on this rung is a lookup while the expensive
+ * one is a second payment.
  */
 export const UNEXPECTED_VERIFY_ERROR = "unexpected_verify_error";
 export const UNEXPECTED_SETTLE_ERROR = "unexpected_settle_error";
@@ -128,7 +137,17 @@ export const UNEXPECTED_SETTLE_ERROR = "unexpected_settle_error";
  * because a refusal wearing it would be read as something else entirely by the buyer's
  * client: {@link SETTLEMENT_PENDING} (money may have moved), {@link RATE_LIMITED} and
  * {@link FACILITATOR_NOT_READY} (nothing was examined, retry later), and
- * {@link UNEXPECTED_VERIFY_ERROR} (no verdict at all).
+ * {@link UNEXPECTED_VERIFY_ERROR} / {@link UNEXPECTED_SETTLE_ERROR} (no verdict at all,
+ * and on `/settle` no claim about the broadcast either).
+ *
+ * Every word admitted here is answered with a 402 that re-issues the offer, the four that
+ * name a defect in the request's own text included (`unsupported_scheme`,
+ * `invalid_network`, `invalid_payment_requirements`, `invalid_x402_version`). That is
+ * deliberate rather than an oversight of the spec's 400 mapping: 400 is this profile's
+ * answer to a payment it could not *read*, and a payload that parsed but disagrees with
+ * the offer is fixed by reading the offer that comes back with the 402 — which is exactly
+ * what a buyer who signed against a stale or misread offer needs. The seller's docs state
+ * the rung, so a client that loops on 402 loops against a corrected offer, not a blank one.
  */
 const KNOWN_REFUSAL_REASONS: ReadonlySet<string> = new Set([
     // x402 v2 §9, every word that names a refusal formed before any broadcast.
@@ -140,7 +159,6 @@ const KNOWN_REFUSAL_REASONS: ReadonlySet<string> = new Set([
     "invalid_payment_requirements",
     "invalid_x402_version",
     "invalid_transaction_state",
-    UNEXPECTED_SETTLE_ERROR,
     // This profile's own. The budget words are `@mapae/store`'s
     // (`SettlementBudgetExceeded`); they are admitted here and nothing branches on them,
     // so a rename there costs a pass-through, never a wrong status.
@@ -151,6 +169,15 @@ const KNOWN_REFUSAL_REASONS: ReadonlySet<string> = new Set([
     SETTLEMENT_REVERTED,
     VENDOR_NOT_CREDITED,
 ]);
+
+/**
+ * The two words that name a failure formed *after* the broadcast: the only ones a body
+ * naming a transaction hash may wear and still have settled the question of who was
+ * charged. Everything else in {@link KNOWN_REFUSAL_REASONS} — and everything the fold
+ * turns into {@link DELEGATION_REJECTED} — claims a refusal formed before any broadcast,
+ * which a named hash contradicts. See {@link decideSettlement}.
+ */
+const MINED_REFUSAL_REASONS: ReadonlySet<string> = new Set([SETTLEMENT_REVERTED, VENDOR_NOT_CREDITED]);
 
 /** The facilitator's word if we know it, {@link DELEGATION_REJECTED} if we do not. */
 function foldRefusalReason(value: unknown): string {
@@ -220,9 +247,10 @@ export interface Erc7710SettleResponse {
  *
  * `unavailable` and `failed` each carry the word the seller puts in its own
  * `Payment-Response`: the facilitator's, when it is one of {@link KNOWN_REFUSAL_REASONS},
- * and never its free text. `failed.transaction` is the hash the body named, which a mined
- * failure ({@link SETTLEMENT_REVERTED}, {@link VENDOR_NOT_CREDITED}) always has and a
- * pre-broadcast refusal never does.
+ * and never its free text. `failed.transaction` is the hash the body named, and only a
+ * mined failure ({@link MINED_REFUSAL_REASONS}) reaches `failed` with one — a body that
+ * names a hash under any other word is `unknown`, because the word claims a refusal formed
+ * before the broadcast and the hash says something was broadcast anyway.
  */
 export type SettlementOutcome =
     | {kind: "unavailable"; errorReason: typeof RATE_LIMITED | typeof FACILITATOR_NOT_READY}
@@ -319,6 +347,17 @@ export function decideVerification(
  * landed, broadcast, and the answer was lost on the way back". A body that says the
  * request was refused unexamined ({@link RATE_LIMITED}, {@link FACILITATOR_NOT_READY})
  * is the one answer that rules both out, and is `unavailable`.
+ *
+ * On a `success: false` body the hash outranks the word. Every word that can reach
+ * `failed` claims a refusal formed before any broadcast — {@link foldRefusalReason} turns
+ * an unrecognised one into {@link DELEGATION_REJECTED}, which is such a claim — so a body
+ * that names a mined transaction under one of them is contradicting itself, and believing
+ * the word answers "nobody was charged, pay again" while holding the evidence that
+ * something went out. Only {@link MINED_REFUSAL_REASONS} settles the question with a hash
+ * attached; anything else that names one is `unknown`, and the seller answers 504 with the
+ * hash rather than re-issuing the offer. Our own facilitator cannot produce that shape
+ * (`describeFailure` writes `""` on every rejection), which is the point: this is the rung
+ * a third-party facilitator, or a post-broadcast word added on that side alone, arrives on.
  */
 export function decideSettlement(
     response: {reachable: boolean; body?: unknown},
@@ -332,15 +371,16 @@ export function decideSettlement(
     if (body.errorReason === FACILITATOR_NOT_READY) {
         return {kind: "unavailable", errorReason: FACILITATOR_NOT_READY};
     }
-    if (body.errorReason === SETTLEMENT_PENDING) {
+    if (body.errorReason === SETTLEMENT_PENDING || body.errorReason === UNEXPECTED_SETTLE_ERROR) {
         return {kind: "unknown", transaction: readTransaction(body.transaction)};
     }
     if (body.success !== true) {
-        return {
-            kind: "failed",
-            errorReason: foldRefusalReason(body.errorReason),
-            transaction: readTransaction(body.transaction),
-        };
+        const transaction = readTransaction(body.transaction);
+        const errorReason = foldRefusalReason(body.errorReason);
+        if (transaction !== undefined && !MINED_REFUSAL_REASONS.has(errorReason)) {
+            return {kind: "unknown", transaction};
+        }
+        return {kind: "failed", errorReason, transaction};
     }
     // Success with a payer we did not derive is not a clean failure. The facilitator
     // said it broadcast, so money may well have moved; only the identity it reports is

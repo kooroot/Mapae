@@ -20,6 +20,7 @@ import {
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     SETTLEMENT_REVERTED,
+    UNEXPECTED_SETTLE_ERROR,
     UNEXPECTED_VERIFY_ERROR,
     VENDOR_NOT_CREDITED,
     decideSettlement,
@@ -575,7 +576,8 @@ describe("D5 settlement outcome ladder", () => {
     test("verify: a rate-limited answer is 'unavailable' — the delegation was never examined", () => {
         // The limiter refuses before the body is read. Reading that as `rejected` would
         // send the buyer to re-sign a delegation nothing refused, and a flood from one
-        // address would turn every honest buyer behind it into a 403.
+        // address would answer every honest buyer behind it with a 402 that re-issues the
+        // offer — "pay again with a new leaf" for a delegation nothing examined.
         expect(
             decideVerification({reachable: true, body: {isValid: false, invalidReason: RATE_LIMITED}}, PAYER),
         ).toEqual({kind: "unavailable", errorReason: RATE_LIMITED});
@@ -644,7 +646,8 @@ describe("D5 settlement outcome ladder", () => {
         // x402 v2 binds `settlement_pending` to a non-empty transaction, and every
         // producer in this repository computes the hash before the broadcast. A body
         // that drops it anyway is read for what it still claims — money may have moved
-        // — as a 504 with nothing to look up, never a 422 that asserts non-payment.
+        // — as a 504 with nothing to look up, never a 402 that re-issues the offer and so
+        // asserts non-payment.
         expect(
             decideSettlement(
                 {
@@ -662,9 +665,9 @@ describe("D5 settlement outcome ladder", () => {
     });
 
     test("the sentinel is one shared constant, not a literal per process, and is the §9 word", () => {
-        // If this ever drifts, the case above silently becomes `failed` — a 422 that
-        // asserts a balance nobody checked. Pinning the value is what makes the
-        // facilitator and the seller provably agree without running either.
+        // If this ever drifts, the case above silently becomes `failed` — a 402 that
+        // re-issues the offer over a balance nobody checked. Pinning the value is what
+        // makes the facilitator and the seller provably agree without running either.
         expect(SETTLEMENT_PENDING).toBe("settlement_pending");
     });
 
@@ -754,6 +757,62 @@ describe("D5 settlement outcome ladder", () => {
                 ),
             ).toEqual({kind: "failed", errorReason, transaction: TX});
         }
+    });
+
+    test("a failure that names a hash under any other word is unknown, never a re-issued offer", () => {
+        // The word claims a refusal formed before the broadcast — every word that reaches
+        // `failed` does, `delegation_rejected` included, and the fold turns an unrecognised
+        // one into exactly that claim. A named hash says something went out anyway. Reading
+        // the word would answer 402 "nobody was charged, pay again" while holding the
+        // evidence that says otherwise, so the hash decides and the seller answers 504.
+        for (const errorReason of [
+            "token_transfer_partially_applied", // a post-broadcast word some other facilitator added
+            undefined, // no claim at all
+            "insufficient_funds", // a §9 verdict contradicted by its own receipt
+            DELEGATION_REJECTED,
+        ]) {
+            expect(
+                decideSettlement(
+                    {
+                        reachable: true,
+                        body: {success: false, network: GIWA_SEPOLIA_CAIP2, transaction: TX, errorReason},
+                    },
+                    PAYER,
+                ),
+                String(errorReason),
+            ).toEqual({kind: "unknown", transaction: TX});
+        }
+    });
+
+    test("§9's unexpected settle error is unknown: it does not claim where it happened", () => {
+        // "An unexpected error occurred while settling" names no point in the sequence, and
+        // a wire that cannot say whether it broadcast cannot claim nobody was charged. Our
+        // own facilitator raises it only pre-broadcast, with `transaction: ""` — but
+        // `@mapae/seller` is pointed at whichever facilitator its operator configured.
+        expect(UNEXPECTED_SETTLE_ERROR).toBe("unexpected_settle_error");
+        expect(
+            decideSettlement(
+                {
+                    reachable: true,
+                    body: {
+                        success: false,
+                        network: GIWA_SEPOLIA_CAIP2,
+                        transaction: "",
+                        errorReason: UNEXPECTED_SETTLE_ERROR,
+                    },
+                },
+                PAYER,
+            ),
+        ).toEqual({kind: "unknown", transaction: undefined});
+        expect(
+            decideSettlement(
+                {
+                    reachable: true,
+                    body: {success: false, network: GIWA_SEPOLIA_CAIP2, transaction: TX, errorReason: UNEXPECTED_SETTLE_ERROR},
+                },
+                PAYER,
+            ),
+        ).toEqual({kind: "unknown", transaction: TX});
     });
 
     test("a reason outside the closed vocabulary folds, so no facilitator prose reaches the buyer", () => {

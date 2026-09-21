@@ -52,7 +52,7 @@
 | `invalid_network` | GIWA Sepolia가 아닌 체인 |
 | `invalid_transaction_state` | `/verify`만 낸다 — 이 결제의 정산이 이미 온체인에서 실패로 끝났다(채굴된 revert, 판매자 앞 `Transfer` 없는 영수증). 재시뮬레이션이 유효하게 만들 수 없다 |
 | `settlement_pending` | `/settle`만 낸다 — 원래 거래는 있고 결과를 모른다. 언제나 비어 있지 않은 `transaction`과 함께 |
-| `unexpected_verify_error` / `unexpected_settle_error` | 위 어디에도 속하지 않는 예외 — 우리 쪽 결함이다. 브로드캐스트 전에 던졌으므로 청구된 것은 없지만, 위임에 대한 판정도 아니다 |
+| `unexpected_verify_error` / `unexpected_settle_error` | 위 어디에도 속하지 않는 예외 — 우리 쪽 결함이다. 브로드캐스트 전에 던졌으므로 청구된 것은 없지만, 위임에 대한 판정도 아니다. 판매자는 앞의 것을 503(판정 없음), 뒤의 것을 504(모름)로 읽는다 — 어느 시점의 실패인지 그 낱말이 말하지 않으므로, 우리가 아닌 facilitator를 가리킨 판매자가 "청구되지 않았다"고 주장할 수는 없다 |
 | `settlement_reverted` / `vendor_not_credited` | 거절이 아니라 채굴된 terminal 결과 — `describeFailure`가 아니라 영수증을 읽은 저널이 내고, 가스는 이미 썼다 |
 
 `delegation_rejected`는 거절 판정 중 §9 밖의 유일한 낱말이고, 그래서 정의가 좁다:
@@ -68,7 +68,11 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 `unexpected_verify_error`가 503인 이유는 브로드캐스트 전 우리 쪽 예외라 아무도 청구되지
 않았고 위임에 대한 판정도 아니기 때문이다 — 거절로 읽으면 멀쩡한 grant를 다시 서명하러
 보낸다. `invalid_transaction_state`는 거절로 남는다: 같은 leaf로는 다시 살 수 없지만 새
-결제는 가능하므로 402가 맞다. 그날 가스 예산이 모자란
+결제는 가능하므로 402가 맞다. 요청의 글 자체를 지적하는 네 낱말
+(`unsupported_scheme`·`invalid_network`·`invalid_payment_requirements`·`invalid_x402_version`)도
+같은 402로 답하는데, 이는 스펙의 400 매핑을 놓친 것이 아니라 고른 것이다: 400은 *읽을 수
+없는* 결제에 대한 우리 답이고, 파싱은 됐지만 오퍼와 어긋난 payload는 402와 함께 돌아온 오퍼를
+읽으면 고쳐진다 — 낡거나 잘못 읽은 오퍼로 서명한 구매자에게 필요한 것이 정확히 그것이다. 그날 가스 예산이 모자란
 `budget_exhausted`·`payer_budget_exhausted`도 §9 밖이고, 위임이 아니라 우리 릴레이어의
 하루가 거절한 것이다.
 
@@ -124,9 +128,9 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 | 상태 | 언제 | 오퍼를 다시 싣는가 |
 |---|---|---|
 | `400 malformed_payment` | 헤더가 크거나 파싱 불가·ERC-7710 아님 | 아니오 — 읽히지 않은 헤더다 |
-| `503 facilitator_unavailable` | `/supported` 미도달, `/verify`·`/settle`이 `rate_limited`·`facilitator_not_ready`·`unexpected_verify_error` | 아니오 — 같은 결제를 나중에 다시 내면 된다 |
-| `402` + 오퍼 | `/verify` 거절, 또는 아무도 청구되지 않은 `/settle` 실패(`settlement_reverted`, 예산 낱말 등) | **예** — 새 leaf로 낼 수 있다 |
-| `504 settlement_unknown` | `/settle` 결과를 모른다(응답 유실, `settlement_pending`, payer 불일치) | 아니오 — 청구됐을 수 있다 |
+| `503 facilitator_unavailable` | `/supported` 미도달, `/verify`·`/settle`이 `rate_limited`·`facilitator_not_ready`, `/verify`가 `unexpected_verify_error` | 아니오 — 같은 결제를 나중에 다시 내면 된다 |
+| `402` + 오퍼 | `/verify` 거절, 또는 아무도 청구되지 않은 `/settle` 실패(예산 낱말, 그리고 해시와 함께 오는 `settlement_reverted` — 채굴된 revert라 자산이 움직이지 않았다) | **예** — 새 leaf로 낼 수 있다 |
+| `504 settlement_unknown` | `/settle` 결과를 모른다: 응답 유실, `settlement_pending`, `unexpected_settle_error`, payer 불일치, 그리고 **해시를 댄 실패의 낱말이 채굴 실패 낱말이 아닐 때** | 아니오 — 청구됐을 수 있다 |
 | `502 settlement_misdirected` | `vendor_not_credited` — 채굴됐고 우리 `payTo`가 아닌 곳을 채웠다 | 아니오 — 잔고가 이미 움직였다 |
 
 실패한 응답은 모두 `Payment-Response`에 x402 v2 `SettleResponse`를 싣는다:
@@ -138,14 +142,22 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 본문을 미결제 요청에 주거나 미결제 402를 결제 요청에 주는 것을 막는다.
 
 에이전트 쪽은 이 낱말을 읽어 실패를 분류한다(`payment-client.ts`). 재시도 응답이 2xx가
-아니면 **헤더만** 읽고(바디는 열지 않는다 — 판매자가 bearer 헤더를 반사할 수 있다),
-`errorReason`이 우리 상수와 문자열 일치하는 닫힌 집합에 있을 때만 분류에 쓴다:
-`settlement_pending` → `SETTLEMENT_UNKNOWN`(상태가 402든 504든),
-`rate_limited`·`facilitator_not_ready` → `SELLER_UNAVAILABLE`, 나머지 §9 낱말과
-`delegation_rejected` → `PAYMENT_REJECTED`. 집합 밖의 낱말은 아무것도 바꾸지 않고 상태
-코드 규칙이 결정한다 — `vendor_not_credited`가 그 보호의 이유다: 판매자가 502로 답하므로
-상태 규칙이 이미 "청구됐을 수 있다"로 읽는데, 이 낱말을 §9처럼 받아들이면 그것이
-"아무 일도 없었으니 다시 내라"로 바뀐다.
+아니면 **헤더만** 읽고(바디는 열지 않는다 — 판매자가 bearer 헤더를 반사할 수 있다), 그
+헤더에서도 두 칸만 본다: `errorReason`은 우리 상수와 문자열 일치하는 닫힌 집합에 있을 때만,
+`transaction`은 16진 해시 모양일 때만. `settlement_pending`·`unexpected_settle_error` →
+`SETTLEMENT_UNKNOWN`, `rate_limited`·`facilitator_not_ready`·`unexpected_verify_error` →
+`SELLER_UNAVAILABLE`, 나머지 §9 낱말과 `delegation_rejected` → `PAYMENT_REJECTED`.
+
+낱말이 할 수 있는 일에는 방향이 있다: 상태보다 **더** 조심하게 만들 수는 있어도 덜
+조심하게 만들 수는 없다. `settlement_pending`은 402를 504의 독법으로 끌어올리지만,
+`SETTLEMENT_UNKNOWN_STATUSES`(504·502·52x)에 속한 상태는 어떤 낱말로도 뒤집히지 않는다 —
+그 집합은 아래 GIWA 사례가 만든 독법이고, 사례는 상태로 도착했다. 해시도 같은 규칙을 영수증
+쪽에서 읽은 것이다: 실패 영수증이 해시를 대면 무언가 브로드캐스트됐다는 뜻이므로 낱말이
+무엇이든 `SETTLEMENT_UNKNOWN`이고, 그 해시는 `detail`에 함께 실려 나간다 — 호출자가 탐색기에
+넣을 수 있는 유일한 값이다. 집합 밖의 낱말은 아무것도 바꾸지 않고 상태 규칙이 결정한다 —
+`vendor_not_credited`와 `settlement_reverted`가 그 보호의 이유다: 둘은 채굴된 실패의 낱말이고
+해시와 함께 오므로 해시 규칙이 이미 읽는데, 이 낱말을 §9처럼 받아들이면 그것이 "아무 일도
+없었으니 다시 내라"로 바뀐다.
 
 이 구분의 근거는 실제 사례다. GIWA `0x533c5cb2…9964c`(block 31634935)는
 지불자에게서 1.00 mUSDC를 실제로 이체했지만 호출자는 `PAYMENT_REJECTED`를
@@ -162,7 +174,9 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 |---|---|---|
 | 응답 못 받음 (연결 거부·non-2xx·JSON 아님·타임아웃) | `unknown` 504 | "요청이 닿지 않음"과 "브로드캐스트 후 응답 유실"을 구분할 수 없다 |
 | `errorReason === SETTLEMENT_PENDING` | `unknown` 504 (+해시) | x402 v2가 이 사유에 해시를 강제한다 — 해시가 없으면 호출자가 확인할 수단이 없다 |
+| `errorReason === unexpected_settle_error` | `unknown` 504 (+해시) | 어느 시점의 실패인지 낱말이 말하지 않는다 — 브로드캐스트 여부를 말할 수 없는 답은 아무도 청구되지 않았다고 주장할 수 없다 |
 | `success !== true`, `errorReason === vendor_not_credited` | `failed` 502 (+해시) | 채굴됐고 우리 `payTo`가 아닌 곳을 채웠다 — 잔고가 움직였을 수 있으므로 오퍼를 다시 주지 않는다 |
+| `success !== true`, 해시가 있고 낱말이 채굴 실패(`settlement_reverted`·`vendor_not_credited`)가 아니다 | `unknown` 504 (+해시) | 해시가 낱말을 이긴다. `failed`에 닿는 모든 낱말은 브로드캐스트 전 거절을 주장하고(접힌 `delegation_rejected`도 그렇다), 해시는 그래도 무언가 나갔다고 말한다 — 낱말을 믿으면 증거를 쥐고 "다시 내라"로 답한다 |
 | `success !== true`, 그 밖 | `failed` 402 + 오퍼 | 명시적 거절 — 자금이 이동하지 않았고, 새 leaf로 다시 낼 수 있다 |
 | `success === true`, payer 불일치 | `unknown` 504 | 브로드캐스트는 주장되었으나 신원이 어긋났고, 잔액은 확인되지 않았다 |
 | `success === true`, payer 일치 | `settled` 200 | |

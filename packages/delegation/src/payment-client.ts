@@ -18,6 +18,8 @@ import {
     FACILITATOR_NOT_READY,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
+    UNEXPECTED_SETTLE_ERROR,
+    UNEXPECTED_VERIFY_ERROR,
 } from "./facilitator-contract.js";
 import {getAddress, isAddress, zeroAddress, type Address, type Hex} from "viem";
 
@@ -94,9 +96,11 @@ export type DelegatedPaymentFailureCode =
  * non-2xx collapsed into one code. `408` and `425` are included because a gateway in front
  * of a seller produces them for the same reason.
  *
- * Read only when the answer did not say in words: a seller that names its reason in
- * `Payment-Response` is believed over its status, because the status is also whatever the
- * proxies in between made of it. See {@link SELLER_REFUSAL_CODES}.
+ * This set is the floor, not a fallback. A seller that names its reason in
+ * `Payment-Response` is believed over its status where that adds caution — the status is
+ * also whatever the proxies in between made of it — but never against this set: the
+ * incident above arrived as a status, and a word that talked the caller out of it would
+ * undo the reading it bought. See {@link SELLER_REFUSAL_CODES}.
  */
 const SETTLEMENT_UNKNOWN_STATUSES = new Set([
     408, 425, 504,
@@ -132,9 +136,14 @@ const SELLER_UNAVAILABLE_STATUSES = new Set([429, 503]);
  * Closed on purpose, and small on purpose. Every key is either a constant of this
  * repository's own wire or one of §9's fixed words; a word outside the map changes
  * nothing and the status rules decide, because the safe reading of a word we do not know
- * is no reading at all. In particular `vendor_not_credited` is deliberately absent: the
- * seller answers it 502, which the status rules already read as "may be charged", and
- * admitting it as a §9-shaped refusal would turn that into "nothing happened, pay again".
+ * is no reading at all. In particular `vendor_not_credited` and `settlement_reverted` are
+ * deliberately absent: they are the two words a mined failure wears, the seller answers
+ * them 502 and 402 respectively with the hash in the receipt, and the hash is what this end
+ * reads — admitting either as a §9-shaped refusal would let the word say "nothing
+ * happened, pay again" over its own evidence.
+ *
+ * What a word may do is bounded on purpose: it can make this end *more* careful than the
+ * status, never less. See the classification in {@link payForDelegatedResource}.
  */
 const X402_REFUSAL_WORDS = [
     "insufficient_funds",
@@ -145,8 +154,6 @@ const X402_REFUSAL_WORDS = [
     "invalid_payment_requirements",
     "invalid_x402_version",
     "invalid_transaction_state",
-    "unexpected_verify_error",
-    "unexpected_settle_error",
 ] as const;
 
 /** The three codes a seller's own word can select. Narrowed so the notes below are total. */
@@ -159,10 +166,17 @@ const SELLER_REFUSAL_CODES: ReadonlyMap<string, SellerRefusalCode> = new Map<str
     // Money may have moved, whatever status carried the word. The seller sends it with a
     // 504; a gateway that rewrote that must not cost the caller this reading.
     [SETTLEMENT_PENDING, "SETTLEMENT_UNKNOWN"],
+    // §9's "an unexpected error occurred while settling" — a failure whose place in the
+    // sequence the sender did not claim to know. `@mapae/seller` raises it only before the
+    // broadcast and answers 504, but it is read from the word rather than from that, because
+    // any other seller using §9's vocabulary has not promised as much.
+    [UNEXPECTED_SETTLE_ERROR, "SETTLEMENT_UNKNOWN"],
     // Nothing was examined and nothing was charged: the same payment is safe to present
-    // again later.
+    // again later. `/verify` never broadcasts, so its unexpected error belongs here rather
+    // than with the verdicts — the seller's own ladder reads it the same way.
     [RATE_LIMITED, "SELLER_UNAVAILABLE"],
     [FACILITATOR_NOT_READY, "SELLER_UNAVAILABLE"],
+    [UNEXPECTED_VERIFY_ERROR, "SELLER_UNAVAILABLE"],
     // A verdict on the payment, formed before anything was broadcast.
     [DELEGATION_REJECTED, "PAYMENT_REJECTED"],
     ...X402_REFUSAL_WORDS.map((word): [string, SellerRefusalCode] => [word, "PAYMENT_REJECTED"]),
@@ -546,30 +560,52 @@ function readSettlementReceipt(
     return {transaction: transaction as Hex};
 }
 
+/** What a failing answer's `Payment-Response` declared about itself, of what we read of it. */
+interface DeclaredRefusal {
+    /** Our code for the word it used, when the word is one of {@link SELLER_REFUSAL_CODES}. */
+    code?: SellerRefusalCode;
+    /** That word itself. Repeatable in a `detail` because matching it made it ours. */
+    reason?: string;
+    /**
+     * The hash it named.
+     *
+     * Evidence that something was broadcast, whatever the word claims: a failure receipt
+     * naming a mined transaction is a payment in doubt even when its word asserts a verdict
+     * formed before any broadcast, and this end cannot read the chain to settle which. The
+     * seller puts it there for exactly that reason — it is the caller's only way to find out
+     * for themselves whether they were charged — so it must not stop here.
+     */
+    transaction?: Hex;
+}
+
 /**
- * How the seller classified its own failure, when it used a word from
- * {@link SELLER_REFUSAL_CODES}.
+ * How the seller described its own failure, of the two fields we read.
  *
  * Only the header is read, never the body: a malicious seller can reflect
  * `Payment-Signature` back after we have sent a bearer permission context, and that rule
- * does not relax because the answer looks helpful. Of the header, only `errorReason` is
- * looked at, and only to match it against our own constants — so the word that reaches the
- * result is ours, and `errorMessage` or anything else the seller wrote goes nowhere.
+ * does not relax because the answer looks helpful. Of the header, only `errorReason` and
+ * `transaction` are looked at — the word matched against our own constants, the hash
+ * against a hex pattern — so everything that reaches the result is a word of ours or a
+ * hash, and `errorMessage` or anything else the seller wrote goes nowhere.
  */
-function readSellerRefusal(
-    header: string | null,
-): {code: SellerRefusalCode; reason: string} | undefined {
-    if (header === null) return undefined;
+function readSellerRefusal(header: string | null): DeclaredRefusal {
+    if (header === null) return {};
     let decoded: unknown;
     try {
         decoded = decodePaymentResponseHeader(header);
     } catch {
-        return undefined;
+        return {};
     }
-    const reason: unknown = (decoded as {errorReason?: unknown} | null)?.errorReason;
-    if (typeof reason !== "string") return undefined;
-    const code = SELLER_REFUSAL_CODES.get(reason);
-    return code === undefined ? undefined : {code, reason};
+    const receipt = decoded as {errorReason?: unknown; transaction?: unknown} | null;
+    const reason: unknown = receipt?.errorReason;
+    const code = typeof reason === "string" ? SELLER_REFUSAL_CODES.get(reason) : undefined;
+    const transaction: unknown = receipt?.transaction;
+    return {
+        ...(code === undefined ? {} : {code, reason: reason as string}),
+        ...(typeof transaction === "string" && TRANSACTION_HASH.test(transaction)
+            ? {transaction: transaction as Hex}
+            : {}),
+    };
 }
 
 /**
@@ -716,38 +752,41 @@ export async function payForDelegatedResource(
     if (!second.ok) {
         // Do not read the body: a malicious seller can reflect Payment-Signature after
         // we have sent a bearer permission context. The `Payment-Response` header is read
-        // — one field of it, matched against our own vocabulary — because a seller that
-        // says which failure this was knows better than its status code does: the same 402
-        // covers a refused delegation and a settlement that charged nobody, and any status
-        // is also whatever the proxies in between made of it.
-        const declared = readSellerRefusal(second.headers.get(PAYMENT_RESPONSE_HEADER));
-        if (declared !== undefined) {
-            return failure(
-                declared.code,
-                `seller reported ${declared.reason} (${second.status}) — ${REFUSAL_NOTE[declared.code]}`,
-                second.status,
-            );
-        }
-        // No word, or one we do not know: the status class is all there is.
-        if (SETTLEMENT_UNKNOWN_STATUSES.has(second.status)) {
-            return failure(
-                "SETTLEMENT_UNKNOWN",
-                `seller could not confirm settlement (${second.status}) — the payer may already be charged`,
-                second.status,
-            );
-        }
-        if (SELLER_UNAVAILABLE_STATUSES.has(second.status)) {
-            return failure(
-                "SELLER_UNAVAILABLE",
-                `seller could not take the payment (${second.status}) — nothing charged, retry later`,
-                second.status,
-            );
-        }
-        return failure(
-            "PAYMENT_REJECTED",
-            `seller rejected the payment (${second.status})`,
-            second.status,
-        );
+        // — two fields of it, a word matched against our own vocabulary and a hash — because
+        // a seller that says which failure this was knows more than its status code does:
+        // the same 402 covers a refused delegation and a settlement that charged nobody, and
+        // any status is also whatever the proxies in between made of it.
+        const refusal = readSellerRefusal(second.headers.get(PAYMENT_RESPONSE_HEADER));
+        const byStatus: SellerRefusalCode = SETTLEMENT_UNKNOWN_STATUSES.has(second.status)
+            ? "SETTLEMENT_UNKNOWN"
+            : SELLER_UNAVAILABLE_STATUSES.has(second.status)
+              ? "SELLER_UNAVAILABLE"
+              : "PAYMENT_REJECTED";
+        // What the answer says about itself may make this end more careful than its status
+        // did; it may never make it less. A 504 and the origin-death codes beside it are the
+        // reading that exists because of GIWA tx `0x533c5cb2…9964c` (see
+        // `SETTLEMENT_UNKNOWN_STATUSES`), and no word overrides them — `unexpected_settle_error`
+        // on a 504 is still a settlement in doubt, whatever the seller meant by it. A named
+        // hash is the same rule read off the receipt rather than the status: something was
+        // broadcast, so the answer is not "nothing happened, pay again" even when the word
+        // says so. Upward it does move: `settlement_pending` on a 402 is a doubt the status
+        // never carried.
+        const code: SellerRefusalCode =
+            byStatus === "SETTLEMENT_UNKNOWN" || refusal.transaction !== undefined
+                ? "SETTLEMENT_UNKNOWN"
+                : (refusal.code ?? byStatus);
+        const what =
+            refusal.reason !== undefined
+                ? `seller reported ${refusal.reason} (${second.status})`
+                : code === "SETTLEMENT_UNKNOWN"
+                  ? `seller could not confirm settlement (${second.status})`
+                  : code === "SELLER_UNAVAILABLE"
+                    ? `seller could not take the payment (${second.status})`
+                    : `seller rejected the payment (${second.status})`;
+        // The hash is matched against a hex pattern before it gets here, so it is a hash and
+        // not seller prose — and it is the one thing the caller can take to an explorer.
+        const found = refusal.transaction === undefined ? "" : ` — transaction ${refusal.transaction}`;
+        return failure(code, `${what} — ${REFUSAL_NOTE[code]}${found}`, second.status);
     }
 
     // A paid resource is whatever the seller serves — a ticket as JSON, a report as

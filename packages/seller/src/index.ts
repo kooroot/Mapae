@@ -535,18 +535,18 @@ function buildPaywall(
     if (extensions !== undefined) JSON.stringify(extensions);
 
     const paywall: MiddlewareHandler<MapaeEnv> = async (c, next) => {
+        // Every answer below turns on whether this request carried a payment, so a shared
+        // cache must never hand one of them to the other request: `no-store` keeps a paid
+        // body out of a cache at all, and `Vary` keys whatever a cache does keep on the
+        // payment header. Set before the first branch — the 404 rung included, so that
+        // "every answer" is a claim about every answer and not about most of them.
+        c.header("Cache-Control", "no-store");
+        c.header("Vary", PAYMENT_SIGNATURE_HEADER);
+
         // Never price, let alone settle, a route nothing will serve. When this
         // middleware is the last matched route, `next()` would be a 404 — a buyer
         // must not pay for one.
         if (c.req.routeIndex === matchedRoutes(c).length - 1) return c.notFound();
-
-        // Every answer below turns on whether this request carried a payment, so a shared
-        // cache must never hand one of them to the other request: `no-store` keeps a paid
-        // body out of a cache at all, and `Vary` keys whatever a cache does keep on the
-        // payment header. Set before the first branch, so the whole ladder carries them —
-        // the 402 offer included, which must not be served to a request that did pay.
-        c.header("Cache-Control", "no-store");
-        c.header("Vary", PAYMENT_SIGNATURE_HEADER);
 
         // Whatever is wrong with the header itself is answered before the facilitator
         // is involved: a bad header costs nobody a network call.
@@ -656,10 +656,15 @@ function buildPaywall(
             // A mined redemption that credited someone else moved the buyer's balance. No
             // offer goes back with it: answering "pay again" to a buyer who has already
             // paid once is how one sale takes two payments, and this wire cannot refund
-            // the first. Every other failure charged nobody, so it re-offers.
+            // the first.
             if (outcome.errorReason === VENDOR_NOT_CREDITED) {
                 return c.json({error: "settlement_misdirected"}, 502);
             }
+            // Everything still here charged nobody. That is not read off this one word:
+            // `decideSettlement` only reaches `failed` with a hash for a word that names a
+            // mined failure, and turns any other answer carrying one into `unknown` above.
+            // So the offer is never re-issued alongside evidence of a broadcast, whatever
+            // the facilitator called it.
             return offer();
         }
 

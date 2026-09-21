@@ -1020,6 +1020,51 @@ describe("D5 the seller's own word decides, when it is one we know", () => {
         expect(garbage.detail).toContain("could not confirm settlement");
     });
 
+    test("a word never talks the caller out of the caution a status carried", async () => {
+        // `SETTLEMENT_UNKNOWN_STATUSES` exists because of GIWA tx `0x533c5cb2…9964c`: a
+        // settlement that outlived the seller's timeout, reported as a rejection while
+        // 1.00 mUSDC had already moved. That incident arrived as a status, so a word must
+        // not undo it — §9's `unexpected_settle_error` does not mean "nothing was
+        // broadcast" for any seller that is not this repository's, and neither does a
+        // verdict word on a 52x an origin died behind.
+        for (const status of [504, 502, 522]) {
+            for (const word of ["unexpected_settle_error", "insufficient_funds", "delegation_rejected"]) {
+                const result = await resultFor(status, refusal(word));
+                expect(result.code, `${status} ${word}`).toBe("SETTLEMENT_UNKNOWN");
+                expect(result.detail).toContain("may already be charged");
+            }
+        }
+    });
+
+    test("a receipt that names a hash is a payment in doubt, whatever its word said", async () => {
+        // The hash is the seller's evidence that something was broadcast. Believing the word
+        // over it would answer "nothing happened, pay again" while holding the proof — and
+        // the hash itself comes back, because it is the only thing the caller can take to an
+        // explorer. It is matched against a hex pattern first, so it is a hash and not prose.
+        for (const word of ["delegation_rejected", "insufficient_funds", "settlement_reverted"]) {
+            const result = await resultFor(402, refusal(word, {transaction: TX}));
+            expect(result.code, word).toBe("SETTLEMENT_UNKNOWN");
+            expect(result.detail, word).toContain(TX);
+            expect(result.detail).toContain("may already be charged");
+        }
+        // And a malformed one is not repeated at all: it would be the seller's text, not a hash.
+        const bogus = await resultFor(402, refusal("delegation_rejected", {transaction: "0xnope"}));
+        expect(bogus.code).toBe("PAYMENT_REJECTED");
+        expect(bogus.detail).not.toContain("0xnope");
+    });
+
+    test("§9's unexpected errors follow the route they name, not the verdict pile", async () => {
+        // `unexpected_settle_error` says nothing about where in the sequence it happened, so
+        // it is a payment in doubt; `unexpected_verify_error` is a throw on a call that never
+        // broadcasts, so nothing was charged and the same payment may be presented again.
+        // Both readings are the ones the seller's own ladder takes.
+        const settling = await resultFor(402, refusal("unexpected_settle_error"));
+        expect(settling.code).toBe("SETTLEMENT_UNKNOWN");
+        const verifying = await resultFor(402, refusal("unexpected_verify_error"));
+        expect(verifying.code).toBe("SELLER_UNAVAILABLE");
+        expect(verifying.detail).toContain("nothing charged, retry later");
+    });
+
     test("the body is still never read, however helpful the header was", async () => {
         // `poisonedResponse` throws from json() and text() alike. Reading one field of one
         // header is not permission to read the body a seller can reflect a bearer into.

@@ -90,8 +90,13 @@ payer는 위임이 허락하는 만큼 정산을 요구할 수 있다. 그래서
 viem에 revert 데이터가 없는 `ExecutionRevertedError`까지), 또는 `MAX_REDEMPTION_GAS`를
 넘는 가스. "viem 오류면 전부"가 아니다: 우리 인코딩 실수 같은 다른 viem 오류는
 `unexpected_*_error`다 — facilitator는 체인이 본 적 없는 위임을 거절됐다고 말하지 않는다.
-구매자를 재서명으로 보내는 마지막 판단은 판매자 사다리의 몫이고, 그쪽은 아직 `/verify`의
-`invalidReason`을 `rate_limited`·`facilitator_not_ready` 말고는 모두 거절로 읽는다.
+구매자를 재서명으로 보내는 마지막 판단은 판매자 사다리의 몫이고, 그쪽의
+`decideVerification`은 `/verify`의 `invalidReason`을 세 갈래로 읽는다:
+`rate_limited`·`facilitator_not_ready`·`unexpected_verify_error`는 판정이 아니라 "판정이
+없다"라서 503, 나머지는 402 + 오퍼 재발행(403이 아니다 — 구매자는 새 leaf로 다시 낼 수
+있다), 그때 실리는 낱말은 허용집합에 있을 때만 우리 것이고 밖의 문자열은
+`delegation_rejected`로 접힌다. `/settle`의 `unexpected_settle_error`는 거절이 아니라
+"모른다"로 읽혀 504가 된다 — 어느 시점의 실패인지 그 낱말이 말하지 않는다.
 낱말이 하나인 것도 의도다 — 어느 caveat이 걸렸는지는 revert 문장이 말하고, 그것은
 호출자가 탐색할 경계다.
 

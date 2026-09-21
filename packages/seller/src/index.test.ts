@@ -26,6 +26,7 @@ import {
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     SETTLEMENT_REVERTED,
+    UNEXPECTED_SETTLE_ERROR,
     VENDOR_NOT_CREDITED,
 } from "@mapae/delegation/facilitator-contract";
 import {
@@ -645,10 +646,64 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
         expect(seen.served).toBe(0);
     });
 
-    test("every other settlement failure charged nobody, so the offer is re-issued", async () => {
-        for (const errorReason of [SETTLEMENT_REVERTED, "payer_budget_exhausted", DELEGATION_REJECTED]) {
+    test("504 settlement_unknown when a settle failure names a hash under any other word", async () => {
+        // The word says a refusal formed before the broadcast — the fold makes every word
+        // that reaches `failed` say that — and the hash says something went out anyway. The
+        // offer must not go back with it: "pay again" over a mined transaction is how one
+        // sale takes two payments. Our own facilitator writes `""` on every rejection, so
+        // this is the shape a third-party facilitator arrives in.
+        for (const errorReason of ["token_transfer_partially_applied", DELEGATION_REJECTED, undefined]) {
             const remote = facilitator({
-                "/settle": json({success: false, network: GIWA_SEPOLIA_CAIP2, transaction: "", errorReason}),
+                "/settle": json({success: false, network: GIWA_SEPOLIA_CAIP2, transaction: TX, errorReason}),
+            });
+            const {app, seen} = seller(paywall({fetch: remote.fetch}));
+            const response = await pay(app);
+            expect(response.status, String(errorReason)).toBe(504);
+            expect(await response.json()).toEqual({error: "settlement_unknown"});
+            expect(response.headers.get(PAYMENT_REQUIRED_HEADER), String(errorReason)).toBeNull();
+            expect(failureReceipt(response), String(errorReason)).toEqual({
+                success: false,
+                errorReason: SETTLEMENT_PENDING,
+                network: GIWA_SEPOLIA_CAIP2,
+                payer: PAYER,
+                transaction: TX,
+            });
+            expect(seen.served).toBe(0);
+        }
+    });
+
+    test("504 settlement_unknown for §9's unexpected settle error, hash or no hash", async () => {
+        // It names no point in the sequence, so it cannot be answered "nobody was charged".
+        for (const transaction of ["", TX]) {
+            const remote = facilitator({
+                "/settle": json({
+                    success: false,
+                    network: GIWA_SEPOLIA_CAIP2,
+                    transaction,
+                    errorReason: UNEXPECTED_SETTLE_ERROR,
+                }),
+            });
+            const response = await pay(seller(paywall({fetch: remote.fetch})).app);
+            expect(response.status, transaction).toBe(504);
+            expect(response.headers.get(PAYMENT_REQUIRED_HEADER), transaction).toBeNull();
+            expect(failureReceipt(response).transaction, transaction).toBe(transaction);
+        }
+    });
+
+    test("every other settlement failure charged nobody, so the offer is re-issued", async () => {
+        // `settlement_reverted` is the one word that may bring a hash here: the redemption
+        // was mined and reverted, so the asset never moved and the offer is safe to re-issue.
+        // The facilitator read that off the receipt; every other word claims a refusal
+        // formed before the broadcast, and one arriving with a hash goes to 504 above.
+        const cases: Array<[string, Hex | ""]> = [
+            [SETTLEMENT_REVERTED, TX],
+            [SETTLEMENT_REVERTED, ""],
+            ["payer_budget_exhausted", ""],
+            [DELEGATION_REJECTED, ""],
+        ];
+        for (const [errorReason, transaction] of cases) {
+            const remote = facilitator({
+                "/settle": json({success: false, network: GIWA_SEPOLIA_CAIP2, transaction, errorReason}),
             });
             const {app, seen} = seller(paywall({fetch: remote.fetch}));
             const response = await pay(app);
@@ -656,6 +711,7 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
             expect(((await response.json()) as {accepts: unknown}).accepts).toEqual([OFFER]);
             expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeString();
             expect(failureReceipt(response).errorReason, errorReason).toBe(errorReason);
+            expect(failureReceipt(response).transaction, errorReason).toBe(transaction);
             expect(seen.served).toBe(0);
         }
     });
@@ -862,7 +918,12 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
         const app = new Hono();
         app.use("/api/*", paywall({fetch: remote.fetch}));
         app.get("/api/thing", (c) => c.text("thing"));
-        expect((await app.request("http://seller.test/api/nothing")).status).toBe(404);
+        const unpriced = await app.request("http://seller.test/api/nothing");
+        expect(unpriced.status).toBe(404);
+        // The cache headers are set before this rung, so "every answer" is a claim about
+        // every answer: the 404 is the one that leaves before the ladder starts.
+        expect(unpriced.headers.get("cache-control")).toBe("no-store");
+        expect(unpriced.headers.get("vary")).toBe(PAYMENT_SIGNATURE_HEADER);
         expect(
             (await app.request("http://seller.test/api/nothing", {
                 headers: {[PAYMENT_SIGNATURE_HEADER]: paymentHeader()},

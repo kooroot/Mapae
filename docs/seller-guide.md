@@ -211,7 +211,7 @@ curl -s https://facilitator.mapae.io/supported
 | `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니다 | 에이전트 쪽 문제. `detail`이 이유를 말한다 |
 | `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했거나, facilitator가 결제를 보지 않았다 — 요청 제한, 또는 실패한 준비 검사 — `/verify`든 `/settle`이든. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 같은 결제로 다시 시도 |
 | `402` (오퍼 재발행) | facilitator가 위임을 거절했거나(만료, 한도 초과, 상한 10.00 초과, 오퍼 불일치), 아무도 청구되지 않은 정산 실패다. 새 leaf로 다시 낼 수 있으므로 오퍼를 다시 싣는다 | 손님의 위임을 확인. 가격이 상한 안인지 확인 |
-| `504 settlement_unknown` | 브로드캐스트됐을 수 있으나 영수증을 못 봤다. **청구됐을 수 있다** | 탐색기에서 tx를 확인. 에이전트에게 다시 서명시키지 않는다 |
+| `504 settlement_unknown` | 결과가 확정되지 않았다 — 응답 유실, `settlement_pending`, `unexpected_settle_error`, 또는 채굴 실패 낱말이 아닌 사유로 해시를 댄 실패. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 에이전트에게 다시 서명시키지 않는다 |
 | `502 settlement_misdirected` | 정산이 채굴됐지만 `payTo`가 아닌 곳을 채웠다. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 오퍼를 다시 주지 않는다 |
 | `404` | 페이월 뒤에 핸들러가 없다 | 미들웨어는 아무도 안 받는 경로에 값을 매기지 않는다. 라우트를 확인 |
 
@@ -219,8 +219,13 @@ curl -s https://facilitator.mapae.io/supported
 JSON)에 함께 싣는다 — `success: false`와 §9 낱말 하나(`invalid_payload`,
 `settlement_pending`, `rate_limited`, `delegation_rejected` …). 읽히지 않은 헤더(400)와
 헤더 없는 503만 예외다: 영수증은 지불자를 말하는 문서인데 그 두 경우엔 말할 지불자가
-없다. 모든 응답에 `Cache-Control: no-store`와 `Vary: Payment-Signature`도 붙어, 캐시가
-결제한 본문을 미결제 요청에 주는 일이 없다.
+없다. 모든 응답에 — 404까지 — `Cache-Control: no-store`와 `Vary: Payment-Signature`도
+붙어, 캐시가 결제한 본문을 미결제 요청에 주는 일이 없다.
+
+해시를 댄 실패에는 오퍼를 다시 싣지 않는다. `vendor_not_credited`는 502, 그 밖은 504다 —
+402 칸에 닿을 수 있는 낱말은 모두 "브로드캐스트 전에 거절됐다"고 주장하는데 해시는 그래도
+무언가 나갔다고 말하기 때문이다. 예외는 `settlement_reverted` 하나로, 채굴된 revert라
+자산이 움직이지 않았다.
 
 부팅이 `payTo must be…`, `price must be…`, `description must not be empty`,
 `facilitator must use HTTPS…`, `baseUrl must be an origin…`으로 멈추면 옵션 값의
