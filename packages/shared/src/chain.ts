@@ -25,9 +25,6 @@ export const giwaSepolia = defineChain({
 /** CAIP-2 identifier. x402 v2 uses this form for `network`, not the chain name. */
 export const GIWA_SEPOLIA_CAIP2 = `eip155:${giwaSepolia.id}` as const;
 
-/** Self-hosted facilitator. Override via env in deployed environments. */
-export const FACILITATOR_URL = "http://localhost:8080";
-
 /**
  * Does this hostname reach a node on this machine?
  *
