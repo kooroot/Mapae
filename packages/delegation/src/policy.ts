@@ -58,10 +58,17 @@ const BASE_POLICY = {
 /**
  * 시연 역할의 총액은 기간 상한의 네 배로 둔다.
  *
- * 기간 60초·만료 30분이라는 이 역할들의 창에서는 기간이 30번 갱신되므로, 총액이 없으면
- * 한 번 서명한 root가 기간 상한의 30배까지 내보낼 수 있다. 네 배는 "기간 상한을 네 번
- * 채울 수 있다"는 한 문장으로 설명되고, 30배와 한 배(= 한 기간만 쓰고 죽는 위임) 사이에서
- * 시연이 실제로 쓰는 폭을 남긴다.
+ * 총액은 **유효 창에서 유도하지 않는다.** 기간 상한이 속도라면 총액은 예산이고, 예산은
+ * "이 grant가 얼마나 오래 살아 있는가"가 아니라 "이 grant에 얼마를 맡겼는가"로 정해져야
+ * 한다. 창에서 유도하면 `PERMISSION_TTL_SECONDS`로 창을 넓히는 운영자가 자기도 모르게
+ * 맡긴 돈을 늘리게 된다 — 총액이 막으려는 것이 바로 그 미끄러짐이다.
+ *
+ * 네 배인 이유는 이 grant들이 실제로 쓰이는 폭이다: 시연 한 번이 기간 상한 한 칸 안에서
+ * 끝나므로, 네 배면 같은 grant로 네 번(재시도 포함) 돌 수 있고 그 이상은 새로 서명한다.
+ * 기본 창(기간 60초·만료 30분)에서 기간은 30번 갱신되므로, 총액이 없으면 한 번 서명한
+ * root가 기간 상한의 30배까지 내보낼 수 있다 — 네 배는 그 30배와 한 배(한 기간만 쓰고
+ * 죽는 위임) 사이다. 창을 7일까지 넓혀도 이 숫자는 그대로이고, 그래서 넓힌 창에서는
+ * 총액이 먼저 문다.
  */
 const LIFETIME_PERIODS = 4n;
 
@@ -70,9 +77,14 @@ const LIFETIME_PERIODS = 4n;
  *
  * 총액은 소유자가 직접 서명하는 세 root에만 붙인다 — 이 셋이 소유자의 잔액에서 돈이
  * 빠져나가는 입구이고, 소유자가 읽는 승인 화면에 적히는 숫자다. `child-a`·`child-b`는
- * 총액을 받지 않는다: 둘은 `team-manager` 아래에 다시 위임되므로 한 번의 상환이 자식과
- * 부모의 caveat을 모두 통과해야 하고, 부모의 총액이 이미 두 자식의 합을 덮는다. 자식마다
- * 총액을 또 두면 운영자가 맞춰야 하는 숫자만 늘고 실제 상한은 바뀌지 않는다.
+ * 총액을 받지 않는다: 둘은 `team-manager` 아래에 **재위임으로만** 만들어지므로 한 번의
+ * 상환이 자식과 부모의 caveat을 모두 통과해야 하고, 부모의 총액이 이미 두 자식의 합을
+ * 덮는다. 자식마다 총액을 또 두면 운영자가 맞춰야 하는 숫자만 늘고 실제 상한은 바뀌지
+ * 않는다.
+ *
+ * "재위임으로만"은 지켜져야 성립하는 근거다. 그래서 소유자 서명 CLI
+ * (`apps/delegation-lab/sign-root-permission.ts`)는 이 세 역할만 받는다 — 자식을 부모 없는
+ * root로 서명해 주면 총액 없는 소유자 grant가 만들어지고, 이 문단은 거짓이 된다.
  */
 export function buildD3Policies(
     fixedVendor: Address,
@@ -125,6 +137,16 @@ export interface PreparePeriodDelegationParams {
 
 function assertPolicy(policy: PeriodPolicy, startDate: number): void {
     if (policy.periodAmount <= 0n) throw new Error("periodAmount must be positive");
+    if (!Number.isSafeInteger(policy.periodDurationSeconds) || policy.periodDurationSeconds <= 0) {
+        throw new Error("periodDurationSeconds must be a positive safe integer");
+    }
+    if (!Number.isSafeInteger(policy.expiresAfterSeconds) || policy.expiresAfterSeconds <= 0) {
+        throw new Error("expiresAfterSeconds must be a positive safe integer");
+    }
+    if (!Number.isSafeInteger(startDate) || startDate < 0) {
+        throw new Error("startDate must be a non-negative Unix timestamp");
+    }
+    // 총액 검사는 기간·유효 창이 숫자로 성립한 뒤에 한다 — 아래 상한 계산이 그 둘을 나눈다.
     if (policy.lifetimeTotalAmount !== undefined) {
         if (policy.lifetimeTotalAmount <= 0n) {
             throw new Error("lifetimeTotalAmount must be positive");
@@ -142,15 +164,26 @@ function assertPolicy(policy: PeriodPolicy, startDate: number): void {
                     "lower periodAmount instead of hiding it behind a smaller total",
             );
         }
-    }
-    if (!Number.isSafeInteger(policy.periodDurationSeconds) || policy.periodDurationSeconds <= 0) {
-        throw new Error("periodDurationSeconds must be a positive safe integer");
-    }
-    if (!Number.isSafeInteger(policy.expiresAfterSeconds) || policy.expiresAfterSeconds <= 0) {
-        throw new Error("expiresAfterSeconds must be a positive safe integer");
-    }
-    if (!Number.isSafeInteger(startDate) || startDate < 0) {
-        throw new Error("startDate must be a non-negative Unix timestamp");
+        // 반대쪽도 같은 이유로 거절한다: 유효 창이 허용하는 최대 지출 이상인 총액은 어떤
+        // 상환도 거절하지 못한다. 유효 창에 기간이 N번 들어가면 이 위임이 평생 내보낼 수
+        // 있는 최대치는 `periodAmount × N`이고, 총액이 그 값 이상이면 총액이 먼저 무는
+        // 경우가 존재하지 않는다(같을 때조차 마지막 한 푼까지 기간 상한이 먼저 답한다).
+        // 그런데도 그 숫자는 소유자 서명 화면에 "평생 총액"으로 찍히고, permission context는
+        // caveat 하나만큼(실측 576 hex) 길어진다. 체인이 강제하지 않을 한도를 읽게 하는 것은
+        // 위에서 거절한 부정직함과 같은 것이므로, 여기서도 거절하고 어느 숫자를 고쳐야
+        // 하는지 말한다.
+        const windowPeriods = BigInt(
+            Math.ceil(policy.expiresAfterSeconds / policy.periodDurationSeconds),
+        );
+        const windowCeiling = policy.periodAmount * windowPeriods;
+        if (policy.lifetimeTotalAmount >= windowCeiling) {
+            throw new Error(
+                `lifetimeTotalAmount ${policy.lifetimeTotalAmount} can never bind: this ` +
+                    `validity window holds at most ${windowPeriods} periods × ` +
+                    `${policy.periodAmount} = ${windowCeiling}; lower the total, or widen ` +
+                    "expiresAfterSeconds if the grant is meant to live that long",
+            );
+        }
     }
 }
 

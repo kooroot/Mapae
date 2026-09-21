@@ -235,6 +235,64 @@ describe("MetaMask Delegation Framework policy construction", () => {
         expect(prepare(base.periodAmount).caveats).toHaveLength(4);
     });
 
+    test("유효 창이 닿을 수 없는 총액은 거절한다 — 강제되지 않는 한도는 적지 않는다", () => {
+        const base = D3_POLICIES["open-agent"];
+        // 기간 60초·만료 1800초 = 기간 30번. 그 창에서 최대로 나갈 수 있는 금액은
+        // 3 × 30 = 90 mUSDC이고, 90 이상인 총액은 어떤 상환도 거절하지 못한다.
+        expect(base.expiresAfterSeconds / base.periodDurationSeconds).toBe(30);
+        const prepare = (policy: PeriodPolicy) =>
+            preparePeriodDelegation({
+                environment: deployedEnvironment,
+                delegator: PAYER,
+                delegate: address(11),
+                policy,
+                startDate: 2_000_000_000,
+            });
+        expect(() => prepare({...base, lifetimeTotalAmount: toTokenAmount("90")})).toThrow(
+            "can never bind",
+        );
+        expect(() => prepare({...base, lifetimeTotalAmount: toTokenAmount("91")})).toThrow(
+            "can never bind",
+        );
+        // 89는 받는다: 서른 번째 기간의 마지막 1 mUSDC를 총액이 먼저 거절한다.
+        expect(prepare({...base, lifetimeTotalAmount: toTokenAmount("89")}).caveats).toHaveLength(4);
+
+        // 창을 좁히면 같은 총액이 강제되지 않게 된다. 기본 정책 셋의 12 mUSDC도 예외가
+        // 아니므로, `PERMISSION_TTL_SECONDS`로 창을 좁히는 운영자는 통과하는 대신 이 사유를
+        // 읽는다.
+        expect(() => prepare({...base, expiresAfterSeconds: 120})).toThrow("can never bind");
+        // 창이 기간의 배수가 아니어도 셈은 실제 기간 수(끝 조각도 한 기간)를 따른다:
+        // 90초면 기간 두 개이므로 상한은 6 mUSDC다.
+        expect(() =>
+            prepare({...base, expiresAfterSeconds: 90, lifetimeTotalAmount: toTokenAmount("6")}),
+        ).toThrow("can never bind");
+        expect(
+            prepare({...base, expiresAfterSeconds: 90, lifetimeTotalAmount: toTokenAmount("5")})
+                .caveats,
+        ).toHaveLength(4);
+    });
+
+    test("기본 정책 셋의 총액은 전부 자기 창 안에서 강제된다", () => {
+        // 이 셈이 깨지면 `permission:prepare`가 부팅에서 던진다. 다섯 역할 모두 여기서 잰다.
+        for (const policy of Object.values(D3_POLICIES)) {
+            const periods = Math.ceil(policy.expiresAfterSeconds / policy.periodDurationSeconds);
+            const ceiling = policy.periodAmount * BigInt(periods);
+            if (policy.lifetimeTotalAmount !== undefined) {
+                expect(policy.lifetimeTotalAmount).toBeLessThan(ceiling);
+                expect(policy.lifetimeTotalAmount).toBeGreaterThanOrEqual(policy.periodAmount);
+            }
+            expect(() =>
+                preparePeriodDelegation({
+                    environment: deployedEnvironment,
+                    delegator: PAYER,
+                    delegate: address(11),
+                    policy,
+                    startDate: 2_000_000_000,
+                }),
+            ).not.toThrow();
+        }
+    });
+
     test("caveat 하나가 늘어도 부모 + 리프 체인은 상한 안에 들어온다", async () => {
         const session = privateKeyToAccount(`0x${"22".repeat(32)}` as Hex);
 
