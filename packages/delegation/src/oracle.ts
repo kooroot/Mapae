@@ -55,6 +55,12 @@ export interface OracleSettlement {
 export class DelegationPolicyOracle {
     readonly #delegations = new Map<string, StoredDelegation>();
     readonly #spent = new Map<string, bigint>();
+    /**
+     * 위임별 누적 총액. `#spent`와 달리 기간 키가 없다 —
+     * `ERC20TransferAmountEnforcer`의 `spentMap`이 위임 해시 하나당 한 칸이고 되돌아가지
+     * 않기 때문이다. 기간 버킷과 이 칸을 한 맵에 섞으면 기간 갱신이 총액까지 되살린다.
+     */
+    readonly #lifetimeSpent = new Map<string, bigint>();
     readonly #settled = new Set<string>();
 
     register(input: OracleDelegation): void {
@@ -84,13 +90,25 @@ export class DelegationPolicyOracle {
         this.register(replacement);
     }
 
+    /**
+     * 지금 이 위임으로 더 쓸 수 있는 금액 — 기간 잔량과 평생 총액 잔량 중 작은 쪽.
+     *
+     * 총액을 든 정책에서 기간 잔량만 답하면, 기간이 갱신될 때마다 이 오라클은 체인이
+     * 거절할 결제를 허용한다. 두 caveat은 하나의 상환에 함께 걸리므로 답도 하나여야 한다.
+     */
     remaining(id: string, at: number): bigint {
         const delegation = this.#require(id);
         const key = this.#bucketKey(delegation, at);
         const spent = this.#spent.get(key) ?? 0n;
-        return delegation.policy.periodAmount > spent
-            ? delegation.policy.periodAmount - spent
-            : 0n;
+        const periodRemaining =
+            delegation.policy.periodAmount > spent
+                ? delegation.policy.periodAmount - spent
+                : 0n;
+        const total = delegation.policy.lifetimeTotalAmount;
+        if (total === undefined) return periodRemaining;
+        const lifetimeSpent = this.#lifetimeSpent.get(delegation.id) ?? 0n;
+        const lifetimeRemaining = total > lifetimeSpent ? total - lifetimeSpent : 0n;
+        return lifetimeRemaining < periodRemaining ? lifetimeRemaining : periodRemaining;
     }
 
     settle(input: OracleSettlement): void {
@@ -147,6 +165,10 @@ export class DelegationPolicyOracle {
         for (const delegation of lineage) {
             const key = this.#bucketKey(delegation, input.at);
             this.#spent.set(key, (this.#spent.get(key) ?? 0n) + input.amount);
+            this.#lifetimeSpent.set(
+                delegation.id,
+                (this.#lifetimeSpent.get(delegation.id) ?? 0n) + input.amount,
+            );
         }
         this.#settled.add(input.settlementId);
     }

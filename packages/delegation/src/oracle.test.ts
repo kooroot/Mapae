@@ -155,6 +155,50 @@ describe("D3 role and failure scenario oracle", () => {
         );
     });
 
+    test("lifetime total survives period resets and a re-signed grant starts fresh", () => {
+        const oracle = new DelegationPolicyOracle();
+        oracle.register({
+            id: "open",
+            delegate: OPEN_AGENT,
+            policy: D3_POLICIES["open-agent"],
+            startDate: START,
+        });
+        // 기간 상한 3, 총액 12. 기간을 네 번 채우면 기간은 다시 열리지만 총액이 비어 있다.
+        for (let period = 0; period < 4; period += 1) {
+            oracle.settle({
+                settlementId: `period-${period}`,
+                delegationId: "open",
+                amount: 3_000_000n,
+                payTo: OTHER_PAYEE,
+                redeemer: RELAYER,
+                at: START + period * 60 + 1,
+            });
+        }
+        expect(oracle.remaining("open", START + 240 + 1)).toBe(0n);
+        expectViolation(
+            () =>
+                oracle.settle({
+                    settlementId: "fifth-period",
+                    delegationId: "open",
+                    amount: 1n,
+                    payTo: OTHER_PAYEE,
+                    redeemer: RELAYER,
+                    at: START + 240 + 2,
+                }),
+            "LIMIT_EXCEEDED",
+        );
+
+        // 같은 세션 키에 위임을 다시 써 주면(체인에서는 새 salt = 새 위임 해시) 칸이 새로
+        // 열린다. 총액은 키가 아니라 위임 하나에 달려 있다.
+        oracle.rotate("open", {
+            id: "open-resigned",
+            delegate: OPEN_AGENT,
+            policy: D3_POLICIES["open-agent"],
+            startDate: START,
+        });
+        expect(oracle.remaining("open-resigned", START + 240 + 3)).toBe(3_000_000n);
+    });
+
     test("period reset restores allowance after 60 seconds", () => {
         const oracle = new DelegationPolicyOracle();
         oracle.register({
