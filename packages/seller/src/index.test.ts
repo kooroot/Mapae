@@ -21,9 +21,12 @@ import {
 import {ENTRY_POINT_V07} from "@mapae/delegation/config";
 import {
     CLIENT_IP_HEADER,
+    DELEGATION_REJECTED,
     FACILITATOR_NOT_READY,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
+    SETTLEMENT_REVERTED,
+    VENDOR_NOT_CREDITED,
 } from "@mapae/delegation/facilitator-contract";
 import {
     buildD3Policies,
@@ -190,6 +193,13 @@ function seller(middleware: ReturnType<typeof mapaePaywall>) {
 const pay = (app: Hono, header = paymentHeader()) =>
     app.request(RESOURCE, {headers: {[PAYMENT_SIGNATURE_HEADER]: header}});
 
+/** The x402 v2 `SettleResponse` a failing answer carries, decoded. */
+function failureReceipt(response: Response): Record<string, unknown> {
+    const header = response.headers.get(PAYMENT_RESPONSE_HEADER);
+    expect(header).toBeString();
+    return JSON.parse(atob(header ?? "")) as Record<string, unknown>;
+}
+
 describe("mapaePaywall — construction", () => {
     test("rejects a payTo that is not a usable public address", () => {
         expect(() => paywall({payTo: "0xabc"})).toThrow(/public receiving address/);
@@ -298,6 +308,8 @@ describe("mapaePaywall — the 402 offer", () => {
         const first = await app.request(RESOURCE);
         expect(first.status).toBe(503);
         expect(await first.json()).toEqual({error: "facilitator_unavailable"});
+        // Nobody presented a payment, so there is no payer a settlement answer could name.
+        expect(first.headers.get(PAYMENT_RESPONSE_HEADER)).toBeNull();
         const second = await app.request(RESOURCE);
         expect(second.status).toBe(402);
         expect(remote.paths()).toEqual(["/supported", "/supported"]);
@@ -432,6 +444,9 @@ describe("mapaePaywall — malformed payments", () => {
         const response = await pay(app, "A".repeat(150_001));
         expect(response.status).toBe(400);
         expect(await response.json()).toEqual({error: "malformed_payment", detail: "header too large"});
+        // A SettleResponse answers one payment and names its payer. A header we could not
+        // read names nobody, so the reason travels in the body and no receipt is invented.
+        expect(response.headers.get(PAYMENT_RESPONSE_HEADER)).toBeNull();
         expect(remote.calls).toEqual([]);
         expect(seen.served).toBe(0);
     });
@@ -470,12 +485,22 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
             const response = await pay(app);
             expect(response.status).toBe(503);
             expect(await response.json()).toEqual({error: "facilitator_unavailable"});
+            // No verdict was obtained, so the receipt says not-ready and carries no offer:
+            // the same payment may be presented again once the facilitator answers.
+            expect(failureReceipt(response)).toEqual({
+                success: false,
+                errorReason: FACILITATOR_NOT_READY,
+                network: GIWA_SEPOLIA_CAIP2,
+                payer: PAYER,
+                transaction: "",
+            });
+            expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeNull();
             expect(remote.paths()).toEqual(["/supported", "/verify"]);
             expect(seen.served).toBe(0);
         }
     });
 
-    test("503 facilitator_unavailable when the facilitator refuses to look at either call — never 403 or 422", async () => {
+    test("503 facilitator_unavailable when the facilitator refuses to look at either call — never 402 or 502", async () => {
         // /verify's not-ready answer rides a 503, unavailable before the body is read;
         // the reason in the body says the same under any status.
         for (const invalidReason of [RATE_LIMITED, FACILITATOR_NOT_READY]) {
@@ -484,6 +509,9 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
             const refusedAtVerify = await pay(verify.app);
             expect(refusedAtVerify.status).toBe(503);
             expect(await refusedAtVerify.json()).toEqual({error: "facilitator_unavailable"});
+            // The word the facilitator used, not a flattened one: the buyer's agent tells
+            // "wait out the limiter" from "the facilitator is not ready" by reading it.
+            expect(failureReceipt(refusedAtVerify).errorReason, invalidReason).toBe(invalidReason);
             expect(throttledVerify.paths()).toEqual(["/supported", "/verify"]);
             expect(verify.seen.served).toBe(0);
         }
@@ -498,24 +526,58 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
             const refusedAtSettle = await pay(settle.app);
             expect(refusedAtSettle.status).toBe(503);
             expect(await refusedAtSettle.json()).toEqual({error: "facilitator_unavailable"});
+            expect(failureReceipt(refusedAtSettle).errorReason, errorReason).toBe(errorReason);
             expect(throttledSettle.paths()).toEqual(["/supported", "/verify", "/settle"]);
             expect(settle.seen.served).toBe(0);
         }
     });
 
-    test("403 delegation_rejected when the facilitator refuses, or names a payer we did not send", async () => {
+    test("a refused delegation is answered 402 with the offer re-issued, not 403", async () => {
+        // The buyer can sign another leaf and pay again, which is what 402 means; 403 said
+        // "this identity may not have it", which was never true of a payment that was
+        // simply not accepted yet. The offer rides along so the agent needs no extra trip.
         for (const verify of [
-            json({isValid: false, invalidReason: "delegation_rejected"}),
+            json({isValid: false, invalidReason: DELEGATION_REJECTED}),
             json({isValid: true, payer: IMPOSTOR}),
             json({isValid: true}),
         ]) {
             const remote = facilitator({"/verify": verify});
             const {app, seen} = seller(paywall({fetch: remote.fetch}));
             const response = await pay(app);
-            expect(response.status).toBe(403);
-            expect(await response.json()).toEqual({error: "delegation_rejected"});
+            expect(response.status).toBe(402);
+            const body = await response.json();
+            expect(body).toEqual({
+                x402Version: X402_VERSION,
+                resource: {url: RESOURCE, description: "Logo — final SVG"},
+                accepts: [OFFER],
+            });
+            expect(decodePaymentRequiredHeader(response.headers.get(PAYMENT_REQUIRED_HEADER) ?? "")).toEqual(body);
+            expect(failureReceipt(response)).toEqual({
+                success: false,
+                errorReason: DELEGATION_REJECTED,
+                network: GIWA_SEPOLIA_CAIP2,
+                payer: PAYER,
+                transaction: "",
+            });
             expect(remote.paths()).toEqual(["/supported", "/verify"]);
             expect(seen.served).toBe(0);
+        }
+    });
+
+    test("the refusal's word is the facilitator's when we know it, and folded when we do not", async () => {
+        // A facilitator's reason is free text on that wire, and this header is read by the
+        // buyer's agent: only the closed vocabulary passes through.
+        const cases: Array<[unknown, string]> = [
+            ["invalid_transaction_state", "invalid_transaction_state"],
+            ["payer_budget_exhausted", "payer_budget_exhausted"],
+            ["ERC20PeriodTransferEnforcer:allowance-exceeded", DELEGATION_REJECTED],
+            [undefined, DELEGATION_REJECTED],
+        ];
+        for (const [invalidReason, expected] of cases) {
+            const remote = facilitator({"/verify": json({isValid: false, invalidReason})});
+            const response = await pay(seller(paywall({fetch: remote.fetch})).app);
+            expect(response.status, String(invalidReason)).toBe(402);
+            expect(failureReceipt(response).errorReason, String(invalidReason)).toBe(expected);
         }
     });
 
@@ -531,19 +593,142 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
             const response = await pay(app);
             expect(response.status).toBe(504);
             expect(await response.json()).toEqual({error: "settlement_unknown"});
+            // No offer: a payment that may have been charged must not be invited again.
+            expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeNull();
+            expect(failureReceipt(response).errorReason).toBe(SETTLEMENT_PENDING);
             expect(seen.served).toBe(0);
         }
     });
 
-    test("422 settlement_failed when the facilitator reports the transfer did not happen", async () => {
+    test("the pending receipt carries the hash whenever the facilitator named one", async () => {
+        // It is the buyer's only way to find out for themselves whether they were charged.
         const remote = facilitator({
-            "/settle": json({success: false, network: GIWA_SEPOLIA_CAIP2, errorReason: "vendor_not_credited"}),
+            "/settle": json({...SETTLED, success: false, errorReason: SETTLEMENT_PENDING}),
+        });
+        const withHash = await pay(seller(paywall({fetch: remote.fetch})).app);
+        expect(failureReceipt(withHash)).toEqual({
+            success: false,
+            errorReason: SETTLEMENT_PENDING,
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: PAYER,
+            transaction: TX,
+        });
+        // And spells "no hash" the way the spec does when there is none to name.
+        const lost = facilitator({"/settle": refused});
+        const without = await pay(seller(paywall({fetch: lost.fetch})).app);
+        expect(failureReceipt(without).transaction).toBe("");
+    });
+
+    test("502 settlement_misdirected when the redemption credited someone else — and no offer", async () => {
+        // The buyer's balance moved, so re-offering would take a second payment for one
+        // sale. The hash goes out with it: it is what names the movement.
+        const remote = facilitator({
+            "/settle": json({
+                success: false,
+                network: GIWA_SEPOLIA_CAIP2,
+                transaction: TX,
+                errorReason: VENDOR_NOT_CREDITED,
+            }),
         });
         const {app, seen} = seller(paywall({fetch: remote.fetch}));
         const response = await pay(app);
-        expect(response.status).toBe(422);
-        expect(await response.json()).toEqual({error: "settlement_failed"});
+        expect(response.status).toBe(502);
+        expect(await response.json()).toEqual({error: "settlement_misdirected"});
+        expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeNull();
+        expect(failureReceipt(response)).toEqual({
+            success: false,
+            errorReason: VENDOR_NOT_CREDITED,
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: PAYER,
+            transaction: TX,
+        });
         expect(seen.served).toBe(0);
+    });
+
+    test("every other settlement failure charged nobody, so the offer is re-issued", async () => {
+        for (const errorReason of [SETTLEMENT_REVERTED, "payer_budget_exhausted", DELEGATION_REJECTED]) {
+            const remote = facilitator({
+                "/settle": json({success: false, network: GIWA_SEPOLIA_CAIP2, transaction: "", errorReason}),
+            });
+            const {app, seen} = seller(paywall({fetch: remote.fetch}));
+            const response = await pay(app);
+            expect(response.status, errorReason).toBe(402);
+            expect(((await response.json()) as {accepts: unknown}).accepts).toEqual([OFFER]);
+            expect(response.headers.get(PAYMENT_REQUIRED_HEADER)).toBeString();
+            expect(failureReceipt(response).errorReason, errorReason).toBe(errorReason);
+            expect(seen.served).toBe(0);
+        }
+    });
+
+    test("a payment presented while /supported is down still gets a receipt naming its payer", async () => {
+        const remote = facilitator({"/supported": refused});
+        const response = await pay(seller(paywall({fetch: remote.fetch})).app);
+        expect(response.status).toBe(503);
+        expect(failureReceipt(response)).toEqual({
+            success: false,
+            errorReason: FACILITATOR_NOT_READY,
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: PAYER,
+            transaction: "",
+        });
+    });
+
+    test("every answer is uncacheable and keyed on the payment header", async () => {
+        // A shared cache that ignored this would hand a paid body to a request that did not
+        // pay, or hand a 402 to one that did. It is the paywall's word, not the handler's.
+        const cases: Array<[string, () => Response | Promise<Response>]> = [
+            ["402 offer", () => seller(paywall({fetch: facilitator().fetch})).app.request(RESOURCE)],
+            ["400 malformed", () => pay(seller(paywall({fetch: facilitator().fetch})).app, "not-base64!!")],
+            [
+                "503 unavailable",
+                () => pay(seller(paywall({fetch: facilitator({"/supported": refused}).fetch})).app),
+            ],
+            [
+                "402 refused",
+                () => pay(seller(paywall({fetch: facilitator({"/verify": json({isValid: false})}).fetch})).app),
+            ],
+            ["504 unknown", () => pay(seller(paywall({fetch: facilitator({"/settle": refused}).fetch})).app)],
+            [
+                "502 misdirected",
+                () =>
+                    pay(
+                        seller(
+                            paywall({
+                                fetch: facilitator({
+                                    "/settle": json({
+                                        success: false,
+                                        network: GIWA_SEPOLIA_CAIP2,
+                                        transaction: TX,
+                                        errorReason: VENDOR_NOT_CREDITED,
+                                    }),
+                                }).fetch,
+                            }),
+                        ).app,
+                    ),
+            ],
+            ["200 served", () => pay(seller(paywall({fetch: facilitator().fetch})).app)],
+        ];
+        for (const [name, request] of cases) {
+            const response = await request();
+            expect(response.headers.get("cache-control"), name).toBe("no-store");
+            expect(response.headers.get("vary"), name).toBe(PAYMENT_SIGNATURE_HEADER);
+        }
+    });
+
+    test("the receipt says when the facilitator answered out of its own record", async () => {
+        // A recovered settlement is the same body as a fresh one but for this word. It is
+        // not a delivery gate — once a first attempt ends pending, every later success is
+        // marked — so the seller reads it as "some other call did this" and dedupes on the
+        // intent id instead.
+        const remote = facilitator({"/settle": json({...SETTLED, replayed: true})});
+        const {app, seen} = seller(paywall({fetch: remote.fetch}));
+        expect((await pay(app)).status).toBe(200);
+        expect(seen.receipt?.replayed).toBe(true);
+        expect(seen.served).toBe(1);
+
+        const fresh = seller(paywall({fetch: facilitator().fetch}));
+        await pay(fresh.app);
+        expect(fresh.seen.receipt?.replayed).toBe(false);
     });
 
     test("serves after settlement: receipt in both headers, in the context, and in onSettled", async () => {
@@ -570,6 +755,7 @@ describe("mapaePaywall — settle-before-serve ladder", () => {
             payTo: PAY_TO,
             network: GIWA_SEPOLIA_CAIP2,
             transaction: TX,
+            replayed: false,
         };
         expect(seen.receipt).toEqual(expectedReceipt);
         expect(seen.receipt?.intent).toMatch(/^0x[0-9a-f]{64}$/);

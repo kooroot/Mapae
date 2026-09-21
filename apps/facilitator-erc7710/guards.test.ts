@@ -6,6 +6,7 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import {
     CLIENT_IP_HEADER,
+    DELEGATION_REJECTED,
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
     PaymentValidationError,
@@ -29,7 +30,6 @@ import {
 } from "viem";
 import {
     CachedProbe,
-    DELEGATION_REJECTED,
     RATE_WINDOW_MS,
     RedemptionRejected,
     RpcUnreachableBeforeBroadcast,

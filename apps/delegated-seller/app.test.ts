@@ -232,7 +232,12 @@ describe("ticket — one payment, one ticket", () => {
         stub.routes["/verify"] = ALLOWANCE_SPENT;
         const again = await ticketOf(await pay(AMERICANO, header));
         expect(stub.paths).toEqual(SETTLED_ONCE);
-        expect(again).toEqual(first);
+        // Same ticket, same payment — and one field that differs on purpose: this answer
+        // came out of the row an earlier request wrote, which is what `replayed` says. The
+        // row, not that word, is what keeps the sale to one delivery.
+        expect(again.ticket).toEqual(first.ticket);
+        expect(again.receipt).toEqual({...first.receipt, replayed: true});
+        expect(first.receipt.replayed).toBe(false);
         expect(store.orders.summary({sinceMs: 0})).toEqual({total: 1, bySeller: {"demo-cafe": 1}});
     });
 

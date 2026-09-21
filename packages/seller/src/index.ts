@@ -24,9 +24,13 @@ import {
     type Erc7710SupportedPayload,
     type PaymentExtension,
     type PaymentRequired,
+    type SettleResponse,
 } from "@mapae/shared";
 import {
     CLIENT_IP_HEADER,
+    FACILITATOR_NOT_READY,
+    SETTLEMENT_PENDING,
+    VENDOR_NOT_CREDITED,
     decideSettlement,
     decideVerification,
     derivePaymentIntentId,
@@ -64,6 +68,19 @@ export interface SettlementReceipt {
     network: "eip155:91342";
     /** GIWA transaction hash, when the facilitator reported one. */
     transaction?: Hex;
+    /**
+     * True when the facilitator answered out of its own record of this intent rather than
+     * performing the settlement in this call — an earlier attempt's outcome, or a
+     * concurrent call's, replayed onto this answer.
+     *
+     * **Not a delivery gate.** When a first attempt ends `settlement_pending` and a later
+     * call finishes the claim, every successful answer for that intent is marked, so a
+     * seller that refuses to ship a replay would refuse the sale it was paid for. Dedupe
+     * on {@link SettlementReceipt.intent} instead — one row per intent, written where the
+     * order is (the hosted shop's `orders` table does exactly this) — and read this field
+     * as what it says: some other call did the work.
+     */
+    replayed: boolean;
 }
 
 /** What every paywall made by one {@link createMapae} shares. */
@@ -159,18 +176,27 @@ export interface MapaeSeller {
      * offer (header and body). With one, the facilitator is asked to `/verify` and then
      * `/settle`, and only a confirmed settlement lets the next handler run:
      *
+     * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment.
      * - 503 `facilitator_unavailable` — `/supported` or `/verify` could not be reached,
      *   or the facilitator refused to look at the payment (its per-address rate limit,
      *   or a readiness check it failed). Nothing was charged; the buyer may retry later
      *   with the same payment.
-     * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment.
-     * - 403 `delegation_rejected` — the facilitator examined the delegation and refused it.
+     * - 402 with the offer re-issued — the facilitator examined the delegation and refused
+     *   it, or the settlement failed without charging anybody. Nothing was charged and a
+     *   new leaf can pay, which is what 402 means; the offer rides along so the buyer's
+     *   agent does not have to ask for it again.
      * - 504 `settlement_unknown` — the facilitator broadcast but no receipt was seen, or
      *   the answer was lost. The buyer may have been charged and must not re-sign blindly.
-     * - 422 `settlement_failed` — the facilitator reports the transfer did not happen.
+     * - 502 `settlement_misdirected` — the redemption was mined and credited someone who
+     *   is not this `payTo`. The buyer's balance may be gone, so no offer is re-issued.
      *
      * On success the receipt rides in `Payment-Response`, `c.get("mapaeReceipt")` holds
      * it, and `onSettled` has run.
+     *
+     * Every one of those answers also carries `Cache-Control: no-store` and
+     * `Vary: Payment-Signature`, and every failure carries the x402 v2 `SettleResponse`
+     * in `Payment-Response` — `success: false` plus the §9 word for why — as soon as the
+     * payment named a payer to write it about.
      *
      * The facilitator rate-limits `/verify` and `/settle` per client address, and reads
      * `X-Mapae-Client-IP` only from a caller whose own address it cannot see — one on
@@ -459,6 +485,43 @@ function paywallDescriptor(handler: unknown): PaywallDescriptor | undefined {
     return paywallDescriptor((handler as {[COMPOSED_HANDLER]?: unknown})[COMPOSED_HANDLER]);
 }
 
+/**
+ * What this middleware writes in `Payment-Response` beside a non-2xx: the same x402 v2
+ * `SettleResponse` document as a success receipt, with the spec's optional `errorReason`
+ * filled in. This profile always names one on a failure, so it is required here.
+ *
+ * The word is never the facilitator's text — `@mapae/delegation`'s outcome ladder folds
+ * what it received onto a closed vocabulary first, and only that reaches the buyer.
+ */
+interface FailureReceipt extends SettleResponse {
+    errorReason: string;
+}
+
+/**
+ * Write the failure receipt, when there is a payer to write it about.
+ *
+ * A `SettleResponse` answers one payment and names the payer of that payment. Until the
+ * header has parsed there is no payer — an unreadable header names nobody, and a request
+ * with no header at all is not a payment — so those rungs carry their reason in the JSON
+ * body alone and no receipt is invented for them.
+ */
+function writeFailureReceipt(
+    c: Context<MapaeEnv>,
+    errorReason: string,
+    payer: Address | undefined,
+    transaction: Hex | "" = "",
+): void {
+    if (payer === undefined) return;
+    const receipt: FailureReceipt = {
+        success: false,
+        errorReason,
+        network: NETWORK,
+        payer,
+        transaction,
+    };
+    c.header(PAYMENT_RESPONSE_HEADER, encodePaymentResponseHeader(receipt));
+}
+
 function buildPaywall(
     facilitator: FacilitatorClient,
     baseUrl: string | undefined,
@@ -477,10 +540,22 @@ function buildPaywall(
         // must not pay for one.
         if (c.req.routeIndex === matchedRoutes(c).length - 1) return c.notFound();
 
+        // Every answer below turns on whether this request carried a payment, so a shared
+        // cache must never hand one of them to the other request: `no-store` keeps a paid
+        // body out of a cache at all, and `Vary` keys whatever a cache does keep on the
+        // payment header. Set before the first branch, so the whole ladder carries them —
+        // the 402 offer included, which must not be served to a request that did pay.
+        c.header("Cache-Control", "no-store");
+        c.header("Vary", PAYMENT_SIGNATURE_HEADER);
+
         // Whatever is wrong with the header itself is answered before the facilitator
         // is involved: a bad header costs nobody a network call.
         const header = c.req.header(PAYMENT_SIGNATURE_HEADER);
-        let payload: Erc7710PaymentPayload | undefined;
+        // The claimed delegator is what every facilitator answer is cross-checked
+        // against, and what a receipt names, so it is derived the moment the header
+        // parses. The facilitator itself binds that claim to the signed root, so an
+        // answer naming anyone else is an answer about some other payment.
+        let payment: {payload: Erc7710PaymentPayload; payer: Address} | undefined;
         if (header !== undefined) {
             if (header.length > MAX_PAYMENT_HEADER_LENGTH) {
                 return c.json({error: "malformed_payment", detail: "header too large"}, 400);
@@ -489,11 +564,16 @@ function buildPaywall(
             if (!decoded.ok) {
                 return c.json({error: "malformed_payment", detail: decoded.detail}, 400);
             }
-            payload = decoded.payload;
+            payment = {payload: decoded.payload, payer: getAddress(decoded.payload.payload.delegator)};
         }
 
         const kind = await facilitator.kind();
-        if (!kind) return c.json({error: "facilitator_unavailable"}, 503);
+        if (!kind) {
+            // `/supported` never looked at a payment, so there is no word from the
+            // facilitator to carry: not-ready is this side's own reading.
+            writeFailureReceipt(c, FACILITATOR_NOT_READY, payment?.payer);
+            return c.json({error: "facilitator_unavailable"}, 503);
+        }
         // The facilitator's advertised kind is copied verbatim into the offer: the
         // buyer's agent refuses any offer whose facilitatorAddresses does not overlap
         // its trusted list, and its delegationProvider reads the in-band manager because
@@ -505,7 +585,13 @@ function buildPaywall(
             delegationManager: kind.delegationManager,
         });
 
-        if (!payload) {
+        /**
+         * The 402 and its offer, in a header and a body alike. Both the unpaid request and
+         * a payment that failed without charging anybody are answered with it: the second
+         * one is a payment the buyer may make again with a new leaf, and re-issuing the
+         * offer is what spares their agent a round trip to ask for it.
+         */
+        const offer = (): Response => {
             // Behind `baseUrl` the resource is the public origin plus the path exactly as
             // it arrived — still percent-encoded, query dropped — so it stays a URL a
             // buyer can call, not the decoded form `c.req.path` carries.
@@ -520,16 +606,15 @@ function buildPaywall(
             // stays as well, and a client honours whichever of the two it understands.
             c.header(PAYMENT_REQUIRED_HEADER, encodePaymentRequiredHeader(body));
             return c.json(body, 402);
-        }
+        };
+
+        if (!payment) return offer();
+        const {payload, payer} = payment;
         const request: Erc7710FacilitatorRequest = {
             x402Version: X402_VERSION,
             paymentPayload: payload,
             paymentRequirements: requirements,
         };
-        // The claimed delegator is what the facilitator's answer is cross-checked
-        // against. The facilitator itself binds that claim to the signed root, so an
-        // answer naming anyone else is an answer about some other payment.
-        const payer = getAddress(payload.payload.delegator);
         // Only the address Cloudflare wrote on the buyer's request. An `X-Mapae-Client-IP`
         // the buyer sent themselves is never passed through: a request through the tunnel
         // always carries `CF-Connecting-IP`, and one that does not carry it came from
@@ -540,17 +625,43 @@ function buildPaywall(
         // Nothing is charged at /verify, so 503 is a safe, honest "retry later".
         const verification = decideVerification(await facilitator.verify(request, buyer), payer);
         if (verification.kind === "unavailable") {
+            writeFailureReceipt(c, verification.errorReason, payer);
             return c.json({error: "facilitator_unavailable"}, 503);
         }
-        if (verification.kind === "rejected") return c.json({error: "delegation_rejected"}, 403);
+        if (verification.kind === "rejected") {
+            // A refused delegation is not the end of the sale. The buyer can sign another
+            // leaf and pay again, and 402 is the status the spec keeps for "pay (again) to
+            // proceed" — a 403 said "this identity may not have it", which was never true
+            // of a payment that was simply not accepted yet.
+            writeFailureReceipt(c, verification.errorReason, payer);
+            return offer();
+        }
 
         // "Did not succeed" and "is not known to have succeeded" are different claims
         // too. A transport failure, or a facilitator that broadcast without seeing a
-        // receipt, leaves the payer possibly charged — 422 would assert they were not.
+        // receipt, leaves the payer possibly charged — 402 would invite a second payment.
         const outcome = decideSettlement(await facilitator.settle(request, buyer), payer);
-        if (outcome.kind === "unavailable") return c.json({error: "facilitator_unavailable"}, 503);
-        if (outcome.kind === "unknown") return c.json({error: "settlement_unknown"}, 504);
-        if (outcome.kind === "failed") return c.json({error: "settlement_failed"}, 422);
+        if (outcome.kind === "unavailable") {
+            writeFailureReceipt(c, outcome.errorReason, payer);
+            return c.json({error: "facilitator_unavailable"}, 503);
+        }
+        if (outcome.kind === "unknown") {
+            // The hash rides along whenever the facilitator named one: it is the buyer's
+            // only way to find out for themselves whether they were charged.
+            writeFailureReceipt(c, SETTLEMENT_PENDING, payer, outcome.transaction ?? "");
+            return c.json({error: "settlement_unknown"}, 504);
+        }
+        if (outcome.kind === "failed") {
+            writeFailureReceipt(c, outcome.errorReason, payer, outcome.transaction ?? "");
+            // A mined redemption that credited someone else moved the buyer's balance. No
+            // offer goes back with it: answering "pay again" to a buyer who has already
+            // paid once is how one sale takes two payments, and this wire cannot refund
+            // the first. Every other failure charged nobody, so it re-offers.
+            if (outcome.errorReason === VENDOR_NOT_CREDITED) {
+                return c.json({error: "settlement_misdirected"}, 502);
+            }
+            return offer();
+        }
 
         const receipt: SettlementReceipt = {
             intent: derivePaymentIntentId({
@@ -567,6 +678,7 @@ function buildPaywall(
             payTo,
             network: NETWORK,
             transaction: outcome.transaction,
+            replayed: outcome.replayed,
         };
         c.set("mapaeReceipt", receipt);
         if (onSettled) {
@@ -583,6 +695,11 @@ function buildPaywall(
 
         await next();
 
+        // Again after the handler, and deliberately the paywall's word rather than the
+        // handler's: a paid body in a shared cache is a resource served to whoever asks
+        // next, and a handler returning its own Response would otherwise carry neither.
+        c.header("Cache-Control", "no-store");
+        c.header("Vary", PAYMENT_SIGNATURE_HEADER);
         // Built from fields this middleware validated — a CAIP-2 constant, a checksummed
         // address, a hex hash already matched against /^0x[0-9a-fA-F]{64}$/ — not by
         // echoing the facilitator's body.

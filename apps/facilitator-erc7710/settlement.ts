@@ -1,5 +1,7 @@
 import {
     PaymentValidationError,
+    SETTLEMENT_REVERTED,
+    VENDOR_NOT_CREDITED,
     reconcileSettlementReceipt,
     type ValidatedDelegatedPayment,
     type Erc7710SettleResponse,
@@ -10,10 +12,10 @@ import type {TransactionReceipt} from "viem";
 
 /** A mined revert cost gas; it is not a pre-broadcast rejection. */
 export function receiptFailure(receipt: Pick<TransactionReceipt, "status" | "logs">, payment: ValidatedDelegatedPayment): string | undefined {
-    if (receipt.status !== "success") return "settlement_reverted";
+    if (receipt.status !== "success") return SETTLEMENT_REVERTED;
     const discrepancies = reconcileSettlementReceipt({logs: receipt.logs, asset: payment.paymentRequirements.asset,
         payer: payment.payer, payTo: payment.paymentRequirements.payTo, amount: payment.amount});
-    return discrepancies.length ? "vendor_not_credited" : undefined;
+    return discrepancies.length ? VENDOR_NOT_CREDITED : undefined;
 }
 
 /**

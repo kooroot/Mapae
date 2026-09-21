@@ -78,6 +78,86 @@ export const RATE_LIMITED = "rate_limited";
  */
 export const FACILITATOR_NOT_READY = "facilitator_not_ready";
 
+/**
+ * The Mapae profile's one refusal word outside the x402 §9 vocabulary: the facilitator
+ * examined the delegation against live state and the chain would not redeem it — the
+ * simulation reverted, or the redemption priced above its gas cap. Neither is a defect
+ * in the request's text (§9 has words for those) nor an unexpected failure of ours; it
+ * is the verdict the delegation earned, and the seller answers it with a fresh 402 so
+ * the buyer can sign a new leaf. The reason stays this one word on purpose — the revert
+ * text names the caveat that fired, which is the caller's boundary to probe.
+ *
+ * It lives here rather than in the facilitator, beside the other words both ends of this
+ * wire read, because the seller now branches on it: a word declared twice is a word that
+ * can be renamed on one side only.
+ */
+export const DELEGATION_REJECTED = "delegation_rejected";
+
+/**
+ * The redemption was mined and moved the asset, but the seller's `payTo` is not what it
+ * credited. The one failure word that must not be answered with a re-issued offer: the
+ * buyer's balance is gone, so inviting a second payment charges them twice for a sale
+ * this wire cannot refund.
+ */
+export const VENDOR_NOT_CREDITED = "vendor_not_credited";
+
+/** A mined redemption that reverted: broadcast, gas spent by the facilitator, nothing transferred. */
+export const SETTLEMENT_REVERTED = "settlement_reverted";
+
+/**
+ * §9's words for a failure that is ours rather than the request's, one per route.
+ *
+ * `unexpected_verify_error` is not a verdict on anything. It reaches the seller as
+ * {@link VerificationOutcome} `unavailable`, never `rejected` — see
+ * {@link decideVerification}.
+ */
+export const UNEXPECTED_VERIFY_ERROR = "unexpected_verify_error";
+export const UNEXPECTED_SETTLE_ERROR = "unexpected_settle_error";
+
+/**
+ * Every refusal word this profile knows, as a closed allow-list.
+ *
+ * A facilitator's reason is a free string on the wire, and the seller now re-emits it to
+ * the buyer in `Payment-Response`. Re-emitting it verbatim would make a facilitator's
+ * prose part of the seller's answer — the rule this repository has kept since the
+ * facilitator stopped putting revert text on the wire. So a word is passed through only
+ * when it is one of these, and anything else folds to {@link DELEGATION_REJECTED}.
+ *
+ * Deliberately absent, each because it is classified before the fold is reached and
+ * because a refusal wearing it would be read as something else entirely by the buyer's
+ * client: {@link SETTLEMENT_PENDING} (money may have moved), {@link RATE_LIMITED} and
+ * {@link FACILITATOR_NOT_READY} (nothing was examined, retry later), and
+ * {@link UNEXPECTED_VERIFY_ERROR} (no verdict at all).
+ */
+const KNOWN_REFUSAL_REASONS: ReadonlySet<string> = new Set([
+    // x402 v2 §9, every word that names a refusal formed before any broadcast.
+    "insufficient_funds",
+    "invalid_scheme",
+    "unsupported_scheme",
+    "invalid_network",
+    "invalid_payload",
+    "invalid_payment_requirements",
+    "invalid_x402_version",
+    "invalid_transaction_state",
+    UNEXPECTED_SETTLE_ERROR,
+    // This profile's own. The budget words are `@mapae/store`'s
+    // (`SettlementBudgetExceeded`); they are admitted here and nothing branches on them,
+    // so a rename there costs a pass-through, never a wrong status.
+    DELEGATION_REJECTED,
+    "payer_budget_exhausted",
+    "budget_exhausted",
+    // Mined failures, classified from the receipt by the facilitator's settlement.ts.
+    SETTLEMENT_REVERTED,
+    VENDOR_NOT_CREDITED,
+]);
+
+/** The facilitator's word if we know it, {@link DELEGATION_REJECTED} if we do not. */
+function foldRefusalReason(value: unknown): string {
+    return typeof value === "string" && KNOWN_REFUSAL_REASONS.has(value)
+        ? value
+        : DELEGATION_REJECTED;
+}
+
 export interface Erc7710VerifyResponse {
     isValid: boolean;
     payer?: Address;
@@ -93,7 +173,13 @@ export interface Erc7710SettleResponse {
     transaction: Hex | "";
     network: typeof GIWA_SEPOLIA_CAIP2;
     payer?: Address;
-    /** `SETTLEMENT_PENDING` means the transaction named above is not yet resolved. */
+    /**
+     * `SETTLEMENT_PENDING` means the transaction named above is not yet resolved;
+     * otherwise it is why the settlement failed — a word of
+     * {@link KNOWN_REFUSAL_REASONS} for every refusal this profile produces, and a free
+     * string as far as this type is concerned, which is why the seller folds it before
+     * putting it on its own wire.
+     */
     errorReason?: string;
     /**
      * Present when this call is not the one that performed the answer it carries: a
@@ -130,11 +216,17 @@ export interface Erc7710SettleResponse {
  *
  * `settled.replayed` is the facilitator's own word: true only when the body said so,
  * i.e. the answer is a recorded earlier settlement rather than one this call performed.
+ *
+ * `unavailable` and `failed` each carry the word the seller puts in its own
+ * `Payment-Response`: the facilitator's, when it is one of {@link KNOWN_REFUSAL_REASONS},
+ * and never its free text. `failed.transaction` is the hash the body named, which a mined
+ * failure ({@link SETTLEMENT_REVERTED}, {@link VENDOR_NOT_CREDITED}) always has and a
+ * pre-broadcast refusal never does.
  */
 export type SettlementOutcome =
-    | {kind: "unavailable"}
+    | {kind: "unavailable"; errorReason: typeof RATE_LIMITED | typeof FACILITATOR_NOT_READY}
     | {kind: "unknown"; transaction?: Hex}
-    | {kind: "failed"}
+    | {kind: "failed"; errorReason: string; transaction?: Hex}
     | {kind: "settled"; transaction?: Hex; replayed: boolean};
 
 const TRANSACTION_HASH = /^0x[0-9a-fA-F]{64}$/;
@@ -173,10 +265,15 @@ export function isVerificationAccepted(body: unknown, expectedPayer: Address): b
  * There is no `unknown` here. `/verify` never broadcasts, and the one answer that used
  * to carry the pending sentinel — an unreadable recovery journal — is not-ready now,
  * which is `unavailable`.
+ *
+ * Both refusals carry the word the seller re-emits in `Payment-Response`. `unavailable`
+ * carries only the two that mean "no verdict, nothing charged, try again" — a 503 the
+ * buyer's client reads as retryable must not wear a word that says anything else — and
+ * `rejected` carries one of {@link KNOWN_REFUSAL_REASONS}, never the facilitator's prose.
  */
 export type VerificationOutcome =
-    | {kind: "unavailable"}
-    | {kind: "rejected"}
+    | {kind: "unavailable"; errorReason: typeof RATE_LIMITED | typeof FACILITATOR_NOT_READY}
+    | {kind: "rejected"; errorReason: string}
     | {kind: "accepted"; payer: Address};
 
 /**
@@ -186,20 +283,28 @@ export type VerificationOutcome =
  * saying the facilitator refused to form one ({@link RATE_LIMITED},
  * {@link FACILITATOR_NOT_READY}): the delegation was not examined, and blaming it would
  * send the buyer to re-sign what nothing refused.
+ *
+ * {@link UNEXPECTED_VERIFY_ERROR} is the third answer that is not a verdict, and it is
+ * read the same way. It is §9's word for a throw of ours before the broadcast: nobody was
+ * charged *and* nothing about the delegation was decided. Read as `rejected` it would
+ * send the buyer to sign a new leaf because our own RPC call raised — so it reports as
+ * not-ready, which is what the seller's 503 says, and the facilitator's own word for it
+ * stays in the facilitator's log.
  */
 export function decideVerification(
     response: {reachable: boolean; body?: unknown},
     expectedPayer: Address,
 ): VerificationOutcome {
     if (!response.reachable || !response.body || typeof response.body !== "object") {
-        return {kind: "unavailable"};
+        return {kind: "unavailable", errorReason: FACILITATOR_NOT_READY};
     }
     const {invalidReason} = response.body as Erc7710VerifyResponse;
-    if (invalidReason === RATE_LIMITED || invalidReason === FACILITATOR_NOT_READY) {
-        return {kind: "unavailable"};
+    if (invalidReason === RATE_LIMITED) return {kind: "unavailable", errorReason: RATE_LIMITED};
+    if (invalidReason === FACILITATOR_NOT_READY || invalidReason === UNEXPECTED_VERIFY_ERROR) {
+        return {kind: "unavailable", errorReason: FACILITATOR_NOT_READY};
     }
     if (!isVerificationAccepted(response.body, expectedPayer)) {
-        return {kind: "rejected"};
+        return {kind: "rejected", errorReason: foldRefusalReason(invalidReason)};
     }
     return {kind: "accepted", payer: expectedPayer};
 }
@@ -222,13 +327,20 @@ export function decideSettlement(
         return {kind: "unknown"};
     }
     const body = response.body as Erc7710SettleResponse;
-    if (body.errorReason === RATE_LIMITED || body.errorReason === FACILITATOR_NOT_READY) {
-        return {kind: "unavailable"};
+    if (body.errorReason === RATE_LIMITED) return {kind: "unavailable", errorReason: RATE_LIMITED};
+    if (body.errorReason === FACILITATOR_NOT_READY) {
+        return {kind: "unavailable", errorReason: FACILITATOR_NOT_READY};
     }
     if (body.errorReason === SETTLEMENT_PENDING) {
         return {kind: "unknown", transaction: readTransaction(body.transaction)};
     }
-    if (body.success !== true) return {kind: "failed"};
+    if (body.success !== true) {
+        return {
+            kind: "failed",
+            errorReason: foldRefusalReason(body.errorReason),
+            transaction: readTransaction(body.transaction),
+        };
+    }
     // Success with a payer we did not derive is not a clean failure. The facilitator
     // said it broadcast, so money may well have moved; only the identity it reports is
     // inconsistent. Answering `failed` here would assert a balance nobody has checked.

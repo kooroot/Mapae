@@ -272,6 +272,10 @@ function ticketResponse(order: Order, seller: Seller, item: Item, receipt: Settl
  * first answer was lost. Every field is the row's or the offer's, and the offer's are
  * honest because the intent that found the row was derived from them: what the lookup
  * matched on is what was paid.
+ *
+ * `replayed` is true by construction: this path answers out of a row some earlier request
+ * wrote, which is exactly what the word claims. It is not what decides whether the ticket
+ * ships — the row is, and there is one row per intent.
  */
 function recordedReceipt(order: Order, payTo: Address): SettlementReceipt {
     return {
@@ -282,6 +286,7 @@ function recordedReceipt(order: Order, payTo: Address): SettlementReceipt {
         payTo,
         network: GIWA_SEPOLIA_CAIP2,
         ...(order.txHash === null ? {} : {transaction: order.txHash}),
+        replayed: true,
     };
 }
 

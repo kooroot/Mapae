@@ -10,11 +10,14 @@
  */
 import {
     CLIENT_IP_HEADER,
+    DELEGATION_REJECTED,
     FACILITATOR_NOT_READY,
     FixedWindowLimiter,
     PaymentValidationError,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
+    UNEXPECTED_SETTLE_ERROR,
+    UNEXPECTED_VERIFY_ERROR,
     ipBucket,
     isRateLimitError,
     type Erc7710SettleResponse,
@@ -224,17 +227,6 @@ export class SettlementPending extends Error {
     }
 }
 
-/**
- * The Mapae profile's one refusal outside the x402 §9 vocabulary: the facilitator
- * examined the delegation against live state and the chain would not redeem it — the
- * simulation reverted, or the redemption priced above `MAX_REDEMPTION_GAS`. Neither is
- * a defect in the request's text (§9 has words for those) nor an unexpected failure of
- * ours; it is the verdict the delegation earned, and the seller reads it as a 403 for
- * the buyer to re-sign. The reason stays this one word on purpose — the revert text
- * names the caveat that fired, which is the caller's boundary to probe.
- */
-export const DELEGATION_REJECTED = "delegation_rejected";
-
 /** The redemption priced above the configured gas cap: a verdict, before the reservation. */
 export class RedemptionRejected extends Error {
     constructor(message: string) {
@@ -304,7 +296,7 @@ export function describeFailure(error: unknown, route: "verify" | "settle"): Set
     if (error instanceof PaymentValidationError) return rejected(error.reason);
     if (error instanceof SettlementBudgetExceeded) return rejected(error.errorCode);
     if (error instanceof RedemptionRejected || isRedemptionRevert(error)) return rejected(DELEGATION_REJECTED);
-    return rejected(route === "verify" ? "unexpected_verify_error" : "unexpected_settle_error");
+    return rejected(route === "verify" ? UNEXPECTED_VERIFY_ERROR : UNEXPECTED_SETTLE_ERROR);
 }
 
 // ── /health ─────────────────────────────────────────────────────────────────────────

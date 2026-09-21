@@ -15,9 +15,13 @@ import {
     withDelegationSignature,
 } from "./policy.js";
 import {
+    DELEGATION_REJECTED,
     FACILITATOR_NOT_READY,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
+    SETTLEMENT_REVERTED,
+    UNEXPECTED_VERIFY_ERROR,
+    VENDOR_NOT_CREDITED,
     decideSettlement,
     decideVerification,
     isVerificationAccepted,
@@ -559,7 +563,10 @@ describe("D5 settlement outcome ladder", () => {
         // Task #37: an outage on the /verify hop must not be reported as the caller's
         // delegation being refused. Nothing is charged at /verify, so it is safe to
         // separate the operational cause from a real verdict.
-        expect(decideVerification({reachable: false}, PAYER)).toEqual({kind: "unavailable"});
+        expect(decideVerification({reachable: false}, PAYER)).toEqual({
+            kind: "unavailable",
+            errorReason: FACILITATOR_NOT_READY,
+        });
         for (const body of [undefined, null, "nope", 3]) {
             expect(decideVerification({reachable: true, body}, PAYER).kind).toBe("unavailable");
         }
@@ -571,7 +578,7 @@ describe("D5 settlement outcome ladder", () => {
         // address would turn every honest buyer behind it into a 403.
         expect(
             decideVerification({reachable: true, body: {isValid: false, invalidReason: RATE_LIMITED}}, PAYER),
-        ).toEqual({kind: "unavailable"});
+        ).toEqual({kind: "unavailable", errorReason: RATE_LIMITED});
     });
 
     test("verify: a not-ready answer is 'unavailable' whatever status carried it", () => {
@@ -584,7 +591,7 @@ describe("D5 settlement outcome ladder", () => {
                 {reachable: true, body: {isValid: false, invalidReason: FACILITATOR_NOT_READY}},
                 PAYER,
             ),
-        ).toEqual({kind: "unavailable"});
+        ).toEqual({kind: "unavailable", errorReason: FACILITATOR_NOT_READY});
     });
 
     test("verify: a reachable body that fails the payer cross-check is 'rejected'", () => {
@@ -675,7 +682,7 @@ describe("D5 settlement outcome ladder", () => {
                 },
                 PAYER,
             ),
-        ).toEqual({kind: "unavailable"});
+        ).toEqual({kind: "unavailable", errorReason: RATE_LIMITED});
     });
 
     test("a settle the facilitator was not ready for is unavailable, never failed", () => {
@@ -691,7 +698,7 @@ describe("D5 settlement outcome ladder", () => {
                 },
                 PAYER,
             ),
-        ).toEqual({kind: "unavailable"});
+        ).toEqual({kind: "unavailable", errorReason: FACILITATOR_NOT_READY});
     });
 
     test("a clean refusal is failed — money did not move", () => {
@@ -702,12 +709,92 @@ describe("D5 settlement outcome ladder", () => {
                     body: {
                         success: false,
                         network: GIWA_SEPOLIA_CAIP2,
-                        errorReason: "delegation_rejected",
+                        errorReason: DELEGATION_REJECTED,
                     },
                 },
                 PAYER,
             ),
-        ).toEqual({kind: "failed"});
+        ).toEqual({kind: "failed", errorReason: DELEGATION_REJECTED, transaction: undefined});
+    });
+
+    test("a refusal names its word, and an unmined one names no transaction", () => {
+        // The word is what the seller re-emits in its own Payment-Response, so it has to
+        // survive the ladder. A pre-broadcast refusal writes the wire's `""` for the hash,
+        // which is "no transaction", not a transaction called "".
+        expect(
+            decideSettlement(
+                {
+                    reachable: true,
+                    body: {
+                        success: false,
+                        network: GIWA_SEPOLIA_CAIP2,
+                        transaction: "",
+                        errorReason: "payer_budget_exhausted",
+                    },
+                },
+                PAYER,
+            ),
+        ).toEqual({kind: "failed", errorReason: "payer_budget_exhausted", transaction: undefined});
+    });
+
+    test("a mined failure keeps its hash, and vendor_not_credited is the word that names it", () => {
+        // This is the one failure the seller must not answer with a re-issued offer, and
+        // the hash is what the buyer looks the movement up with. Pinned, because folding
+        // this word would turn "you were charged, we were not credited" into "pay again".
+        expect(VENDOR_NOT_CREDITED).toBe("vendor_not_credited");
+        expect(SETTLEMENT_REVERTED).toBe("settlement_reverted");
+        for (const errorReason of [VENDOR_NOT_CREDITED, SETTLEMENT_REVERTED]) {
+            expect(
+                decideSettlement(
+                    {
+                        reachable: true,
+                        body: {success: false, network: GIWA_SEPOLIA_CAIP2, transaction: TX, errorReason},
+                    },
+                    PAYER,
+                ),
+            ).toEqual({kind: "failed", errorReason, transaction: TX});
+        }
+    });
+
+    test("a reason outside the closed vocabulary folds, so no facilitator prose reaches the buyer", () => {
+        // The facilitator's reason is a free string on this wire and the seller now puts it
+        // in a header a buyer's agent reads. Passing it through verbatim would make the
+        // facilitator's text — a revert message, an operator's note — part of the seller's
+        // answer. Everything unrecognised becomes the profile's own word instead.
+        for (const errorReason of ["ERC20PeriodTransferEnforcer:allowance-exceeded", "", undefined, 7]) {
+            expect(
+                decideSettlement(
+                    {reachable: true, body: {success: false, network: GIWA_SEPOLIA_CAIP2, errorReason}},
+                    PAYER,
+                ),
+                String(errorReason),
+            ).toEqual({kind: "failed", errorReason: DELEGATION_REJECTED, transaction: undefined});
+            expect(
+                decideVerification({reachable: true, body: {isValid: false, invalidReason: errorReason}}, PAYER),
+                String(errorReason),
+            ).toEqual({kind: "rejected", errorReason: DELEGATION_REJECTED});
+        }
+        // A §9 word is ours to repeat: it is a fixed vocabulary, not the sender's prose.
+        expect(
+            decideVerification(
+                {reachable: true, body: {isValid: false, invalidReason: "invalid_transaction_state"}},
+                PAYER,
+            ),
+        ).toEqual({kind: "rejected", errorReason: "invalid_transaction_state"});
+    });
+
+    test("verify: an unexpected facilitator error is unavailable, never a refused delegation", () => {
+        // §9's word for a throw of ours before the broadcast. Nobody was charged *and*
+        // nothing about the delegation was decided, so reading it as `rejected` would send
+        // the buyer to sign a new leaf because our own RPC call raised. The seller's 503
+        // says what happened, and the facilitator's word stays in the facilitator's log.
+        expect(UNEXPECTED_VERIFY_ERROR).toBe("unexpected_verify_error");
+        expect(
+            decideVerification(
+                {reachable: true, body: {isValid: false, invalidReason: UNEXPECTED_VERIFY_ERROR}},
+                PAYER,
+            ),
+        ).toEqual({kind: "unavailable", errorReason: FACILITATOR_NOT_READY});
     });
 
     test("success with a payer we did not derive is unknown, not failed", () => {
