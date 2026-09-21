@@ -1,5 +1,5 @@
 /**
- * Schema for `user_version` 6.
+ * Schema for `user_version` 7.
  *
  * The schema is the allowlist. Every column is something an operator may read back
  * later — identifiers, addresses, amounts, hashes, outcomes — and there is no column a
@@ -25,8 +25,14 @@
  * Version 4 keyed `budget_days` by scope as well as day, so one file holds a service's
  * total beside a per-payer share, and gave every order a `ticket`: the code a buyer shows
  * at pickup used to be the autoincrement id, which anyone can count to.
+ *
+ * Version 7 added `payment_identifiers`, the disk half of the x402 `payment-identifier`
+ * extension. It is a table and not a column on `orders` because the two answer different
+ * questions and live for different lengths of time: a row here exists from the first
+ * attempt a buyer makes under an identifier, including every attempt that never became an
+ * order, and an order exists only after money moved.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const SCHEMA_SQL = `
 CREATE TABLE payment_jobs (
@@ -148,4 +154,26 @@ CREATE TABLE orders (
     FOREIGN KEY (seller_slug, item_key) REFERENCES items (seller_slug, key)
 );
 CREATE INDEX orders_seller_created_at ON orders (seller_slug, created_at);
+
+-- One row per x402 payment-identifier a buyer presented. fingerprint is the paywall's
+-- normalised request (sha256 hex, no 0x); payment_intent_id is the leaf that request was
+-- paid with. Both are compared before a settlement: a second attempt under the same
+-- identifier that changes either one is a different payment wearing the same name, and
+-- answering it from this row would either deliver the wrong thing or charge twice.
+--
+-- The settled half is written only after the facilitator confirmed the transfer, and it is
+-- written whole: a payer with no settled_at, or the reverse, would be a row that cannot say
+-- whether the money moved, which is the one thing it exists to say. No amount, asset or
+-- recipient is kept — the fingerprint already pins them, and the paywall holds the offer.
+CREATE TABLE payment_identifiers (
+    id TEXT PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    payment_intent_id TEXT NOT NULL,
+    bound_at INTEGER NOT NULL,
+    payer TEXT,
+    tx_hash TEXT,
+    settled_at INTEGER,
+    CONSTRAINT payment_identifiers_settled CHECK ((payer IS NULL) = (settled_at IS NULL))
+);
+CREATE INDEX payment_identifiers_bound_at ON payment_identifiers (bound_at);
 `;

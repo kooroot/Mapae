@@ -5,7 +5,12 @@ import {html, raw} from "hono/html";
 import type {HtmlEscapedString} from "hono/utils/html";
 import {getAddress, isAddress, isHex, type Address} from "viem";
 import {derivePaymentIntentId, type PaymentIntent} from "@mapae/delegation/facilitator-contract";
-import type {MapaeEnv, MapaeSeller, SettlementReceipt} from "@mapae/seller";
+import type {
+    MapaeEnv,
+    MapaeSeller,
+    PaymentIdentifierBinding,
+    SettlementReceipt,
+} from "@mapae/seller";
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
@@ -365,6 +370,36 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
     };
 
     /**
+     * 페이월이 쓰는 결제 식별자 바인딩. 표가 둘인 이유는 질문이 둘이기 때문이다:
+     * `orders`는 "무엇이 팔렸는가"에 답하고 — 돈이 옮겨진 뒤에만 생기는 행이다 —
+     * `payment_identifiers`는 "이것이 같은 결제인가"에 답한다. 두 번째 질문은 첫
+     * 시도부터 답할 수 있어야 한다. 주문이 되지 못한 시도까지 묶어야, 같은 이름을
+     * 달고 들어온 다른 결제를 정산 전에 돌려보낼 수 있다.
+     *
+     * 시계는 여기서 읽는다. 저장소는 시계를 읽지 않는다 — 행의 날짜는 부르는 쪽이 댄다.
+     */
+    const paymentIdentifiers: PaymentIdentifierBinding = {
+        bind: (payment) => {
+            const bound = store.paymentIdentifiers.bind({...payment, at: Date.now()});
+            if (bound.kind !== "settled") return bound;
+            return {
+                kind: "settled",
+                settled: {
+                    payer: bound.settled.payer,
+                    ...(bound.settled.txHash === null ? {} : {transaction: bound.settled.txHash}),
+                },
+            };
+        },
+        record: ({id, payer, transaction}) =>
+            store.paymentIdentifiers.record({
+                id,
+                payer,
+                txHash: transaction ?? null,
+                at: Date.now(),
+            }),
+    };
+
+    /**
      * The store refuses a code of the wrong shape with a TypeError. A code someone
      * mistyped at the counter is a ticket that does not exist, not a 500.
      */
@@ -415,6 +450,8 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
         // Before the facilitator, not after: `/verify` simulates against live chain
         // state, where the first settlement already spent the leaf's one-shot allowance,
         // so a replayed header is refused there and never reaches the orders table.
+        // 주문 행은 "이 결제는 이미 끝났다"는 증거다. 식별자는 아직 정산되지 않은
+        // 결제를 지키는 장치이므로, 이 칸을 앞질러 읽을 필요가 없다.
         const paid = paidOrder(c, seller, item);
         if (paid) {
             c.set("order", paid);
@@ -436,6 +473,7 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
                     },
                 },
             },
+            paymentIdentifiers,
             // The one place an order is written. Money has moved when this runs; the
             // row keyed on the intent is what makes the second delivery the same ticket.
             onSettled: (receipt) => {

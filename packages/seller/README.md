@@ -67,7 +67,8 @@ options as well, and makes a client of its own each time.
 | `price` | tUSDC as a decimal string, positive, up to 6 fractional digits — `"0.01"`. |
 | `description` | One line the buyer's agent reads in the 402 offer and in the manifest. |
 | `onSettled` | `(receipt) => void \| Promise<void>`, called once per settled payment, **before** your handler. Write your ledger here. A throw is logged; the buyer is still served. |
-| `extensions` | `Record<string, PaymentExtension>` — the x402 extensions you publish, keyed by name, each one `{info, schema?}`: `info` is what your extension declares, `schema` an optional JSON Schema for what a client echoes back. They go in the 402 body's `extensions` slot — and in the `Payment-Required` header, which encodes the same document. Absent, the slot is absent. It travels in a header on every unpaid request: keep it small. |
+| `extensions` | `Record<string, PaymentExtension>` — the x402 extensions you publish, keyed by name, each one `{info, schema?}`: `info` is what your extension declares, `schema` an optional JSON Schema for what a client echoes back. They go in the 402 body's `extensions` slot — and in the `Payment-Required` header, which encodes the same document. Absent, the slot is absent. It travels in a header on every unpaid request: keep it small. `payment-identifier` is the paywall's own and is refused here. |
+| `paymentIdentifiers` | Where the x402 `payment-identifier` bindings live — `bind` before settling, `record` after. Supplied, the paywall advertises the extension and enforces it; absent, it neither advertises nor reads one. Use durable storage: a guard that dies with the process is not a guard. |
 
 Without a payment header the request gets a **402** carrying the x402 v2 offer in the
 `Payment-Required` header and the JSON body. With one, the middleware asks the facilitator
@@ -84,7 +85,9 @@ interface SettlementReceipt {
     payTo: Address;
     network: "eip155:91342";
     transaction?: Hex; // GIWA tx hash
-    replayed: boolean; // the facilitator answered out of its own record of this intent
+    replayed: boolean; // this call settled nothing: the facilitator answered out of its own
+                       // record of this intent, or the identifier binding out of the
+                       // payment it already recorded
 }
 ```
 
@@ -95,7 +98,8 @@ for. Dedupe on `intent` — one row per intent — and read this as "some other 
 | status | meaning |
 |---|---|
 | `402` (no offer consumed) | no payment header — normal for humans and `curl` |
-| `400 malformed_payment` | header is not a usable ERC-7710 payment. The receipt names `invalid_payload` and no payer — the payer's name was inside the text that would not parse |
+| `400 malformed_payment` | header is not a usable ERC-7710 payment, or carries a `payment-identifier` outside 16–128 characters of `[A-Za-z0-9_-]`. The receipt names `invalid_payload`, and names the payer only when the header itself parsed |
+| `409 payment_identifier_conflict` | this `payment-identifier` is already bound to a different request or a different leaf; `detail` says which. Nothing was charged and no offer is re-issued — a fresh id is how to pay |
 | `503 facilitator_unavailable` | `/supported` or `/verify` unreachable, or the facilitator would not look at the payment — its rate limit, or a readiness check it failed — on `/verify` or `/settle`; nothing charged, retry later with the same payment |
 | `402` (offer re-issued) | the facilitator refused the delegation (expired, over limit, over the 10.00 cap, offer mismatch), or the settlement failed without charging anybody. A new leaf can pay, so the offer rides along |
 | `504 settlement_unknown` | the outcome is not established — no answer, `settlement_pending`, `unexpected_settle_error`, or a failure that names a transaction hash under a word that does not mean a mined failure. The buyer **may** have been charged; no offer is re-issued and the hash goes out with the receipt |
@@ -129,6 +133,15 @@ do not pay again".
 Two routes at the same price and `payTo` share one offer (the offer carries no path), so a
 header bought for one opens the other. Use distinct prices, or check `receipt.intent` against
 your ledger.
+
+With `paymentIdentifiers` the paywall also binds each id to the request it paid for —
+scheme, network, asset, amount, `payTo`, path and method, folded with sha256 — and to that
+payment's intent, before it settles anything. A second attempt under the same id that
+changes either one is the 409; one that changes neither and already settled is served from
+the stored result with `replayed: true` and no facilitator call. This is what an id buys you
+that `intent` cannot: a retry signs a **new leaf**, so its intent differs, and the identifier
+is the only name the two attempts share. It is not signed, though — treat it as an
+idempotency hint, never as authentication, and keep every safety decision on `intent`.
 
 ### `mapae.manifest({name, app})` · `mapaeManifest({name, app, facilitator?})`
 

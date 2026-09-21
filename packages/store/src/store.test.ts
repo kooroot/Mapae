@@ -156,6 +156,7 @@ describe("openStore", () => {
             "faucet_windows",
             "items",
             "orders",
+            "payment_identifiers",
             "payment_jobs",
             "payment_runs",
             "sellers",
@@ -1021,5 +1022,169 @@ describe("faucet windows", () => {
         expect(() => store.faucetWindows.record(LOWER, -1)).toThrow(TypeError);
         expect(() => store.faucetWindows.record(LOWER, 1.5)).toThrow(TypeError);
         expect(() => store.faucetWindows.sweep(-1)).toThrow(TypeError);
+    });
+});
+
+describe("payment identifiers", () => {
+    const ID = "pay_0123456789abcdef0123456789ab";
+    const PRINT = "a".repeat(64);
+    const OTHER_PRINT = "b".repeat(64);
+
+    test("binds an identifier once and replays the settled result after that", () => {
+        const store = open();
+        expect(store.paymentIdentifiers.get(ID)).toBeNull();
+        expect(
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0,
+            }),
+        ).toEqual({kind: "new"});
+
+        // Bound but not settled: the earlier attempt moved no money, so the same payment may
+        // be tried again — and the facilitator's intent journal is what guards that round.
+        expect(
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + HOUR,
+            }),
+        ).toEqual({kind: "new"});
+        expect(store.paymentIdentifiers.get(ID)).toEqual({
+            id: ID,
+            fingerprint: PRINT,
+            paymentIntentId: INTENT,
+            // The first bind dated the row; a later attempt does not move it.
+            boundAt: T0,
+            settled: null,
+        });
+
+        store.paymentIdentifiers.record({id: ID, payer: ALICE, txHash: TX, at: T0 + 2 * HOUR});
+        expect(
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + 3 * HOUR,
+            }),
+        ).toEqual({kind: "settled", settled: {payer: ALICE, txHash: TX}});
+        expect(store.paymentIdentifiers.get(ID)?.settled).toEqual({
+            payer: ALICE,
+            txHash: TX,
+            at: T0 + 2 * HOUR,
+        });
+    });
+
+    test("names which half of the binding a second attempt changed", () => {
+        const store = open();
+        store.paymentIdentifiers.bind({
+            id: ID,
+            fingerprint: PRINT,
+            paymentIntentId: INTENT,
+            at: T0,
+        });
+        // A different request under the same name: answering it from this row would deliver
+        // the wrong thing.
+        expect(
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: OTHER_PRINT,
+                paymentIntentId: INTENT,
+                at: T0,
+            }),
+        ).toEqual({kind: "conflict", reason: "fingerprint"});
+        // The same request paid with a different leaf: settling it charges a second time.
+        expect(
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: OTHER_INTENT,
+                at: T0,
+            }),
+        ).toEqual({kind: "conflict", reason: "payment_intent"});
+        // Neither refusal touched the row.
+        expect(store.paymentIdentifiers.get(ID)).toEqual({
+            id: ID,
+            fingerprint: PRINT,
+            paymentIntentId: INTENT,
+            boundAt: T0,
+            settled: null,
+        });
+    });
+
+    test("keeps a settled payment's payer: recording twice refuses instead of overwriting", () => {
+        const store = open();
+        store.paymentIdentifiers.bind({
+            id: ID,
+            fingerprint: PRINT,
+            paymentIntentId: INTENT,
+            at: T0,
+        });
+        store.paymentIdentifiers.record({id: ID, payer: ALICE, at: T0});
+        // No hash is a legitimate settlement — a facilitator may confirm without naming one.
+        expect(store.paymentIdentifiers.get(ID)?.settled).toEqual({
+            payer: ALICE,
+            txHash: null,
+            at: T0,
+        });
+        expect(() => store.paymentIdentifiers.record({id: ID, payer: BOB, at: T0})).toThrow(
+            /already settled/,
+        );
+        expect(store.paymentIdentifiers.get(ID)?.settled?.payer).toBe(ALICE);
+    });
+
+    test("refuses to settle an identifier nothing bound", () => {
+        const store = open();
+        expect(() => store.paymentIdentifiers.record({id: ID, payer: ALICE, at: T0})).toThrow(
+            /not bound/,
+        );
+    });
+
+    /** The whole reason this is a table: a guard that dies with the process is not a guard. */
+    test("a binding survives closing and reopening the file", () => {
+        const path = join(tempDir(), "identifiers.sqlite");
+        const first = open(path);
+        first.paymentIdentifiers.bind({
+            id: ID,
+            fingerprint: PRINT,
+            paymentIntentId: INTENT,
+            at: T0,
+        });
+        first.paymentIdentifiers.record({id: ID, payer: ALICE, txHash: TX, at: T0});
+        first.close();
+
+        expect(
+            open(path).paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: T0 + HOUR,
+            }),
+        ).toEqual({kind: "settled", settled: {payer: ALICE, txHash: TX}});
+    });
+
+    test("refuses an identifier or a fingerprint that is not the shape the extension writes", () => {
+        const store = open();
+        const bind = (id: string, fingerprint = PRINT): unknown =>
+            store.paymentIdentifiers.bind({id, fingerprint, paymentIntentId: INTENT, at: T0});
+        expect(() => bind("pay_short")).toThrow(TypeError);
+        expect(() => bind(`pay_${"a".repeat(125)}`)).toThrow(TypeError);
+        expect(() => bind("pay_0123456789abcdef!")).toThrow(TypeError);
+        expect(() => bind("")).toThrow(TypeError);
+        // sha256 hex, lowercase, no 0x — the equality that decides a conflict is on this text.
+        expect(() => bind(ID, PRINT.toUpperCase())).toThrow(TypeError);
+        expect(() => bind(ID, `0x${PRINT}`)).toThrow(TypeError);
+        expect(() => bind(ID, "abc")).toThrow(TypeError);
+        expect(() => store.paymentIdentifiers.get("pay_short")).toThrow(TypeError);
+        expect(() =>
+            store.paymentIdentifiers.bind({
+                id: ID,
+                fingerprint: PRINT,
+                paymentIntentId: INTENT,
+                at: -1,
+            }),
+        ).toThrow(TypeError);
     });
 });

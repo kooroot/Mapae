@@ -81,15 +81,33 @@ from extension name to `{info, schema}` — `info` is what the extension itself 
 `schema` a JSON Schema describing the shape a client echoes back in its payload. The
 hosted shop publishes one entry, `mapae`, and puts the seller and the manifest URL under
 its `info`. There is no `schema`: nothing there asks the client to echo anything. The
-payment **payload** has no `extensions` slot at all, because nothing here produces one: the
-specification has a client echo only the extensions it actually *used*, and no payer here
-uses one, so the slot arrives with the first extension that needs it. The reference client
+payment **payload** carries a slot of the same name. The specification has a client echo
+only the extensions it actually *used*, and the first producer of that slot here is
+`payment-identifier`, below. The reference client
 is looser than that rule — `mergeExtensions` in `@x402/core` 2.20.0 returns the seller's
 whole map when the client adds nothing of its own, so a reference-stack payer paying the
 hosted shop echoes the `mapae` entry back unused. The facilitator's validator compares the
 fields it names instead of enumerating the object's keys, so that entry is ignored rather
 than refused. `/supported`'s identically named `extensions` is a different thing: the
 **list** of extensions the facilitator supports, which today is empty.
+
+**`payment-identifier` is an idempotency key, not authentication.** Give the paywall a
+binding store and the 402 advertises this extension; the client then puts a fresh id
+(`pay_` plus 16 random bytes in hex) in its payload envelope, one per payment. **Before**
+settling, the seller binds that id to the request fingerprint — scheme, network, asset,
+amount, payTo, path and method folded with sha256 — and to the payment intent. A second
+attempt under the same id that changes either one is answered 409 with nothing charged; an
+id that already settled is answered from the stored payer and hash rather than settled
+again. The reason this is needed is that a retry signs a **new leaf**: the intent differs,
+so neither the facilitator's intent journal nor the shop's orders table can see the two
+attempts as one payment, and the identifier is the only name that spans them. That name is
+not signed, though — a man in the middle can rewrite it — so it is an idempotency hint and
+never authentication, and every safety decision is still made alongside the
+signature-derived intent. A seller that supplies no binding neither advertises the
+extension nor reads an id that arrives: promise only what you can keep. The hosted shop
+keeps two tables for the same reason it asks two questions: `orders` answers "what was
+sold" once money has moved, and `payment_identifiers` answers "is this the same payment"
+from the first attempt onwards.
 
 The sequence below shows three paths for one and the same delegation — a normal
 settlement, an over-cap refusal, and an expiry refusal. What decides a refusal is

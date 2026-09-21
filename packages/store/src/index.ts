@@ -230,6 +230,61 @@ export interface Orders {
     summary(window: {sinceMs: number}): OrderSummary;
 }
 
+/** Which half of the binding a second attempt changed. */
+export type PaymentIdentifierConflict = "fingerprint" | "payment_intent";
+
+/** What the facilitator confirmed about a settled payment, as the buyer gets it back. */
+export interface RecordedPayment {
+    payer: HexString;
+    txHash: HexString | null;
+}
+
+export type PaymentIdentifierBindResult =
+    | {kind: "new"}
+    | {kind: "settled"; settled: RecordedPayment}
+    | {kind: "conflict"; reason: PaymentIdentifierConflict};
+
+/**
+ * The x402 `payment-identifier` bindings on disk.
+ *
+ * Structurally the `PaymentIdentifierBinding` that `@mapae/seller`'s paywall takes, except
+ * for the timestamps: nothing here reads the clock, so the caller dates the row. A guard
+ * that dies with the process is not a guard — this is why the extension is stored at all.
+ */
+export interface PaymentIdentifiers {
+    /**
+     * Claim `id` for this request, or say why it cannot be claimed.
+     *
+     * `new` means the row is now on file and the caller may settle. `settled` means this
+     * exact payment already moved money and the caller must answer from the stored result
+     * instead of settling again. `conflict` means the identifier is on file against a
+     * different request or a different leaf.
+     *
+     * A row that is bound but not settled answers `new` again: the earlier attempt did not
+     * move money, so the buyer may retry under the same identifier — and because the leaf
+     * is identical, the facilitator's own intent journal is what stops that round from
+     * paying twice.
+     */
+    bind(payment: {
+        id: string;
+        fingerprint: string;
+        paymentIntentId: HexString;
+        at: number;
+    }): PaymentIdentifierBindResult;
+    /** Write the settled half. Only after the transfer is confirmed; never before. */
+    record(settlement: {id: string; payer: HexString; txHash?: HexString | null; at: number}): void;
+    /** The stored binding, for an operator reading back why an identifier was refused. */
+    get(id: string): PaymentIdentifierRow | null;
+}
+
+export interface PaymentIdentifierRow {
+    id: string;
+    fingerprint: string;
+    paymentIntentId: HexString;
+    boundAt: number;
+    settled: (RecordedPayment & {at: number}) | null;
+}
+
 /**
  * The faucet's per-account windows on disk.
  *
@@ -253,6 +308,7 @@ export interface MapaeStore {
     readonly sellers: Sellers;
     readonly items: Items;
     readonly orders: Orders;
+    readonly paymentIdentifiers: PaymentIdentifiers;
     /** Idempotent. */
     close(): void;
 }
@@ -814,6 +870,122 @@ function createOrders(db: Database): Orders {
     };
 }
 
+// ── Payment identifiers ─────────────────────────────────────────────────────────────
+
+/** The x402 extension's own charset, checked here so a row can never hold anything else. */
+const PAYMENT_IDENTIFIER = /^[A-Za-z0-9_-]{16,128}$/;
+
+function identifierKey(value: unknown): string {
+    if (typeof value !== "string" || !PAYMENT_IDENTIFIER.test(value)) {
+        throw new TypeError("id must be 16–128 characters of [A-Za-z0-9_-]");
+    }
+    return value;
+}
+
+/**
+ * The paywall's request fingerprint: sha256 as lowercase hex, no `0x`. The comparison that
+ * decides a conflict is an equality on this text, so a value stored in another shape would
+ * quietly read as "a different request" — every payment under that identifier would then be
+ * refused. Refusing the shape on the write keeps that at the caller.
+ */
+function fingerprintHex(value: unknown): string {
+    if (typeof value !== "string" || !SHA256_HEX.test(value)) {
+        throw new TypeError("fingerprint must be 64 lowercase hex characters (sha256)");
+    }
+    return value;
+}
+
+interface PaymentIdentifierDbRow {
+    id: string;
+    fingerprint: string;
+    payment_intent_id: string;
+    bound_at: number;
+    payer: string | null;
+    tx_hash: string | null;
+    settled_at: number | null;
+}
+
+function toPaymentIdentifier(row: PaymentIdentifierDbRow): PaymentIdentifierRow {
+    return {
+        id: row.id,
+        fingerprint: row.fingerprint,
+        paymentIntentId: row.payment_intent_id as HexString,
+        boundAt: row.bound_at,
+        // The CHECK constraint keeps the two columns together, so one test answers for both.
+        settled:
+            row.settled_at === null
+                ? null
+                : {
+                      payer: row.payer as HexString,
+                      txHash: row.tx_hash as HexString | null,
+                      at: row.settled_at,
+                  },
+    };
+}
+
+function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
+    const insert = db.query<PaymentIdentifierDbRow, Params>(
+        `INSERT INTO payment_identifiers (id, fingerprint, payment_intent_id, bound_at)
+         VALUES ($id, $fingerprint, $paymentIntentId, $at)
+         ON CONFLICT (id) DO NOTHING
+         RETURNING *`,
+    );
+    const byId = db.query<PaymentIdentifierDbRow, Params>(
+        `SELECT * FROM payment_identifiers WHERE id = $id`,
+    );
+    // `settled_at IS NULL` is the guard, not an optimisation: an UPDATE that overwrote a
+    // settled row would replace the payer of a payment that already moved money with
+    // another one, and that is the double charge this table exists to make visible.
+    const settle = db.query<never, Params>(
+        `UPDATE payment_identifiers SET payer = $payer, tx_hash = $txHash, settled_at = $at
+         WHERE id = $id AND settled_at IS NULL`,
+    );
+    return {
+        bind({id, fingerprint, paymentIntentId, at}) {
+            const key = identifierKey(id);
+            const print = fingerprintHex(fingerprint);
+            const inserted = insert.get({
+                id: key,
+                fingerprint: print,
+                paymentIntentId,
+                at: millis(at, "at"),
+            });
+            if (inserted) return {kind: "new"};
+            // DO NOTHING returned no row, so the identifier is already claimed. The store is
+            // single-process and synchronous; nothing can delete it in between.
+            const existing = byId.get({id: key});
+            if (!existing) {
+                throw new Error("payment_identifiers: duplicate id vanished before read");
+            }
+            if (existing.fingerprint !== print) return {kind: "conflict", reason: "fingerprint"};
+            if (existing.payment_intent_id !== paymentIntentId) {
+                return {kind: "conflict", reason: "payment_intent"};
+            }
+            const settled = toPaymentIdentifier(existing).settled;
+            if (settled === null) return {kind: "new"};
+            return {kind: "settled", settled: {payer: settled.payer, txHash: settled.txHash}};
+        },
+        record({id, payer, txHash, at}) {
+            const {changes} = settle.run({
+                id: identifierKey(id),
+                payer,
+                txHash: txHash ?? null,
+                at: millis(at, "at"),
+            });
+            // Nothing to write to means the caller settled a payment this table never bound,
+            // or settled one of them twice. Both are bugs in the order of the two calls, and
+            // both are invisible if this returns quietly.
+            if (changes === 0) {
+                throw new Error(`payment_identifiers: ${id} is not bound, or is already settled`);
+            }
+        },
+        get(id) {
+            const row = byId.get({id: identifierKey(id)});
+            return row ? toPaymentIdentifier(row) : null;
+        },
+    };
+}
+
 // ── Open ────────────────────────────────────────────────────────────────────────────
 
 function migrate(db: Database, path: string): void {
@@ -881,6 +1053,7 @@ export function openStore(path: string): MapaeStore {
         sellers: createSellers(db),
         items: createItems(db),
         orders: createOrders(db),
+        paymentIdentifiers: createPaymentIdentifiers(db),
         close() {
             if (closed) return;
             closed = true;

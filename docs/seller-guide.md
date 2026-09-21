@@ -57,7 +57,7 @@ Node라면 마지막 줄 대신 `@hono/node-server`의 `serve({fetch: app.fetch,
 `facilitator`(기본 `https://facilitator.mapae.io`), `onSettled`(정산 콜백, §6),
 `extensions`(402 본문의 `extensions` 칸 — 확장 이름 → `{info, schema}` 맵이며 `info`가
 확장이 선언하는 내용, `schema`는 클라이언트가 에코할 형태를 기술하는 JSON Schema다.
-헤더에도 같이 실리니 작게),
+헤더에도 같이 실리니 작게), `paymentIdentifiers`(결제 식별자 바인딩, §6-1),
 `baseUrl`(§2-1)은 선택이다.
 
 ### 2-1. 경로가 여럿이면 — `createMapae`
@@ -156,7 +156,8 @@ mapaePaywall({
         // receipt.payer       낸 쪽의 루트 위임자 주소
         // receipt.amount      "0.01"  (tUSDC)
         // receipt.transaction GIWA tx 해시 — https://sepolia-explorer.giwa.io/tx/<해시>
-        // receipt.replayed    facilitator가 자기 기록으로 답했다(이 호출이 정산한 게 아니다)
+        // receipt.replayed    이 호출이 정산한 게 아니다 — facilitator가 자기 기록으로
+        //                     답했거나, 결제 식별자 바인딩이 이미 남긴 결제로 답했다
         await ledger.insert(receipt);
     },
 });
@@ -174,6 +175,37 @@ mapaePaywall({
 **같은 가격·같은 `payTo`의 경로 둘을 두지 않는다.** 오퍼에는 경로가 들어 있지 않아,
 한 경로에서 산 헤더가 같은 오퍼의 다른 경로도 연다. 경로마다 가격을 다르게 하거나,
 `receipt.intent`를 장부와 대조해 한 번 쓴 결제를 거절한다.
+
+### 6-1. 재시도가 두 번 청구되지 않게 — `paymentIdentifiers`
+
+`receipt.intent`는 **서명된 리프 하나**의 이름이다. 손님의 에이전트가 답을 못 받고 다시
+낼 때는 새 리프로 서명하므로 intent가 달라지고, 그러면 장부의 한 행도 facilitator의
+기록도 두 시도를 같은 결제로 보지 못한다. 두 시도를 잇는 이름이 x402의
+`payment-identifier`다.
+
+```ts
+mapaePaywall({
+    payTo: PAY_TO,
+    price: "0.01",
+    description: "일일 리포트",
+    paymentIdentifiers: {
+        // id를 이 요청(지문)과 이 결제(intent)에 묶는다. 정산보다 먼저 불린다.
+        //   {kind: "new"}       — 처음 보는 id. 그대로 정산한다
+        //   {kind: "conflict"}  — 같은 id에 다른 요청이나 다른 리프 → 409
+        //   {kind: "settled"}   — 이미 낸 결제 → 다시 정산하지 않고 그 결과로 답한다
+        bind: (payment) => bindings.bind(payment),
+        // 정산이 성공한 뒤에만 불린다. 지불자와 해시를 남긴다
+        record: (settlement) => bindings.record(settlement),
+    },
+});
+```
+
+포트를 주면 페이월이 402에 확장을 광고하고 실려 온 id를 읽는다. 주지 않으면 광고하지도,
+읽지도 않는다 — 지킬 수 없는 약속은 하지 않는다. **저장은 디스크에 한다.** 프로세스와
+함께 죽는 가드는 가드가 아니다.
+
+id는 **서명되지 않는다.** 중간에 누가 바꿔 칠 수 있으므로 멱등성 힌트일 뿐 인증이 아니고,
+"이 손님이 맞는가"는 언제나 `receipt.intent`와 `receipt.payer`로 판단한다.
 
 ## 7. 공개 facilitator — `https://facilitator.mapae.io`
 
@@ -208,7 +240,8 @@ curl -s https://facilitator.mapae.io/supported
 | 응답 | 뜻 | 할 일 |
 |---|---|---|
 | `402` (헤더 없음) | 결제 헤더가 없다 | 정상. 에이전트가 낼 차례다 |
-| `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니다. 영수증은 `invalid_payload`를 대고 지불자는 대지 않는다 — 그 이름이 읽히지 않은 글자 안에 있었다 | 에이전트 쪽 문제. `detail`이 사람이 읽을 이유를 말한다 |
+| `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니거나, `payment-identifier`가 `[A-Za-z0-9_-]` 16–128자가 아니다. 영수증은 `invalid_payload`를 대고, 헤더 자체가 읽힌 경우에만 지불자를 댄다 | 에이전트 쪽 문제. `detail`이 사람이 읽을 이유를 말한다 |
+| `409 payment_identifier_conflict` | 이 `payment-identifier`가 이미 다른 요청이나 다른 리프에 묶여 있다(`detail`이 어느 쪽인지 말한다). 청구된 것은 없고 오퍼도 다시 싣지 않는다 | 에이전트는 새 id로 낸다. 같은 id로는 무엇을 내도 같은 답이다 |
 | `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했거나, facilitator가 결제를 보지 않았다 — 요청 제한, 또는 실패한 준비 검사 — `/verify`든 `/settle`이든. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 같은 결제로 다시 시도 |
 | `402` (오퍼 재발행) | facilitator가 위임을 거절했거나(만료, 한도 초과, 상한 10.00 초과, 오퍼 불일치), 아무도 청구되지 않은 정산 실패다. 새 leaf로 다시 낼 수 있으므로 오퍼를 다시 싣는다 | 손님의 위임을 확인. 가격이 상한 안인지 확인 |
 | `504 settlement_unknown` | 결과가 확정되지 않았다 — 응답 유실, `settlement_pending`, `unexpected_settle_error`, 또는 채굴 실패 낱말이 아닌 사유로 해시를 댄 실패. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 에이전트에게 다시 서명시키지 않는다 |
@@ -219,8 +252,8 @@ curl -s https://facilitator.mapae.io/supported
 `Payment-Response` 헤더(base64 UTF-8 JSON)에 함께 싣는다 — `success: false`와 §9 낱말
 하나(`invalid_payload`, `settlement_pending`, `rate_limited`, `delegation_rejected` …).
 성공 영수증과 실패 영수증은 모양이 다르다: `payer`는 성공에 항상 있고(움직인 돈이 누가
-냈는지 모를 수는 없다) 실패에서는 없을 수 있다 — 400 칸은 읽히지 않은 헤더에 답하는
-칸이고 지불자의 이름이 그 안에 있었다. `errorReason`은 그 거울상으로 실패에 항상 있고
+냈는지 모를 수는 없다) 실패에서는 없을 수 있다 — 헤더가 읽히지 않은 400은 지불자의
+이름도 그 글자 안에 있었기 때문이다. `errorReason`은 그 거울상으로 실패에 항상 있고
 성공에는 없다. 칸은 상태로 읽고 낱말로 읽지 않는다: `invalid_payload`는 400의 낱말이면서
 facilitator가 오퍼와 어긋나는 `accepted`에 답하는 낱말이기도 해서, 지불자를 실은 402로
 돌아오기도 한다.

@@ -3,9 +3,13 @@ import {createHash} from "node:crypto";
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
+    PAYMENT_IDENTIFIER_EXTENSION,
     PAYMENT_REQUIRED_HEADER,
     PAYMENT_SIGNATURE_HEADER,
+    buildPaymentIdentifierEcho,
+    decodePaymentHeader,
     decodePaymentRequiredHeader,
+    encodePaymentHeader,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
 } from "@mapae/shared";
@@ -167,14 +171,19 @@ describe("402 — the offer", () => {
         expect(body.accepts[0]?.network).toBe(GIWA_SEPOLIA_CAIP2);
         // 스펙의 확장 봉투: 확장 이름 → {info, schema}. 상점이 선언하는 내용은
         // `info` 아래에 있고, 클라이언트가 에코할 형태를 요구하지 않으므로 `schema`는 없다.
-        expect(body.extensions).toEqual({
-            mapae: {
-                info: {
-                    seller: {slug: "demo-cafe", name: "데모 카페"},
-                    manifest: `${BASE_URL}/s/demo-cafe`,
-                },
+        expect(body.extensions?.mapae).toEqual({
+            info: {
+                seller: {slug: "demo-cafe", name: "데모 카페"},
+                manifest: `${BASE_URL}/s/demo-cafe`,
             },
         });
+        // 그 옆의 `payment-identifier`는 상점이 선언한 것이 아니라 페이월 자신의 확장이다:
+        // 상점이 바인딩 포트를 줬기 때문에 광고된다.
+        expect(Object.keys(body.extensions ?? {}).sort()).toEqual([
+            "mapae",
+            PAYMENT_IDENTIFIER_EXTENSION,
+        ]);
+        expect(body.extensions?.[PAYMENT_IDENTIFIER_EXTENSION]?.info).toEqual({required: false});
         const header = response.headers.get(PAYMENT_REQUIRED_HEADER);
         expect(header).not.toBeNull();
         expect(decodePaymentRequiredHeader(header ?? "")).toEqual(body);
@@ -567,5 +576,72 @@ describe("health and seed", () => {
             ["demo-cafe", "croissant", 2_500_000n],
             ["demo-studio", "logo", ONE],
         ]);
+    });
+});
+
+/**
+ * 사양의 `payment-identifier`. 상점이 직접 다는 것이 아니라 페이월이 바인딩 포트를 받고
+ * 광고하는 확장이고, 이 스위트가 보는 것은 그 포트 뒤에 상점의 저장소가 꽂혔을 때
+ * 일어나는 일이다 — 즉 재시도가 새 리프로 서명해도 두 번 청구되지 않는다는 것.
+ */
+describe("payment-identifier — 같은 이름으로 다른 결제는 받지 않는다", () => {
+    const ID = "pay_0123456789abcdef0123456789ab";
+
+    /** 같은 결제에 식별자만 실은 헤더. */
+    const identified = (header: string, id: string): string =>
+        encodePaymentHeader({
+            ...decodePaymentHeader(header),
+            extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierEcho(id)},
+        });
+
+    test("같은 id로 서명한 다른 리프는 409 — 재시도가 두 번 청구되지 않는다", async () => {
+        const {store, stub, pay} = shop();
+        const first = await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID));
+        const ticket = await ticketOf(first);
+        expect(stub.paths).toEqual(SETTLED_ONCE);
+
+        // 같은 상품·같은 값이므로 지문은 같다. 다른 것은 서명된 리프이고, 그래서 intent가
+        // 다르다 — 주문 표는 이것을 같은 결제로 보지 못한다. 18행의 구멍이 여기다.
+        const retry = await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_B), ID));
+        expect(retry.status).toBe(409);
+        expect(await retry.json()).toEqual({
+            error: "payment_identifier_conflict",
+            detail: "payment_intent",
+        });
+        // 정산은 다시 시도되지 않았고, 주문도 늘지 않았다.
+        expect(stub.paths).toEqual(SETTLED_ONCE);
+        expect(store.orders.listBySeller("demo-cafe").map((order) => order.ticket)).toEqual([
+            ticket.ticket.code,
+        ]);
+    });
+
+    test("같은 id로 다른 상품을 사려 하면 409 — 이름은 요청에 묶인다", async () => {
+        const {store, stub, pay} = shop();
+        await ticketOf(await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID)));
+
+        const other = await pay(CROISSANT, identified(paymentHeader(ONE * 2n, LEAF_B), ID));
+        expect(other.status).toBe(409);
+        expect(await other.json()).toEqual({
+            error: "payment_identifier_conflict",
+            detail: "fingerprint",
+        });
+        expect(stub.paths).toEqual(SETTLED_ONCE);
+        expect(store.orders.listBySeller("demo-cafe")).toHaveLength(1);
+    });
+
+    test("바인딩은 정산 뒤 디스크에 남는다 — 프로세스와 함께 죽는 가드는 가드가 아니다", async () => {
+        const {store, pay} = shop();
+        await ticketOf(await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID)));
+        expect(store.paymentIdentifiers.get(ID)?.settled).toEqual({
+            payer: PAYER,
+            txHash: TX,
+            at: expect.any(Number),
+        });
+    });
+
+    test("식별자 없이 내는 결제는 지금까지와 똑같다", async () => {
+        const {stub, pay} = shop();
+        await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
+        expect(stub.paths).toEqual(SETTLED_ONCE);
     });
 });
