@@ -133,19 +133,38 @@ than refused. `/supported`'s identically named `extensions` is a different thing
 binding store and the 402 advertises this extension; the client then puts a fresh id
 (`pay_` plus 16 random bytes in hex) in its payload envelope, one per payment. **Before**
 settling, the seller binds that id to the request fingerprint — scheme, network, asset,
-amount, payTo, path and method folded with sha256 — and to the payment intent. A second
-attempt under the same id that changes either one is answered 409 with nothing charged; an
-id that already settled is answered from the stored payer and hash rather than settled
-again. The reason this is needed is that a retry signs a **new leaf**: the intent differs,
+amount, payTo, resource URL and method folded with sha256 — and to the payment intent. The
+resource URL includes the origin and the query: fold the path alone and a header paid at
+`/report?ticker=A` is served the stored receipt at `?ticker=B`, one settlement for two
+resources. It is also where the spec says to scope the key by tenant, merchant or route.
+The reason any of this is needed is that a retry signs a **new leaf**: the intent differs,
 so neither the facilitator's intent journal nor the shop's orders table can see the two
 attempts as one payment, and the identifier is the only name that spans them. That name is
 not signed, though — a man in the middle can rewrite it — so it is an idempotency hint and
 never authentication, and every safety decision is still made alongside the
 signature-derived intent. A seller that supplies no binding neither advertises the
-extension nor reads an id that arrives: promise only what you can keep. The hosted shop
-keeps two tables for the same reason it asks two questions: `orders` answers "what was
+extension nor reads an id that arrives: promise only what you can keep.
+
+There are four verdicts. An unseen id settles the usual way. The same request and the same
+leaf under an id that already settled is answered from the stored payer and hash **without
+settling again** (`replayed` on the success receipt says this call did no settling). A
+different fingerprint is `409 payment_identifier_conflict`: nothing was charged for this
+request, so a fresh id is how to pay. The same fingerprint with a different leaf, under an
+id that already settled, is `409 payment_identifier_settled`, and that one carries the
+stored payer and hash — it is where a buyer whose first attempt ended `settlement_pending`
+arrives after signing again, and "nothing was charged" would be the sentence that makes
+them pay twice. The buyer's client reads the first word as `PAYMENT_REJECTED` and the
+second as `SETTLEMENT_UNKNOWN` for that reason.
+
+The hosted shop keeps two tables because it asks two questions: `orders` answers "what was
 sold" once money has moved, and `payment_identifiers` answers "is this the same payment"
-from the first attempt onwards.
+from the first attempt onwards. A row there is written **before** the facilitator is asked
+anything, so attempts nobody verified claim one too — which is why it carries the same kind
+of prune the ledger's refusals do: unsettled rows only, bounded by both an age and a count.
+Settled rows are the replay guard and are never touched. The table took the store schema to
+version 7, and this build refuses an older file rather than migrating it: an operator moves
+the existing sqlite file aside and re-seeds, which recreates sellers, items, orders and
+tickets.
 
 The sequence below shows three paths for one and the same delegation — a normal
 settlement, an over-cap refusal, and an expiry refusal. What decides a refusal is
@@ -723,7 +742,9 @@ established" becomes a double payment. The seller's ladder says which in its sta
 
 | Status | When | Offer re-issued? | Receipt |
 |---|---|---|---|
-| `400 malformed_payment` | the header is oversized, unparseable, or not ERC-7710 | No — nothing read it | `invalid_payload`, no payer, `transaction: ""` |
+| `400 malformed_payment` | the header is oversized, unparseable, not ERC-7710, or carries a `payment-identifier` of the wrong shape | No — what to fix is inside the header | `invalid_payload`, `transaction: ""`, and the payer only when the header itself parsed |
+| `409 payment_identifier_conflict` | the same `payment-identifier` under a different fingerprint (another resource, price or method), or a different leaf under an id that has not settled | No — every payment under this id gets the same answer | that word and the payer, `transaction: ""`. Nothing was charged for this request |
+| `409 payment_identifier_settled` | the same fingerprint with a different leaf, under an id that already settled | No — that name has already paid | that word, the **stored** payer, and the hash when there is one |
 | `503 facilitator_unavailable` | `/supported` out of reach; `/verify` or `/settle` answered `rate_limited` or `facilitator_not_ready`; `/verify` answered `unexpected_verify_error` | No — the same payment may be presented again later | that word and the payer — except for a request that sent no header at all, which gets none |
 | `402` + offer | `/verify` refused, or a `/settle` failure that charged nobody (a budget word, and `settlement_reverted` even with a hash — a mined revert moved no asset) | **Yes** — a new leaf can pay | that word and the payer |
 | `504 settlement_unknown` | the `/settle` outcome is unknown: answer lost, `settlement_pending`, `unexpected_settle_error`, payer mismatch, and **a failure that names a hash under a word that is not a mined-failure word** | No — the buyer may be charged | `settlement_pending`, the payer, and the hash when there is one |
@@ -737,7 +758,8 @@ known. The hash rides along whenever there is one (`settlement_pending` on the 5
 A success receipt and a failure receipt are shaped differently, which is why the type is a
 union discriminated on `success` (`packages/shared/src/x402.ts`): `payer` is required of a
 success and may be omitted only on a failure — money that moved cannot fail to name who paid
-it, but the 400 rung answers a header it could not read and lost the name inside it.
+it, but a 400 answering a header it could not read lost the name inside it. The same 400
+does name the payer when the header parsed and only the identifier it carried was malformed.
 `errorReason` is the mirror image, required of a failure. The reference implementation leaves
 all three optional; this profile always holds a word folded onto a closed vocabulary before
 it answers, so leaving `errorReason` optional would put "a failure receipt with no reason" —

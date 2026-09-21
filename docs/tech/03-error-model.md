@@ -127,7 +127,9 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 
 | 상태 | 언제 | 오퍼를 다시 싣는가 | 영수증 |
 |---|---|---|---|
-| `400 malformed_payment` | 헤더가 크거나 파싱 불가·ERC-7710 아님 | 아니오 — 읽히지 않은 헤더다 | `invalid_payload`, 지불자 없음, `transaction: ""` |
+| `400 malformed_payment` | 헤더가 크거나 파싱 불가·ERC-7710 아님, 또는 실려 온 `payment-identifier`가 형식에 어긋남 | 아니오 — 고칠 곳이 헤더 안에 있다 | `invalid_payload`, `transaction: ""`, 그리고 헤더 자체가 읽힌 경우에만 지불자 |
+| `409 payment_identifier_conflict` | 같은 `payment-identifier`에 다른 지문(다른 자원·값·메서드), 또는 아직 정산되지 않은 id에 다른 리프 | 아니오 — 이 id로는 무엇을 내도 같은 답이다 | 그 낱말과 지불자, `transaction: ""`. 이 요청으로 청구된 것은 없다 |
+| `409 payment_identifier_settled` | 같은 지문에 다른 리프인데, 그 id로는 이미 정산이 끝났다 | 아니오 — 그 이름으로는 이미 냈다 | 그 낱말과 **저장된** 지불자, 그리고 해시가 있으면 해시 |
 | `503 facilitator_unavailable` | `/supported` 미도달, `/verify`·`/settle`이 `rate_limited`·`facilitator_not_ready`, `/verify`가 `unexpected_verify_error` | 아니오 — 같은 결제를 나중에 다시 내면 된다 | 그 낱말과 지불자. 단 헤더를 아예 안 보낸 요청에는 영수증 없음 |
 | `402` + 오퍼 | `/verify` 거절, 또는 아무도 청구되지 않은 `/settle` 실패(예산 낱말, 그리고 해시와 함께 오는 `settlement_reverted` — 채굴된 revert라 자산이 움직이지 않았다) | **예** — 새 leaf로 낼 수 있다 | 그 낱말과 지불자 |
 | `504 settlement_unknown` | `/settle` 결과를 모른다: 응답 유실, `settlement_pending`, `unexpected_settle_error`, payer 불일치, 그리고 **해시를 댄 실패의 낱말이 채굴 실패 낱말이 아닐 때** | 아니오 — 청구됐을 수 있다 | `settlement_pending`, 지불자, 그리고 해시가 있으면 해시 |
@@ -140,8 +142,9 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 
 영수증은 성공과 실패에서 모양이 다르고, 타입이 `success`로 판별하는 합집합인 것도 그
 때문이다(`packages/shared/src/x402.ts`): `payer`는 성공에 필수이고 실패에서만 생략될 수
-있다 — 움직인 돈이 누가 냈는지 모를 수는 없지만, 읽히지 않은 헤더에 답하는 400 칸은 그
-이름을 그 안에서 잃었다. `errorReason`은 그 거울상으로 실패에 필수다. 참조 구현은 셋을 다
+있다 — 움직인 돈이 누가 냈는지 모를 수는 없지만, 헤더 자체가 읽히지 않은 400은 그 이름도
+읽히지 않은 글자 안에 있었다. 같은 400이라도 헤더는 읽히고 그 안의 식별자만 형식에 어긋난
+경우에는 지불자를 댄다. `errorReason`은 그 거울상으로 실패에 필수다. 참조 구현은 셋을 다
 optional로 두지만, 우리 프로필은 나가는 낱말을 언제나 닫힌 어휘로 접어 갖고 있으므로
 optional로 두면 "이유 없는 실패 영수증"이라는 생산자 없는 상태가 타입에 생긴다.
 

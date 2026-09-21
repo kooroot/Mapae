@@ -191,7 +191,8 @@ mapaePaywall({
     paymentIdentifiers: {
         // id를 이 요청(지문)과 이 결제(intent)에 묶는다. 정산보다 먼저 불린다.
         //   {kind: "new"}       — 처음 보는 id. 그대로 정산한다
-        //   {kind: "conflict"}  — 같은 id에 다른 요청이나 다른 리프 → 409
+        //   {kind: "conflict"}  — 같은 id에 다른 요청이나 다른 리프 → 409.
+        //                         그 id로 이미 정산된 결제가 있으면 `settled`에 실어 준다
         //   {kind: "settled"}   — 이미 낸 결제 → 다시 정산하지 않고 그 결과로 답한다
         bind: (payment) => bindings.bind(payment),
         // 정산이 성공한 뒤에만 불린다. 지불자와 해시를 남긴다
@@ -204,8 +205,21 @@ mapaePaywall({
 읽지도 않는다 — 지킬 수 없는 약속은 하지 않는다. **저장은 디스크에 한다.** 프로세스와
 함께 죽는 가드는 가드가 아니다.
 
+지문은 scheme·network·asset·금액·`payTo`·**자원 URL**·메서드를 sha256으로 접은 값이다.
+자원 URL은 오리진과 쿼리까지 포함한다 — 같은 경로라도 쿼리가 다르면 다른 요청이고,
+한 번 낸 값으로 다른 답을 받아 가지 못하게 하려면 그래야 한다.
+
+`bind`를 부르는 시점은 facilitator보다 **앞**이므로, 서명을 아직 아무도 확인하지 않은
+시도까지 한 행씩 생긴다. 그러니 **정산되지 않은 행을 지우는 길을 함께 두라**(나이 기준과
+개수 기준 둘 다). 정산된 행은 지우지 않는다 — 그 행이 재생 가드다.
+
 id는 **서명되지 않는다.** 중간에 누가 바꿔 칠 수 있으므로 멱등성 힌트일 뿐 인증이 아니고,
 "이 손님이 맞는가"는 언제나 `receipt.intent`와 `receipt.payer`로 판단한다.
+
+**호스팅 상점(`apps/delegated-seller`)을 쓰고 있었다면**: 이 표가 들어오면서 저장소 스키마가
+7이 되었고, 이 빌드는 옛 파일을 마이그레이션하지 않고 거절한다(`… does not migrate — move
+the file aside`). 기존 sqlite 파일을 옆으로 치우고 다시 시드해야 하며, 판매자·상품·주문·
+티켓이 새로 만들어진다.
 
 ## 7. 공개 facilitator — `https://facilitator.mapae.io`
 
@@ -241,7 +255,8 @@ curl -s https://facilitator.mapae.io/supported
 |---|---|---|
 | `402` (헤더 없음) | 결제 헤더가 없다 | 정상. 에이전트가 낼 차례다 |
 | `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니거나, `payment-identifier`가 `[A-Za-z0-9_-]` 16–128자가 아니다. 영수증은 `invalid_payload`를 대고, 헤더 자체가 읽힌 경우에만 지불자를 댄다 | 에이전트 쪽 문제. `detail`이 사람이 읽을 이유를 말한다 |
-| `409 payment_identifier_conflict` | 이 `payment-identifier`가 이미 다른 요청이나 다른 리프에 묶여 있다(`detail`이 어느 쪽인지 말한다). 청구된 것은 없고 오퍼도 다시 싣지 않는다 | 에이전트는 새 id로 낸다. 같은 id로는 무엇을 내도 같은 답이다 |
+| `409 payment_identifier_conflict` | 이 `payment-identifier`가 이미 다른 요청에 묶여 있거나, 아직 정산되지 않은 결제에 묶여 있다(`detail`이 어느 쪽인지 말한다). **이 요청으로** 청구된 것은 없고 오퍼도 다시 싣지 않는다 | 에이전트는 새 id로 낸다. 같은 id로는 무엇을 내도 같은 답이다 |
+| `409 payment_identifier_settled` | 같은 요청인데 리프가 다르고, 그 id로는 이미 정산이 끝났다. 영수증이 저장된 지불자와 해시를 댄다 | 다시 내지 않는다. 해시를 탐색기에서 확인하고, 그 결제로 자원을 받으려면 **처음 낸 헤더 그대로** 다시 제시한다 |
 | `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했거나, facilitator가 결제를 보지 않았다 — 요청 제한, 또는 실패한 준비 검사 — `/verify`든 `/settle`이든. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 같은 결제로 다시 시도 |
 | `402` (오퍼 재발행) | facilitator가 위임을 거절했거나(만료, 한도 초과, 상한 10.00 초과, 오퍼 불일치), 아무도 청구되지 않은 정산 실패다. 새 leaf로 다시 낼 수 있으므로 오퍼를 다시 싣는다 | 손님의 위임을 확인. 가격이 상한 안인지 확인 |
 | `504 settlement_unknown` | 결과가 확정되지 않았다 — 응답 유실, `settlement_pending`, `unexpected_settle_error`, 또는 채굴 실패 낱말이 아닌 사유로 해시를 댄 실패. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 에이전트에게 다시 서명시키지 않는다 |

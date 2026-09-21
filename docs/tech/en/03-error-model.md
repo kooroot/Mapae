@@ -143,7 +143,9 @@ established" becomes a double payment. The seller's ladder says which in its sta
 
 | Status | When | Offer re-issued? | Receipt |
 |---|---|---|---|
-| `400 malformed_payment` | the header is oversized, unparseable, or not ERC-7710 | No — nothing read it | `invalid_payload`, no payer, `transaction: ""` |
+| `400 malformed_payment` | the header is oversized, unparseable, not ERC-7710, or carries a `payment-identifier` of the wrong shape | No — what to fix is inside the header | `invalid_payload`, `transaction: ""`, and the payer only when the header itself parsed |
+| `409 payment_identifier_conflict` | the same `payment-identifier` under a different fingerprint (another resource, price or method), or a different leaf under an id that has not settled | No — every payment under this id gets the same answer | that word and the payer, `transaction: ""`. Nothing was charged for this request |
+| `409 payment_identifier_settled` | the same fingerprint with a different leaf, under an id that already settled | No — that name has already paid | that word, the **stored** payer, and the hash when there is one |
 | `503 facilitator_unavailable` | `/supported` out of reach; `/verify` or `/settle` answered `rate_limited` or `facilitator_not_ready`; `/verify` answered `unexpected_verify_error` | No — the same payment may be presented again later | that word and the payer — except for a request that sent no header at all, which gets none |
 | `402` + offer | `/verify` refused, or a `/settle` failure that charged nobody (a budget word, and `settlement_reverted` even with a hash — a mined revert moved no asset) | **Yes** — a new leaf can pay | that word and the payer |
 | `504 settlement_unknown` | the `/settle` outcome is unknown: answer lost, `settlement_pending`, `unexpected_settle_error`, payer mismatch, and **a failure that names a hash under a word that is not a mined-failure word** | No — the buyer may be charged | `settlement_pending`, the payer, and the hash when there is one |
@@ -157,7 +159,8 @@ known. The hash rides along whenever there is one (`settlement_pending` on the 5
 A success receipt and a failure receipt are shaped differently, which is why the type is a
 union discriminated on `success` (`packages/shared/src/x402.ts`): `payer` is required of a
 success and may be omitted only on a failure — money that moved cannot fail to name who paid
-it, but the 400 rung answers a header it could not read and lost the name inside it.
+it, but a 400 answering a header it could not read lost the name inside it. The same 400
+does name the payer when the header parsed and only the identifier it carried was malformed.
 `errorReason` is the mirror image, required of a failure. The reference implementation leaves
 all three optional; this profile always holds a word folded onto a closed vocabulary before
 it answers, so leaving `errorReason` optional would put "a failure receipt with no reason" —

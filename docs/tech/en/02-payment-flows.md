@@ -95,19 +95,38 @@ than refused. `/supported`'s identically named `extensions` is a different thing
 binding store and the 402 advertises this extension; the client then puts a fresh id
 (`pay_` plus 16 random bytes in hex) in its payload envelope, one per payment. **Before**
 settling, the seller binds that id to the request fingerprint — scheme, network, asset,
-amount, payTo, path and method folded with sha256 — and to the payment intent. A second
-attempt under the same id that changes either one is answered 409 with nothing charged; an
-id that already settled is answered from the stored payer and hash rather than settled
-again. The reason this is needed is that a retry signs a **new leaf**: the intent differs,
+amount, payTo, resource URL and method folded with sha256 — and to the payment intent. The
+resource URL includes the origin and the query: fold the path alone and a header paid at
+`/report?ticker=A` is served the stored receipt at `?ticker=B`, one settlement for two
+resources. It is also where the spec says to scope the key by tenant, merchant or route.
+The reason any of this is needed is that a retry signs a **new leaf**: the intent differs,
 so neither the facilitator's intent journal nor the shop's orders table can see the two
 attempts as one payment, and the identifier is the only name that spans them. That name is
 not signed, though — a man in the middle can rewrite it — so it is an idempotency hint and
 never authentication, and every safety decision is still made alongside the
 signature-derived intent. A seller that supplies no binding neither advertises the
-extension nor reads an id that arrives: promise only what you can keep. The hosted shop
-keeps two tables for the same reason it asks two questions: `orders` answers "what was
+extension nor reads an id that arrives: promise only what you can keep.
+
+There are four verdicts. An unseen id settles the usual way. The same request and the same
+leaf under an id that already settled is answered from the stored payer and hash **without
+settling again** (`replayed` on the success receipt says this call did no settling). A
+different fingerprint is `409 payment_identifier_conflict`: nothing was charged for this
+request, so a fresh id is how to pay. The same fingerprint with a different leaf, under an
+id that already settled, is `409 payment_identifier_settled`, and that one carries the
+stored payer and hash — it is where a buyer whose first attempt ended `settlement_pending`
+arrives after signing again, and "nothing was charged" would be the sentence that makes
+them pay twice. The buyer's client reads the first word as `PAYMENT_REJECTED` and the
+second as `SETTLEMENT_UNKNOWN` for that reason.
+
+The hosted shop keeps two tables because it asks two questions: `orders` answers "what was
 sold" once money has moved, and `payment_identifiers` answers "is this the same payment"
-from the first attempt onwards.
+from the first attempt onwards. A row there is written **before** the facilitator is asked
+anything, so attempts nobody verified claim one too — which is why it carries the same kind
+of prune the ledger's refusals do: unsettled rows only, bounded by both an age and a count.
+Settled rows are the replay guard and are never touched. The table took the store schema to
+version 7, and this build refuses an older file rather than migrating it: an operator moves
+the existing sqlite file aside and re-seeds, which recreates sellers, items, orders and
+tickets.
 
 The sequence below shows three paths for one and the same delegation — a normal
 settlement, an over-cap refusal, and an expiry refusal. What decides a refusal is
