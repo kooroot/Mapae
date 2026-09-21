@@ -102,7 +102,7 @@ for. Dedupe on `intent` — one row per intent — and read this as "some other 
 | `502 settlement_misdirected` | the redemption was mined and credited someone who is not this `payTo` — the buyer **may** have been charged, so no offer is re-issued |
 | `404` | the paywall is the last matched route — it never prices a route nothing serves |
 
-Every refusal of an *attempted* payment carries the x402 v2 `SettleResponse` in
+Every refusal that *read* the payment header carries the x402 v2 `SettleResponse` in
 `Payment-Response` (base64 UTF-8 JSON): `success: false` plus one §9 word —
 `invalid_payload`, `settlement_pending`, `rate_limited`, `delegation_rejected` and the rest.
 A success receipt and a failure receipt are shaped differently: `payer` is always present on
@@ -116,9 +116,8 @@ comes back as a 402 with a payer.
 Two answers carry no receipt: a request that sent no payment header, since there is no payment
 for it to be the receipt of, and the `404`, which leaves before the header is read — so even a
 request that did pay gets none there, because no route would have served it either way. Every
-answer, failing or not — the 404 included —
-carries `Cache-Control: no-store` and `Vary: Payment-Signature`, so no shared cache hands a
-paid body to a request that did not pay.
+answer, failing or not — the 404 included — carries `Cache-Control: no-store` and
+`Vary: Payment-Signature`, so no shared cache hands a paid body to a request that did not pay.
 
 The offer is never re-issued beside a transaction hash. A `/settle` failure that names one is
 answered 502 for `vendor_not_credited` and 504 otherwise, because every word that could reach

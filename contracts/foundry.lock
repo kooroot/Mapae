@@ -1,4 +1,7 @@
 {
+  "lib/delegation-framework": {
+    "rev": "d0ebab5386503824730fdc0e48924f362d8290d0"
+  },
   "lib/forge-std": {
     "rev": "bf647bd6046f2f7da30d0c2bf435e5c76a780c1b"
   },
