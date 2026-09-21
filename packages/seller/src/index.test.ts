@@ -1225,6 +1225,74 @@ describe("mapaePaywall — payment-identifier 확장", () => {
         expect(remote.paths()).not.toContain("/verify");
     });
 
+    test("정산된 id가 다른 쿼리·다른 호스트로 재생되지 않는다", async () => {
+        const {port} = binding();
+        const remote = facilitator();
+        const app = new Hono();
+        app.get("/paid", paywall({fetch: remote.fetch, paymentIdentifiers: port}), (c) =>
+            c.json({report: c.req.query("ticker") ?? "none"}),
+        );
+        const header = identified(IDENTIFIER);
+        const first = await app.request(`${RESOURCE}?ticker=AAPL`, {
+            headers: {[PAYMENT_SIGNATURE_HEADER]: header},
+        });
+        expect(first.status).toBe(200);
+        expect(await first.json()).toEqual({report: "AAPL"});
+        remote.calls.length = 0;
+
+        // 같은 경로, 다른 쿼리. 지문에 쿼리가 없던 동안 이 요청은 저장된 영수증으로 200을
+        // 받았다 — 정산 한 번으로 리포트 둘. `baseUrl` 없이는 402의 `resource.url`이 쿼리를
+        // 포함하므로, 값이 매겨진 자원 자체가 달랐다.
+        const other = await app.request(`${RESOURCE}?ticker=TSLA`, {
+            headers: {[PAYMENT_SIGNATURE_HEADER]: header},
+        });
+        expect(other.status).toBe(409);
+        expect(await other.json()).toEqual({
+            error: PAYMENT_IDENTIFIER_CONFLICT,
+            detail: "fingerprint",
+        });
+        expect(remote.paths()).toEqual([]);
+
+        // 호스트도 같은 이유로 지문 안에 있다: 한 앱이 두 호스트를 서빙하면 경로·가격·payTo가
+        // 모두 같을 수 있고, 사양은 tenant·merchant 단위로 키를 좁히라고 적는다.
+        const elsewhere = await app.request("http://other.test/paid?ticker=AAPL", {
+            headers: {[PAYMENT_SIGNATURE_HEADER]: header},
+        });
+        expect(elsewhere.status).toBe(409);
+        expect(await elsewhere.json()).toEqual({
+            error: PAYMENT_IDENTIFIER_CONFLICT,
+            detail: "fingerprint",
+        });
+    });
+
+    test("baseUrl을 준 판매자는 오리진을 그것으로 접는다 — 터널 뒤에서도 한 자원이다", async () => {
+        const {port} = binding();
+        const remote = facilitator();
+        const app = new Hono();
+        app.get(
+            "/paid",
+            mapaePaywall({
+                payTo: PAY_TO,
+                price: "1.00",
+                description: "Logo — final SVG",
+                facilitator: "http://127.0.0.1:8081",
+                fetch: remote.fetch,
+                baseUrl: "https://shop.example",
+                paymentIdentifiers: port,
+            }),
+            (c) => c.json({ok: true}),
+        );
+        const header = identified(IDENTIFIER);
+        expect((await pay(app, header)).status).toBe(200);
+        // 같은 자원에 다른 홉으로 들어온 같은 결제: 오리진이 `baseUrl`로 접히므로 같은
+        // 지문이고, 저장된 결과가 그대로 나간다.
+        const viaOtherHop = await app.request("http://127.0.0.1:3001/paid", {
+            headers: {[PAYMENT_SIGNATURE_HEADER]: header},
+        });
+        expect(viaOtherHop.status).toBe(200);
+        expect(remote.paths()).toEqual(["/supported", "/verify", "/settle"]);
+    });
+
     test("이미 정산된 id에 다른 리프가 오면 409 — 청구됐다는 사실을 낱말과 해시로 말한다", async () => {
         const {port} = binding();
         const remote = facilitator();

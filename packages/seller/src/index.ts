@@ -637,7 +637,7 @@ function writeFailureReceipt(
  * 새 행이 맞지 않는다 — 그때 조용히 "같은 결제"로 읽히는 대신 409로 떨어지도록 태그를
  * 함께 접는다. 태그를 올리는 것이 마이그레이션이다.
  */
-const FINGERPRINT_VERSION = "mapae.x402.payment-identifier.fingerprint.v1";
+const FINGERPRINT_VERSION = "mapae.x402.payment-identifier.fingerprint.v2";
 
 /**
  * 사양 "Request Binding"의 정규화된 요청 지문. 아래 순서로 한 줄에 이어 sha256으로 접는다:
@@ -648,19 +648,30 @@ const FINGERPRINT_VERSION = "mapae.x402.payment-identifier.fingerprint.v1";
  *   4. asset                       체크섬 주소
  *   5. amount                      최소 단위 정수 문자열
  *   6. payTo                       체크섬 주소
- *   7. 자원 경로                   요청이 온 그대로의 pathname, 쿼리 없이
+ *   7. 자원                        오리진 + 경로 + **쿼리**, 퍼센트 인코딩된 그대로
  *   8. 메서드                      대문자
  *
- * 사양이 함께 적은 "애플리케이션 식별자"는 경로가 대신한다: 이 미들웨어는 자기 뒤에 무엇이
- * 팔리는지 모르고, 호스팅 상점의 상품 키는 경로 안에 있다. 쿼리를 빼는 것은 오퍼가 값을
- * 매기는 단위가 경로이기 때문이다 — 같은 경로의 다른 쿼리는 같은 402를 받는다.
+ * 사양이 함께 적은 "애플리케이션 식별자"는 이 자원 문자열이 대신한다: 이 미들웨어는 자기
+ * 뒤에 무엇이 팔리는지 모르고, 호스팅 상점의 상품 키도 리포트의 종목 코드도 URL 안에 있다.
+ *
+ * 쿼리와 오리진이 들어 있는 것이 v1과의 차이이고, 둘 다 같은 사고를 막는다 — 정산된 id가
+ * 다른 자원으로 재생되는 것. `/report?ticker=A`로 한 번 낸 헤더를 `/report?ticker=B`에
+ * 내밀면 v1에서는 지문이 같아 저장된 영수증으로 200이 나갔다(확장 이전에는 같은 재생이
+ * `/verify`에서 쓰인 allowance로 거절됐으니, 바인딩이 만든 새 구멍이었다). 오리진도 같은
+ * 이유다 — 사양이 "tenant, merchant, route 단위로 키를 좁히라"고 적은 자리다.
+ *
+ * 오리진은 {@link MapaeOptions.baseUrl}이 있으면 그것이고, 없으면 요청이 온 오리진이다.
+ * 402의 `resource.url`은 `baseUrl` 뒤에서 쿼리를 버리므로 지문이 오퍼보다 촘촘해지는데,
+ * 그 방향은 안전하다: 오퍼가 구별하지 않는 차이가 여기서는 409가 되고, 409는 아무것도
+ * 청구하지 않는 실패다. 반대 방향 — 지문이 오퍼보다 성기면 — 이 산 적 없는 자원을 내주는
+ * 사고다.
  *
  * 구분자는 줄바꿈이고, 위 값들 중 줄바꿈을 담을 수 있는 것은 없다(주소·정수·CAIP-2·
- * 퍼센트 인코딩된 경로·메서드). 그래서 이어 붙인 문자열이 항목 경계를 잃지 않는다.
+ * 퍼센트 인코딩된 URL·메서드). 그래서 이어 붙인 문자열이 항목 경계를 잃지 않는다.
  */
 function requestFingerprint(
     requirements: Erc7710PaymentRequirements,
-    path: string,
+    resource: string,
     method: string,
 ): string {
     const canonical = [
@@ -670,7 +681,7 @@ function requestFingerprint(
         requirements.asset,
         requirements.amount,
         requirements.payTo,
-        path,
+        resource,
         method.toUpperCase(),
     ].join("\n");
     // 0x 접두사를 떼어 64자 소문자 hex로 — 저장소의 해시 칸이 그 모습을 요구한다.
@@ -868,13 +879,14 @@ function buildPaywall(
         // 다른 요청이면 캐시된 결과를 주지도, 두 번째 연산을 하지도 말 것"), 정산은 그
         // "두 번째 연산"이다.
         if (paymentIdentifiers && identifier !== undefined) {
+            const requested = new URL(c.req.url);
             const bound = paymentIdentifiers.bind({
                 id: identifier,
-                // 쿼리를 뺀 경로 — 오퍼가 값을 매기는 단위이고, `resource.url`이 쓰는 것과
-                // 같은 값이다.
+                // 오리진 + 경로 + 쿼리. 뒤에 선 핸들러가 무엇으로 답을 바꾸든 그 값이 이 안에
+                // 있어야, 한 번 낸 값으로 다른 답을 받아 가지 못한다.
                 fingerprint: requestFingerprint(
                     requirements,
-                    new URL(c.req.url).pathname,
+                    `${baseUrl ?? requested.origin}${requested.pathname}${requested.search}`,
                     c.req.method,
                 ),
                 paymentIntentId: intent,
