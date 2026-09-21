@@ -1,11 +1,13 @@
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
+    PAYMENT_IDENTIFIER_EXTENSION,
     PAYMENT_REQUIRED_HEADER,
     PAYMENT_RESPONSE_HEADER,
     PAYMENT_SIGNATURE_HEADER,
     X402_VERSION,
     buildErc7710PaymentPayload,
+    buildPaymentIdentifierEcho,
     decodePaymentRequiredHeader,
     decodePaymentResponseHeader,
     encodePaymentHeader,
@@ -17,6 +19,7 @@ import {
     DELEGATION_REJECTED,
     FACILITATOR_NOT_READY,
     INVALID_PAYLOAD,
+    PAYMENT_IDENTIFIER_CONFLICT,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     UNEXPECTED_SETTLE_ERROR,
@@ -197,6 +200,11 @@ const SELLER_REFUSAL_CODES: ReadonlyMap<string, SellerRefusalCode> = new Map<str
     [UNEXPECTED_VERIFY_ERROR, "SELLER_UNAVAILABLE"],
     // A verdict on the payment, formed before anything was broadcast.
     [DELEGATION_REJECTED, "PAYMENT_REJECTED"],
+    // 같은 결제 식별자에 다른 결제를 냈다(사양의 409). 아무것도 청구되지 않았으므로
+    // `SETTLEMENT_UNKNOWN`이 아니고, 그렇다고 다시 시도할 수 있는 실패도 아니다 — 이
+    // id로는 영원히 같은 답이 온다. 고칠 곳은 판매자도 위임도 아니라 호출자의 멱등성
+    // 사용법이라, 위임을 들여다보게 하는 `PAYMENT_REJECTED`가 맞는 칸이다.
+    [PAYMENT_IDENTIFIER_CONFLICT, "PAYMENT_REJECTED"],
     ...X402_REFUSAL_WORDS.map((word): [string, SellerRefusalCode] => [word, "PAYMENT_REJECTED"]),
 ]);
 
@@ -265,8 +273,38 @@ export type DelegatedPaymentResult =
           contentType?: string;
           /** Parsed when the content type is JSON, the body text otherwise. */
           resource: unknown;
+          /** The `payment-identifier` this payment was presented under. See below. */
+          paymentIdentifier: string;
       }
-    | {ok: false; code: DelegatedPaymentFailureCode; status?: number; detail: string};
+    | {
+          ok: false;
+          code: DelegatedPaymentFailureCode;
+          status?: number;
+          detail: string;
+          /**
+           * 결제가 어느 식별자로 제시됐는지 — **헤더가 전선에 오른 뒤의 실패에만 있다.**
+           *
+           * 그것이 이 칸의 뜻이다: 값이 있으면 판매자가 이 id로 결제를 봤다는 말이고,
+           * 그래서 호출자가 같은 결제를 가리킬 수 있다. 402를 읽다 실패하거나 서명이
+           * 실패한 결과에는 없다 — 아무에게도 제시되지 않은 id를 "이 결제의 식별자"라고
+           * 부르는 것은 없는 결제를 가리키는 것이다.
+           */
+          paymentIdentifier?: string;
+      };
+
+/**
+ * 한 결제의 멱등성 키. 사양 "`id` Format"의 권고 모양 그대로 — `pay_` 접두사에 128비트
+ * hex, 36자로 16–128 범위 안이다.
+ *
+ * `crypto.getRandomValues`이고 `Math.random`이 아니다: 이 값은 판매자의 (id → 결제)
+ * 바인딩을 여는 키이고, 추측할 수 있으면 남이 우리 결제 결과를 조회하거나 우리가 쓸 id를
+ * 먼저 다른 지문으로 잡아 409를 만들어 낼 수 있다.
+ */
+export function newPaymentIdentifier(): string {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return `pay_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
 
 /**
  * The rail this agent pays on: exact scheme, GIWA, ERC-7710 transfer. An offer past
@@ -642,6 +680,14 @@ function readSellerRefusal(header: string | null): DeclaredRefusal {
  * agent and the D5 MCP server; the caller owns env/file loading, deployment
  * verification, and provider construction.
  *
+ * 결제마다 `payment-identifier` 확장의 새 id를 실어 보내고, 성공·실패 양쪽 결과에
+ * `paymentIdentifier`로 돌려준다 — 호출자가 같은 결제를 가리킬 수 있게. **같은 id로 다시
+ * 제시하는 일은 아직 하지 않는다**: 이 함수는 호출마다 새 leaf를 서명하고 새 id를 만들며,
+ * 재시도에서 같은 헤더를 그대로 다시 내미는 것은 다음 라운드의 일이다
+ * (`apps/payment-scheduler`의 자동 재시도도 아직 같은 id를 재사용하지 않는다). 지금 이
+ * 확장이 닫는 구멍은 그 앞의 것이다 — 판매자가 같은 id에 **다른** 결제를 받아 두 번
+ * 청구하는 일을 409로 막는다.
+ *
  * Security invariants (preserved from the CLI agent):
  * - On a failed retry the seller's body is neither read nor returned. A malicious
  *   seller can reflect `Payment-Signature` back after we send a bearer permission
@@ -749,14 +795,33 @@ export async function payForDelegatedResource(
         return failure("MANAGER_MISMATCH", "provider returned an unexpected DelegationManager");
     }
 
+    // 결제마다 새 식별자. 판매자가 402에서 `payment-identifier`를 광고했는지, 광고했다면
+    // `required: true`였는지 보지 않는다 — 어느 쪽이든 우리는 항상 싣고, 싣는 쪽에 손해가
+    // 없다. 확장을 모르는 판매자에게는 자기가 이름 붙이지 않은 봉투 항목 하나이고,
+    // 퍼실리테이터의 검증기도 자기가 이름 붙인 칸만 비교한다. 분기를 두면 아무것도 달라지지
+    // 않는 판정을 402에서 한 번 더 읽어야 한다.
+    //
+    // **이 id는 서명 대상이 아니다.** leaf 서명은 위임의 typed-data이고 id는 HTTP 봉투의
+    // 값이라, 중간자가 값을 바꿔 넣을 수 있다. 그래서 id는 멱등성 힌트이지 인증 수단이
+    // 아니다 — 판매자의 안전 판정은 항상 서명에서 파생된 intent id와 함께 이루어져야 한다.
+    const paymentIdentifier = newPaymentIdentifier();
     const payload = buildErc7710PaymentPayload({
         accepted,
         delegationManager: getAddress(leaf.delegationManager),
         permissionContext: leaf.permissionContext,
         delegator: getAddress(leaf.delegator),
+        extensions: {
+            [PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierEcho(paymentIdentifier),
+        },
     });
 
     const paymentHeader = encodePaymentHeader(payload);
+    /** 헤더가 전선에 오른 뒤의 실패 — 어느 id로 제시된 결제였는지를 함께 돌려준다. */
+    const sent = (
+        code: DelegatedPaymentFailureCode,
+        detail: string,
+        status?: number,
+    ): DelegatedPaymentResult => ({ok: false, code, detail, status, paymentIdentifier});
 
     // One submission header, whichever way the offer arrived. An ERC-7710 payload
     // carries a full permission context, and the same value under a second header name
@@ -775,7 +840,7 @@ export async function payForDelegatedResource(
         // as "the request never landed", which is exactly the belief that makes a caller
         // retry a payment that already went through. The identical failure *before* the
         // header is sent is a genuine TRANSPORT_ERROR; the difference is the header.
-        return failure("SETTLEMENT_UNKNOWN", `no answer after the payment was sent: ${errorMessage(error)}`);
+        return sent("SETTLEMENT_UNKNOWN", `no answer after the payment was sent: ${errorMessage(error)}`);
     }
     if (!second.ok) {
         // Do not read the body: a malicious seller can reflect Payment-Signature after
@@ -814,7 +879,7 @@ export async function payForDelegatedResource(
         // The hash is matched against a hex pattern before it gets here, so it is a hash and
         // not seller prose — and it is the one thing the caller can take to an explorer.
         const found = refusal.transaction === undefined ? "" : ` — transaction ${refusal.transaction}`;
-        return failure(code, `${what} — ${REFUSAL_NOTE[code]}${found}`, second.status);
+        return sent(code, `${what} — ${REFUSAL_NOTE[code]}${found}`, second.status);
     }
 
     // A paid resource is whatever the seller serves — a ticket as JSON, a report as
@@ -837,7 +902,7 @@ export async function payForDelegatedResource(
                 ? await second.json()
                 : await second.text();
     } catch (error) {
-        return failure("MALFORMED_RESOURCE", `resource could not be read: ${errorMessage(error)}`);
+        return sent("MALFORMED_RESOURCE", `resource could not be read: ${errorMessage(error)}`);
     }
     // The payment succeeded, so this body is what the caller paid for and has to
     // come back. It is still seller-controlled text that lands in MCP tool output
@@ -856,5 +921,6 @@ export async function payForDelegatedResource(
         transaction: receipt ? receipt.transaction : extractTransaction(resource),
         ...(contentType === undefined ? {} : {contentType}),
         resource,
+        paymentIdentifier,
     };
 }

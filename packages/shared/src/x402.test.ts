@@ -1,16 +1,20 @@
 import {describe, expect, test} from "bun:test";
 import {getAddress} from "viem";
 import {
+    PAYMENT_IDENTIFIER_EXTENSION,
     X402_VERSION,
     buildErc7710PaymentPayload,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
+    buildPaymentIdentifierEcho,
+    buildPaymentIdentifierOffer,
     decodePaymentHeader,
     decodePaymentRequiredHeader,
     decodePaymentResponseHeader,
     encodePaymentHeader,
     encodePaymentRequiredHeader,
     encodePaymentResponseHeader,
+    readPaymentIdentifier,
     type PaymentRequired,
     type Erc7710PaymentRequirements,
 } from "./x402.js";
@@ -173,6 +177,104 @@ describe("x402 v2 transport headers", () => {
         // Not merely `payer: undefined`: an absent key is what goes on the wire, because
         // JSON drops an undefined value and a reader must not have to tell the two apart.
         expect(decoded).not.toHaveProperty("payer");
+    });
+});
+
+describe("payment-identifier 확장", () => {
+    const ID = "pay_7d5d747be160e280504c099d984bcfe0";
+    /** 사양 문서에 적힌 스키마 그대로. 우리 상수를 다시 읽는 대신 여기에 옮겨 고정한다. */
+    const SCHEMA = {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        type: "object",
+        properties: {
+            required: {type: "boolean"},
+            id: {type: "string", minLength: 16, maxLength: 128},
+        },
+        required: ["required"],
+    };
+
+    test("서버 광고와 클라이언트 제시가 사양의 두 예시와 같은 봉투다", () => {
+        expect(PAYMENT_IDENTIFIER_EXTENSION).toBe("payment-identifier");
+        // 사양 "PaymentRequired": info.required + 위 스키마.
+        expect(buildPaymentIdentifierOffer()).toEqual({info: {required: false}, schema: SCHEMA});
+        // 사양 "PaymentPayload": 같은 스키마를 에코하고 info에 id를 더한다.
+        expect(buildPaymentIdentifierEcho(ID)).toEqual({
+            info: {required: false, id: ID},
+            schema: SCHEMA,
+        });
+    });
+
+    test("봉투는 페이로드 헤더를 왕복하고, 확장을 쓰지 않은 결제에는 칸이 없다", () => {
+        const accepted = buildErc7710PaymentRequirements({payTo: PAYEE, amount: 1_000_000n});
+        const withId = buildErc7710PaymentPayload({
+            accepted,
+            delegationManager: MANAGER,
+            permissionContext: "0x1234",
+            delegator: DELEGATOR,
+            extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierEcho(ID)},
+        });
+        const decoded = decodePaymentHeader(encodePaymentHeader(withId));
+        expect(decoded).toEqual(withId);
+        expect(readPaymentIdentifier(decoded)).toEqual({kind: "present", id: ID});
+
+        const without = buildErc7710PaymentPayload({
+            accepted,
+            delegationManager: MANAGER,
+            permissionContext: "0x1234",
+            delegator: DELEGATOR,
+        });
+        expect("extensions" in without).toBe(false);
+        expect(readPaymentIdentifier(without)).toEqual({kind: "absent"});
+    });
+
+    test("형식을 어긴 id는 '없음'이 아니라 '잘못됨'으로 읽힌다", () => {
+        const read = (id: unknown) =>
+            readPaymentIdentifier({
+                extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: {info: {required: false, id}}},
+            }).kind;
+        // 사양 "id Format": 16–128자, 영숫자·하이픈·밑줄.
+        expect(read("pay_shorty")).toBe("malformed"); // 10자
+        expect(read("pay_shorty12345")).toBe("malformed"); // 15자 — 한 자 짧다
+        expect(read(`pay_${"a".repeat(125)}`)).toBe("malformed"); // 129자 — 한 자 길다
+        expect(read(`pay_${"a".repeat(124)}`)).toBe("present"); // 128자 — 경계는 안이다
+        expect(read("pay_7d5d747be160e28!")).toBe("malformed");
+        expect(read("pay_7d5d747be160 e28")).toBe("malformed");
+        expect(read("pay.7d5d747be160e280")).toBe("malformed");
+        expect(read(42)).toBe("malformed");
+        // 하이픈·밑줄은 허용 문자다.
+        expect(read("pay-7d5d747b_e160e280")).toBe("present");
+    });
+
+    test("봉투가 깨진 항목은 malformed, id 없는 항목은 absent", () => {
+        // 확장을 쓴다고 이름을 올려 두고 모양을 틀린 것 — 조용히 무시하면 안 된다.
+        expect(readPaymentIdentifier({extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: "x"}}).kind).toBe(
+            "malformed",
+        );
+        expect(
+            readPaymentIdentifier({extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: {info: "x"}}}).kind,
+        ).toBe("malformed");
+        // 사양의 스키마에서 id는 선택이다: required:false를 광고한 서버에 "id는 없다"고
+        // 답하는 것은 합법이고, 그 결제는 멱등성 약속이 없는 결제일 뿐이다.
+        expect(
+            readPaymentIdentifier({
+                extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: {info: {required: false}}},
+            }).kind,
+        ).toBe("absent");
+        // 남의 확장만 실은 봉투, 봉투가 없는 문서, 문서가 아닌 값 — 모두 없음이다.
+        expect(readPaymentIdentifier({extensions: {mapae: {info: {}}}}).kind).toBe("absent");
+        expect(readPaymentIdentifier({extensions: 7}).kind).toBe("absent");
+        expect(readPaymentIdentifier({}).kind).toBe("absent");
+        expect(readPaymentIdentifier(null).kind).toBe("absent");
+        expect(readPaymentIdentifier("payload").kind).toBe("absent");
+    });
+
+    test("402 광고도 같은 봉투로 헤더를 왕복한다", () => {
+        const body: PaymentRequired<Erc7710PaymentRequirements> = {
+            x402Version: X402_VERSION,
+            accepts: [buildErc7710PaymentRequirements({payTo: PAYEE, amount: 1_000_000n})],
+            extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierOffer()},
+        };
+        expect(decodePaymentRequiredHeader(encodePaymentRequiredHeader(body))).toEqual(body);
     });
 });
 

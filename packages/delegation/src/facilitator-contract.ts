@@ -126,6 +126,25 @@ export const VENDOR_NOT_CREDITED = "vendor_not_credited";
 export const SETTLEMENT_REVERTED = "settlement_reverted";
 
 /**
+ * 같은 `payment-identifier`에 다른 결제가 왔다 — 판매자의 409.
+ *
+ * §9에 없는 이 프로필의 두 번째 낱말이고, {@link DELEGATION_REJECTED}와 달리
+ * **facilitator가 만들지 않는다**: 확장의 바인딩은 자원 서버가 쥔 약속이고, 퍼실리테이터는
+ * id를 보지도 않는다. 그래서 {@link KNOWN_REFUSAL_REASONS}에 넣지 않았다 — 그 집합은
+ * 퍼실리테이터의 낱말을 통과시키는 필터이고, 이 낱말이 거기 있으면 퍼실리테이터가 남의
+ * 약속을 대신 깼다고 주장하는 답이 402로 그대로 흘러나간다.
+ *
+ * 여기 선언하는 이유는 {@link INVALID_PAYLOAD}와 같다: 판매자가 쓰고
+ * `payment-client.ts`가 읽는다(닫힌 집합에서 `PAYMENT_REJECTED`로 분류한다 — 같은 id로는
+ * 다시 시도해서는 안 되는 실패다). 한쪽에만 적힌 낱말은 한쪽에서만 이름이 바뀔 수 있다.
+ *
+ * 근거는 사양의 "Idempotency Behavior" 표다: 같은 id에 다른 요청이 오면 캐시된 결과를
+ * 주지도, 두 번째 연산을 하지도 말고 409로 실패해야 한다. 서버가 안전하게 고를 수 있는
+ * 답이 없다 — 클라이언트가 스스로 한 멱등성 약속을 깬 것이기 때문이다.
+ */
+export const PAYMENT_IDENTIFIER_CONFLICT = "payment_identifier_conflict";
+
+/**
  * §9's words for a failure that is ours rather than the request's, one per route.
  *
  * Neither is a verdict, so neither reaches the seller as one. `unexpected_verify_error` is
@@ -158,7 +177,9 @@ export const UNEXPECTED_SETTLE_ERROR = "unexpected_settle_error";
  * client: {@link SETTLEMENT_PENDING} (money may have moved), {@link RATE_LIMITED} and
  * {@link FACILITATOR_NOT_READY} (nothing was examined, retry later), and
  * {@link UNEXPECTED_VERIFY_ERROR} / {@link UNEXPECTED_SETTLE_ERROR} (no verdict at all,
- * and on `/settle` no claim about the broadcast either).
+ * and on `/settle` no claim about the broadcast either). {@link PAYMENT_IDENTIFIER_CONFLICT}
+ * is absent for a different reason: no facilitator produces it, because the
+ * `payment-identifier` binding is a promise the resource server keeps on its own.
  *
  * Every word admitted here is answered with a 402 that re-issues the offer, the five that
  * name a defect in the request's own text included (`unsupported_scheme`, `invalid_network`,

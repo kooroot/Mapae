@@ -118,8 +118,9 @@ export interface ResourceInfo {
  *
  * The spec's envelope is two slots, not an opaque blob: `info` is what the extension
  * itself declares, and `schema` is a JSON Schema describing the shape a client echoes
- * back in its payload. Mapae publishes `info` only — nothing it serves asks the client
- * to echo anything, so there is no shape to describe yet.
+ * back in its payload. The hosted shop's own `mapae` entry publishes `info` alone — it asks
+ * the client to echo nothing, so there is no shape to describe — while `payment-identifier`
+ * carries both, because there the echo is the whole point.
  */
 export interface PaymentExtension {
     info: unknown;
@@ -172,15 +173,18 @@ export interface Erc7710DelegationPayload {
  * requirements are embedded under `accepted`, which is how the facilitator
  * resolves which scheme handler to use.
  *
- * Nor is there an `extensions` slot, because nothing here produces one: the spec has a
- * client echo the extensions it actually *used*, and no payer in this repo uses one. The
- * slot arrives together with the first extension that needs it; writing the echo before
- * then would be a guess about a shape no extension has asked for.
+ * `extensions` is the same envelope map the 402 carries, on the payer's side: the spec has
+ * a client echo the extensions it actually *used*. The slot was absent while nothing here
+ * produced one; `payment-identifier` is the first, and `payForDelegatedResource` fills it on
+ * every payment (see {@link buildPaymentIdentifierEcho}). It is declared on both payload
+ * shapes because it is a property of the v2 payload wire rather than of one scheme — the
+ * decoded header is `AnyPaymentPayload`, and a counterparty may echo an extension on either
+ * rail.
  *
- * The reference client is looser than that rule — `@x402/core` 2.20.0 `mergeExtensions`
- * (dist/esm/client/index.mjs:283) returns the seller's whole map when the client adds
- * nothing of its own, so a reference-stack payer paying our hosted shop echoes the
- * `mapae` entry back without ever using it. That reaches us as an unnamed key, and the
+ * The reference client is looser than the "only what you used" rule — `@x402/core` 2.20.0
+ * `mergeExtensions` (dist/esm/client/index.mjs:283) returns the seller's whole map when the
+ * client adds nothing of its own, so a reference-stack payer paying our hosted shop echoes
+ * the `mapae` entry back without ever using it. That reaches us as an unnamed key, and the
  * facilitator's validator compares the fields it names instead of enumerating the object,
  * so it is ignored rather than refused.
  */
@@ -189,6 +193,7 @@ export interface PaymentPayload {
     accepted: PaymentRequirements;
     payload: Eip3009Payload;
     resource?: ResourceInfo;
+    extensions?: Record<string, PaymentExtension>;
 }
 
 export interface Erc7710PaymentPayload {
@@ -196,6 +201,7 @@ export interface Erc7710PaymentPayload {
     accepted: Erc7710PaymentRequirements;
     payload: Erc7710DelegationPayload;
     resource?: ResourceInfo;
+    extensions?: Record<string, PaymentExtension>;
 }
 
 export type AnyPaymentPayload = PaymentPayload | Erc7710PaymentPayload;
@@ -208,6 +214,105 @@ export interface FacilitatorRequest<
     x402Version: typeof X402_VERSION;
     paymentPayload: TPayload;
     paymentRequirements: TRequirements;
+}
+
+/* ------------------------------------------------------------------ *
+ * payment-identifier 확장
+ * ------------------------------------------------------------------ */
+
+/**
+ * 확장의 이름. 사양은 x402-foundation/x402의
+ * `specs/extensions/payment_identifier.md`이고, 그 문서가 이 절의 유일한 맞춤 대상이다 —
+ * 참조 구현 `@x402/core` 2.20.0에는 이 확장의 지원이 없다(bun 캐시의 패키지를 grep해
+ * 확인했다). 그래서 아래 함수들의 주석은 사양의 어느 문단에 대응하는지를 적는다.
+ *
+ * 사양 "`PaymentRequired`"와 "`PaymentPayload`": 이름이 같은 항목이 402의 `extensions`와
+ * 결제 페이로드의 `extensions` **양쪽**에 실린다. 우리 봉투 타입 {@link PaymentExtension}
+ * (`{info, schema?}`)이 그 두 예시와 그대로 맞는다.
+ */
+export const PAYMENT_IDENTIFIER_EXTENSION = "payment-identifier";
+
+/**
+ * 사양 "`id` Format": 16–128자, 영숫자·하이픈·밑줄. 길이와 문자를 한 정규식에 접었다 —
+ * 어느 쪽을 어겼는지는 판정에 쓰이지 않고, 둘 다 "잘못된 id"라는 같은 답을 받는다.
+ */
+const PAYMENT_IDENTIFIER = /^[A-Za-z0-9_-]{16,128}$/;
+
+/**
+ * 사양이 서버 광고에 싣게 한 JSON Schema, 문서에 적힌 그대로. 클라이언트가 봉투를 에코할
+ * 때도 같은 문서를 싣는다(사양의 `PaymentPayload` 예시가 그렇다).
+ */
+const PAYMENT_IDENTIFIER_SCHEMA = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+        required: {type: "boolean"},
+        id: {type: "string", minLength: 16, maxLength: 128},
+    },
+    required: ["required"],
+} as const;
+
+/**
+ * 서버 광고 — 402의 `extensions["payment-identifier"]`.
+ *
+ * `required`는 언제나 `false`다. 사양은 `true`일 때 id 없는 결제를 400으로 거절하게 하는데,
+ * 이 저장소의 판매자는 id 없는 결제를 지금 경로대로 받는다(멱등성은 구매자가 걸 수 있는
+ * 약속이고, 걸지 않았다고 결제를 거절할 이유가 없다). 값을 매개변수로 열어 두지 않은 것도
+ * 그래서다 — `true`를 싣는 생산자가 없다.
+ */
+export function buildPaymentIdentifierOffer(): PaymentExtension {
+    return {info: {required: false}, schema: PAYMENT_IDENTIFIER_SCHEMA};
+}
+
+/**
+ * 클라이언트 제시 — 결제 페이로드의 `extensions["payment-identifier"]`.
+ *
+ * `required: false`는 서버의 광고를 옮긴 주장이 **아니다**: 사양의 스키마가 그 칸을
+ * 필수로 두었기 때문에 채우는 값이고, 이 클라이언트는 서버가 요구하든 말든 id를 항상
+ * 싣기 때문에 값이 판정을 바꾸는 일이 없다. 광고를 읽어 그대로 되싣는 분기를 두면 아무도
+ * 읽지 않는 값을 위해 402를 한 번 더 해석하는 코드가 생긴다.
+ */
+export function buildPaymentIdentifierEcho(id: string): PaymentExtension {
+    return {info: {required: false, id}, schema: PAYMENT_IDENTIFIER_SCHEMA};
+}
+
+/**
+ * 결제 페이로드에서 읽어 낸 식별자.
+ *
+ * `absent`와 `malformed`가 갈라져 있는 것이 이 타입의 요점이다. 확장을 싣지 않은 결제는
+ * 그냥 멱등성 약속이 없는 결제이므로 지금 경로대로 진행하고, 형식을 어긋나게 실은 결제는
+ * 자기가 건 약속을 우리가 지킬 수 없는 결제이므로 400이다 — 판매자가 그 둘을 구별하지
+ * 못하면 잘못된 id가 조용히 무시된다.
+ */
+export type PaymentIdentifierRead =
+    | {kind: "absent"}
+    | {kind: "malformed"}
+    | {kind: "present"; id: string};
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+}
+
+/**
+ * 임의의 페이로드에서 식별자를 꺼낸다. 입력은 카운터파티가 쓴 JSON이므로 `unknown`이고,
+ * 어느 단계가 어긋나도 던지지 않는다.
+ *
+ * 봉투가 아예 없거나 우리 확장의 항목이 없으면 `absent`. 항목은 있는데 봉투가 객체가
+ * 아니면 `malformed` — 확장을 쓴다고 말하고 모양을 틀린 것이다. `info.id`가 없는 항목은
+ * `absent`다: 사양의 스키마에서 `id`는 선택이고, `required: false`를 광고한 서버에
+ * "확장은 읽었지만 id는 없다"고 답하는 것은 합법이다.
+ */
+export function readPaymentIdentifier(payload: unknown): PaymentIdentifierRead {
+    const extensions = asRecord(asRecord(payload)?.extensions);
+    if (extensions === undefined || !(PAYMENT_IDENTIFIER_EXTENSION in extensions)) {
+        return {kind: "absent"};
+    }
+    const info = asRecord(asRecord(extensions[PAYMENT_IDENTIFIER_EXTENSION])?.info);
+    if (info === undefined) return {kind: "malformed"};
+    const id: unknown = info.id;
+    if (id === undefined) return {kind: "absent"};
+    if (typeof id !== "string" || !PAYMENT_IDENTIFIER.test(id)) return {kind: "malformed"};
+    return {kind: "present", id};
 }
 
 /* ------------------------------------------------------------------ *
@@ -350,6 +455,11 @@ export function buildErc7710PaymentPayload(params: {
     delegationManager: Address;
     permissionContext: Hex;
     delegator: Address;
+    /**
+     * 확장 봉투. 생략하면 칸도 없다 — 확장을 쓰지 않은 결제와 빈 봉투를 실은 결제는
+     * 다른 문서이고, 읽는 쪽이 둘을 구별할 필요가 없어야 한다.
+     */
+    extensions?: Record<string, PaymentExtension>;
 }): Erc7710PaymentPayload {
     return {
         x402Version: X402_VERSION,
@@ -359,6 +469,7 @@ export function buildErc7710PaymentPayload(params: {
             permissionContext: params.permissionContext,
             delegator: params.delegator,
         },
+        ...(params.extensions === undefined ? {} : {extensions: params.extensions}),
     };
 }
 

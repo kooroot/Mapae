@@ -162,6 +162,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * every refusal is a {@link PaymentValidationError} whose reason is the §9 word the
  * wire will carry: the request's own shape is `invalid_payload`, the offer's terms are
  * `invalid_payment_requirements`, and the version, scheme and network each have theirs.
+ *
+ * 결제 페이로드의 `extensions` 봉투는 여기를 그대로 통과한다 — 읽지도, 비교하지도 않는다.
+ * 그 칸에 실려 오는 `payment-identifier`의 id에 대해 적어 둘 사실이 있기 때문이다:
+ * **id는 서명 대상이 아니다.** leaf 서명은 위임의 typed-data이고 id는 HTTP 봉투의 값이라,
+ * 중간자가 값을 바꿔 넣거나 지워도 서명은 그대로 유효하다. 그래서 id는 멱등성 힌트이지
+ * 인증 수단이 아니며, 안전 판정은 언제나 아래에서 서명으로부터 파생하는
+ * {@link ValidatedDelegatedPayment.paymentIntentId}와 함께 이루어져야 한다. 이 퍼실리테이터의
+ * 저널·단일비행이 intent id만 키로 쓰는 것이 그 규칙이고, 판매자의 바인딩도 같은 id에 다른
+ * intent가 오면 거절한다(`@mapae/seller`의 409).
+ *
+ * `accepted` 에코 비교(`sameRequirement`)가 봉투를 보지 않는 것도 같은 이유다: 봉투는
+ * 오퍼의 조건이 아니라 전송의 부속물이고, 서명되지 않은 값을 오퍼 일치의 조건으로 삼으면
+ * 중간자가 결제를 깨뜨릴 수 있다.
  */
 export function validateDelegatedPayment(
     input: unknown,

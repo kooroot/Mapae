@@ -2,17 +2,19 @@ import {describe, expect, test} from "bun:test";
 import {getAddress, type Address, type Hex} from "viem";
 import {
     GIWA_SEPOLIA_CAIP2,
+    PAYMENT_SIGNATURE_HEADER,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
     buildPaymentRequirements,
     decodePaymentHeader,
     encodePaymentRequiredHeader,
     encodePaymentResponseHeader,
+    readPaymentIdentifier,
     type Erc7710PaymentRequirements,
     type PaymentRequired,
     type SettleResponse,
 } from "@mapae/shared";
-import {INVALID_PAYLOAD} from "./facilitator-contract.js";
+import {INVALID_PAYLOAD, PAYMENT_IDENTIFIER_CONFLICT} from "./facilitator-contract.js";
 import {
     BEARER_REDACTION,
     payForDelegatedResource,
@@ -1231,5 +1233,99 @@ describe("declared payment flow", () => {
         expect(result.detail).toBe("Error: seller declares an unsupported payment flow");
         expect(result.detail).not.toContain("내 문자열");
         expect(result.detail).not.toContain("escrow-");
+    });
+});
+
+describe("payment-identifier 확장", () => {
+    /** 재시도 헤더에서 되읽은 결제 페이로드. */
+    const sentPayload = (calls: FetchCall[]) =>
+        decodePaymentHeader(
+            (calls[1]?.init?.headers as Record<string, string>)[PAYMENT_SIGNATURE_HEADER]!,
+        );
+
+    test("결제마다 새 id를 봉투에 싣고, 결과가 그 id를 돌려준다", async () => {
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {invoice: "inv-001"}));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("unreachable");
+        // 사양 "PaymentPayload": 같은 이름의 항목이 페이로드의 extensions에 실린다.
+        expect(readPaymentIdentifier(sentPayload(calls))).toEqual({
+            kind: "present",
+            id: result.paymentIdentifier,
+        });
+        // 사양 "id Format"의 권고 모양 — pay_ 접두사에 128비트 hex, 36자.
+        expect(result.paymentIdentifier).toMatch(/^pay_[0-9a-f]{32}$/);
+
+        const second = await payForDelegatedResource(
+            target,
+            baseConfig(scriptedFetch(jsonResponse(200, {})).impl),
+        );
+        expect(second.ok).toBe(true);
+        if (!second.ok) throw new Error("unreachable");
+        // 호출마다 새 leaf를 서명하므로 id도 새것이다 — 같은 헤더를 다시 내미는 일은
+        // 다음 라운드다.
+        expect(second.paymentIdentifier).not.toBe(result.paymentIdentifier);
+    });
+
+    test("판매자가 확장을 광고하지 않아도 싣는다 — 분기가 없다", async () => {
+        // 광고를 읽는 코드가 아예 없다는 사실을 고정한다: 402에 extensions 칸이 없어도
+        // 페이로드에는 id가 있다.
+        const bare = paymentRequired();
+        expect(bare).not.toHaveProperty("extensions");
+        const {impl, calls} = scriptedFetch(jsonResponse(200, {}), bare);
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+
+        expect(result.ok).toBe(true);
+        expect(readPaymentIdentifier(sentPayload(calls)).kind).toBe("present");
+    });
+
+    test("서명 전에 끝난 실패에는 식별자가 없고, 헤더가 나간 뒤의 실패에는 있다", async () => {
+        // 아무에게도 제시되지 않은 id를 "이 결제의 식별자"라고 부를 수는 없다.
+        const early = await payForDelegatedResource(target, {
+            ...baseConfig(scriptedFetch(jsonResponse(200, {})).impl),
+            trustedFacilitators: [UNTRUSTED],
+        });
+        expect(early.ok).toBe(false);
+        if (early.ok) throw new Error("unreachable");
+        expect(early.code).toBe("FACILITATOR_UNTRUSTED");
+        expect(early.paymentIdentifier).toBeUndefined();
+
+        const {impl, calls} = scriptedFetch(poisonedResponse(402));
+        const late = await payForDelegatedResource(target, baseConfig(impl));
+        expect(late.ok).toBe(false);
+        if (late.ok) throw new Error("unreachable");
+        expect(late.code).toBe("PAYMENT_REJECTED");
+        // 판매자가 본 id와 같은 값이어야 쓸모가 있다.
+        expect(late.paymentIdentifier).toMatch(/^pay_[0-9a-f]{32}$/);
+        expect(readPaymentIdentifier(sentPayload(calls))).toEqual({
+            kind: "present",
+            id: late.paymentIdentifier as string,
+        });
+    });
+
+    test("409 payment_identifier_conflict는 PAYMENT_REJECTED이고, 의심스러운 결제가 아니다", async () => {
+        // 사양 "Idempotency Behavior": 같은 id에 다른 요청이면 409. 아무것도 청구되지
+        // 않았으므로 SETTLEMENT_UNKNOWN이 아니고, 이 id로 다시 시도해서도 안 된다.
+        const {impl} = scriptedFetch(
+            poisonedResponse(
+                409,
+                receiptHeader({
+                    success: false,
+                    errorReason: PAYMENT_IDENTIFIER_CONFLICT,
+                    network: GIWA_SEPOLIA_CAIP2,
+                    payer: DELEGATOR,
+                    transaction: "",
+                }),
+            ),
+        );
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("unreachable");
+        expect(result.code).toBe("PAYMENT_REJECTED");
+        expect(result.status).toBe(409);
+        expect(result.detail).toContain(PAYMENT_IDENTIFIER_CONFLICT);
+        expect(result.detail).toContain("no settlement was attempted");
+        expect(result.paymentIdentifier).toMatch(/^pay_[0-9a-f]{32}$/);
     });
 });
