@@ -80,12 +80,19 @@ function receiptHeader(receipt: unknown): Record<string, string> {
     return {"Payment-Response": encodePaymentResponseHeader(receipt as SettleResponse)};
 }
 
-/** A non-2xx response whose body throws if read — proves the caller never reads it. */
-function poisonedResponse(status: number): Response {
+/**
+ * A non-2xx response whose body throws if read — proves the caller never reads it. Its
+ * headers are real, because the caller does read one of them (`Payment-Response`).
+ */
+function poisonedResponse(status: number, headers: Record<string, string> = {}): Response {
     return {
         status,
         ok: false,
+        headers: new Headers(headers),
         json: async () => {
+            throw new Error("body must not be read after a rejected payment");
+        },
+        text: async () => {
             throw new Error("body must not be read after a rejected payment");
         },
     } as unknown as Response;
@@ -851,9 +858,10 @@ describe("D5 settlement-unknown is not a rejection", () => {
     });
 
     test("a genuine refusal is still PAYMENT_REJECTED", async () => {
-        // 403 delegation_rejected and 422 settlement_failed both mean the payment did not
-        // go through. Widening the unknown set to cover these would make every refusal
-        // look like a possible charge, which is its own way of being useless.
+        // A status outside both sets means the payment did not go through: `@mapae/seller`
+        // answers a refused delegation with 402 and a bad header with 400, and 403/422 are
+        // what other sellers use. Widening the unknown set to cover these would make every
+        // refusal look like a possible charge, which is its own way of being useless.
         for (const status of [402, 403, 422, 400, 500]) {
             const result = await resultFor(poisonedResponse(status));
             expect(result.ok === false && result.code).toBe("PAYMENT_REJECTED");
@@ -911,6 +919,112 @@ describe("D5 settlement-unknown is not a rejection", () => {
 
         const result = await payForDelegatedResource(target, baseConfig(impl));
         expect(result.ok === false && result.code).toBe("TRANSPORT_ERROR");
+    });
+});
+
+/**
+ * The seller now says which failure a non-2xx was, in `Payment-Response`, and the status
+ * alone can no longer tell: `@mapae/seller` answers both a refused delegation and a
+ * settlement that charged nobody with 402 plus a re-issued offer, and every status is also
+ * whatever the proxies in between made of it.
+ */
+describe("D5 the seller's own word decides, when it is one we know", () => {
+    const refusal = (errorReason: string, extra: Record<string, unknown> = {}) =>
+        receiptHeader({
+            success: false,
+            errorReason,
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: DELEGATOR,
+            transaction: "",
+            ...extra,
+        });
+
+    async function resultFor(status: number, headers: Record<string, string>) {
+        const {impl} = scriptedFetch(poisonedResponse(status, headers));
+        const result = await payForDelegatedResource(target, baseConfig(impl));
+        if (result.ok) throw new Error("unreachable");
+        return result;
+    }
+
+    test("settlement_pending is SETTLEMENT_UNKNOWN whatever status carried it", async () => {
+        // The seller sends it with a 504, and a gateway that rewrote that must not cost the
+        // caller the one reading that keeps them from paying twice.
+        for (const status of [504, 402]) {
+            const result = await resultFor(status, refusal("settlement_pending"));
+            expect(result.code, String(status)).toBe("SETTLEMENT_UNKNOWN");
+            expect(result.detail).toContain("settlement_pending");
+            expect(result.detail).toContain("may already be charged");
+            expect(result.status).toBe(status);
+        }
+    });
+
+    test("a refused delegation is PAYMENT_REJECTED even though the seller answered 402", async () => {
+        // 402 is now also the answer to "pay again with a new leaf", so the status is no
+        // longer the thing that says a verdict was formed.
+        const result = await resultFor(402, refusal("delegation_rejected"));
+        expect(result.code).toBe("PAYMENT_REJECTED");
+        expect(result.detail).toContain("delegation_rejected");
+        expect(result.detail).toContain("no settlement was attempted");
+    });
+
+    test("§9's own refusal words are PAYMENT_REJECTED too", async () => {
+        for (const word of ["invalid_payload", "invalid_transaction_state", "insufficient_funds"]) {
+            const result = await resultFor(402, refusal(word));
+            expect(result.code, word).toBe("PAYMENT_REJECTED");
+        }
+    });
+
+    test("a throttled or not-ready seller is SELLER_UNAVAILABLE", async () => {
+        for (const word of ["rate_limited", "facilitator_not_ready"]) {
+            const result = await resultFor(503, refusal(word));
+            expect(result.code, word).toBe("SELLER_UNAVAILABLE");
+            expect(result.detail).toContain("nothing charged, retry later");
+        }
+    });
+
+    test("no header means the status rules, exactly as before", async () => {
+        expect((await resultFor(402, {})).code).toBe("PAYMENT_REJECTED");
+        expect((await resultFor(504, {})).code).toBe("SETTLEMENT_UNKNOWN");
+        expect((await resultFor(503, {})).code).toBe("SELLER_UNAVAILABLE");
+    });
+
+    test("a word outside the closed set changes nothing — the status still decides", async () => {
+        // `vendor_not_credited` is the case this protects: the seller answers it 502, which
+        // the status rules read as "may be charged". Admitting it here as one more refusal
+        // word would turn that into "nothing happened, pay again".
+        const misdirected = await resultFor(502, refusal("vendor_not_credited", {transaction: TX}));
+        expect(misdirected.code).toBe("SETTLEMENT_UNKNOWN");
+        expect(misdirected.detail).not.toContain("vendor_not_credited");
+        for (const word of ["settlement_reverted", "payer_budget_exhausted", "not a word at all", ""]) {
+            expect((await resultFor(402, refusal(word))).code, word).toBe("PAYMENT_REJECTED");
+        }
+    });
+
+    test("nothing the seller wrote but a word we already had reaches the result", async () => {
+        // The header is seller-controlled text that lands in MCP tool output. Only the
+        // matched word — our own constant — is repeated; a free-text errorMessage, an
+        // unknown reason, an undecodable header, all contribute nothing.
+        const chatty = await resultFor(
+            402,
+            refusal("delegation_rejected", {
+                errorMessage: "ERC20PeriodTransferEnforcer:allowance-exceeded at 0xsecret",
+                extra: {note: "call me at evil.example"},
+            }),
+        );
+        expect(chatty.code).toBe("PAYMENT_REJECTED");
+        expect(chatty.detail).not.toContain("allowance-exceeded");
+        expect(chatty.detail).not.toContain("evil.example");
+
+        const garbage = await resultFor(504, {"Payment-Response": "!!!not-base64!!!"});
+        expect(garbage.code).toBe("SETTLEMENT_UNKNOWN");
+        expect(garbage.detail).toContain("could not confirm settlement");
+    });
+
+    test("the body is still never read, however helpful the header was", async () => {
+        // `poisonedResponse` throws from json() and text() alike. Reading one field of one
+        // header is not permission to read the body a seller can reflect a bearer into.
+        const result = await resultFor(402, refusal("delegation_rejected"));
+        expect(result.code).toBe("PAYMENT_REJECTED");
     });
 });
 

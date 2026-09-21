@@ -156,6 +156,7 @@ mapaePaywall({
         // receipt.payer       낸 쪽의 루트 위임자 주소
         // receipt.amount      "0.01"  (tUSDC)
         // receipt.transaction GIWA tx 해시 — https://sepolia-explorer.giwa.io/tx/<해시>
+        // receipt.replayed    facilitator가 자기 기록으로 답했다(이 호출이 정산한 게 아니다)
         await ledger.insert(receipt);
     },
 });
@@ -164,6 +165,11 @@ mapaePaywall({
 `onSettled`는 핸들러보다 **먼저** 돈다. 잔액은 이미 움직였으므로 콜백이 던져도 손님은
 받는다 — 던진 오류는 로그로만 남는다. 장부는 여기서 쓴다. 같은 영수증은 핸들러 안에서
 `c.get("mapaeReceipt")`로도 읽을 수 있다.
+
+`receipt.replayed`는 **배송 게이트가 아니다.** 첫 시도가 `settlement_pending`으로 끝나고
+나중 호출이 청구를 마무리하면 성공한 답이 전부 `replayed`다 — 그것으로 배송을 막으면
+받은 돈의 판매를 거절한다. 중복 배송은 `receipt.intent` 한 건당 한 행으로 막고, 이 값은
+"다른 호출이 이 일을 했다"로만 읽는다.
 
 **같은 가격·같은 `payTo`의 경로 둘을 두지 않는다.** 오퍼에는 경로가 들어 있지 않아,
 한 경로에서 산 헤더가 같은 오퍼의 다른 경로도 연다. 경로마다 가격을 다르게 하거나,
@@ -180,7 +186,7 @@ mapaePaywall({
 - 인증이 없다. 어느 서버든 지금 바로 부를 수 있고, 등록도 키도 필요 없다.
 - 정산 tx의 가스는 마패의 relayer가 낸다. 판매자도 손님도 ETH가 필요 없다.
 - 건당 상한은 `MAX_SETTLEMENT_AMOUNT` 기본 **10.00 tUSDC**다. 그보다 비싼 `price`는
-  `/verify`에서 거절된다(아래 403).
+  `/verify`에서 거절된다(아래 402 오퍼 재발행).
 - 수취는 `payTo`로 직접 간다. 마패는 자금을 보관하지도, 환전하지도 않는다.
 - `/verify`와 `/settle`은 호출자 주소별로 요청을 제한한다. `facilitator`가 루프백에
   있으면 — 자기 주소를 볼 수 없는 유일한 호출자 — 페이월이 손님의 `CF-Connecting-IP`를
@@ -201,13 +207,20 @@ curl -s https://facilitator.mapae.io/supported
 
 | 응답 | 뜻 | 할 일 |
 |---|---|---|
-| `402` | 결제 헤더가 없다 | 정상. 에이전트가 낼 차례다 |
-| `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했거나, facilitator가 결제를 보지 않았다 — 요청 제한, 또는 실패한 준비 검사 — `/verify`든 `/settle`이든. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 같은 결제로 다시 시도 |
+| `402` (헤더 없음) | 결제 헤더가 없다 | 정상. 에이전트가 낼 차례다 |
 | `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니다 | 에이전트 쪽 문제. `detail`이 이유를 말한다 |
-| `403 delegation_rejected` | facilitator가 위임을 거절했다 — 만료, 한도 초과, 상한(10.00) 초과, 오퍼 불일치 | 손님의 위임을 확인. 가격이 상한 안인지 확인 |
+| `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했거나, facilitator가 결제를 보지 않았다 — 요청 제한, 또는 실패한 준비 검사 — `/verify`든 `/settle`이든. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 같은 결제로 다시 시도 |
+| `402` (오퍼 재발행) | facilitator가 위임을 거절했거나(만료, 한도 초과, 상한 10.00 초과, 오퍼 불일치), 아무도 청구되지 않은 정산 실패다. 새 leaf로 다시 낼 수 있으므로 오퍼를 다시 싣는다 | 손님의 위임을 확인. 가격이 상한 안인지 확인 |
 | `504 settlement_unknown` | 브로드캐스트됐을 수 있으나 영수증을 못 봤다. **청구됐을 수 있다** | 탐색기에서 tx를 확인. 에이전트에게 다시 서명시키지 않는다 |
-| `422 settlement_failed` | 이전이 일어나지 않았다. 청구된 것은 없다 | 다시 시도 |
+| `502 settlement_misdirected` | 정산이 채굴됐지만 `payTo`가 아닌 곳을 채웠다. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 오퍼를 다시 주지 않는다 |
 | `404` | 페이월 뒤에 핸들러가 없다 | 미들웨어는 아무도 안 받는 경로에 값을 매기지 않는다. 라우트를 확인 |
+
+실패한 응답은 모두 x402 v2 `SettleResponse`를 `Payment-Response` 헤더(base64 UTF-8
+JSON)에 함께 싣는다 — `success: false`와 §9 낱말 하나(`invalid_payload`,
+`settlement_pending`, `rate_limited`, `delegation_rejected` …). 읽히지 않은 헤더(400)와
+헤더 없는 503만 예외다: 영수증은 지불자를 말하는 문서인데 그 두 경우엔 말할 지불자가
+없다. 모든 응답에 `Cache-Control: no-store`와 `Vary: Payment-Signature`도 붙어, 캐시가
+결제한 본문을 미결제 요청에 주는 일이 없다.
 
 부팅이 `payTo must be…`, `price must be…`, `description must not be empty`,
 `facilitator must use HTTPS…`, `baseUrl must be an origin…`으로 멈추면 옵션 값의

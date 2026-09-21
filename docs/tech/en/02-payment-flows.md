@@ -133,7 +133,7 @@ sequenceDiagram
     Fac->>DM: simulate redeemDelegations
     DM-->>Fac: revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded
     Fac-->>Seller: isValid = false
-    Seller-->>Agent: 403 — no settlement, funds untouched
+    Seller-->>Agent: 402 + offer re-issued — no settlement, funds untouched
     end
 
     rect rgb(255,244,229)
@@ -258,7 +258,7 @@ and a bearer value parked in a parameter must not ride along.
 **On-chain pre-flight.** Before signing, the agent reads the enforcer's own
 accounting directly and filters out payments that cannot succeed. The chain enforces
 the cap either way, so the purpose of this step is not safety but **accuracy of the
-reason** — instead of going all the way to the seller and receiving a 403, it states
+reason** — instead of going all the way to the seller and receiving a 402, it states
 the cause, as in `payment of 2500000 exceeds 2000000 left in this period`. A side
 effect is that no leaf is signed for a payment that cannot succeed (a leaf is a
 bearer authorization).

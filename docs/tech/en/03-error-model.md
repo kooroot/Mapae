@@ -25,8 +25,8 @@ gone; the model and its tests remain. The ERC-7710 delegated path behaves differ
 
 | | Direct payment (`packages/shared` error model) | Delegated payment (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
-| External response | `SettlementError._tag` + `describe()` cause | x402 v2 §9's **closed words** — `invalid_payload`, `settlement_pending` and the rest, plus `delegation_rejected` from outside §9. The reason's sentence never goes out |
-| Status code | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |
+| External response | `SettlementError._tag` + `describe()` cause | x402 v2 §9's **closed words** — `invalid_payload`, `settlement_pending` and the rest, plus `delegation_rejected` from outside §9. The reason's sentence never goes out. The seller puts that word in a failing answer's `Payment-Response` (the x402 v2 `SettleResponse`) |
+| Status code | `httpStatusFor()` | 402 / 400 / 503 / 502 / 504 |
 | Client branching | Tag | `DelegatedPaymentFailureCode` (the agent's own classification) |
 
 The delegated path sends out words only because of the threat model. Returning
@@ -67,14 +67,18 @@ shape a node reports under a plain `-32000`, leaving viem no revert data to deco
 above `MAX_REDEMPTION_GAS`. It is not "any viem error": another viem error, such as an
 encoding mistake of ours, is `unexpected_*_error` — the facilitator does not call a grant
 the chain never saw a rejected one. The last call on sending a buyer back to re-sign
-belongs to the seller's ladder, and its `decideVerification` still reads every `/verify`
-`invalidReason` but `rate_limited` and `facilitator_not_ready` as `rejected` (a 403
-`delegation_rejected`); telling `unexpected_verify_error` and `invalid_transaction_state`
-apart is work left on the seller SDK. `budget_exhausted` and `payer_budget_exhausted`, the
+belongs to the seller's ladder, and its `decideVerification` reads a `/verify`
+`invalidReason` three ways: `rate_limited`, `facilitator_not_ready` and
+`unexpected_verify_error` are not verdicts but "there is no verdict", so `unavailable`
+(503); everything else is `rejected` (402 with the offer re-issued); and the word that
+rides along is the facilitator's only when it is in the allow-set — anything outside folds
+to `delegation_rejected`. `unexpected_verify_error` is a 503 because it is a throw of ours
+before the broadcast: nobody was charged *and* nothing about the delegation was decided, so
+reading it as a refusal would send the buyer to re-sign a grant nothing refused.
+`invalid_transaction_state` stays a refusal: the same leaf cannot buy again, but a new
+payment can, which is what 402 says. `budget_exhausted` and `payer_budget_exhausted`, the
 day's gas budget, are outside §9 too: what refused was our relayer's day, not the
-delegation. `rate_limited`
-and `facilitator_not_ready` are not refusals at all but "the request was never looked at",
-and the seller's ladder reads them as 503.
+delegation.
 
 ## How absent state is judged
 
@@ -125,13 +129,38 @@ gives the same result on a clean clone.
 | `check:advisories` | That every `bun audit` finding is either fixed or an acceptance carrying a `prove` function that is re-measured on every run |
 | `check:counts` | That the test counts the repository README states match what bun and forge actually collect — it checks agreement with the suites, not agreement among the numbers in the documentation |
 
-## The semantic distinction between 422 and 504
+## The seller's ladder — a failure that charged nobody, and one nobody confirmed
 
-Among the opaque reasons, these two must be distinguished. `settlement_failed`
-(422) means "the payer was not charged"; `settlement_unknown` (504) means
-"whether the payer was charged could not be established." The former is an
-answer that invites a retry, and retrying an unconfirmed state becomes a double
-payment.
+Among the opaque reasons, these two must be distinguished. "The payer was not charged" is
+an answer that may be paid again; retrying "whether the payer was charged could not be
+established" becomes a double payment. The seller's ladder says which in its status code.
+
+| Status | When | Offer re-issued? |
+|---|---|---|
+| `400 malformed_payment` | the header is oversized, unparseable, or not ERC-7710 | No — nothing read it |
+| `503 facilitator_unavailable` | `/supported` out of reach; `/verify` or `/settle` answered `rate_limited`, `facilitator_not_ready` or `unexpected_verify_error` | No — the same payment may be presented again later |
+| `402` + offer | `/verify` refused, or a `/settle` failure that charged nobody (`settlement_reverted`, a budget word, …) | **Yes** — a new leaf can pay |
+| `504 settlement_unknown` | the `/settle` outcome is unknown (answer lost, `settlement_pending`, payer mismatch) | No — the buyer may be charged |
+| `502 settlement_misdirected` | `vendor_not_credited` — mined, and it credited someone who is not this `payTo` | No — the balance has already moved |
+
+Every failing answer carries the x402 v2 `SettleResponse` in `Payment-Response`:
+`success: false`, `network`, `payer`, and one §9 word. The hash rides along whenever there
+is one (`settlement_pending` on the 504, `vendor_not_credited` on the 502) — it is the
+buyer's only way to find out for themselves. The two rungs that go out without a receipt are
+the unread header (400) and a 503 with no header at all: a receipt names the payer of the
+payment it answers, and those name nobody. Every answer also carries `Cache-Control:
+no-store` and `Vary: Payment-Signature`, so no shared cache hands a paid body to a request
+that did not pay, or an unpaid 402 to one that did.
+
+The agent side reads those words to classify its failure (`payment-client.ts`). When a retry
+is not 2xx, only the **header** is read — never the body, which a seller can reflect a
+bearer header into — and only an `errorReason` matching our own constants, as a closed set,
+is used: `settlement_pending` → `SETTLEMENT_UNKNOWN` (whether the status was 402 or 504),
+`rate_limited` and `facilitator_not_ready` → `SELLER_UNAVAILABLE`, the remaining §9 words and
+`delegation_rejected` → `PAYMENT_REJECTED`. A word outside the set changes nothing and the
+status rules decide — `vendor_not_credited` is why that protection exists: the seller answers
+it 502, which the status rules already read as "may be charged", and admitting the word as
+one more §9-shaped refusal would turn that into "nothing happened, pay again".
 
 The distinction is grounded in a real incident. GIWA `0x533c5cb2…9964c`
 (block 31634935) actually transferred 1.00 mUSDC from the payer, yet the caller
@@ -149,7 +178,8 @@ by producer and consumer alike. The decision ladder leans toward `unknown`.
 |---|---|---|
 | No response received (connection refused, non-2xx, not JSON, timeout) | `unknown` 504 | "The request never arrived" and "the response was lost after broadcast" cannot be told apart |
 | `errorReason === SETTLEMENT_PENDING` | `unknown` 504 (+hash) | x402 v2 binds this reason to a hash — without it the caller has no way to verify |
-| `success !== true` | `failed` 422 | Explicit refusal — no funds moved |
+| `success !== true`, `errorReason === vendor_not_credited` | `failed` 502 (+hash) | Mined, and it credited somewhere that is not our `payTo` — the balance may have moved, so no offer is re-issued |
+| `success !== true`, otherwise | `failed` 402 + offer | Explicit refusal — no funds moved, and a new leaf can pay |
 | `success === true`, payer mismatch | `unknown` 504 | A broadcast was claimed but the identity did not line up, and the balance was not confirmed |
 | `success === true`, payer match | `settled` 200 | |
 

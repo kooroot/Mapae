@@ -125,7 +125,7 @@ sequenceDiagram
     Fac->>DM: simulate redeemDelegations
     DM-->>Fac: revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded
     Fac-->>Seller: isValid = false
-    Seller-->>Agent: 403 — 정산 없음, 자금 불변
+    Seller-->>Agent: 402 + 오퍼 재발행 — 정산 없음, 자금 불변
     end
 
     rect rgb(255,244,229)
@@ -242,7 +242,7 @@ content-type은 미디어 타입뿐이다 — 파라미터는 버린다. `Conten
 
 **온체인 pre-flight.** 서명 전에 enforcer의 회계를 직접 읽어, 성공할 수 없는
 결제를 미리 거른다. 한도는 어차피 온체인이 강제하므로 이 단계의 목적은 안전이
-아니라 **사유의 정확도**다 — 판매자까지 갔다가 403을 받는 대신
+아니라 **사유의 정확도**다 — 판매자까지 갔다가 402를 받는 대신
 `payment of 2500000 exceeds 2000000 left in this period`처럼 원인을 말한다.
 성공할 수 없는 결제에 leaf를 서명하지 않는 부수 효과도 있다(leaf는 bearer
 authorization이다).

@@ -34,8 +34,9 @@ export type Erc7710FacilitatorRequest = FacilitatorRequest<
  *
  * What that behaviour would be is known, because it already happened once. Renaming or
  * dropping this sentinel silently converts the seller's answer for a *broadcast but
- * unconfirmed* payment from 504 to 422 — from "you may have been charged" to "you were
- * not". That is the bug that told a caller `PAYMENT_REJECTED` while GIWA tx
+ * unconfirmed* payment from 504 to a 402 that re-issues the offer — from "you may have
+ * been charged" to "pay again". That is the bug that told a caller `PAYMENT_REJECTED`
+ * while GIWA tx
  * `0x533c5cb2…9964c` had already moved 1.00 mUSDC out of the payer.
  *
  * The word is x402 v2's (§9 `settlement_pending`), and the spec binds it to a

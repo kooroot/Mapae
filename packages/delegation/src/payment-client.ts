@@ -13,6 +13,12 @@ import {
     type Erc7710PaymentRequirements,
     type PaymentRequired,
 } from "@mapae/shared";
+import {
+    DELEGATION_REJECTED,
+    FACILITATOR_NOT_READY,
+    RATE_LIMITED,
+    SETTLEMENT_PENDING,
+} from "./facilitator-contract.js";
 import {getAddress, isAddress, zeroAddress, type Address, type Hex} from "viem";
 
 /**
@@ -87,6 +93,10 @@ export type DelegatedPaymentFailureCode =
  * not known to have succeeded are different claims"). The loss happened here, where every
  * non-2xx collapsed into one code. `408` and `425` are included because a gateway in front
  * of a seller produces them for the same reason.
+ *
+ * Read only when the answer did not say in words: a seller that names its reason in
+ * `Payment-Response` is believed over its status, because the status is also whatever the
+ * proxies in between made of it. See {@link SELLER_REFUSAL_CODES}.
  */
 const SETTLEMENT_UNKNOWN_STATUSES = new Set([
     408, 425, 504,
@@ -110,6 +120,60 @@ const SETTLEMENT_UNKNOWN_STATUSES = new Set([
  * rejection sent the caller to inspect a delegation nothing had refused.
  */
 const SELLER_UNAVAILABLE_STATUSES = new Set([429, 503]);
+
+/**
+ * The words a seller may classify its own refusal with, and what each one means here.
+ *
+ * A failing retry used to be read from its status alone, and the status is the coarsest
+ * thing about the answer: `@mapae/seller` answers a refused delegation and a settlement
+ * that charged nobody with the same 402, and a proxy can rewrite any of them. The x402 v2
+ * `SettleResponse` in `Payment-Response` says which it was, so it is read first.
+ *
+ * Closed on purpose, and small on purpose. Every key is either a constant of this
+ * repository's own wire or one of §9's fixed words; a word outside the map changes
+ * nothing and the status rules decide, because the safe reading of a word we do not know
+ * is no reading at all. In particular `vendor_not_credited` is deliberately absent: the
+ * seller answers it 502, which the status rules already read as "may be charged", and
+ * admitting it as a §9-shaped refusal would turn that into "nothing happened, pay again".
+ */
+const X402_REFUSAL_WORDS = [
+    "insufficient_funds",
+    "invalid_scheme",
+    "unsupported_scheme",
+    "invalid_network",
+    "invalid_payload",
+    "invalid_payment_requirements",
+    "invalid_x402_version",
+    "invalid_transaction_state",
+    "unexpected_verify_error",
+    "unexpected_settle_error",
+] as const;
+
+/** The three codes a seller's own word can select. Narrowed so the notes below are total. */
+type SellerRefusalCode = Extract<
+    DelegatedPaymentFailureCode,
+    "SETTLEMENT_UNKNOWN" | "SELLER_UNAVAILABLE" | "PAYMENT_REJECTED"
+>;
+
+const SELLER_REFUSAL_CODES: ReadonlyMap<string, SellerRefusalCode> = new Map<string, SellerRefusalCode>([
+    // Money may have moved, whatever status carried the word. The seller sends it with a
+    // 504; a gateway that rewrote that must not cost the caller this reading.
+    [SETTLEMENT_PENDING, "SETTLEMENT_UNKNOWN"],
+    // Nothing was examined and nothing was charged: the same payment is safe to present
+    // again later.
+    [RATE_LIMITED, "SELLER_UNAVAILABLE"],
+    [FACILITATOR_NOT_READY, "SELLER_UNAVAILABLE"],
+    // A verdict on the payment, formed before anything was broadcast.
+    [DELEGATION_REJECTED, "PAYMENT_REJECTED"],
+    ...X402_REFUSAL_WORDS.map((word): [string, SellerRefusalCode] => [word, "PAYMENT_REJECTED"]),
+]);
+
+/** What each of those codes means to whoever reads the reason. Our sentences, not the seller's. */
+const REFUSAL_NOTE: Record<SellerRefusalCode, string> = {
+    SETTLEMENT_UNKNOWN: "the payer may already be charged",
+    SELLER_UNAVAILABLE: "nothing charged, retry later",
+    PAYMENT_REJECTED: "no settlement was attempted",
+};
 
 /** Signs a payment-specific leaf delegation for a seller's ERC-7710 offer. */
 export type DelegatedLeafProvider = (
@@ -483,6 +547,32 @@ function readSettlementReceipt(
 }
 
 /**
+ * How the seller classified its own failure, when it used a word from
+ * {@link SELLER_REFUSAL_CODES}.
+ *
+ * Only the header is read, never the body: a malicious seller can reflect
+ * `Payment-Signature` back after we have sent a bearer permission context, and that rule
+ * does not relax because the answer looks helpful. Of the header, only `errorReason` is
+ * looked at, and only to match it against our own constants — so the word that reaches the
+ * result is ours, and `errorMessage` or anything else the seller wrote goes nowhere.
+ */
+function readSellerRefusal(
+    header: string | null,
+): {code: SellerRefusalCode; reason: string} | undefined {
+    if (header === null) return undefined;
+    let decoded: unknown;
+    try {
+        decoded = decodePaymentResponseHeader(header);
+    } catch {
+        return undefined;
+    }
+    const reason: unknown = (decoded as {errorReason?: unknown} | null)?.errorReason;
+    if (typeof reason !== "string") return undefined;
+    const code = SELLER_REFUSAL_CODES.get(reason);
+    return code === undefined ? undefined : {code, reason};
+}
+
+/**
  * Autonomous ERC-7710 payment: GET → 402 → sign a payment-specific leaf → retry
  * with `Payment-Signature` → resource. This is the reusable core shared by the CLI
  * agent and the D5 MCP server; the caller owns env/file loading, deployment
@@ -625,7 +715,20 @@ export async function payForDelegatedResource(
     }
     if (!second.ok) {
         // Do not read the body: a malicious seller can reflect Payment-Signature after
-        // we have sent a bearer permission context. Report the status class only.
+        // we have sent a bearer permission context. The `Payment-Response` header is read
+        // — one field of it, matched against our own vocabulary — because a seller that
+        // says which failure this was knows better than its status code does: the same 402
+        // covers a refused delegation and a settlement that charged nobody, and any status
+        // is also whatever the proxies in between made of it.
+        const declared = readSellerRefusal(second.headers.get(PAYMENT_RESPONSE_HEADER));
+        if (declared !== undefined) {
+            return failure(
+                declared.code,
+                `seller reported ${declared.reason} (${second.status}) — ${REFUSAL_NOTE[declared.code]}`,
+                second.status,
+            );
+        }
+        // No word, or one we do not know: the status class is all there is.
         if (SETTLEMENT_UNKNOWN_STATUSES.has(second.status)) {
             return failure(
                 "SETTLEMENT_UNKNOWN",

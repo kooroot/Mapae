@@ -23,8 +23,8 @@
 
 | | 직접 결제 (`packages/shared` 오류 모델) | 위임 결제 (`apps/delegated-seller`, `apps/facilitator-erc7710`) |
 |---|---|---|
-| 외부 응답 | `SettlementError._tag` + `describe()` 원인 | x402 v2 §9의 **닫힌 낱말** — `invalid_payload`, `settlement_pending` 등(+ §9 밖의 `delegation_rejected`). 사유의 문장은 나가지 않는다 |
-| 상태 코드 | `httpStatusFor()` | 402 / 400 / 403 / 422 / 504 |
+| 외부 응답 | `SettlementError._tag` + `describe()` 원인 | x402 v2 §9의 **닫힌 낱말** — `invalid_payload`, `settlement_pending` 등(+ §9 밖의 `delegation_rejected`). 사유의 문장은 나가지 않는다. 판매자는 그 낱말을 실패 응답의 `Payment-Response`(x402 v2 `SettleResponse`)에 실어 보낸다 |
+| 상태 코드 | `httpStatusFor()` | 402 / 400 / 503 / 502 / 504 |
 | 클라이언트 분기 | 태그 | `DelegatedPaymentFailureCode` (에이전트 측 자체 분류) |
 
 위임 경로가 낱말만 내보내는 것은 위협 모델 때문이다. 실패 사유를 문장으로 반환하면
@@ -60,14 +60,17 @@ facilitator가 라이브 상태로 위임을 검사했고 체인이 redeem을 �
 revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `ExecutionRevertedError`까지),
 또는 `MAX_REDEMPTION_GAS`를 넘는 가스. "viem 오류면 전부"가 아니다: 우리 인코딩 실수 같은
 다른 viem 오류는 `unexpected_*_error`다 — facilitator는 체인이 본 적 없는 위임을 거절됐다고
-말하지 않는다. 구매자를 재서명으로 보내는 마지막 판단은 판매자 사다리의 몫인데, 그쪽의
-`decideVerification`은 아직 `/verify`의 `invalidReason`을 `rate_limited`·
-`facilitator_not_ready` 말고는 모두 `rejected`(403 `delegation_rejected`)로 읽는다.
-`unexpected_verify_error`와 `invalid_transaction_state`를 갈라내는 것은 판매자 SDK 쪽에
-남은 일이다. 그날 가스 예산이 모자란 `budget_exhausted`·`payer_budget_exhausted`도 §9
-밖이고, 위임이 아니라 우리 릴레이어의 하루가 거절한 것이다. `rate_limited`와
-`facilitator_not_ready`는 거절조차 아니라 "요청을 보지 않았다"이고, 판매자 사다리가
-503으로 읽는다.
+말하지 않는다. 구매자를 재서명으로 보내는 마지막 판단은 판매자 사다리의 몫이고, 그쪽의
+`decideVerification`은 `/verify`의 `invalidReason`을 세 갈래로 읽는다: `rate_limited`와
+`facilitator_not_ready`와 `unexpected_verify_error`는 판정이 아니라 "판정이 없다"라서
+`unavailable`(503), 나머지는 `rejected`(402 + 오퍼 재발행), 그리고 그때 실리는 낱말은
+허용집합에 있을 때만 facilitator의 것이고 밖의 문자열은 `delegation_rejected`로 접힌다.
+`unexpected_verify_error`가 503인 이유는 브로드캐스트 전 우리 쪽 예외라 아무도 청구되지
+않았고 위임에 대한 판정도 아니기 때문이다 — 거절로 읽으면 멀쩡한 grant를 다시 서명하러
+보낸다. `invalid_transaction_state`는 거절로 남는다: 같은 leaf로는 다시 살 수 없지만 새
+결제는 가능하므로 402가 맞다. 그날 가스 예산이 모자란
+`budget_exhausted`·`payer_budget_exhausted`도 §9 밖이고, 위임이 아니라 우리 릴레이어의
+하루가 거절한 것이다.
 
 ## 상태 부재의 판정 규칙
 
@@ -112,12 +115,37 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 | `check:advisories` | `bun audit`의 모든 발견이 수정되었거나, 매 실행 재측정되는 `prove` 함수가 딸린 수용인지 |
 | `check:counts` | 저장소 README가 적은 테스트 수가 bun·forge가 실제로 수집하는 수와 일치하는지 — 문서의 숫자끼리의 일치가 아니라 수트와의 일치를 검사한다 |
 
-## 422와 504의 의미 구분
+## 판매자 사다리 — 청구되지 않은 실패와 확인되지 않은 실패
 
-불투명 사유 중 이 둘은 구분이 필수다. `settlement_failed`(422)는 "지불자는
-청구되지 않았다"이고 `settlement_unknown`(504)은 "청구 여부를 확인하지
-못했다"이다. 전자는 재시도를 부르는 답이고, 미확인 상태의 재시도는 이중 지불이
-된다.
+불투명 사유 중 이 둘은 구분이 필수다. "지불자는 청구되지 않았다"는 다시 결제해도 되는
+답이고, "청구 여부를 확인하지 못했다"의 재시도는 이중 지불이 된다. 판매자 사다리는 그
+구분을 상태 코드로 낸다.
+
+| 상태 | 언제 | 오퍼를 다시 싣는가 |
+|---|---|---|
+| `400 malformed_payment` | 헤더가 크거나 파싱 불가·ERC-7710 아님 | 아니오 — 읽히지 않은 헤더다 |
+| `503 facilitator_unavailable` | `/supported` 미도달, `/verify`·`/settle`이 `rate_limited`·`facilitator_not_ready`·`unexpected_verify_error` | 아니오 — 같은 결제를 나중에 다시 내면 된다 |
+| `402` + 오퍼 | `/verify` 거절, 또는 아무도 청구되지 않은 `/settle` 실패(`settlement_reverted`, 예산 낱말 등) | **예** — 새 leaf로 낼 수 있다 |
+| `504 settlement_unknown` | `/settle` 결과를 모른다(응답 유실, `settlement_pending`, payer 불일치) | 아니오 — 청구됐을 수 있다 |
+| `502 settlement_misdirected` | `vendor_not_credited` — 채굴됐고 우리 `payTo`가 아닌 곳을 채웠다 | 아니오 — 잔고가 이미 움직였다 |
+
+실패한 응답은 모두 `Payment-Response`에 x402 v2 `SettleResponse`를 싣는다:
+`success: false`, `network`, `payer`, 그리고 §9 낱말 하나. 해시가 있으면(504의
+`settlement_pending`, 502의 `vendor_not_credited`) 반드시 함께 간다 — 구매자가 스스로
+확인할 유일한 수단이다. 읽히지 않은 헤더(400)와 헤더 없는 503만 영수증 없이 나간다:
+영수증은 한 결제의 지불자를 말하는 문서이고, 그 둘은 말할 지불자가 없다. 그리고 모든
+응답에 `Cache-Control: no-store`와 `Vary: Payment-Signature`가 붙는다 — 캐시가 결제한
+본문을 미결제 요청에 주거나 미결제 402를 결제 요청에 주는 것을 막는다.
+
+에이전트 쪽은 이 낱말을 읽어 실패를 분류한다(`payment-client.ts`). 재시도 응답이 2xx가
+아니면 **헤더만** 읽고(바디는 열지 않는다 — 판매자가 bearer 헤더를 반사할 수 있다),
+`errorReason`이 우리 상수와 문자열 일치하는 닫힌 집합에 있을 때만 분류에 쓴다:
+`settlement_pending` → `SETTLEMENT_UNKNOWN`(상태가 402든 504든),
+`rate_limited`·`facilitator_not_ready` → `SELLER_UNAVAILABLE`, 나머지 §9 낱말과
+`delegation_rejected` → `PAYMENT_REJECTED`. 집합 밖의 낱말은 아무것도 바꾸지 않고 상태
+코드 규칙이 결정한다 — `vendor_not_credited`가 그 보호의 이유다: 판매자가 502로 답하므로
+상태 규칙이 이미 "청구됐을 수 있다"로 읽는데, 이 낱말을 §9처럼 받아들이면 그것이
+"아무 일도 없었으니 다시 내라"로 바뀐다.
 
 이 구분의 근거는 실제 사례다. GIWA `0x533c5cb2…9964c`(block 31634935)는
 지불자에게서 1.00 mUSDC를 실제로 이체했지만 호출자는 `PAYMENT_REJECTED`를
@@ -134,7 +162,8 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 |---|---|---|
 | 응답 못 받음 (연결 거부·non-2xx·JSON 아님·타임아웃) | `unknown` 504 | "요청이 닿지 않음"과 "브로드캐스트 후 응답 유실"을 구분할 수 없다 |
 | `errorReason === SETTLEMENT_PENDING` | `unknown` 504 (+해시) | x402 v2가 이 사유에 해시를 강제한다 — 해시가 없으면 호출자가 확인할 수단이 없다 |
-| `success !== true` | `failed` 422 | 명시적 거절 — 자금이 이동하지 않았다 |
+| `success !== true`, `errorReason === vendor_not_credited` | `failed` 502 (+해시) | 채굴됐고 우리 `payTo`가 아닌 곳을 채웠다 — 잔고가 움직였을 수 있으므로 오퍼를 다시 주지 않는다 |
+| `success !== true`, 그 밖 | `failed` 402 + 오퍼 | 명시적 거절 — 자금이 이동하지 않았고, 새 leaf로 다시 낼 수 있다 |
 | `success === true`, payer 불일치 | `unknown` 504 | 브로드캐스트는 주장되었으나 신원이 어긋났고, 잔액은 확인되지 않았다 |
 | `success === true`, payer 일치 | `settled` 200 | |
 

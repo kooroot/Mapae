@@ -84,18 +84,31 @@ interface SettlementReceipt {
     payTo: Address;
     network: "eip155:91342";
     transaction?: Hex; // GIWA tx hash
+    replayed: boolean; // the facilitator answered out of its own record of this intent
 }
 ```
 
+`replayed` is **not a delivery gate**: once a first attempt ends `settlement_pending`, every
+later success for that intent is marked, so refusing a replay refuses a sale you were paid
+for. Dedupe on `intent` — one row per intent — and read this as "some other call did this".
+
 | status | meaning |
 |---|---|
-| `402` | no payment header — normal for humans and `curl` |
-| `503 facilitator_unavailable` | `/supported` or `/verify` unreachable, or the facilitator would not look at the payment — its rate limit, or a readiness check it failed — on `/verify` or `/settle`; nothing charged, retry later with the same payment |
+| `402` (no offer consumed) | no payment header — normal for humans and `curl` |
 | `400 malformed_payment` | header is not a usable ERC-7710 payment |
-| `403 delegation_rejected` | facilitator refused the delegation (expired, over limit, over the 10.00 cap, offer mismatch) |
+| `503 facilitator_unavailable` | `/supported` or `/verify` unreachable, or the facilitator would not look at the payment — its rate limit, or a readiness check it failed — on `/verify` or `/settle`; nothing charged, retry later with the same payment |
+| `402` (offer re-issued) | the facilitator refused the delegation (expired, over limit, over the 10.00 cap, offer mismatch), or the settlement failed without charging anybody. A new leaf can pay, so the offer rides along |
 | `504 settlement_unknown` | broadcast but no receipt seen — the buyer **may** have been charged; do not re-sign blindly |
-| `422 settlement_failed` | transfer did not happen; nothing charged |
+| `502 settlement_misdirected` | the redemption was mined and credited someone who is not this `payTo` — the buyer **may** have been charged, so no offer is re-issued |
 | `404` | the paywall is the last matched route — it never prices a route nothing serves |
+
+Every failing answer also carries the x402 v2 `SettleResponse` in `Payment-Response`
+(base64 UTF-8 JSON): `success: false` plus one §9 word — `invalid_payload`,
+`settlement_pending`, `rate_limited`, `delegation_rejected` and the rest. The two rungs
+before a payer is known (400, and 503 with no header) are the exception: a receipt names the
+payer of the payment it answers, and those name nobody. Every answer, failing or not, carries
+`Cache-Control: no-store` and `Vary: Payment-Signature`, so no shared cache hands a paid body
+to a request that did not pay.
 
 Two routes at the same price and `payTo` share one offer (the offer carries no path), so a
 header bought for one opens the other. Use distinct prices, or check `receipt.intent` against
