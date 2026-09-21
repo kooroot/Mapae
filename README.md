@@ -216,14 +216,14 @@ total without running a single test body; `forge test --list` does the same for
 the contracts.
 
 The advisory check runs `bun audit` and requires every finding to be either
-fixed or accepted in writing with a proof attached. One is accepted today: a
-Windows path traversal in the HTTP adapter that `@modelcontextprotocol/sdk`
-pulls in for a transport this repository does not use. No compatible update
-closes it — the SDK declares `^1.19.9` and the fix landed in 2.0.5 — so the
-acceptance rests entirely on that adapter never entering our bundle, which is
-re-measured on every run. A control file that imports the transport on purpose
-has to be found by the same measurement first: a detector that always reported
-zero would pass the check while proving nothing.
+fixed or accepted in writing with a proof attached. Nothing is accepted today.
+An acceptance is code rather than prose: each one carries a `prove` function
+that re-measures its own reason on every run, and the list fails in three
+directions — a finding with no acceptance, an acceptance whose proof broke, and
+an acceptance whose advisory is no longer reported, so permissions nobody needs
+cannot accumulate. A run that could not reach the registry is distinguished
+from a run that found nothing: the proofs still execute and the skipped
+comparison is said out loud.
 
 The logging check refuses a raw error inside any `console.*` argument. The
 private RPC endpoint used for local forks carries its API key in the URL *path*,
