@@ -663,22 +663,33 @@ Among the opaque reasons, these two must be distinguished. "The payer was not ch
 an answer that may be paid again; retrying "whether the payer was charged could not be
 established" becomes a double payment. The seller's ladder says which in its status code.
 
-| Status | When | Offer re-issued? |
-|---|---|---|
-| `400 malformed_payment` | the header is oversized, unparseable, or not ERC-7710 | No — nothing read it |
-| `503 facilitator_unavailable` | `/supported` out of reach; `/verify` or `/settle` answered `rate_limited` or `facilitator_not_ready`; `/verify` answered `unexpected_verify_error` | No — the same payment may be presented again later |
-| `402` + offer | `/verify` refused, or a `/settle` failure that charged nobody (a budget word, and `settlement_reverted` even with a hash — a mined revert moved no asset) | **Yes** — a new leaf can pay |
-| `504 settlement_unknown` | the `/settle` outcome is unknown: answer lost, `settlement_pending`, `unexpected_settle_error`, payer mismatch, and **a failure that names a hash under a word that is not a mined-failure word** | No — the buyer may be charged |
-| `502 settlement_misdirected` | `vendor_not_credited` — mined, and it credited someone who is not this `payTo` | No — the balance has already moved |
+| Status | When | Offer re-issued? | Receipt |
+|---|---|---|---|
+| `400 malformed_payment` | the header is oversized, unparseable, or not ERC-7710 | No — nothing read it | `invalid_payload`, no payer, `transaction: ""` |
+| `503 facilitator_unavailable` | `/supported` out of reach; `/verify` or `/settle` answered `rate_limited` or `facilitator_not_ready`; `/verify` answered `unexpected_verify_error` | No — the same payment may be presented again later | that word and the payer — except for a request that sent no header at all, which gets none |
+| `402` + offer | `/verify` refused, or a `/settle` failure that charged nobody (a budget word, and `settlement_reverted` even with a hash — a mined revert moved no asset) | **Yes** — a new leaf can pay | that word and the payer |
+| `504 settlement_unknown` | the `/settle` outcome is unknown: answer lost, `settlement_pending`, `unexpected_settle_error`, payer mismatch, and **a failure that names a hash under a word that is not a mined-failure word** | No — the buyer may be charged | `settlement_pending`, the payer, and the hash when there is one |
+| `502 settlement_misdirected` | `vendor_not_credited` — mined, and it credited someone who is not this `payTo` | No — the balance has already moved | `vendor_not_credited`, the payer, the hash |
 
-Every failing answer carries the x402 v2 `SettleResponse` in `Payment-Response`:
-`success: false`, `network`, `payer`, and one §9 word. The hash rides along whenever there
-is one (`settlement_pending` on the 504, `vendor_not_credited` on the 502) — it is the
-buyer's only way to find out for themselves. The two rungs that go out without a receipt are
-the unread header (400) and a 503 with no header at all: a receipt names the payer of the
-payment it answers, and those name nobody. Every answer also carries `Cache-Control:
-no-store` and `Vary: Payment-Signature`, so no shared cache hands a paid body to a request
-that did not pay, or an unpaid 402 to one that did.
+Every refusal of an *attempted* payment carries the x402 v2 `SettleResponse` in
+`Payment-Response`: `success: false`, `network`, one §9 word, and the payer where it is
+known. The hash rides along whenever there is one (`settlement_pending` on the 504,
+`vendor_not_credited` on the 502) — it is the buyer's only way to find out for themselves.
+
+A success receipt and a failure receipt are shaped differently, which is why the type is a
+union discriminated on `success` (`packages/shared/src/x402.ts`): `payer` is required of a
+success and may be omitted only on a failure — money that moved cannot fail to name who paid
+it, but the 400 rung answers a header it could not read and lost the name inside it.
+`errorReason` is the mirror image, required of a failure. The reference implementation leaves
+all three optional; this profile always holds a word folded onto a closed vocabulary before
+it answers, so leaving `errorReason` optional would put "a failure receipt with no reason" —
+a state nothing here produces — into the type.
+
+The one answer with no receipt at all is a request that sent no payment header: that request
+asked what the resource costs rather than paying for it, and a receipt for a payment nobody
+made is an invention. Every answer also carries `Cache-Control: no-store` and `Vary:
+Payment-Signature`, so no shared cache hands a paid body to a request that did not pay, or an
+unpaid 402 to one that did.
 
 The agent side reads those words to classify its failure (`payment-client.ts`). When a retry
 is not 2xx, only the **header** is read — never the body, which a seller can reflect a

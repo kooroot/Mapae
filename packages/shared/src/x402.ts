@@ -394,20 +394,38 @@ export const PAYMENT_SIGNATURE_HEADER = "Payment-Signature";
 export const PAYMENT_RESPONSE_HEADER = "Payment-Response";
 
 /**
- * Settlement receipt a resource server returns in `Payment-Response` beside a 2xx — the
- * x402 v2 `SettleResponse`. `transaction` is required, and `""` when no on-chain
- * transaction can be named: a counterparty validating against the reference schema
- * rejects a receipt that simply omits the field.
+ * Settlement receipt a resource server returns in `Payment-Response` — the x402 v2
+ * `SettleResponse`. Discriminated on `success`, because a settlement that happened and one
+ * that did not know different things about themselves.
+ *
+ * `transaction` is required on both sides, and `""` when no on-chain transaction can be
+ * named: a counterparty validating against the reference schema rejects a receipt that
+ * simply omits the field.
+ *
+ * `payer` is required of a success and optional of a failure. Money that moved cannot fail
+ * to name who paid it; a refusal can be older than the payer's name — the rung that
+ * answers a `Payment-Signature` it could not parse knows a payment was attempted and
+ * nothing more.
+ *
+ * `errorReason` is required of a failure, where the reference type leaves it optional.
+ * This profile folds every reason onto a closed vocabulary before answering, so "a failure
+ * receipt with no reason" is a state nothing here produces; declaring it optional would
+ * put that state in the type and send every reader down a branch no writer can reach.
+ * `errorMessage` is absent for the mirror-image reason: nothing produces one, and a
+ * seller's free-form sentence does not go on the wire.
  *
  * This is the shape we *write*. What arrives from someone else is `unknown` until the
  * reader has checked it, which is why the decoder below does not claim this type.
  */
-export interface SettleResponse {
-    success: boolean;
-    network: string;
-    payer: Address;
-    transaction: Hex | "";
-}
+export type SettleResponse =
+    | {success: true; network: string; payer: Address; transaction: Hex | ""}
+    | {
+          success: false;
+          network: string;
+          payer?: Address;
+          transaction: Hex | "";
+          errorReason: string;
+      };
 
 /* ------------------------------------------------------------------ *
  * Header codec

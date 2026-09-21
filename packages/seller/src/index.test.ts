@@ -23,6 +23,7 @@ import {
     CLIENT_IP_HEADER,
     DELEGATION_REJECTED,
     FACILITATOR_NOT_READY,
+    INVALID_PAYLOAD,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     SETTLEMENT_REVERTED,
@@ -309,7 +310,9 @@ describe("mapaePaywall — the 402 offer", () => {
         const first = await app.request(RESOURCE);
         expect(first.status).toBe(503);
         expect(await first.json()).toEqual({error: "facilitator_unavailable"});
-        // Nobody presented a payment, so there is no payer a settlement answer could name.
+        // Nobody presented a payment, so there is no settlement for a receipt to be about.
+        // (An unreadable header does get one — see the 400 rungs. The rule is "a payment was
+        // attempted", not "a payer is known".)
         expect(first.headers.get(PAYMENT_RESPONSE_HEADER)).toBeNull();
         const second = await app.request(RESOURCE);
         expect(second.status).toBe(402);
@@ -445,9 +448,19 @@ describe("mapaePaywall — malformed payments", () => {
         const response = await pay(app, "A".repeat(150_001));
         expect(response.status).toBe(400);
         expect(await response.json()).toEqual({error: "malformed_payment", detail: "header too large"});
-        // A SettleResponse answers one payment and names its payer. A header we could not
-        // read names nobody, so the reason travels in the body and no receipt is invented.
-        expect(response.headers.get(PAYMENT_RESPONSE_HEADER)).toBeNull();
+        // A payment was attempted, so it gets a receipt — the buyer's agent decides between
+        // "fix the header" and "sign a new leaf" by machine, and the body's prose is for a
+        // human. No payer: the name was inside the text that did not parse.
+        expect(failureReceipt(response)).toEqual({
+            success: false,
+            errorReason: INVALID_PAYLOAD,
+            network: GIWA_SEPOLIA_CAIP2,
+            transaction: "",
+        });
+        // Checked separately because `toEqual` above would accept `payer: undefined`, and
+        // the point of this rung is that no payer is *claimed* — not that a claimed one is
+        // empty.
+        expect(failureReceipt(response)).not.toHaveProperty("payer");
         expect(remote.calls).toEqual([]);
         expect(seen.served).toBe(0);
     });
@@ -472,9 +485,33 @@ describe("mapaePaywall — malformed payments", () => {
             const response = await pay(app, header);
             expect(response.status, detail).toBe(400);
             expect(await response.json()).toEqual({error: "malformed_payment", detail});
+            // One §9 word for every way the text can be unreadable: the buyer's agent has
+            // nothing to do differently between them, and `detail` already says which for a
+            // human. The payer is unknown on all of them.
+            expect(failureReceipt(response), detail).toEqual({
+                success: false,
+                errorReason: INVALID_PAYLOAD,
+                network: GIWA_SEPOLIA_CAIP2,
+                transaction: "",
+            });
+            expect(failureReceipt(response), detail).not.toHaveProperty("payer");
             expect(remote.calls).toEqual([]);
             expect(seen.served).toBe(0);
         }
+    });
+
+    test("a request with no payment header gets no receipt, even when /supported is down", async () => {
+        // The 400s above refused a payment that was attempted. This request attempted none
+        // — it asked what the resource costs — so there is no settlement for a receipt to
+        // be the receipt of, and inventing one would have the seller answer a payment
+        // nobody made. The 503 is the same rung either way; only the receipt differs.
+        const remote = facilitator({"/supported": refused});
+        const {app, seen} = seller(paywall({fetch: remote.fetch}));
+        const response = await app.request(RESOURCE);
+        expect(response.status).toBe(503);
+        expect(await response.json()).toEqual({error: "facilitator_unavailable"});
+        expect(response.headers.get(PAYMENT_RESPONSE_HEADER)).toBeNull();
+        expect(seen.served).toBe(0);
     });
 });
 

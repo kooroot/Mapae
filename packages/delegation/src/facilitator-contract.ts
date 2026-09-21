@@ -80,6 +80,20 @@ export const RATE_LIMITED = "rate_limited";
 export const FACILITATOR_NOT_READY = "facilitator_not_ready";
 
 /**
+ * §9's word for a payment whose text could not be read at all: oversized
+ * `Payment-Signature`, bytes that are not base64 UTF-8 JSON, a payload that is not an
+ * ERC-7710 delegation. The seller answers those 400 and names this word in the receipt.
+ *
+ * Named here, beside the other words both ends of this wire read, because both ends do
+ * read it: the seller writes it and `payment-client.ts` matches it as a §9 refusal. A word
+ * spelled out twice is a word that can be renamed on one side only.
+ *
+ * It is the one word the seller reaches on its own, before any facilitator call — so it is
+ * never a folded reason, and the facilitator never produces it.
+ */
+export const INVALID_PAYLOAD = "invalid_payload";
+
+/**
  * The Mapae profile's one refusal word outside the x402 §9 vocabulary: the facilitator
  * examined the delegation against live state and the chain would not redeem it — the
  * simulation reverted, or the redemption priced above its gas cap. Neither is a defect
@@ -155,7 +169,7 @@ const KNOWN_REFUSAL_REASONS: ReadonlySet<string> = new Set([
     "invalid_scheme",
     "unsupported_scheme",
     "invalid_network",
-    "invalid_payload",
+    INVALID_PAYLOAD,
     "invalid_payment_requirements",
     "invalid_x402_version",
     "invalid_transaction_state",

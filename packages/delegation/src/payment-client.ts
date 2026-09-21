@@ -16,6 +16,7 @@ import {
 import {
     DELEGATION_REJECTED,
     FACILITATOR_NOT_READY,
+    INVALID_PAYLOAD,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     UNEXPECTED_SETTLE_ERROR,
@@ -164,7 +165,7 @@ const X402_REFUSAL_WORDS = [
     "invalid_scheme",
     "unsupported_scheme",
     "invalid_network",
-    "invalid_payload",
+    INVALID_PAYLOAD,
     "invalid_payment_requirements",
     "invalid_x402_version",
     "invalid_transaction_state",

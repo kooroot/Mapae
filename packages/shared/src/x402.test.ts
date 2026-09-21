@@ -145,8 +145,8 @@ describe("x402 v2 transport headers", () => {
             success: true,
             network: GIWA_SEPOLIA_CAIP2,
             payer: DELEGATOR,
-            transaction: `0x${"cd".repeat(32)}` as const,
-        };
+            transaction: `0x${"cd".repeat(32)}`,
+        } as const;
         expect(decodePaymentResponseHeader(encodePaymentResponseHeader(settled))).toEqual(settled);
         // `transaction` is required; "no on-chain transaction" is spelled `""`.
         const unnamed = {
@@ -156,6 +156,23 @@ describe("x402 v2 transport headers", () => {
             transaction: "",
         } as const;
         expect(decodePaymentResponseHeader(encodePaymentResponseHeader(unnamed))).toEqual(unnamed);
+    });
+
+    test("a failure receipt round-trips without a payer, and names its reason", () => {
+        // The failure side of the union: a refusal older than the payer's name — the
+        // header that did not parse carried it. `errorReason` is what makes the receipt
+        // worth writing at all, so it is required where `payer` is not.
+        const unread = {
+            success: false,
+            network: GIWA_SEPOLIA_CAIP2,
+            transaction: "",
+            errorReason: "invalid_payload",
+        } as const;
+        const decoded = decodePaymentResponseHeader(encodePaymentResponseHeader(unread));
+        expect(decoded).toEqual(unread);
+        // Not merely `payer: undefined`: an absent key is what goes on the wire, because
+        // JSON drops an undefined value and a reader must not have to tell the two apart.
+        expect(decoded).not.toHaveProperty("payer");
     });
 });
 

@@ -208,19 +208,22 @@ curl -s https://facilitator.mapae.io/supported
 | 응답 | 뜻 | 할 일 |
 |---|---|---|
 | `402` (헤더 없음) | 결제 헤더가 없다 | 정상. 에이전트가 낼 차례다 |
-| `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니다 | 에이전트 쪽 문제. `detail`이 이유를 말한다 |
+| `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니다. 영수증은 `invalid_payload`를 대고 지불자는 대지 않는다 — 그 이름이 읽히지 않은 글자 안에 있었다 | 에이전트 쪽 문제. `detail`이 사람이 읽을 이유를 말한다 |
 | `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했거나, facilitator가 결제를 보지 않았다 — 요청 제한, 또는 실패한 준비 검사 — `/verify`든 `/settle`이든. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 같은 결제로 다시 시도 |
 | `402` (오퍼 재발행) | facilitator가 위임을 거절했거나(만료, 한도 초과, 상한 10.00 초과, 오퍼 불일치), 아무도 청구되지 않은 정산 실패다. 새 leaf로 다시 낼 수 있으므로 오퍼를 다시 싣는다 | 손님의 위임을 확인. 가격이 상한 안인지 확인 |
 | `504 settlement_unknown` | 결과가 확정되지 않았다 — 응답 유실, `settlement_pending`, `unexpected_settle_error`, 또는 채굴 실패 낱말이 아닌 사유로 해시를 댄 실패. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 에이전트에게 다시 서명시키지 않는다 |
 | `502 settlement_misdirected` | 정산이 채굴됐지만 `payTo`가 아닌 곳을 채웠다. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 오퍼를 다시 주지 않는다 |
 | `404` | 페이월 뒤에 핸들러가 없다 | 미들웨어는 아무도 안 받는 경로에 값을 매기지 않는다. 라우트를 확인 |
 
-실패한 응답은 모두 x402 v2 `SettleResponse`를 `Payment-Response` 헤더(base64 UTF-8
-JSON)에 함께 싣는다 — `success: false`와 §9 낱말 하나(`invalid_payload`,
-`settlement_pending`, `rate_limited`, `delegation_rejected` …). 읽히지 않은 헤더(400)와
-헤더 없는 503만 예외다: 영수증은 지불자를 말하는 문서인데 그 두 경우엔 말할 지불자가
-없다. 모든 응답에 — 404까지 — `Cache-Control: no-store`와 `Vary: Payment-Signature`도
-붙어, 캐시가 결제한 본문을 미결제 요청에 주는 일이 없다.
+**결제를 시도한** 요청을 거절하는 응답은 모두 x402 v2 `SettleResponse`를
+`Payment-Response` 헤더(base64 UTF-8 JSON)에 함께 싣는다 — `success: false`와 §9 낱말
+하나(`invalid_payload`, `settlement_pending`, `rate_limited`, `delegation_rejected` …).
+성공 영수증과 실패 영수증은 모양이 다르다: `payer`는 성공에 항상 있고(움직인 돈이 누가
+냈는지 모를 수는 없다) 실패에서는 없을 수 있다 — 400 칸은 읽히지 않은 헤더에 답하는
+칸이고 지불자의 이름이 그 안에 있었다. `errorReason`은 그 거울상으로 실패에 항상 있고
+성공에는 없다. 영수증이 아예 없는 응답은 결제 헤더를 보내지 않은 요청 하나뿐이다 —
+영수증이 될 결제가 없다. 모든 응답에 — 404까지 — `Cache-Control: no-store`와
+`Vary: Payment-Signature`도 붙어, 캐시가 결제한 본문을 미결제 요청에 주는 일이 없다.
 
 해시를 댄 실패에는 오퍼를 다시 싣지 않는다. `vendor_not_credited`는 502, 그 밖은 504다 —
 402 칸에 닿을 수 있는 낱말은 모두 "브로드캐스트 전에 거절됐다"고 주장하는데 해시는 그래도

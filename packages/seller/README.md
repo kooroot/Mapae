@@ -95,20 +95,24 @@ for. Dedupe on `intent` — one row per intent — and read this as "some other 
 | status | meaning |
 |---|---|
 | `402` (no offer consumed) | no payment header — normal for humans and `curl` |
-| `400 malformed_payment` | header is not a usable ERC-7710 payment |
+| `400 malformed_payment` | header is not a usable ERC-7710 payment. The receipt names `invalid_payload` and no payer — the payer's name was inside the text that would not parse |
 | `503 facilitator_unavailable` | `/supported` or `/verify` unreachable, or the facilitator would not look at the payment — its rate limit, or a readiness check it failed — on `/verify` or `/settle`; nothing charged, retry later with the same payment |
 | `402` (offer re-issued) | the facilitator refused the delegation (expired, over limit, over the 10.00 cap, offer mismatch), or the settlement failed without charging anybody. A new leaf can pay, so the offer rides along |
 | `504 settlement_unknown` | the outcome is not established — no answer, `settlement_pending`, `unexpected_settle_error`, or a failure that names a transaction hash under a word that does not mean a mined failure. The buyer **may** have been charged; no offer is re-issued and the hash goes out with the receipt |
 | `502 settlement_misdirected` | the redemption was mined and credited someone who is not this `payTo` — the buyer **may** have been charged, so no offer is re-issued |
 | `404` | the paywall is the last matched route — it never prices a route nothing serves |
 
-Every failing answer also carries the x402 v2 `SettleResponse` in `Payment-Response`
-(base64 UTF-8 JSON): `success: false` plus one §9 word — `invalid_payload`,
-`settlement_pending`, `rate_limited`, `delegation_rejected` and the rest. The two rungs
-before a payer is known (400, and 503 with no header) are the exception: a receipt names the
-payer of the payment it answers, and those name nobody. Every answer, failing or not — the
-404 included — carries `Cache-Control: no-store` and `Vary: Payment-Signature`, so no shared
-cache hands a paid body to a request that did not pay.
+Every refusal of an *attempted* payment carries the x402 v2 `SettleResponse` in
+`Payment-Response` (base64 UTF-8 JSON): `success: false` plus one §9 word —
+`invalid_payload`, `settlement_pending`, `rate_limited`, `delegation_rejected` and the rest.
+A success receipt and a failure receipt are shaped differently: `payer` is always present on
+a success — money that moved cannot fail to name who paid it — and may be absent on a
+failure, because the 400 rung answers a header it could not read and the payer's name was
+inside it. `errorReason` is the mirror image: always on a failure, never on a success. The
+one answer with no receipt at all is a request that sent no payment header, since there is no
+payment for it to be the receipt of. Every answer, failing or not — the 404 included —
+carries `Cache-Control: no-store` and `Vary: Payment-Signature`, so no shared cache hands a
+paid body to a request that did not pay.
 
 The offer is never re-issued beside a transaction hash. A `/settle` failure that names one is
 answered 502 for `vendor_not_credited` and 504 otherwise, because every word that could reach

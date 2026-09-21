@@ -29,6 +29,7 @@ import {
 import {
     CLIENT_IP_HEADER,
     FACILITATOR_NOT_READY,
+    INVALID_PAYLOAD,
     SETTLEMENT_PENDING,
     VENDOR_NOT_CREDITED,
     decideSettlement,
@@ -176,7 +177,9 @@ export interface MapaeSeller {
      * offer (header and body). With one, the facilitator is asked to `/verify` and then
      * `/settle`, and only a confirmed settlement lets the next handler run:
      *
-     * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment.
+     * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment. The receipt
+     *   names `invalid_payload` and no payer: the payer's name was in the text that would
+     *   not parse.
      * - 503 `facilitator_unavailable` — `/supported` or `/verify` could not be reached,
      *   or the facilitator refused to look at the payment (its per-address rate limit,
      *   or a readiness check it failed). Nothing was charged; the buyer may retry later
@@ -194,9 +197,11 @@ export interface MapaeSeller {
      * it, and `onSettled` has run.
      *
      * Every one of those answers also carries `Cache-Control: no-store` and
-     * `Vary: Payment-Signature`, and every failure carries the x402 v2 `SettleResponse`
-     * in `Payment-Response` — `success: false` plus the §9 word for why — as soon as the
-     * payment named a payer to write it about.
+     * `Vary: Payment-Signature`, and every refusal of an *attempted* payment carries the
+     * x402 v2 `SettleResponse` in `Payment-Response` — `success: false` plus the §9 word
+     * for why, and the payer whenever the header parsed far enough to name one. A request
+     * that carried no payment header gets no receipt: there is no payment for one to be
+     * about.
      *
      * The facilitator rate-limits `/verify` and `/settle` per client address, and reads
      * `X-Mapae-Client-IP` only from a caller whose own address it cannot see — one on
@@ -486,24 +491,18 @@ function paywallDescriptor(handler: unknown): PaywallDescriptor | undefined {
 }
 
 /**
- * What this middleware writes in `Payment-Response` beside a non-2xx: the same x402 v2
- * `SettleResponse` document as a success receipt, with the spec's optional `errorReason`
- * filled in. This profile always names one on a failure, so it is required here.
+ * Write the failure receipt: the same x402 v2 `SettleResponse` document a success carries,
+ * on the failure side of that union, so every refusal of an attempted payment says why in
+ * a field rather than in prose.
  *
  * The word is never the facilitator's text — `@mapae/delegation`'s outcome ladder folds
  * what it received onto a closed vocabulary first, and only that reaches the buyer.
- */
-interface FailureReceipt extends SettleResponse {
-    errorReason: string;
-}
-
-/**
- * Write the failure receipt, when there is a payer to write it about.
  *
- * A `SettleResponse` answers one payment and names the payer of that payment. Until the
- * header has parsed there is no payer — an unreadable header names nobody, and a request
- * with no header at all is not a payment — so those rungs carry their reason in the JSON
- * body alone and no receipt is invented for them.
+ * `payer` is left out when the header never parsed, because an unreadable header names
+ * nobody. The receipt still goes out: the buyer's agent has to decide whether to fix the
+ * header or sign a new leaf, and that is a decision it makes by machine. The only rung
+ * without a receipt is the request that carried no payment at all — see the `/supported`
+ * branch below.
  */
 function writeFailureReceipt(
     c: Context<MapaeEnv>,
@@ -511,12 +510,11 @@ function writeFailureReceipt(
     payer: Address | undefined,
     transaction: Hex | "" = "",
 ): void {
-    if (payer === undefined) return;
-    const receipt: FailureReceipt = {
+    const receipt: SettleResponse = {
         success: false,
         errorReason,
         network: NETWORK,
-        payer,
+        ...(payer === undefined ? {} : {payer}),
         transaction,
     };
     c.header(PAYMENT_RESPONSE_HEADER, encodePaymentResponseHeader(receipt));
@@ -557,11 +555,17 @@ function buildPaywall(
         // answer naming anyone else is an answer about some other payment.
         let payment: {payload: Erc7710PaymentPayload; payer: Address} | undefined;
         if (header !== undefined) {
+            // A payment was attempted and this side could not read it. The receipt names
+            // the §9 word for that and no payer — the name was in the text that did not
+            // parse — while `detail` keeps the prose for a human reading the body. What a
+            // buyer's agent acts on is the word.
             if (header.length > MAX_PAYMENT_HEADER_LENGTH) {
+                writeFailureReceipt(c, INVALID_PAYLOAD, undefined);
                 return c.json({error: "malformed_payment", detail: "header too large"}, 400);
             }
             const decoded = readDelegatedPayment(header);
             if (!decoded.ok) {
+                writeFailureReceipt(c, INVALID_PAYLOAD, undefined);
                 return c.json({error: "malformed_payment", detail: decoded.detail}, 400);
             }
             payment = {payload: decoded.payload, payer: getAddress(decoded.payload.payload.delegator)};
@@ -571,7 +575,13 @@ function buildPaywall(
         if (!kind) {
             // `/supported` never looked at a payment, so there is no word from the
             // facilitator to carry: not-ready is this side's own reading.
-            writeFailureReceipt(c, FACILITATOR_NOT_READY, payment?.payer);
+            //
+            // The condition is `payment`, not its payer: a request that sent no
+            // `Payment-Signature` asked what this resource costs, and a settlement receipt
+            // for a settlement nobody attempted is an invention — there is no payment for
+            // it to be the receipt *of*. Every rung that does answer an attempted payment
+            // carries one, whether or not the payer's name survived.
+            if (payment) writeFailureReceipt(c, FACILITATOR_NOT_READY, payment.payer);
             return c.json({error: "facilitator_unavailable"}, 503);
         }
         // The facilitator's advertised kind is copied verbatim into the offer: the

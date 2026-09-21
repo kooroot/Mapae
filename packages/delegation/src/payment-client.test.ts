@@ -12,6 +12,7 @@ import {
     type PaymentRequired,
     type SettleResponse,
 } from "@mapae/shared";
+import {INVALID_PAYLOAD} from "./facilitator-contract.js";
 import {
     BEARER_REDACTION,
     payForDelegatedResource,
@@ -970,10 +971,32 @@ describe("D5 the seller's own word decides, when it is one we know", () => {
     });
 
     test("§9's own refusal words are PAYMENT_REJECTED too", async () => {
-        for (const word of ["invalid_payload", "invalid_transaction_state", "insufficient_funds"]) {
+        for (const word of [INVALID_PAYLOAD, "invalid_transaction_state", "insufficient_funds"]) {
             const result = await resultFor(402, refusal(word));
             expect(result.code, word).toBe("PAYMENT_REJECTED");
         }
+    });
+
+    test("a 400 receipt with no payer is still read — invalid_payload is PAYMENT_REJECTED", async () => {
+        // The seller's 400 rung answers a `Payment-Signature` it could not parse, so its
+        // receipt names no payer: the name was inside the text that failed to read. Nothing
+        // on this end reads the payer of a failure receipt, so the word still lands, and it
+        // lands in the one place that matters — nothing was broadcast, so the caller may fix
+        // the header and present the same payment again rather than wonder if it was charged.
+        const noPayer = receiptHeader({
+            success: false,
+            errorReason: INVALID_PAYLOAD,
+            network: GIWA_SEPOLIA_CAIP2,
+            transaction: "",
+        });
+        const result = await resultFor(400, noPayer);
+        expect(result.code).toBe("PAYMENT_REJECTED");
+        expect(result.detail).toContain(INVALID_PAYLOAD);
+        expect(result.detail).toContain("no settlement was attempted");
+        expect(result.status).toBe(400);
+        // 400 is not in either status set, so the word and the status agree here. Pinned so
+        // that moving 400 into one of those sets has to be a decision, not a side effect.
+        expect((await resultFor(400, {})).code).toBe("PAYMENT_REJECTED");
     });
 
     test("a throttled or not-ready seller is SELLER_UNAVAILABLE", async () => {

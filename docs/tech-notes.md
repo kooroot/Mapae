@@ -609,21 +609,30 @@ revert(노드가 `-32000`으로 보고해 viem에 revert 데이터가 없는 `Ex
 답이고, "청구 여부를 확인하지 못했다"의 재시도는 이중 지불이 된다. 판매자 사다리는 그
 구분을 상태 코드로 낸다.
 
-| 상태 | 언제 | 오퍼를 다시 싣는가 |
-|---|---|---|
-| `400 malformed_payment` | 헤더가 크거나 파싱 불가·ERC-7710 아님 | 아니오 — 읽히지 않은 헤더다 |
-| `503 facilitator_unavailable` | `/supported` 미도달, `/verify`·`/settle`이 `rate_limited`·`facilitator_not_ready`, `/verify`가 `unexpected_verify_error` | 아니오 — 같은 결제를 나중에 다시 내면 된다 |
-| `402` + 오퍼 | `/verify` 거절, 또는 아무도 청구되지 않은 `/settle` 실패(예산 낱말, 그리고 해시와 함께 오는 `settlement_reverted` — 채굴된 revert라 자산이 움직이지 않았다) | **예** — 새 leaf로 낼 수 있다 |
-| `504 settlement_unknown` | `/settle` 결과를 모른다: 응답 유실, `settlement_pending`, `unexpected_settle_error`, payer 불일치, 그리고 **해시를 댄 실패의 낱말이 채굴 실패 낱말이 아닐 때** | 아니오 — 청구됐을 수 있다 |
-| `502 settlement_misdirected` | `vendor_not_credited` — 채굴됐고 우리 `payTo`가 아닌 곳을 채웠다 | 아니오 — 잔고가 이미 움직였다 |
+| 상태 | 언제 | 오퍼를 다시 싣는가 | 영수증 |
+|---|---|---|---|
+| `400 malformed_payment` | 헤더가 크거나 파싱 불가·ERC-7710 아님 | 아니오 — 읽히지 않은 헤더다 | `invalid_payload`, 지불자 없음, `transaction: ""` |
+| `503 facilitator_unavailable` | `/supported` 미도달, `/verify`·`/settle`이 `rate_limited`·`facilitator_not_ready`, `/verify`가 `unexpected_verify_error` | 아니오 — 같은 결제를 나중에 다시 내면 된다 | 그 낱말과 지불자. 단 헤더를 아예 안 보낸 요청에는 영수증 없음 |
+| `402` + 오퍼 | `/verify` 거절, 또는 아무도 청구되지 않은 `/settle` 실패(예산 낱말, 그리고 해시와 함께 오는 `settlement_reverted` — 채굴된 revert라 자산이 움직이지 않았다) | **예** — 새 leaf로 낼 수 있다 | 그 낱말과 지불자 |
+| `504 settlement_unknown` | `/settle` 결과를 모른다: 응답 유실, `settlement_pending`, `unexpected_settle_error`, payer 불일치, 그리고 **해시를 댄 실패의 낱말이 채굴 실패 낱말이 아닐 때** | 아니오 — 청구됐을 수 있다 | `settlement_pending`, 지불자, 그리고 해시가 있으면 해시 |
+| `502 settlement_misdirected` | `vendor_not_credited` — 채굴됐고 우리 `payTo`가 아닌 곳을 채웠다 | 아니오 — 잔고가 이미 움직였다 | `vendor_not_credited`, 지불자, 해시 |
 
-실패한 응답은 모두 `Payment-Response`에 x402 v2 `SettleResponse`를 싣는다:
-`success: false`, `network`, `payer`, 그리고 §9 낱말 하나. 해시가 있으면(504의
-`settlement_pending`, 502의 `vendor_not_credited`) 반드시 함께 간다 — 구매자가 스스로
-확인할 유일한 수단이다. 읽히지 않은 헤더(400)와 헤더 없는 503만 영수증 없이 나간다:
-영수증은 한 결제의 지불자를 말하는 문서이고, 그 둘은 말할 지불자가 없다. 그리고 모든
-응답에 `Cache-Control: no-store`와 `Vary: Payment-Signature`가 붙는다 — 캐시가 결제한
-본문을 미결제 요청에 주거나 미결제 402를 결제 요청에 주는 것을 막는다.
+**결제를 시도한** 요청을 거절하는 응답은 모두 `Payment-Response`에 x402 v2
+`SettleResponse`를 싣는다: `success: false`, `network`, §9 낱말 하나, 그리고 아는 경우의
+지불자. 해시가 있으면(504의 `settlement_pending`, 502의 `vendor_not_credited`) 반드시 함께
+간다 — 구매자가 스스로 확인할 유일한 수단이다.
+
+영수증은 성공과 실패에서 모양이 다르고, 타입이 `success`로 판별하는 합집합인 것도 그
+때문이다(`packages/shared/src/x402.ts`): `payer`는 성공에 필수이고 실패에서만 생략될 수
+있다 — 움직인 돈이 누가 냈는지 모를 수는 없지만, 읽히지 않은 헤더에 답하는 400 칸은 그
+이름을 그 안에서 잃었다. `errorReason`은 그 거울상으로 실패에 필수다. 참조 구현은 셋을 다
+optional로 두지만, 우리 프로필은 나가는 낱말을 언제나 닫힌 어휘로 접어 갖고 있으므로
+optional로 두면 "이유 없는 실패 영수증"이라는 생산자 없는 상태가 타입에 생긴다.
+
+영수증이 아예 없는 응답은 결제 헤더를 보내지 않은 요청 하나뿐이다 — 그 요청은 결제가
+아니라 값을 물은 것이고, 없는 결제에 대한 영수증은 발명이다. 그리고 모든 응답에
+`Cache-Control: no-store`와 `Vary: Payment-Signature`가 붙는다 — 캐시가 결제한 본문을
+미결제 요청에 주거나 미결제 402를 결제 요청에 주는 것을 막는다.
 
 에이전트 쪽은 이 낱말을 읽어 실패를 분류한다(`payment-client.ts`). 재시도 응답이 2xx가
 아니면 **헤더만** 읽고(바디는 열지 않는다 — 판매자가 bearer 헤더를 반사할 수 있다), 그
