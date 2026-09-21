@@ -110,10 +110,11 @@ function readAgentKey(env: Record<string, string | undefined>): Hex {
 /**
  * 운영자가 env로 정한 이 런타임의 지출 한도. 금액은 토큰 base unit이다.
  *
- * 온체인 caveat은 **기간** 한도다 — 며칠치 예산을 한 칸에 담고 있으므로, 잘못 든 자원
- * 경로 하나가 한 세션에 그 예산 전부를 쓸 수 있다. 체인은 그것을 막지 않는다: 각 결제가
- * 개별적으로는 전부 합법이기 때문이다. 세 한도는 그 폭을 좁히는 운영자 쪽 장치이고,
- * **최종 한도는 여전히 체인이다.**
+ * 온체인 caveat은 **속도**(기간 상한)와 **예산**(평생 총액)을 정하지만 어느 쪽도 한 세션의
+ * 폭을 정하지 않는다 — 기간 상한 한 칸은 며칠치 예산을 담을 수 있고, 총액은 위임이 사는
+ * 동안 전부 한 번에 나가도 막지 않는다. 잘못 든 자원 경로 하나가 그 예산을 한 세션에 쓰는
+ * 것을 체인은 막지 않는다: 각 결제가 개별적으로는 전부 합법이기 때문이다. 세 한도는 그 폭을
+ * 좁히는 운영자 쪽 장치이고, **최종 한도는 여전히 체인이다.**
  *
  * 미설정 칸은 `undefined`이며 그 한도는 없는 것으로 한다. 기본 숫자를 두지 않는 것은
  * 의도다 — 운영자가 정한 적 없는 예산을 코드가 정하면, 거절의 원인이 운영자가 읽을 수
@@ -495,10 +496,58 @@ export async function loadDelegatedAgentRuntime(
     };
 }
 
+/** 한 링크가 지금 더 허용하는 금액과, 그 답을 낸 caveat. */
+export interface RemainingAllowance {
+    amount: bigint;
+    /**
+     * 기간 상한이 답을 냈는지, 평생 총액이 냈는지.
+     *
+     * 거절의 처방이 갈린다: 기간은 기다리면 다시 열리고, 총액은 기다려도 열리지 않아
+     * 새 grant를 서명해야 한다. 같은 `LIMIT_EXCEEDED`를 내면서 "다음 기간을 기다려라"라고만
+     * 적으면, 총액이 소진된 운영자는 영원히 오지 않는 기간을 기다린다.
+     */
+    source: "period" | "lifetime";
+}
+
 /**
- * Resolve a caller-supplied resource path against the seller origin, rejecting
- * anything that could escape it (protocol-relative, backslash, cross-origin).
+ * The smallest remaining allowance across a chain, or `undefined` when no link carries a
+ * spending caveat at all.
+ *
+ * Shared because two callers computed it with the same six lines and then drew opposite
+ * conclusions from `undefined` — one of them wrongly. Keeping the computation in one place
+ * makes the disagreement visible as a disagreement rather than as a copy that fell behind.
+ *
+ * 한 링크가 두 지출 caveat(기간 상한·평생 총액)을 함께 들면 **둘 다 후보다**. 하나의
+ * 상환에 둘이 함께 걸리므로 답은 작은 쪽이고, 기간 잔량만 세면 기간이 갱신된 직후마다
+ * 체인이 `ERC20TransferAmountEnforcer:allowance-exceeded`로 되돌릴 결제를 통과시킨다.
+ *
+ * `undefined` means "there is no cap to compare against", never "the payment fits".
+ * Every caller has to say which of those it wants.
  */
+export function tightestRemaining(statuses: DelegationStatus[]): RemainingAllowance | undefined {
+    let tightest: RemainingAllowance | undefined;
+    const consider = (candidate: RemainingAllowance): void => {
+        if (tightest === undefined || candidate.amount < tightest.amount) {
+            tightest = candidate;
+            return;
+        }
+        // 금액이 같으면 총액이 이긴다. 두 caveat 모두 같은 금액에서 거절하지만, 기다림이
+        // 해결하지 못한다는 사실을 말해 주는 쪽이 운영자에게 더 정확하다.
+        if (candidate.amount === tightest.amount && candidate.source === "lifetime") {
+            tightest = candidate;
+        }
+    };
+    for (const status of statuses) {
+        if (status.remaining !== undefined) {
+            consider({amount: status.remaining, source: "period"});
+        }
+        if (status.lifetimeRemaining !== undefined) {
+            consider({amount: status.lifetimeRemaining, source: "lifetime"});
+        }
+    }
+    return tightest;
+}
+
 /**
  * Decide whether a payment may be signed, given every link's on-chain status.
  *
@@ -519,26 +568,6 @@ export async function loadDelegatedAgentRuntime(
  * would sign, the settlement would revert, and the failure would surface as a facilitator
  * error rather than as the limit doing its job.
  */
-/**
- * The smallest remaining period allowance across a chain, or `undefined` when no link
- * carries an `ERC20PeriodTransferEnforcer` caveat at all.
- *
- * Shared because two callers computed it with the same six lines and then drew opposite
- * conclusions from `undefined` — one of them wrongly. Keeping the computation in one place
- * makes the disagreement visible as a disagreement rather than as a copy that fell behind.
- *
- * `undefined` means "there is no period cap to compare against", never "the payment fits".
- * Every caller has to say which of those it wants.
- */
-export function tightestPeriodRemaining(statuses: DelegationStatus[]): bigint | undefined {
-    let tightest: bigint | undefined;
-    for (const status of statuses) {
-        if (status.remaining === undefined) continue;
-        if (tightest === undefined || status.remaining < tightest) tightest = status.remaining;
-    }
-    return tightest;
-}
-
 export function judgePreflight(statuses: DelegationStatus[], amount: bigint): PreflightVerdict {
     // An empty chain must not read as "no limits apply".
     //
@@ -571,27 +600,34 @@ export function judgePreflight(statuses: DelegationStatus[], amount: bigint): Pr
         }
     }
 
-    const tightest = tightestPeriodRemaining(statuses);
-    // A chain with links but no period caveat anywhere leaves this undefined, and this
+    const tightest = tightestRemaining(statuses);
+    // A chain with links but no spending caveat anywhere leaves this undefined, and this
     // function deliberately clears the payment then: its question is "will the chain refuse
-    // this?", and with no period cap the answer is no. That is *not* the same judgement the
+    // this?", and with no cap the answer is no. That is *not* the same judgement the
     // broadcast gate in `apps/delegation-lab/giwa-preflight.ts` makes — a human reading
     // "GO — every condition met" before an irreversible settlement must not be shown a
     // missing cap as a satisfied one. The two callers share the computation above and
     // disagree on purpose; do not "fix" the inconsistency by copying one into the other.
     //
     // The empty-chain case above is different in kind and does refuse: "we read nothing" is
-    // not "we read a policy with no period cap".
-    if (tightest !== undefined && amount > tightest) {
+    // not "we read a policy with no cap".
+    if (tightest !== undefined && amount > tightest.amount) {
         return {
             ok: false,
             code: "LIMIT_EXCEEDED",
-            detail: `payment of ${amount} exceeds ${tightest} left in this period`,
+            detail:
+                tightest.source === "period"
+                    ? `payment of ${amount} exceeds ${tightest.amount} left in this period`
+                    : `payment of ${amount} exceeds ${tightest.amount} left in this permission's lifetime total — the total does not refresh with the period, so a new grant has to be signed`,
         };
     }
     return {ok: true};
 }
 
+/**
+ * Resolve a caller-supplied resource path against the seller origin, rejecting
+ * anything that could escape it (protocol-relative, backslash, cross-origin).
+ */
 export function resolveResourceTarget(sellerUrl: URL, resourcePath: string): URL {
     if (
         !resourcePath.startsWith("/") ||

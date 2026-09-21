@@ -14,6 +14,7 @@ import {buildD3Policies, preparePeriodDelegation} from "./policy.js";
 import {
     decodePeriodTransferTerms,
     decodeTimestampTerms,
+    decodeTransferAmountTerms,
     findCaveatTerms,
     judgeValidity,
     readDelegationStatus,
@@ -28,6 +29,7 @@ const DELEGATOR = getAddress("0x5000000000000000000000000000000000000001");
 const DELEGATE = getAddress("0x6000000000000000000000000000000000000001");
 const VENDOR = getAddress("0x2000000000000000000000000000000000000001");
 const PERIOD_ENFORCER = address(5);
+const TOTAL_ENFORCER = address(6);
 const TIMESTAMP_ENFORCER = address(8);
 
 const environment: SmartAccountsEnvironment = {
@@ -38,7 +40,7 @@ const environment: SmartAccountsEnvironment = {
     caveatEnforcers: {
         ValueLteEnforcer: address(4),
         ERC20PeriodTransferEnforcer: PERIOD_ENFORCER,
-        ERC20TransferAmountEnforcer: address(6),
+        ERC20TransferAmountEnforcer: TOTAL_ENFORCER,
         AllowedCalldataEnforcer: address(7),
         TimestampEnforcer: TIMESTAMP_ENFORCER,
         RedeemerEnforcer: address(9),
@@ -84,6 +86,23 @@ describe("caveat term decoding", () => {
         expect(validity.notAfter).toBe(BigInt(START_DATE + POLICY.expiresAfterSeconds));
     });
 
+    test("recovers the lifetime total the policy asked for", () => {
+        const terms = findCaveatTerms(delegation(), TOTAL_ENFORCER);
+        expect(terms).toBeDefined();
+
+        const expected = POLICY.lifetimeTotalAmount;
+        if (expected === undefined) throw new Error("open-agent policy carries no lifetime total");
+
+        const total = decodeTransferAmountTerms(terms!);
+        expect(total.token).toBe(MOCK_USDC.address);
+        expect(total.maxAmount).toBe(expected);
+        expect(total.maxAmount).toBe(toTokenAmount("12"));
+        // 총액과 기간 상한은 같은 토큰이어야 한다. 갈리면 총액 쪽은 이 위임으로 일어나지
+        // 않는 전송을 세느라 상한이 아니게 된다.
+        const periodTerms = findCaveatTerms(delegation(), PERIOD_ENFORCER);
+        expect(total.token).toBe(decodePeriodTransferTerms(periodTerms!).token);
+    });
+
     test("returns undefined for an enforcer the policy does not use", () => {
         expect(findCaveatTerms(delegation(), address(0xdead))).toBeUndefined();
     });
@@ -91,6 +110,7 @@ describe("caveat term decoding", () => {
     test("rejects terms of the wrong length instead of decoding garbage", () => {
         expect(() => decodePeriodTransferTerms("0x1234")).toThrow("116 bytes");
         expect(() => decodeTimestampTerms("0x1234")).toThrow("32 bytes");
+        expect(() => decodeTransferAmountTerms("0x1234")).toThrow("52 bytes");
     });
 });
 
@@ -142,6 +162,8 @@ function clientReturning(logs: unknown[], fromBlockTimestamp?: bigint): any {
 function scriptedNode(script: {
     revoked?: boolean;
     available?: {amount: bigint; isNewPeriod: boolean; currentPeriod: bigint};
+    /** `ERC20TransferAmountEnforcer.spentMap` — 이 위임 해시가 이미 먹은 총액. */
+    spent?: bigint;
     blockTimestamp: bigint;
 }) {
     const calls: Address[] = [];
@@ -165,6 +187,12 @@ function scriptedNode(script: {
                                 script.available.currentPeriod,
                             ],
                         );
+                    }
+                    if (to === TOTAL_ENFORCER) {
+                        if (script.spent === undefined) {
+                            throw new Error("enforcer must not be called");
+                        }
+                        return encodeAbiParameters([{type: "uint256"}], [script.spent]);
                     }
                 }
                 if (method === "eth_getBlockByNumber") {
@@ -206,6 +234,7 @@ describe("readDelegationStatus", () => {
         // read exists to avoid.
         const {client} = scriptedNode({
             available: {amount: 999_999_999n, isNewPeriod: true, currentPeriod: 41n},
+            spent: 0n,
             blockTimestamp: BigInt(START_DATE) + 1n,
         });
 
@@ -228,6 +257,7 @@ describe("readDelegationStatus", () => {
         // says otherwise, and the head is what `TimestampEnforcer` compares against.
         const {client} = scriptedNode({
             available: {amount: toTokenAmount("3"), isNewPeriod: true, currentPeriod: 0n},
+            spent: 0n,
             blockTimestamp: BigInt(START_DATE) + BigInt(POLICY.expiresAfterSeconds),
         });
 
@@ -244,6 +274,7 @@ describe("readDelegationStatus", () => {
     test("the activation second itself is reported as not yet active", async () => {
         const {client} = scriptedNode({
             available: {amount: toTokenAmount("3"), isNewPeriod: true, currentPeriod: 0n},
+            spent: 0n,
             blockTimestamp: BigInt(START_DATE),
         });
 
@@ -260,6 +291,7 @@ describe("readDelegationStatus", () => {
         const {client} = scriptedNode({
             revoked: true,
             available: {amount: toTokenAmount("3"), isNewPeriod: true, currentPeriod: 0n},
+            spent: 0n,
             blockTimestamp: BigInt(START_DATE) + 1n,
         });
 
@@ -284,7 +316,7 @@ describe("readDelegationStatus", () => {
                 (caveat) => getAddress(caveat.enforcer) !== PERIOD_ENFORCER,
             ),
         };
-        const {client, calls} = scriptedNode({blockTimestamp: BigInt(START_DATE) + 1n});
+        const {client, calls} = scriptedNode({spent: 0n, blockTimestamp: BigInt(START_DATE) + 1n});
 
         const status = await readDelegationStatus({
             publicClient: client,
@@ -295,6 +327,94 @@ describe("readDelegationStatus", () => {
         expect(status.remaining).toBeUndefined();
         expect(status.limit).toBeUndefined();
         expect(calls).not.toContain(PERIOD_ENFORCER);
+    });
+
+    /**
+     * 총액 caveat을 읽지 않으면 이 값들이 전부 사라진다.
+     *
+     * `remaining`만 보는 코드는 총액이 가득 찬 위임을 기간이 갱신된 직후에 "쓸 수 있음"으로
+     * 읽는다. 그래서 여기서 재는 것은 두 숫자가 **각각** 나온다는 것이다 — 기간 잔량은
+     * 새 기간에서 가득 차 있고, 총액 잔량은 0이다.
+     */
+    test("총액 caveat을 든 위임은 spentMap까지 읽어 총액 잔량을 낸다", async () => {
+        const {client, calls} = scriptedNode({
+            available: {amount: toTokenAmount("3"), isNewPeriod: true, currentPeriod: 7n},
+            spent: toTokenAmount("4"),
+            blockTimestamp: BigInt(START_DATE) + 1n,
+        });
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: delegation(),
+        });
+
+        expect(status.lifetimeTotal?.maxAmount).toBe(toTokenAmount("12"));
+        expect(status.lifetimeTotal?.token).toBe(MOCK_USDC.address);
+        expect(status.lifetimeRemaining).toBe(toTokenAmount("8"));
+        expect(status.remaining).toBe(toTokenAmount("3"));
+        expect(calls).toContain(TOTAL_ENFORCER);
+    });
+
+    test("총액이 다 찬 위임은 기간이 새로 열려도 총액 잔량이 0이다", async () => {
+        const {client} = scriptedNode({
+            // 기간은 방금 갱신됐다: 기간 상한만 보면 3 mUSDC가 남아 있다.
+            available: {amount: toTokenAmount("3"), isNewPeriod: true, currentPeriod: 4n},
+            spent: toTokenAmount("12"),
+            blockTimestamp: BigInt(START_DATE) + 241n,
+        });
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: delegation(),
+        });
+
+        expect(status.remaining).toBe(toTokenAmount("3"));
+        expect(status.lifetimeRemaining).toBe(0n);
+    });
+
+    test("spentMap이 상한을 넘겨 읽혀도 음수 잔량을 만들지 않는다", async () => {
+        // 상한을 넘긴 `spentMap`은 정상 경로에서 나오지 않지만(enforcer가 먼저 revert한다),
+        // 음수 bigint가 잔량으로 흘러가면 그 다음 비교가 모두 뒤집힌다.
+        const {client} = scriptedNode({
+            available: {amount: toTokenAmount("3"), isNewPeriod: false, currentPeriod: 0n},
+            spent: toTokenAmount("13"),
+            blockTimestamp: BigInt(START_DATE) + 1n,
+        });
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: delegation(),
+        });
+
+        expect(status.lifetimeRemaining).toBe(0n);
+    });
+
+    test("총액 caveat이 없는 위임은 그 enforcer를 부르지 않는다", async () => {
+        const withTotal = delegation();
+        const withoutTotal = {
+            ...withTotal,
+            caveats: withTotal.caveats.filter(
+                (caveat) => getAddress(caveat.enforcer) !== TOTAL_ENFORCER,
+            ),
+        };
+        // `spent`를 주지 않았으므로 enforcer를 부르면 이 테스트는 던진다.
+        const {client, calls} = scriptedNode({
+            available: {amount: toTokenAmount("3"), isNewPeriod: false, currentPeriod: 0n},
+            blockTimestamp: BigInt(START_DATE) + 1n,
+        });
+
+        const status = await readDelegationStatus({
+            publicClient: client,
+            environment,
+            delegation: withoutTotal,
+        });
+
+        expect(status.lifetimeTotal).toBeUndefined();
+        expect(status.lifetimeRemaining).toBeUndefined();
+        expect(calls).not.toContain(TOTAL_ENFORCER);
     });
 });
 

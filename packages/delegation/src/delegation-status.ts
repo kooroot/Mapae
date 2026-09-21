@@ -1,4 +1,7 @@
-import {ERC20PeriodTransferEnforcer} from "@metamask/smart-accounts-kit/contracts";
+import {
+    ERC20PeriodTransferEnforcer,
+    ERC20TransferAmountEnforcer,
+} from "@metamask/smart-accounts-kit/contracts";
 import {hashDelegation} from "@metamask/smart-accounts-kit/utils";
 import type {Delegation, SmartAccountsEnvironment} from "@metamask/smart-accounts-kit";
 import {getAddress, hexToBigInt, parseAbiItem, size, slice} from "viem";
@@ -11,6 +14,18 @@ export interface PeriodLimit {
     periodAmount: bigint;
     periodDuration: bigint;
     startDate: bigint;
+}
+
+/**
+ * `ERC20TransferAmountEnforcer` terms — 이 위임이 평생 내보낼 수 있는 총액.
+ *
+ * 기간 상한과 다른 층이다. 기간 상한은 **속도**여서 기간이 갱신될 때마다 다시 열리지만,
+ * 이 enforcer의 `spentMap(delegationManager, delegationHash)`은 위임 해시 하나당 한 칸이고
+ * 되돌아가지 않는다 — 그래서 총액은 시간이 지나도 다시 채워지지 않는다.
+ */
+export interface LifetimeTotal {
+    token: Address;
+    maxAmount: bigint;
 }
 
 /** `TimestampEnforcer` terms — when the delegation is usable at all. */
@@ -33,6 +48,17 @@ export function decodePeriodTransferTerms(terms: Hex): PeriodLimit {
         periodAmount: hexToBigInt(slice(terms, 20, 52)),
         periodDuration: hexToBigInt(slice(terms, 52, 84)),
         startDate: hexToBigInt(slice(terms, 84, 116)),
+    };
+}
+
+/** `ERC20TransferAmountEnforcer` terms — packed: 토큰 20바이트 + 금액 32바이트. */
+export function decodeTransferAmountTerms(terms: Hex): LifetimeTotal {
+    if (size(terms) !== 52) {
+        throw new Error(`erc20TransferAmount terms must be 52 bytes, got ${size(terms)}`);
+    }
+    return {
+        token: getAddress(slice(terms, 0, 20)),
+        maxAmount: hexToBigInt(slice(terms, 20, 52)),
     };
 }
 
@@ -63,8 +89,18 @@ export interface DelegationStatus {
     limit?: PeriodLimit;
     /** Absent when the delegation carries no timestamp caveat. */
     validity?: ValidityWindow;
+    /** Absent when the delegation carries no lifetime total caveat. */
+    lifetimeTotal?: LifetimeTotal;
     /** Remaining spend in the current period, read from the enforcer. */
     remaining?: bigint;
+    /**
+     * 평생 총액 중 남은 금액(`maxAmount - spentMap`), enforcer에서 읽는다.
+     *
+     * `remaining`과 함께 읽어야 한다. 이 칸은 기간이 갱신돼도 늘지 않으므로, 총액을 든
+     * 위임에서 기간 잔량만 보면 체인이 `allowance-exceeded`로 되돌릴 결제를 "한도 안"으로
+     * 읽게 된다.
+     */
+    lifetimeRemaining?: bigint;
     /** True when the period rolled over and the cap is fresh. */
     isNewPeriod?: boolean;
     currentPeriod?: bigint;
@@ -79,6 +115,10 @@ export interface DelegationStatus {
  * The remaining balance comes from the enforcer itself rather than from a local
  * tally: the cap is enforced on-chain, so anything the UI computes off-chain would
  * be a second source of truth that can disagree with the one that matters.
+ *
+ * 지출 caveat이 둘이면 둘 다 읽는다. 기간 잔량만 읽고 평생 총액을 빼면, 총액이 가득 찬
+ * 위임이 기간 갱신 직후에 "쓸 수 있는 잔량 있음"으로 보고되고 그 위에서 내려진 GO는
+ * 체인이 `allowance-exceeded`로 되돌린다.
  */
 export async function readDelegationStatus(params: {
     publicClient: PublicClient;
@@ -91,16 +131,20 @@ export async function readDelegationStatus(params: {
     const delegationHash = hashDelegation(delegation);
     const delegationManager = getAddress(environment.DelegationManager);
     const periodEnforcer = environment.caveatEnforcers.ERC20PeriodTransferEnforcer;
+    const totalEnforcer = environment.caveatEnforcers.ERC20TransferAmountEnforcer;
     const timestampEnforcer = environment.caveatEnforcers.TimestampEnforcer;
 
     const periodTerms = periodEnforcer
         ? findCaveatTerms(delegation, getAddress(periodEnforcer))
         : undefined;
+    const totalTerms = totalEnforcer
+        ? findCaveatTerms(delegation, getAddress(totalEnforcer))
+        : undefined;
     const timestampTerms = timestampEnforcer
         ? findCaveatTerms(delegation, getAddress(timestampEnforcer))
         : undefined;
 
-    const [revoked, available, now] = await Promise.all([
+    const [revoked, available, spent, now] = await Promise.all([
         isDelegationRevoked({publicClient, delegationManager, delegation}),
         periodTerms && periodEnforcer
             ? ERC20PeriodTransferEnforcer.read.getAvailableAmount({
@@ -111,19 +155,38 @@ export async function readDelegationStatus(params: {
                   terms: periodTerms,
               })
             : Promise.resolve(undefined),
+        // `getSpentAmount`는 `spentMap(delegationManager, delegationHash)` 한 칸을 읽는다.
+        // 기간 잔량과 같은 이유로 체인에서 읽는다 — 오프체인 집계는 실제로 강제하는 쪽과
+        // 어긋날 수 있는 두 번째 진실이 된다.
+        totalTerms && totalEnforcer
+            ? ERC20TransferAmountEnforcer.read.getSpentAmount({
+                  client: publicClient,
+                  contractAddress: getAddress(totalEnforcer),
+                  delegationHash,
+                  delegationManager,
+              })
+            : Promise.resolve(undefined),
         resolveChainTime(publicClient, params.now),
     ]);
 
     const validity = timestampTerms ? decodeTimestampTerms(timestampTerms) : undefined;
     const {expired, notYetActive} = judgeValidity(validity, now);
+    const lifetimeTotal = totalTerms ? decodeTransferAmountTerms(totalTerms) : undefined;
 
     return {
         delegationHash,
         delegator: getAddress(delegation.delegator),
         delegate: getAddress(delegation.delegate),
         limit: periodTerms ? decodePeriodTransferTerms(periodTerms) : undefined,
+        lifetimeTotal,
         validity,
         remaining: available?.availableAmount,
+        lifetimeRemaining:
+            lifetimeTotal === undefined || spent === undefined
+                ? undefined
+                : lifetimeTotal.maxAmount > spent
+                  ? lifetimeTotal.maxAmount - spent
+                  : 0n,
         isNewPeriod: available?.isNewPeriod,
         currentPeriod: available?.currentPeriod,
         revoked,

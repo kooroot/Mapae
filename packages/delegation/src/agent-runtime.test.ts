@@ -10,7 +10,7 @@ import {
     judgePreflight,
     parseAgentSpendPolicy,
     resolveResourceTarget,
-    tightestPeriodRemaining,
+    tightestRemaining,
 } from "./agent-runtime.js";
 import {payForDelegatedResource, type DelegatedLeafProvider} from "./payment-client.js";
 import type {DelegationStatus} from "./delegation-status.js";
@@ -42,29 +42,70 @@ function link(overrides: Partial<DelegationStatus> = {}): DelegationStatus {
  * closure it was extracted from was reachable only through a bootstrap wanting env vars,
  * files and an RPC, which is why it had no test.
  */
-describe("tightestPeriodRemaining", () => {
+describe("tightestRemaining", () => {
     test("takes the smallest allowance across the chain, not the root's", () => {
         // A re-delegated child's smaller cap binds even when the root has room.
         expect(
-            tightestPeriodRemaining([
+            tightestRemaining([
                 link({remaining: toTokenAmount("1")}),
                 link({remaining: toTokenAmount("5")}),
             ]),
-        ).toBe(toTokenAmount("1"));
+        ).toEqual({amount: toTokenAmount("1"), source: "period"});
     });
 
-    test("a chain with no period caveat anywhere is undefined, not zero and not Infinity", () => {
+    test("a chain with no spending caveat anywhere is undefined, not zero and not Infinity", () => {
         // `undefined` is the whole point: it means "there is no cap to compare against".
         // Collapsing it to a number here would force every caller into one interpretation,
         // and the two callers want opposite ones.
-        expect(tightestPeriodRemaining([link({remaining: undefined})])).toBeUndefined();
-        expect(tightestPeriodRemaining([])).toBeUndefined();
+        expect(tightestRemaining([link({remaining: undefined})])).toBeUndefined();
+        expect(tightestRemaining([])).toBeUndefined();
     });
 
     test("links without a cap do not mask the ones that have it", () => {
+        expect(tightestRemaining([link({remaining: undefined}), link({remaining: 7n})])).toEqual({
+            amount: 7n,
+            source: "period",
+        });
+    });
+
+    /**
+     * 총액이 후보에 들어가야 하는 이유가 여기 있다.
+     *
+     * 기간이 갱신되면 기간 잔량은 가득 찬 숫자로 되살아나지만 `spentMap`은 되돌아가지
+     * 않는다. 기간만 세면 그 순간 이 함수는 체인이
+     * `ERC20TransferAmountEnforcer:allowance-exceeded`로 되돌릴 결제를 통과시킨다.
+     */
+    test("총액 잔량이 더 좁으면 그쪽이 답이고, 출처도 그렇게 적힌다", () => {
         expect(
-            tightestPeriodRemaining([link({remaining: undefined}), link({remaining: 7n})]),
-        ).toBe(7n);
+            tightestRemaining([
+                link({remaining: toTokenAmount("3"), lifetimeRemaining: 0n}),
+            ]),
+        ).toEqual({amount: 0n, source: "lifetime"});
+    });
+
+    test("기간 잔량이 더 좁으면 총액이 있어도 기간이 답이다", () => {
+        expect(
+            tightestRemaining([
+                link({remaining: toTokenAmount("1"), lifetimeRemaining: toTokenAmount("8")}),
+            ]),
+        ).toEqual({amount: toTokenAmount("1"), source: "period"});
+    });
+
+    test("두 잔량이 같으면 총액으로 적는다 — 기다림이 해결하지 못하는 쪽이다", () => {
+        expect(
+            tightestRemaining([
+                link({remaining: toTokenAmount("2"), lifetimeRemaining: toTokenAmount("2")}),
+            ]),
+        ).toEqual({amount: toTokenAmount("2"), source: "lifetime"});
+    });
+
+    test("한 링크의 총액이 다른 링크의 기간 잔량보다 좁을 수 있다", () => {
+        expect(
+            tightestRemaining([
+                link({remaining: toTokenAmount("5")}),
+                link({remaining: toTokenAmount("6"), lifetimeRemaining: toTokenAmount("2")}),
+            ]),
+        ).toEqual({amount: toTokenAmount("2"), source: "lifetime"});
     });
 });
 
@@ -186,6 +227,42 @@ describe("judgePreflight", () => {
         expect(judgePreflight([link({remaining: 0n})], 1n)).toMatchObject({
             code: "LIMIT_EXCEEDED",
         });
+    });
+
+    /**
+     * 같은 `LIMIT_EXCEEDED` 안에서 처방이 갈린다.
+     *
+     * 기간 잔량이 원인이면 기다리면 열린다. 총액이 원인이면 기다려도 열리지 않고 새 grant를
+     * 서명해야 한다. 두 경우에 같은 문장을 적으면, 총액이 소진된 운영자는 영원히 오지 않는
+     * 다음 기간을 기다린다.
+     */
+    test("총액이 소진된 체인은 기간이 열려 있어도 거절하고, 사유를 총액으로 적는다", () => {
+        const verdict = judgePreflight(
+            [link({remaining: toTokenAmount("3"), lifetimeRemaining: 0n})],
+            toTokenAmount("1"),
+        );
+        expect(verdict).toMatchObject({code: "LIMIT_EXCEEDED"});
+        expect(verdict.ok === false && verdict.detail).toContain("lifetime total");
+        expect(verdict.ok === false && verdict.detail).not.toContain("left in this period");
+    });
+
+    test("기간이 원인인 거절은 기간 문구를 그대로 유지한다", () => {
+        const verdict = judgePreflight(
+            [link({remaining: 1_000_000n, lifetimeRemaining: toTokenAmount("8")})],
+            1_000_001n,
+        );
+        expect(verdict.ok === false && verdict.detail).toBe(
+            "payment of 1000001 exceeds 1000000 left in this period",
+        );
+    });
+
+    test("총액이 남아 있으면 통과한다 — 총액의 존재 자체가 거절 사유는 아니다", () => {
+        expect(
+            judgePreflight(
+                [link({remaining: toTokenAmount("3"), lifetimeRemaining: toTokenAmount("8")})],
+                toTokenAmount("3"),
+            ),
+        ).toEqual({ok: true});
     });
 });
 
