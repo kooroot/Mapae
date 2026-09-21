@@ -3,20 +3,23 @@ import {matchedRoutes} from "hono/route";
 import type {RouterRoute} from "hono/types";
 import {COMPOSED_HANDLER} from "hono/utils/constants";
 import type {Address, Hex} from "viem";
-import {getAddress, isAddress, isHex, zeroAddress} from "viem";
+import {getAddress, isAddress, isHex, sha256, stringToBytes, zeroAddress} from "viem";
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
+    PAYMENT_IDENTIFIER_EXTENSION,
     PAYMENT_REQUIRED_HEADER,
     PAYMENT_RESPONSE_HEADER,
     PAYMENT_SIGNATURE_HEADER,
     X402_VERSION,
     buildErc7710PaymentRequirements,
+    buildPaymentIdentifierOffer,
     decodePaymentHeader,
     encodePaymentRequiredHeader,
     encodePaymentResponseHeader,
     fromTokenAmount,
     isLoopbackHost,
+    readPaymentIdentifier,
     redactForLog,
     toTokenAmount,
     type Erc7710PaymentPayload,
@@ -30,6 +33,7 @@ import {
     CLIENT_IP_HEADER,
     FACILITATOR_NOT_READY,
     INVALID_PAYLOAD,
+    PAYMENT_IDENTIFIER_CONFLICT,
     SETTLEMENT_PENDING,
     VENDOR_NOT_CREDITED,
     decideSettlement,
@@ -84,6 +88,69 @@ export interface SettlementReceipt {
     replayed: boolean;
 }
 
+/**
+ * 왜 같은 id에 다른 결제가 오면 거절하는지 — {@link PaymentIdentifierBinding}이 답하는 것.
+ *
+ * `fingerprint`는 사양 "Request Binding"이 열거한 항목을 정규화해 접은 값이고,
+ * `paymentIntentId`는 서명에서 파생된 이 결제의 고유 키다. 둘 다 비교하는 이유가 다르다:
+ *
+ * - 지문이 다르면 클라이언트가 같은 멱등성 키로 **다른 요청**을 했다. 사양이 409를 요구하는
+ *   바로 그 경우다 — 캐시된 결과를 주면 사지 않은 것을 배송하는 것이고, 새로 정산하면 그
+ *   id에 두 개의 결제가 생긴다.
+ * - 지문이 같아도 intent가 다르면 **다른 leaf**다. 같은 상품을 같은 가격에 사려는 새 서명이고,
+ *   앞선 시도의 정산 결과를 모르는 채 이것을 정산하면 두 번 청구된다. 첫 시도가
+ *   `settlement_pending`으로 끝났을 때 정확히 이 모습이 온다 — 그 결제는 청구됐을 수 있고,
+ *   그 사실을 아는 유일한 방법은 앞선 intent를 다시 물어보는 것이다. 그래서 이것도 conflict다.
+ */
+export type PaymentIdentifierConflict = "fingerprint" | "payment_intent";
+
+/** 한 결제 식별자에 남은 정산 결과 — 저장된 영수증을 다시 세울 만큼만. */
+export interface RecordedPayment {
+    /** 퍼실리테이터가 확인한 지불자. 이 호출이 주장한 delegator가 아니다. */
+    payer: Address;
+    transaction?: Hex;
+}
+
+export type PaymentIdentifierBindResult =
+    | {kind: "new"}
+    | {kind: "settled"; settled: RecordedPayment}
+    | {kind: "conflict"; reason: PaymentIdentifierConflict};
+
+/**
+ * 내구성 있는 (결제 식별자 → 결제) 바인딩. 주면 `payment-identifier` 확장이 살아난다.
+ *
+ * 프로세스 기억이 아니라 디스크여야 한다. 재시작으로 사라지는 가드는 가드가 아니고, 이
+ * 바인딩이 막는 사고는 바로 재시작·타임아웃 뒤에 일어난다 — 첫 답을 못 받은 구매자가 다시
+ * 내는 순간이다. `apps/delegated-seller`가 `@mapae/store`의 `payment_identifiers` 테이블로
+ * 이것을 구현한다.
+ *
+ * 두 메서드는 한 결제의 앞과 뒤다. `bind`는 정산 **전에** 불려 그 id를 이 결제에
+ * 못박고(그래서 동시에 도착한 다른 leaf가 곧바로 conflict가 된다), `record`는 정산이
+ * 성공한 **뒤에** 결과를 그 행에 남긴다. 실패·미결에서는 기록하지 않는다: 그 id는 아직
+ * 결과가 없고, 같은 헤더를 다시 제시하면 퍼실리테이터의 저널이 답한다.
+ */
+export interface PaymentIdentifierBinding {
+    /**
+     * 이 id를 이 결제에 묶는다.
+     *
+     * - `new` — 처음 보는 id이거나, 같은 결제인데 아직 결과가 없다. 지금 경로대로 정산한다.
+     * - `settled` — 같은 결제가 이미 정산됐다. 다시 정산하지 말고 저장된 결과로 자원을 낸다.
+     * - `conflict` — 같은 id에 다른 결제가 왔다. 409.
+     *
+     * `fingerprint`는 구현이 해석하지 않는 불투명한 문자열이다(판매자 쪽이 sha256 hex로
+     * 만든다). 저장해 두고 다음에 같은지만 비교하면 된다.
+     */
+    bind(payment: {id: string; fingerprint: string; paymentIntentId: Hex}): PaymentIdentifierBindResult;
+    /**
+     * 정산이 끝난 결과를 그 id에 남긴다. `bind`가 `new`를 준 뒤에만 불린다.
+     *
+     * 영수증 전체가 아니라 이 두 칸만 받는다. 나머지(금액·자산·payTo·네트워크·intent)는
+     * 페이월 자신의 오퍼와 `bind`에 준 값이고, 같은 사실을 두 곳에 적어 두면 어긋날 수
+     * 있다 — 지문이 일치했다는 것이 곧 그 값들이 그대로라는 뜻이다.
+     */
+    record(settlement: {id: string} & RecordedPayment): void;
+}
+
 /** What every paywall made by one {@link createMapae} shares. */
 export interface MapaeOptions {
     /** Facilitator base URL. Defaults to {@link DEFAULT_FACILITATOR_URL}; HTTPS unless loopback. */
@@ -109,8 +176,12 @@ export interface PaywallOptions {
     /** Human-readable label the buyer's agent sees in the 402 offer and in the manifest. */
     description: string;
     /**
-     * Runs once per settled payment, before the protected handler. Money has moved by
-     * then, so a throw is logged and the buyer is still served — write your ledger here.
+     * Runs before the protected handler on every answer that delivers a settled payment —
+     * the one this call settled, or one an earlier call settled that this call replayed out
+     * of {@link PaywallOptions.paymentIdentifiers}. Money has moved by then, so a throw is
+     * logged and the buyer is still served — write your ledger here, keyed on
+     * {@link SettlementReceipt.intent}, which is one row per payment however many answers
+     * quote it.
      */
     onSettled?: (receipt: SettlementReceipt) => void | Promise<void>;
     /**
@@ -120,8 +191,24 @@ export interface PaywallOptions {
      * therefore in the `Payment-Required` header too, which encodes the same document.
      * Absent, the slot stays absent. It travels in a header on every unpaid request, so
      * keep it small.
+     *
+     * `payment-identifier` is not yours to publish: it is the paywall's own, advertised
+     * exactly when {@link PaywallOptions.paymentIdentifiers} can honour it, and an entry
+     * under that name here fails the boot rather than promising two things at once.
      */
     extensions?: Record<string, PaymentExtension>;
+    /**
+     * Durable (payment identifier → payment) binding. Given, the paywall advertises the
+     * x402 `payment-identifier` extension and enforces it: a buyer's `id` is bound to this
+     * request's normalised fingerprint and to the payment intent derived from its signature,
+     * a second payment under the same `id` is refused **409**, and a repeat of the same
+     * payment is answered from the stored result instead of settling twice.
+     *
+     * Absent, the extension is neither advertised nor read — an `id` in a payment is one
+     * more envelope entry nobody named. That is the whole rule: a seller that cannot keep
+     * the promise does not make it, and does not enforce a promise it never made either.
+     */
+    paymentIdentifiers?: PaymentIdentifierBinding;
 }
 
 /** Options of the one-liner {@link mapaePaywall}: a paywall plus the settings it is made with. */
@@ -177,9 +264,13 @@ export interface MapaeSeller {
      * offer (header and body). With one, the facilitator is asked to `/verify` and then
      * `/settle`, and only a confirmed settlement lets the next handler run:
      *
-     * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment. The receipt
-     *   names `invalid_payload` and no payer: the payer's name was in the text that would
-     *   not parse.
+     * - 400 `malformed_payment` — the header is not a usable ERC-7710 payment, or its
+     *   `payment-identifier` is not 16–128 characters of `[A-Za-z0-9_-]`. The receipt names
+     *   `invalid_payload`, and no payer unless the header parsed far enough to name one.
+     * - 409 `payment_identifier_conflict` — a second, different payment arrived under a
+     *   `payment-identifier` this server has already bound. Nothing was charged and no offer
+     *   is re-issued: this `id` can never mean anything else, and a buyer who wants to pay
+     *   presents a fresh one.
      * - 503 `facilitator_unavailable` — `/supported` or `/verify` could not be reached,
      *   or the facilitator refused to look at the payment (its per-address rate limit,
      *   or a readiness check it failed). Nothing was charged; the buyer may retry later
@@ -194,7 +285,9 @@ export interface MapaeSeller {
      *   is not this `payTo`. The buyer's balance may be gone, so no offer is re-issued.
      *
      * On success the receipt rides in `Payment-Response`, `c.get("mapaeReceipt")` holds
-     * it, and `onSettled` has run.
+     * it, and `onSettled` has run. A payment this server has already settled under the
+     * same `payment-identifier` is answered the same way out of the stored result, with
+     * no facilitator call and `replayed: true`.
      *
      * Every one of those answers also carries `Cache-Control: no-store` and
      * `Vary: Payment-Signature`, and every refusal that read a payment carries the x402 v2
@@ -524,6 +617,51 @@ function writeFailureReceipt(
     c.header(PAYMENT_RESPONSE_HEADER, encodePaymentResponseHeader(receipt));
 }
 
+/**
+ * 지문 목록의 버전. 항목이 늘거나 순서가 바뀌면 같은 요청이 다른 지문을 내므로, 옛 행과
+ * 새 행이 맞지 않는다 — 그때 조용히 "같은 결제"로 읽히는 대신 409로 떨어지도록 태그를
+ * 함께 접는다. 태그를 올리는 것이 마이그레이션이다.
+ */
+const FINGERPRINT_VERSION = "mapae.x402.payment-identifier.fingerprint.v1";
+
+/**
+ * 사양 "Request Binding"의 정규화된 요청 지문. 아래 순서로 한 줄에 이어 sha256으로 접는다:
+ *
+ *   1. {@link FINGERPRINT_VERSION}  이 목록의 버전
+ *   2. scheme                      오퍼의 것 — 이 레일에서는 언제나 `exact`
+ *   3. network                     CAIP-2
+ *   4. asset                       체크섬 주소
+ *   5. amount                      최소 단위 정수 문자열
+ *   6. payTo                       체크섬 주소
+ *   7. 자원 경로                   요청이 온 그대로의 pathname, 쿼리 없이
+ *   8. 메서드                      대문자
+ *
+ * 사양이 함께 적은 "애플리케이션 식별자"는 경로가 대신한다: 이 미들웨어는 자기 뒤에 무엇이
+ * 팔리는지 모르고, 호스팅 상점의 상품 키는 경로 안에 있다. 쿼리를 빼는 것은 오퍼가 값을
+ * 매기는 단위가 경로이기 때문이다 — 같은 경로의 다른 쿼리는 같은 402를 받는다.
+ *
+ * 구분자는 줄바꿈이고, 위 값들 중 줄바꿈을 담을 수 있는 것은 없다(주소·정수·CAIP-2·
+ * 퍼센트 인코딩된 경로·메서드). 그래서 이어 붙인 문자열이 항목 경계를 잃지 않는다.
+ */
+function requestFingerprint(
+    requirements: Erc7710PaymentRequirements,
+    path: string,
+    method: string,
+): string {
+    const canonical = [
+        FINGERPRINT_VERSION,
+        requirements.scheme,
+        requirements.network,
+        requirements.asset,
+        requirements.amount,
+        requirements.payTo,
+        path,
+        method.toUpperCase(),
+    ].join("\n");
+    // 0x 접두사를 떼어 64자 소문자 hex로 — 저장소의 해시 칸이 그 모습을 요구한다.
+    return sha256(stringToBytes(canonical)).slice(2);
+}
+
 function buildPaywall(
     facilitator: FacilitatorClient,
     baseUrl: string | undefined,
@@ -531,10 +669,20 @@ function buildPaywall(
 ): MiddlewareHandler<MapaeEnv> {
     const payTo = parsePayTo(options.payTo);
     const amount = parsePrice(options.price);
-    const {description, onSettled, extensions} = options;
+    const {description, onSettled, extensions, paymentIdentifiers} = options;
     if (!description.trim()) throw new Error("description must not be empty");
     // Serialised once here, so a value JSON cannot carry fails the boot, not a buyer's 402.
     if (extensions !== undefined) JSON.stringify(extensions);
+    if (extensions !== undefined && PAYMENT_IDENTIFIER_EXTENSION in extensions) {
+        throw new Error(
+            `${PAYMENT_IDENTIFIER_EXTENSION} is published by the paywall itself — pass paymentIdentifiers instead of declaring it`,
+        );
+    }
+    // 광고는 지킬 수 있을 때만 한다. 바인딩이 없으면 이 항목은 없고, 읽는 쪽도 없다.
+    const advertised: Record<string, PaymentExtension> | undefined =
+        paymentIdentifiers === undefined
+            ? extensions
+            : {...extensions, [PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierOffer()};
 
     const paywall: MiddlewareHandler<MapaeEnv> = async (c, next) => {
         // Every answer below turns on whether this request carried a payment, so a shared
@@ -560,6 +708,8 @@ function buildPaywall(
         // parses. The facilitator itself binds that claim to the signed root, so an
         // answer naming anyone else is an answer about some other payment.
         let payment: {payload: Erc7710PaymentPayload; payer: Address} | undefined;
+        /** 이 결제가 실어 온 멱등성 키. 확장을 읽는 판매자가, 실려 온 경우에만. */
+        let identifier: string | undefined;
         if (header !== undefined) {
             // A payment was attempted and this side could not read it. The receipt names
             // the §9 word for that and no payer — the name was in the text that did not
@@ -575,6 +725,25 @@ function buildPaywall(
                 return c.json({error: "malformed_payment", detail: decoded.detail}, 400);
             }
             payment = {payload: decoded.payload, payer: getAddress(decoded.payload.payload.delegator)};
+            // 확장은 바인딩과 함께 산다: 광고하지 않는 판매자는 읽지도 않는다. 읽는
+            // 판매자에게 형식이 어긋난 id는 400이다 — 그 결제는 우리가 지킬 수 없는
+            // 약속을 걸었고, 조용히 무시하면 구매자는 멱등성이 걸린 줄 알고 다시 낸다.
+            // 퍼실리테이터를 부르기 전에 답한다: 나쁜 헤더는 아무에게도 네트워크 호출을
+            // 물리지 않는다. 여기서는 지불자를 댈 수 있다 — 헤더가 그 이름까지는 읽혔다.
+            if (paymentIdentifiers) {
+                const read = readPaymentIdentifier(decoded.payload);
+                if (read.kind === "malformed") {
+                    writeFailureReceipt(c, INVALID_PAYLOAD, payment.payer);
+                    return c.json(
+                        {
+                            error: "malformed_payment",
+                            detail: `${PAYMENT_IDENTIFIER_EXTENSION} must be 16–128 characters of [A-Za-z0-9_-]`,
+                        },
+                        400,
+                    );
+                }
+                if (read.kind === "present") identifier = read.id;
+            }
         }
 
         const kind = await facilitator.kind();
@@ -616,7 +785,7 @@ function buildPaywall(
                 x402Version: X402_VERSION,
                 resource: {url, description},
                 accepts: [requirements],
-                ...(extensions === undefined ? {} : {extensions}),
+                ...(advertised === undefined ? {} : {extensions: advertised}),
             };
             // v2 transport puts the offer in a Payment-Required header; the JSON body
             // stays as well, and a client honours whichever of the two it understands.
@@ -626,6 +795,103 @@ function buildPaywall(
 
         if (!payment) return offer();
         const {payload, payer} = payment;
+        // 파생은 여기 한 번이다. 바인딩의 판정과 성공 영수증이 같은 값을 써야 한다 —
+        // 두 번 계산하면 두 곳에서 서로 다른 오퍼를 읽게 될 여지가 생긴다.
+        const intent = derivePaymentIntentId({
+            network: requirements.network,
+            asset: requirements.asset,
+            amount,
+            payTo,
+            delegationManager: getAddress(payload.payload.delegationManager),
+            permissionContext: payload.payload.permissionContext,
+        });
+
+        /**
+         * 정산이 끝난 결제를 자원으로 바꾸는 한 곳. 이 호출이 정산한 결제와, 앞선 호출이
+         * 정산해 바인딩에 남긴 결제가 같은 길을 지난다 — 구매자 쪽에서 둘은 구별되지
+         * 않아야 하고(같은 200, 같은 영수증 헤더), 판매자의 장부도 같은 intent 한 건을
+         * 두 번 받는 것으로만 보아야 한다.
+         */
+        const deliver = async (receipt: SettlementReceipt): Promise<void> => {
+            c.set("mapaeReceipt", receipt);
+            if (onSettled) {
+                try {
+                    await onSettled(receipt);
+                } catch (error) {
+                    // Money has moved. The callback losing it is the seller's bug to see,
+                    // not a reason to withhold what the buyer paid for.
+                    console.error(
+                        `[mapae] onSettled threw for intent ${receipt.intent} — ${redactForLog(error)}`,
+                    );
+                }
+            }
+
+            await next();
+
+            // Again after the handler, and deliberately the paywall's word rather than the
+            // handler's: a paid body in a shared cache is a resource served to whoever asks
+            // next, and a handler returning its own Response would otherwise carry neither.
+            c.header("Cache-Control", "no-store");
+            c.header("Vary", PAYMENT_SIGNATURE_HEADER);
+            // Built from fields this middleware validated — a CAIP-2 constant, a checksummed
+            // address, a hex hash already matched against /^0x[0-9a-fA-F]{64}$/ — not by
+            // echoing the facilitator's body.
+            c.header(
+                PAYMENT_RESPONSE_HEADER,
+                encodePaymentResponseHeader({
+                    success: true,
+                    network: requirements.network,
+                    payer: receipt.payer,
+                    // The spec writes "no hash" as `""`, not as a missing field: a
+                    // counterparty validating the reference schema needs the key present.
+                    transaction: receipt.transaction ?? "",
+                }),
+            );
+        };
+
+        // 멱등성 판정은 퍼실리테이터보다 먼저다. 사양의 표가 그렇게 요구하고("같은 id에
+        // 다른 요청이면 캐시된 결과를 주지도, 두 번째 연산을 하지도 말 것"), 정산은 그
+        // "두 번째 연산"이다.
+        if (paymentIdentifiers && identifier !== undefined) {
+            const bound = paymentIdentifiers.bind({
+                id: identifier,
+                // 쿼리를 뺀 경로 — 오퍼가 값을 매기는 단위이고, `resource.url`이 쓰는 것과
+                // 같은 값이다.
+                fingerprint: requestFingerprint(
+                    requirements,
+                    new URL(c.req.url).pathname,
+                    c.req.method,
+                ),
+                paymentIntentId: intent,
+            });
+            if (bound.kind === "conflict") {
+                writeFailureReceipt(c, PAYMENT_IDENTIFIER_CONFLICT, payer);
+                // 오퍼를 다시 싣지 않는다. 402는 "이대로 다시 내라"는 말이고, 이 id로는
+                // 무엇을 내도 같은 409다 — 낼 뜻이 있는 구매자는 새 id를 들고 온다.
+                return c.json({error: PAYMENT_IDENTIFIER_CONFLICT, detail: bound.reason}, 409);
+            }
+            if (bound.kind === "settled") {
+                // 프로세스와 함께 죽지 않는 재생 가드: 정산을 다시 하지 않고 저장된
+                // 결과로 답한다. 지불자는 저장된 값이다 — 이 호출이 주장한 delegator가
+                // 아니라 퍼실리테이터가 확인한 이름이고, intent는 delegator를 포함하지
+                // 않으므로 그 둘이 다를 수 있다.
+                await deliver({
+                    intent,
+                    payer: bound.settled.payer,
+                    amount: fromTokenAmount(amount),
+                    asset: requirements.asset,
+                    payTo,
+                    network: NETWORK,
+                    ...(bound.settled.transaction === undefined
+                        ? {}
+                        : {transaction: bound.settled.transaction}),
+                    // 이 호출은 정산하지 않았다 — `replayed`가 말하는 것이 정확히 그것이다.
+                    replayed: true,
+                });
+                return;
+            }
+        }
+
         const request: Erc7710FacilitatorRequest = {
             x402Version: X402_VERSION,
             paymentPayload: payload,
@@ -685,14 +951,7 @@ function buildPaywall(
         }
 
         const receipt: SettlementReceipt = {
-            intent: derivePaymentIntentId({
-                network: requirements.network,
-                asset: requirements.asset,
-                amount,
-                payTo,
-                delegationManager: getAddress(payload.payload.delegationManager),
-                permissionContext: payload.payload.permissionContext,
-            }),
+            intent,
             payer,
             amount: fromTokenAmount(amount),
             asset: requirements.asset,
@@ -701,40 +960,27 @@ function buildPaywall(
             transaction: outcome.transaction,
             replayed: outcome.replayed,
         };
-        c.set("mapaeReceipt", receipt);
-        if (onSettled) {
+        if (paymentIdentifiers && identifier !== undefined) {
+            // 기록은 정산이 성공한 뒤에만이다. 미결(504)이나 실패에서 남기면 다음 호출이
+            // "이미 낸 결제"라며 자원을 내주는데, 정말 냈는지는 아무도 모른다.
             try {
-                await onSettled(receipt);
+                paymentIdentifiers.record({
+                    id: identifier,
+                    payer,
+                    ...(outcome.transaction === undefined
+                        ? {}
+                        : {transaction: outcome.transaction}),
+                });
             } catch (error) {
-                // Money has moved. The callback losing it is the seller's bug to see,
-                // not a reason to withhold what the buyer paid for.
+                // 돈은 이미 옮겨졌다. 여기서 500을 내면 구매자의 클라이언트는 그것을
+                // "아무것도 청구되지 않았다"로 읽고 다시 낸다 — 기록을 잃는 것이 결제를
+                // 두 번 받는 것보다 낫다. 대신 판매자가 로그에서 보게 한다.
                 console.error(
-                    `[mapae] onSettled threw for intent ${receipt.intent} — ${redactForLog(error)}`,
+                    `[mapae] payment identifier record failed for intent ${receipt.intent} — ${redactForLog(error)}`,
                 );
             }
         }
-
-        await next();
-
-        // Again after the handler, and deliberately the paywall's word rather than the
-        // handler's: a paid body in a shared cache is a resource served to whoever asks
-        // next, and a handler returning its own Response would otherwise carry neither.
-        c.header("Cache-Control", "no-store");
-        c.header("Vary", PAYMENT_SIGNATURE_HEADER);
-        // Built from fields this middleware validated — a CAIP-2 constant, a checksummed
-        // address, a hex hash already matched against /^0x[0-9a-fA-F]{64}$/ — not by
-        // echoing the facilitator's body.
-        c.header(
-            PAYMENT_RESPONSE_HEADER,
-            encodePaymentResponseHeader({
-                success: true,
-                network: requirements.network,
-                payer,
-                // The spec writes "no hash" as `""`, not as a missing field: a
-                // counterparty validating the reference schema needs the key present.
-                transaction: outcome.transaction ?? "",
-            }),
-        );
+        await deliver(receipt);
     };
     const descriptor: PaywallDescriptor = {price: options.price.trim(), description, payTo};
     return Object.assign(paywall, {[PAYWALL]: descriptor});

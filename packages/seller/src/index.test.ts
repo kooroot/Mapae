@@ -6,6 +6,7 @@ import {getAddress, type Address, type Hex} from "viem";
 import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
+    PAYMENT_IDENTIFIER_EXTENSION,
     PAYMENT_REQUIRED_HEADER,
     PAYMENT_RESPONSE_HEADER,
     PAYMENT_SIGNATURE_HEADER,
@@ -13,6 +14,7 @@ import {
     buildErc7710PaymentPayload,
     buildErc7710PaymentRequirements,
     buildErc7710SupportedPayload,
+    buildPaymentIdentifierEcho,
     decodePaymentHeader,
     decodePaymentRequiredHeader,
     encodePaymentHeader,
@@ -24,6 +26,7 @@ import {
     DELEGATION_REJECTED,
     FACILITATOR_NOT_READY,
     INVALID_PAYLOAD,
+    PAYMENT_IDENTIFIER_CONFLICT,
     RATE_LIMITED,
     SETTLEMENT_PENDING,
     SETTLEMENT_REVERTED,
@@ -44,6 +47,8 @@ import {
     mapaePaywall,
     type MapaeManifest,
     type MapaePaywallOptions,
+    type PaymentIdentifierBinding,
+    type RecordedPayment,
     type SettlementReceipt,
 } from "./index.js";
 
@@ -1064,6 +1069,220 @@ describe("mapaePaywall — naming the buyer to the facilitator", () => {
             ["/verify", BUYER],
             ["/settle", BUYER],
         ]);
+    });
+});
+
+const IDENTIFIER = "pay_0123456789abcdef0123456789ab";
+
+/** 같은 결제에 `payment-identifier`를 실어 보내는 헤더. */
+function identified(id: string, patch: Partial<Erc7710DelegationPayload> = {}): string {
+    return encodePaymentHeader(
+        buildErc7710PaymentPayload({
+            accepted: OFFER,
+            delegationManager: MANAGER,
+            permissionContext: CONTEXT,
+            delegator: PAYER,
+            extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierEcho(id)},
+            ...patch,
+        }),
+    );
+}
+
+/**
+ * 바인딩 포트의 메모리 구현. 이 스위트가 보는 것은 판매자의 사다리 — 어느 판정이 어느 답을
+ * 내는지 — 이고, 판정을 디스크에 남기는 쪽은 `@mapae/store`가 자기 스위트에서 본다.
+ */
+function binding() {
+    const rows = new Map<string, {fingerprint: string; intent: Hex; settled?: RecordedPayment}>();
+    const port: PaymentIdentifierBinding = {
+        bind({id, fingerprint, paymentIntentId}) {
+            const row = rows.get(id);
+            if (row === undefined) {
+                rows.set(id, {fingerprint, intent: paymentIntentId});
+                return {kind: "new"};
+            }
+            if (row.fingerprint !== fingerprint) return {kind: "conflict", reason: "fingerprint"};
+            if (row.intent !== paymentIntentId) return {kind: "conflict", reason: "payment_intent"};
+            // 같은 id·같은 요청·같은 리프인데 정산 기록이 없다 = 앞선 라운드가 돈을 옮기지
+            // 못했다. 다시 정산해도 되는 유일한 경우이고, 그 라운드의 이중 청구는
+            // 퍼실리테이터의 intent 장부가 막는다.
+            return row.settled === undefined
+                ? {kind: "new"}
+                : {kind: "settled", settled: row.settled};
+        },
+        record({id, payer, transaction}) {
+            const row = rows.get(id);
+            if (row) row.settled = {payer, ...(transaction === undefined ? {} : {transaction})};
+        },
+    };
+    return {port, rows};
+}
+
+describe("mapaePaywall — payment-identifier 확장", () => {
+    test("바인딩을 준 판매자만 확장을 광고한다", async () => {
+        const {port} = binding();
+        const body = (await (
+            await seller(paywall({fetch: facilitator().fetch, paymentIdentifiers: port})).app.request(
+                RESOURCE,
+            )
+        ).json()) as {extensions: Record<string, {info: {required: boolean}; schema: unknown}>};
+        expect(body.extensions[PAYMENT_IDENTIFIER_EXTENSION]?.info).toEqual({required: false});
+        // 스키마도 함께 — 사양이 "서버는 자기가 받는 모양을 광고한다"고 적은 쪽이다.
+        expect(body.extensions[PAYMENT_IDENTIFIER_EXTENSION]?.schema).toHaveProperty("properties");
+        // 호출자의 확장은 그대로 남는다: 우리 항목은 그 옆에 들어간다.
+        const both = (await (
+            await seller(
+                paywall({
+                    fetch: facilitator().fetch,
+                    paymentIdentifiers: port,
+                    extensions: {mapae: {info: {seller: "demo-cafe"}}},
+                }),
+            ).app.request(RESOURCE)
+        ).json()) as {extensions: Record<string, unknown>};
+        expect(Object.keys(both.extensions).sort()).toEqual(["mapae", PAYMENT_IDENTIFIER_EXTENSION]);
+
+        // 지키지 못할 약속은 하지 않는다: 바인딩이 없으면 광고도 없다.
+        const without = await seller(paywall({fetch: facilitator().fetch})).app.request(RESOURCE);
+        expect(await without.json()).not.toHaveProperty("extensions");
+    });
+
+    test("호출자가 직접 선언한 payment-identifier는 부팅에서 막는다", () => {
+        expect(() =>
+            paywall({extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: {info: {required: false}}}}),
+        ).toThrow(/paymentIdentifiers/);
+        expect(() => paywall({extensions: {mapae: {info: {seller: "demo-cafe"}}}})).not.toThrow();
+    });
+
+    test("형식이 어긋난 id는 퍼실리테이터를 부르기 전에 400 — 지불자를 댄 영수증과 함께", async () => {
+        const {port, rows} = binding();
+        for (const bad of ["short", `pay_${"a".repeat(125)}`, "pay_0123456789abcdef!!", ""]) {
+            const remote = facilitator();
+            const {app, seen} = seller(paywall({fetch: remote.fetch, paymentIdentifiers: port}));
+            const response = await pay(app, identified(bad));
+            expect(response.status, bad).toBe(400);
+            expect(await response.json()).toEqual({
+                error: "malformed_payment",
+                detail: `${PAYMENT_IDENTIFIER_EXTENSION} must be 16–128 characters of [A-Za-z0-9_-]`,
+            });
+            // 헤더 자체는 읽혔다 — 이 400은 지불자를 댈 수 있는 유일한 400이다.
+            expect(failureReceipt(response), bad).toEqual({
+                success: false,
+                errorReason: INVALID_PAYLOAD,
+                network: GIWA_SEPOLIA_CAIP2,
+                payer: PAYER,
+                transaction: "",
+            });
+            expect(remote.calls, bad).toEqual([]);
+            expect(seen.served, bad).toBe(0);
+        }
+        // 읽히지 않은 id는 아무것도 묶지 않는다.
+        expect(rows.size).toBe(0);
+    });
+
+    test("같은 id에 다른 요청이 오면 409 — 정산하지 않고, 오퍼도 다시 싣지 않는다", async () => {
+        const {port} = binding();
+        const remote = facilitator();
+        const app = new Hono();
+        app.get("/paid", paywall({fetch: remote.fetch, paymentIdentifiers: port}), (c) =>
+            c.text("first"),
+        );
+        app.get(
+            "/other",
+            paywall({fetch: remote.fetch, paymentIdentifiers: port, price: "2.00"}),
+            (c) => c.text("second"),
+        );
+        const header = identified(IDENTIFIER);
+        expect((await pay(app, header)).status).toBe(200);
+        remote.calls.length = 0;
+
+        const conflict = await app.request("http://seller.test/other", {
+            headers: {[PAYMENT_SIGNATURE_HEADER]: header},
+        });
+        expect(conflict.status).toBe(409);
+        expect(await conflict.json()).toEqual({
+            error: PAYMENT_IDENTIFIER_CONFLICT,
+            detail: "fingerprint",
+        });
+        expect(failureReceipt(conflict)).toEqual({
+            success: false,
+            errorReason: PAYMENT_IDENTIFIER_CONFLICT,
+            network: GIWA_SEPOLIA_CAIP2,
+            payer: PAYER,
+            transaction: "",
+        });
+        // 402가 아니다: 이 id로는 무엇을 내도 같은 409이므로 "이대로 다시 내라"는 오퍼를
+        // 다시 싣는 것은 거짓말이다.
+        expect(conflict.headers.get(PAYMENT_REQUIRED_HEADER)).toBeNull();
+        expect(remote.paths()).not.toContain("/settle");
+        expect(remote.paths()).not.toContain("/verify");
+    });
+
+    test("같은 id에 다른 리프가 오면 409 — 앞선 시도의 결말을 모른 채 또 정산하지 않는다", async () => {
+        const {port} = binding();
+        const remote = facilitator();
+        const {app, seen} = seller(paywall({fetch: remote.fetch, paymentIdentifiers: port}));
+        expect((await pay(app, identified(IDENTIFIER))).status).toBe(200);
+        remote.calls.length = 0;
+
+        // 같은 경로·같은 값이므로 지문은 같다. 다른 것은 서명된 권한 — 즉 다른 결제다.
+        const conflict = await pay(app, identified(IDENTIFIER, {permissionContext: "0xbeef"}));
+        expect(conflict.status).toBe(409);
+        expect(await conflict.json()).toEqual({
+            error: PAYMENT_IDENTIFIER_CONFLICT,
+            detail: "payment_intent",
+        });
+        expect(remote.paths()).toEqual([]);
+        expect(seen.served).toBe(1);
+    });
+
+    test("정산된 id를 다시 내면 정산하지 않고 저장된 영수증으로 자원을 낸다", async () => {
+        const {port} = binding();
+        const remote = facilitator();
+        const {app, seen} = seller(paywall({fetch: remote.fetch, paymentIdentifiers: port}));
+        const header = identified(IDENTIFIER);
+        const first = await pay(app, header);
+        expect(first.status).toBe(200);
+        expect(seen.receipt).toBeDefined();
+        const settled = seen.receipt as SettlementReceipt;
+        expect(settled.replayed).toBe(false);
+        remote.calls.length = 0;
+
+        const again = await pay(app, header);
+        expect(again.status).toBe(200);
+        expect(seen.served).toBe(2);
+        // 같은 결제다: intent·지불자·금액이 같고, 이번 호출이 정산하지 않았다는 말이
+        // `replayed`다.
+        expect(seen.receipt).toEqual({...settled, replayed: true});
+        expect(remote.paths()).toEqual([]);
+        // 구매자 쪽에서 두 답은 구별되지 않는다 — 같은 200, 같은 영수증 헤더.
+        expect(again.headers.get(PAYMENT_RESPONSE_HEADER)).toBe(
+            first.headers.get(PAYMENT_RESPONSE_HEADER),
+        );
+    });
+
+    test("정산이 미결로 끝나면 기록하지 않는다 — 냈는지 모르는 결제를 낸 것으로 하지 않는다", async () => {
+        const {port, rows} = binding();
+        const remote = facilitator({"/settle": refused});
+        const {app, seen} = seller(paywall({fetch: remote.fetch, paymentIdentifiers: port}));
+        const response = await pay(app, identified(IDENTIFIER));
+        expect(response.status).toBe(504);
+        expect(seen.served).toBe(0);
+        // id는 묶였다(다른 요청이 이 id를 못 쓰게), 그러나 정산 기록은 없다 — 다음 라운드는
+        // 다시 정산하고, 그 라운드의 이중 청구는 퍼실리테이터의 intent 장부가 막는다.
+        expect(rows.get(IDENTIFIER)?.settled).toBeUndefined();
+    });
+
+    test("바인딩이 없는 판매자는 실려 온 id를 읽지 않는다", async () => {
+        const remote = facilitator();
+        const {app, seen} = seller(paywall({fetch: remote.fetch}));
+        // 형식이 어긋난 id조차 400이 되지 않는다: 광고하지 않은 것을 검사하지도 않는다.
+        expect((await pay(app, identified("short"))).status).toBe(200);
+        expect(seen.served).toBe(1);
+        expect(remote.paths()).toEqual(["/supported", "/verify", "/settle"]);
+        // 같은 id를 두 번 내면 두 번 정산된다 — 멱등성은 바인딩이 있을 때만 있는 약속이다.
+        expect((await pay(app, identified(IDENTIFIER))).status).toBe(200);
+        expect((await pay(app, identified(IDENTIFIER))).status).toBe(200);
+        expect(seen.served).toBe(3);
     });
 });
 
