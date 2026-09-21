@@ -390,17 +390,64 @@ describe("createAgentSpendGate", () => {
         expect(gate.judge(fullOffer(toTokenAmount("1")))).toEqual({ok: true});
     });
 
-    test("판정은 상태를 바꾸지 않는다 — 같은 오퍼를 다섯 번 물어도 같은 답이다", () => {
-        // 판정이 누적을 더해 버리면 체인이 거절한 결제(`LIMIT_EXCEEDED`)가 세션 예산을
-        // 먹고, 기간이 돌아온 뒤에도 프로세스를 다시 띄워야 하는 상태가 생긴다. 서명만
-        // 세는 것은 그래서다 — `wrap`이 유일한 누적 지점이다.
+    test("선판정은 상태를 바꾸지 않는다 — 같은 오퍼를 다섯 번 물어도 같은 답이다", () => {
+        // 선판정이 예약까지 해 버리면, 판정 뒤 서명까지 가지 않는 호출자의 예산이 한
+        // 조각씩 영구히 사라진다 — `apps/payment-scheduler`가 자기 스케줄 조건으로
+        // 거절하는 경로가 정확히 그것이다. 예약은 서명 직전(`wrap`)에만 선다.
         const gate = createAgentSpendGate({maxSessionTotalBase: toTokenAmount("3")});
         for (let i = 0; i < 5; i++) {
             expect(gate.judge(fullOffer(toTokenAmount("3")))).toEqual({ok: true});
         }
     });
 
-    test("서명이 실패한 금액은 누적에 들어가지 않는다", async () => {
+    test("선판정을 거치지 않고 서명해도 한도가 걸린다", async () => {
+        // `preflight`를 넘기지 않는 호출자에게도 한도가 걸려야 한다. 강제가 선판정에만
+        // 있으면 그 경로는 무제한이고, 무제한인 경로가 하나 있는 한도는 한도가 아니다.
+        const gate = createAgentSpendGate({maxPerPaymentBase: toTokenAmount("1")});
+        let signatures = 0;
+        const sign = gate.wrap(async () => {
+            signatures += 1;
+            return signedLeaf;
+        });
+
+        await expect(sign(fullOffer(toTokenAmount("2")))).rejects.toThrow(
+            "AGENT_MAX_PAYMENT_MUSDC",
+        );
+        expect(signatures).toBe(0);
+    });
+
+    test("동시 호출은 세션 예산을 나눠 쓴다 — 두 번째는 서명되지 않는다", async () => {
+        // 판정과 예약이 두 호출로 나뉘어 있으면 이 테스트가 실패한다: 둘 다 선판정을
+        // 통과한 뒤 둘 다 서명되고, 세션 총액은 동시 호출 수에 비례해 넘친다(측정값:
+        // 예산 1.0에 5개 동시 호출 → 5.0 서명). 강제 지점이 서명 직전 한 곳이고 그
+        // 블록에 `await`가 없다는 것이 이 단정의 근거다.
+        const gate = createAgentSpendGate({maxSessionTotalBase: toTokenAmount("3")});
+        let signatures = 0;
+        const sign = gate.wrap(async () => {
+            signatures += 1;
+            return signedLeaf;
+        });
+
+        // 선판정으로는 둘 다 통과한다 — 아직 아무것도 서명되지 않았기 때문이다.
+        expect(gate.judge(fullOffer(toTokenAmount("2")))).toEqual({ok: true});
+
+        const settled = await Promise.allSettled([
+            sign(fullOffer(toTokenAmount("2"))),
+            sign(fullOffer(toTokenAmount("2"))),
+        ]);
+
+        expect(settled.map((outcome) => outcome.status)).toEqual(["fulfilled", "rejected"]);
+        expect(signatures).toBe(1);
+        const refused = settled[1];
+        expect(refused.status === "rejected" && String(refused.reason)).toContain(
+            "AGENT_SESSION_BUDGET_MUSDC",
+        );
+        // 예약이 정확히 한 번만 섰다: 2가 들어갔고 4가 들어가지 않았다.
+        expect(gate.judge(fullOffer(toTokenAmount("1")))).toEqual({ok: true});
+        expect(gate.judge(fullOffer(toTokenAmount("2")))).toMatchObject({ok: false});
+    });
+
+    test("서명이 실패하면 예약이 되돌아간다", async () => {
         const gate = createAgentSpendGate({maxSessionTotalBase: toTokenAmount("3")});
         const sign = gate.wrap(async () => {
             throw new Error("delegation is disabled");
@@ -510,6 +557,28 @@ describe("지출 정책과 결제 루프의 합성", () => {
         expect(verdict).toMatchObject({ok: false, code: "SPEND_POLICY_REFUSED"});
         expect(signatures()).toBe(0);
         expect(calls).toHaveLength(1);
+    });
+
+    test("동시 결제 두 건 중 예산에 맞는 하나만 서명된다", async () => {
+        // 리뷰에서 재현된 회귀다: MCP 서버는 tool 호출을 직렬화하지 않으므로 두 결제가
+        // 같은 게이트 위에서 겹친다. 예산 2.0에 2.0짜리 두 건을 동시에 넣으면 서명은
+        // 정확히 한 번이어야 한다.
+        const gate = createAgentSpendGate({maxSessionTotalBase: toTokenAmount("2")});
+        const first = run(fullOffer(toTokenAmount("2")), gate);
+        const second = run(fullOffer(toTokenAmount("2")), gate);
+
+        const [a, b] = await Promise.all([first.result, second.result]);
+
+        expect(a.ok).toBe(true);
+        // 선판정을 통과한 뒤 서명 직전에 걸린 거절은 `SIGNING_FAILED`로 보고된다 —
+        // 서명이 일어나지 않았다는 사실은 그 코드로도 정확하고, `detail`이 어느 한도에
+        // 걸렸는지 변수 이름으로 말한다. 강제가 늦은 것이 아니라 보고가 한 단계 거친
+        // 것이다(docs/mcp-guide.md §3.1에 같은 문장이 있다).
+        expect(b).toMatchObject({ok: false, code: "SIGNING_FAILED"});
+        expect(b.ok === false && b.detail).toContain("AGENT_SESSION_BUDGET_MUSDC");
+        expect(first.signatures() + second.signatures()).toBe(1);
+        // 거절된 쪽은 402를 받은 한 번뿐 — 결제 헤더를 실은 재요청이 나가지 않았다.
+        expect(second.calls).toHaveLength(1);
     });
 
     test("세션 예산을 다 쓰면 다음 호출의 서명이 일어나지 않는다", async () => {

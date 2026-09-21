@@ -129,11 +129,17 @@ URL 값은 loopback이 아니면 HTTPS를 강제하고, userinfo가 든 URL은 �
 | `AGENT_SESSION_BUDGET_MUSDC` | 이 런타임 인스턴스가 서명한 leaf 금액의 합이 이 값을 넘게 되는 결제를 서명하지 않는다 |
 | `AGENT_ALLOWED_PAY_TO` | 목록이 설정되어 있으면 그 밖의 `payTo`는 서명하지 않는다. 대소문자는 무관하다 |
 
-네 가지를 분명히 해 둔다.
+다섯 가지를 분명히 해 둔다.
 
 - **판정은 leaf 서명 전에 일어난다.** 서명된 leaf는 bearer 권한이므로, 사후 거절은
   아무것도 되돌리지 못한다 — 판매자가 자원을 주지 못했더라도 facilitator는 그
   leaf를 청구할 수 있다.
+- **동시 호출도 같은 예산을 나눠 쓴다.** 한도를 강제하는 지점은 서명 직전 한 곳이고,
+  그 판정과 예약 사이에는 대기가 없다 — tool 호출을 동시에 여러 개 보내도 세션 누적은
+  넘지 않는다. 대신 그렇게 걸린 거절은 `SPEND_POLICY_REFUSED`가 아니라
+  `SIGNING_FAILED`로 돌아온다(§6): 호출 시작 시점의 선판정은 통과했고, 그 뒤 다른
+  호출이 예산을 먼저 가져갔다는 뜻이다. `detail`은 두 경우 모두 같은 env 변수를
+  지목한다.
 - **세션은 런타임 인스턴스의 수명, 즉 MCP 서버 프로세스의 수명이다.** 프로세스를
   다시 띄우면 누적은 0에서 시작한다. 재시작을 넘겨 남는 예산이 필요하면
   `apps/payment-scheduler`가 그 예산을 DB에 들고 있다.
@@ -195,7 +201,9 @@ Claude Desktop 등 JSON 설정 클라이언트 (`mcpServers`):
   바이트코드와 대조하고, facilitator `/supported`에서 신뢰할 signer 목록을
   가져온다. 전부 읽기 전용이다.
 - **서명 전에 두 판정이 차례로 실행된다.** 먼저 §3.1의 런타임 지출 정책 — 체인을
-  읽지 않고 답할 수 있으므로 거절할 결제에 RPC 왕복을 쓰지 않는다. 그것을 통과하면
+  읽지 않고 답할 수 있으므로 거절할 결제에 RPC 왕복을 쓰지 않는다(정책을 실제로
+  강제하는 곳은 서명 직전이고, 이 순서는 거절을 어느 코드로 보고할지를 정한다).
+  그것을 통과하면
   enforcer의 회계를 직접 읽어 성공할 수 없는 결제를 거르고, 사유를 체인의 값으로
   말한다(`payment of 2500000 exceeds 2000000 left in this period`). 순서가 이런 것은
   두 거절이 운영자를 다른 곳으로 보내기 때문이다 — 하나는 `.env`에서 고칠 수 있고,
@@ -215,6 +223,7 @@ Claude Desktop 등 JSON 설정 클라이언트 (`mcpServers`):
 | `RUNTIME_UNAVAILABLE` | env·파일·네트워크·배포 검증 실패 | `detail`이 지목한 항목을 고치고 재호출 |
 | `INVALID_RESOURCE` | 경로가 판매자 origin을 벗어남 | `/`로 시작하는 절대 경로로 수정 |
 | `SPEND_POLICY_REFUSED` | §3.1의 런타임 한도 하나가 거절 — 호출당·세션 누적·수취처 | **체인은 정상이다.** `detail`이 지목한 env 변수를 확인한다. 세션 누적이면 프로세스 재시작으로도 초기화된다 |
+| `SIGNING_FAILED` | leaf를 만들지 못했다 — parent permission이 깨졌거나, 동시 호출이 세션 예산을 먼저 가져갔다 | `detail`이 사유를 말한다. `AGENT_SESSION_BUDGET_MUSDC`를 지목하면 §3.1의 동시 호출 항목이다 — 자금 불변이고, 순차로 다시 호출하면 된다 |
 | `LIMIT_EXCEEDED` | 이번 주기 잔량 부족 | 주기가 돌아온 뒤 재시도 — 정상 동작이다 |
 | `PERMISSION_INACTIVE` | 회수·만료·미개시 | permission 재서명 또는 체인 상태 확인 |
 | `PAYMENT_REJECTED` | 판매자·facilitator가 명시적으로 거절 | 자금 불변. `detail` 확인 |

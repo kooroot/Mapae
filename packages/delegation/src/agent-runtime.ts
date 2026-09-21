@@ -36,9 +36,16 @@ export interface DelegatedAgentRuntime {
      *
      * 금액 하나가 아니라 요구사항 전체를 받는다 — 수취처 허용목록은 `payTo`를 봐야
      * 판정할 수 있고, 금액만 넘기는 시그니처로는 그 판정이 서명 뒤로 밀린다.
+     *
+     * 지출 정책에 대해서는 이것이 **선판정**이다. 실제 강제는 `provider`가 서명 직전에
+     * 하므로(`AgentSpendGate.wrap`), 이 함수를 넘기지 않는 호출자도 한도를 벗어나지
+     * 못한다.
      */
     preflight: (requirements: Erc7710PaymentRequirements) => Promise<PreflightVerdict>;
-    /** env에서 읽은 런타임 지출 한도. 보고용이고, 강제는 `preflight`가 한다. */
+    /**
+     * env에서 읽은 런타임 지출 한도. 보고용이다 — 강제는 `provider`가 서명 직전에 하고,
+     * `preflight`가 그 거절을 읽을 수 있는 코드로 미리 돌려준다.
+     */
     spendPolicy: AgentSpendPolicy;
     delegationManager: Address;
     trustedFacilitators: Address[];
@@ -202,28 +209,46 @@ export function parseAgentSpendPolicy(
 /**
  * 한 런타임 인스턴스의 지출 정책 상태.
  *
- * 판정과 누적이 두 개로 나뉘어 있는 것은 **서명이 유일한 되돌릴 수 없는 순간**이기
- * 때문이다. `judge`는 서명 전에 물어보는 쪽이라 상태를 바꾸지 않고, `wrap`이 감싼
- * provider가 서명을 실제로 마친 금액만 누적에 더한다. 한쪽이 판정도 하고 누적도 하면
- * 체인이 거절한 결제(`LIMIT_EXCEEDED`)가 세션 예산을 먹어, 기간이 돌아온 뒤에도
- * 프로세스를 다시 띄워야 하는 상태가 생긴다.
+ * **강제 지점은 `wrap`이 감싼 provider 하나다.** 그 안에서 판정과 예약이 같은 동기
+ * 블록에 있다 — inner provider를 `await`하기 전에 판정하고, 통과한 금액을 그 자리에서
+ * 누적에 더한다. 그 사이에 await가 없으므로 동시 호출이 끼어들 틈이 없다. 판정과 누적을
+ * 두 호출로 나누면 그 틈이 생기고, 그때 세션 한도는 동시 호출 수에 비례해 무력해진다:
+ * 예산 1.0에 5개 호출을 동시에 넣으면 다섯 건 모두 판정을 통과한 뒤 다섯 건 모두
+ * 서명된다(측정값 5.0 tUSDC). MCP 서버는 tool 호출을 직렬화하지 않고, 서명된 leaf는
+ * bearer 권한이라 사후에 회수할 수 없다.
+ *
+ * `judge`는 그 강제의 복사본이 아니라 **선판정**이다. 결제 루프가 서명 전에 물어보고
+ * 거절을 `SPEND_POLICY_REFUSED`라는 읽을 수 있는 코드로 돌려주기 위한 것이고, 상태를
+ * 바꾸지 않는다. 동시 호출에서 선판정을 통과한 뒤 서명 시점에 예산이 없어진 결제는
+ * provider가 던지므로 `SIGNING_FAILED`로 나타나고, 그 `detail`이 어느 한도였는지
+ * 이름으로 말한다. 강제가 늦는 것이 아니라 보고가 한 단계 거친 것이다.
+ *
+ * 예약을 `judge`에서 하지 않는 이유는 `judge`→서명이 한 쌍이라는 보장이 없기
+ * 때문이다. `apps/payment-scheduler/scheduler.ts`는 자기 provider 안에서
+ * `runtime.provider`를 부르는데, 그 앞의 스케줄 조건에 걸리면 서명까지 가지 않는다
+ * (그 파일 25~26행). `judge`가 예약했다면 그 거절마다 예산이 한 조각씩 영구히
+ * 사라진다. 반대로 `preflight`를 넘기지 않는 호출자에게는 `judge`가 아예 불리지 않으므로,
+ * 강제가 선판정에만 있으면 그 경로는 무제한이 된다. 서명 직전은 두 경우 모두가 반드시
+ * 지나는 유일한 지점이다.
  *
  * 세는 단위가 **서명**이지 청구가 아닌 것도 의도다. 서명된 leaf는 bearer 권한이고,
  * 판매자가 자원을 주지 못했더라도 facilitator는 그것을 청구할 수 있다. 정산 성공만 세면
- * 실패한 왕복마다 예산이 되살아나 한도가 한도가 아니게 된다.
- *
- * 판정과 서명 사이에는 await가 하나 있다. MCP 서버가 tool 호출을 동시에 처리하면 두
- * 호출이 각각 판정을 통과한 뒤 둘 다 서명할 수 있고, 그때 세션 총액은 진행 중인 결제
- * 하나만큼 예산을 넘을 수 있다 — 그 초과분의 상한이 호출당 상한이며, 두 한도를 같이
- * 설정하는 이유가 그것이다.
+ * 실패한 왕복마다 예산이 되살아나 한도가 한도가 아니게 된다. 되돌리는 경우는 하나뿐이다
+ * — 서명 자체가 던진 경우. 존재하지 않는 leaf는 청구될 수 없다.
  */
 export interface AgentSpendGate {
-    /** 서명 전 판정. 상태를 바꾸지 않으므로 몇 번 불러도 같은 답이다. */
+    /**
+     * 서명 전 선판정. 상태를 바꾸지 않으므로 몇 번 불러도 같은 답이다.
+     *
+     * 거절을 결제 루프가 읽을 수 있는 코드로 만드는 쪽이고, 한도를 강제하는 쪽이 아니다.
+     * 강제는 `wrap`이 한다 — 이 판정을 부르지 않는 호출자에게도 한도가 걸려야 한다.
+     */
     judge: (requirements: Pick<Erc7710PaymentRequirements, "amount" | "payTo">) => PreflightVerdict;
     /**
-     * 서명된 금액만 누적에 더하도록 leaf provider를 감싼다.
+     * 정책을 강제하는 지점. leaf provider를 감싸, 서명 직전에 판정하고 통과한 금액을
+     * 즉시 예약한다. inner provider가 던지면 예약을 되돌린다.
      *
-     * provider를 감싸는 형태인 것은 누적 지점을 잊을 수 없게 하려는 것이다 — 누적을
+     * provider를 감싸는 형태인 것은 강제 지점을 잊을 수 없게 하려는 것이다 — 판정을
      * 부르는 별도 메서드라면, 새 호출 경로가 그것을 부르지 않아도 컴파일된다.
      */
     wrap: (provider: DelegatedLeafProvider) => DelegatedLeafProvider;
@@ -232,58 +257,80 @@ export interface AgentSpendGate {
 /**
  * 정책 판정자를 만든다. 반환된 게이트는 **이 인스턴스의** 세션 누적을 들고 있다.
  *
- * 전제: `judge`에 넘기는 `requirements`는 `assertErc7710Offer`를 통과한 오퍼다
- * (`amount`는 양의 정수 문자열, `payTo`는 0이 아닌 주소). 검증되지 않은 판매자 JSON을
+ * 전제: `judge`와 감싼 provider에 넘기는 `requirements`는 `assertErc7710Offer`를 통과한
+ * 오퍼다(`amount`는 양의 정수 문자열, `payTo`는 0이 아닌 주소). 검증되지 않은 판매자 JSON을
  * 직접 넣으면 안 된다 — `payForDelegatedResource`가 그 순서를 지킨다.
  */
 export function createAgentSpendGate(policy: AgentSpendPolicy): AgentSpendGate {
     let signedBase = 0n;
-    return {
-        judge: (requirements) => {
-            const amount = BigInt(requirements.amount);
-            const payTo = getAddress(requirements.payTo);
 
-            // 허용목록이 먼저다. 낯선 수취처로 가는 결제를 금액 초과로 보고하면 운영자는
-            // 한도를 올리러 가고, 정작 봐야 할 것(에이전트가 왜 그 판매자를 골랐는가)을
-            // 보지 않는다. 금액과 무관하게 거절되는 조건이므로 순서가 결과를 바꾼다.
-            if (policy.allowedPayTo && !policy.allowedPayTo.includes(payTo)) {
-                return {
-                    ok: false,
-                    code: "SPEND_POLICY_REFUSED",
-                    detail: `payTo ${payTo} is not in AGENT_ALLOWED_PAY_TO`,
-                };
-            }
-            if (policy.maxPerPaymentBase !== undefined && amount > policy.maxPerPaymentBase) {
-                return {
-                    ok: false,
-                    code: "SPEND_POLICY_REFUSED",
-                    detail:
-                        `payment of ${amount} exceeds the AGENT_MAX_PAYMENT_MUSDC cap of ` +
-                        `${policy.maxPerPaymentBase}`,
-                };
-            }
-            // `>`이지 `>=`가 아니다 — 예산과 정확히 같은 총액까지는 예산 안이다. 마지막
-            // 한 단위를 쓸 수 없게 만들면 설정한 숫자와 실제 한도가 달라진다.
-            if (
-                policy.maxSessionTotalBase !== undefined &&
-                signedBase + amount > policy.maxSessionTotalBase
-            ) {
-                return {
-                    ok: false,
-                    code: "SPEND_POLICY_REFUSED",
-                    detail:
-                        `payment of ${amount} would take this session to ` +
-                        `${signedBase + amount}, over the AGENT_SESSION_BUDGET_MUSDC of ` +
-                        `${policy.maxSessionTotalBase}`,
-                };
-            }
-            return {ok: true};
-        },
+    const judge = (
+        requirements: Pick<Erc7710PaymentRequirements, "amount" | "payTo">,
+    ): PreflightVerdict => {
+        const amount = BigInt(requirements.amount);
+        const payTo = getAddress(requirements.payTo);
+
+        // 허용목록이 먼저다. 낯선 수취처로 가는 결제를 금액 초과로 보고하면 운영자는
+        // 한도를 올리러 가고, 정작 봐야 할 것(에이전트가 왜 그 판매자를 골랐는가)을
+        // 보지 않는다. 금액과 무관하게 거절되는 조건이므로 순서가 결과를 바꾼다.
+        if (policy.allowedPayTo && !policy.allowedPayTo.includes(payTo)) {
+            return {
+                ok: false,
+                code: "SPEND_POLICY_REFUSED",
+                detail: `payTo ${payTo} is not in AGENT_ALLOWED_PAY_TO`,
+            };
+        }
+        if (policy.maxPerPaymentBase !== undefined && amount > policy.maxPerPaymentBase) {
+            return {
+                ok: false,
+                code: "SPEND_POLICY_REFUSED",
+                detail:
+                    `payment of ${amount} exceeds the AGENT_MAX_PAYMENT_MUSDC cap of ` +
+                    `${policy.maxPerPaymentBase}`,
+            };
+        }
+        // `>`이지 `>=`가 아니다 — 예산과 정확히 같은 총액까지는 예산 안이다. 마지막
+        // 한 단위를 쓸 수 없게 만들면 설정한 숫자와 실제 한도가 달라진다.
+        if (
+            policy.maxSessionTotalBase !== undefined &&
+            signedBase + amount > policy.maxSessionTotalBase
+        ) {
+            return {
+                ok: false,
+                code: "SPEND_POLICY_REFUSED",
+                detail:
+                    `payment of ${amount} would take this session to ` +
+                    `${signedBase + amount}, over the AGENT_SESSION_BUDGET_MUSDC of ` +
+                    `${policy.maxSessionTotalBase}`,
+            };
+        }
+        return {ok: true};
+    };
+
+    return {
+        judge,
         wrap: (provider) => async (requirements) => {
-            const leaf = await provider(requirements);
-            // 서명이 던졌다면 여기 닿지 않는다 — 존재하지 않는 leaf는 청구될 수 없다.
-            signedBase += BigInt(requirements.amount);
-            return leaf;
+            // 이 블록에는 `await`가 없다. 판정과 예약이 한 turn 안에서 끝나므로 두 번째
+            // 호출은 첫 번째가 이미 예약한 총액을 보고, 세션 한도가 동시 호출 수만큼
+            // 늘어나지 않는다. 여기서 `await`를 하나 끼우면 그것이 정확히 무력해진다.
+            const verdict = judge(requirements);
+            // 던지는 것은 이 자리에서 반환할 채널이 없기 때문이다. 결제 루프는 이
+            // throw를 `SIGNING_FAILED`로 보고하고 `detail`에 사유를 그대로 싣는다 —
+            // 서명이 일어나지 않았다는 사실은 그 코드로도 정확하다. 선판정을 거친
+            // 정상 경로는 `SPEND_POLICY_REFUSED`로 오므로, 여기 걸리는 것은 선판정
+            // 이후에 예산이 없어진 동시 호출뿐이다.
+            if (!verdict.ok) throw new Error(`spend policy refused: ${verdict.detail}`);
+            const amount = BigInt(requirements.amount);
+            signedBase += amount;
+            try {
+                return await provider(requirements);
+            } catch (error) {
+                // 존재하지 않는 leaf는 청구될 수 없으므로 예약을 되돌린다. 정산 실패는
+                // 여기 오지 않는다 — 그때는 leaf가 이미 서명되어 있고, 그 금액은 예산을
+                // 쓴 것이 맞다.
+                signedBase -= amount;
+                throw error;
+            }
         },
     };
 }
@@ -405,6 +452,9 @@ export async function loadDelegatedAgentRuntime(
 
     /**
      * 두 판정을 합성한다. **운영자 정책이 먼저다.**
+     *
+     * 여기서 정책은 선판정이다 — 한도를 강제하는 것은 서명 직전의 `spendGate.wrap`이고,
+     * 이 순서는 거절을 어느 코드로 보고할지와 RPC를 아낄지를 정한다.
      *
      * 근거는 두 가지다. 첫째, 정책 판정은 체인을 읽지 않고 답할 수 있으므로 거절할 결제에
      * RPC 왕복을 쓰지 않는다. 둘째, 두 거절은 운영자를 다른 곳으로 보낸다 — 정책 거절은
