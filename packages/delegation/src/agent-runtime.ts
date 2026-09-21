@@ -224,11 +224,11 @@ export function parseAgentSpendPolicy(
  * 이름으로 말한다. 강제가 늦는 것이 아니라 보고가 한 단계 거친 것이다.
  *
  * 예약을 `judge`에서 하지 않는 이유는 `judge`→서명이 한 쌍이라는 보장이 없기
- * 때문이다. `apps/payment-scheduler/scheduler.ts`는 자기 provider 안에서
- * `runtime.provider`를 부르는데, 그 앞의 스케줄 조건에 걸리면 서명까지 가지 않는다
- * (그 파일 25~26행). `judge`가 예약했다면 그 거절마다 예산이 한 조각씩 영구히
- * 사라진다. 반대로 `preflight`를 넘기지 않는 호출자에게는 `judge`가 아예 불리지 않으므로,
- * 강제가 선판정에만 있으면 그 경로는 무제한이 된다. 서명 직전은 두 경우 모두가 반드시
+ * 때문이다. `apps/payment-scheduler/scheduler.ts`의 `paymentExecutor`는 자기 provider
+ * 안에서 `runtime.provider`를 부르는데, 그 앞의 스케줄 조건에 걸리면(`schedule
+ * condition refused`) 서명까지 가지 않는다. `judge`가 예약했다면 그 거절마다 예산이 한
+ * 조각씩 영구히 사라진다. 반대로 `preflight`를 넘기지 않는 호출자에게는 `judge`가 아예
+ * 불리지 않으므로, 강제가 선판정에만 있으면 그 경로는 무제한이 된다. 서명 직전은 두 경우 모두가 반드시
  * 지나는 유일한 지점이다.
  *
  * 세는 단위가 **서명**이지 청구가 아닌 것도 의도다. 서명된 leaf는 bearer 권한이고,

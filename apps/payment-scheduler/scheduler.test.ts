@@ -66,10 +66,11 @@ test("invalid bounds and paths cannot enter the database", () => {
 });
 const manager = "0x4000000000000000000000000000000000000001" as const;
 const facilitator = "0x3000000000000000000000000000000000000001" as const;
-function setup(offerAmount = 80n, recipient = spec.payTo, status = 200, cancelWhileSigning = false) {
+function setup(offerAmount = 80n, recipient = spec.payTo, status = 200, cancelWhileSigning = false,
+    preflight: DelegatedAgentRuntime["preflight"] = async () => ({ok: true})) {
     const s = open().schedules; s.add(spec); let signatures = 0, calls = 0;
     const runtime = {sellerUrl: new URL("https://seller.test"), delegationManager: manager, trustedFacilitators: [facilitator],
-        preflight: async () => ({ok: true}), provider: async () => {signatures++; if (cancelWhileSigning) s.cancel(spec.id);
+        preflight, provider: async () => {signatures++; if (cancelWhileSigning) s.cancel(spec.id);
             return {delegationManager: manager, permissionContext: `0x${"ab".repeat(64)}`, delegator: spec.payTo};}} as Pick<DelegatedAgentRuntime, "sellerUrl" | "delegationManager" | "trustedFacilitators" | "preflight" | "provider">;
     const fetchImpl = (async () => {
         calls++;
@@ -93,6 +94,17 @@ test("real 402 sign/pay succeeds and persists receipt metadata only", async () =
 test("cancellation while signing prevents header dispatch", async () => {
     const f = setup(80n, spec.payTo, 200, true); await tick(f.s, f.execute, () => 1000);
     expect(f.signatures()).toBe(1); expect(f.calls()).toBe(1); expect(f.s.get(spec.id)?.status).toBe("cancelled");
+});
+test("a runtime spend-policy refusal is recorded as unpaid, not as possibly charged", async () => {
+    // 런타임 지출 정책은 leaf 서명 **전에** 거절한다. 이 코드가 '헤더가 나가기 전 실패'
+    // 목록에서 빠지면 결과가 `unknown`으로 떨어져, 서명도 결제 헤더도 없던 결제가
+    // "청구됐을 수 있음"으로 남고 예약된 최대 금액이 풀리지 않은 채 스케줄이 멈춘다.
+    const f = setup(80n, spec.payTo, 200, false,
+        async () => ({ok: false, code: "SPEND_POLICY_REFUSED", detail: "payment of 80 exceeds the AGENT_MAX_PAYMENT_MUSDC cap of 50"}));
+    await tick(f.s, f.execute, () => 1000);
+    expect(f.signatures()).toBe(0); expect(f.calls()).toBe(1);
+    expect(f.s.runs(spec.id)[0]?.outcome).toBe("unpaid"); expect(f.s.runs(spec.id)[0]?.code).toBe("SPEND_POLICY_REFUSED");
+    expect(f.s.get(spec.id)?.committedBase).toBe(0n);
 });
 test("HTTP 504 pauses whereas known HTTP 503 schedules a bounded retry", async () => {
     for (const status of [504, 503]) {
