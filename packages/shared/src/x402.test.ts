@@ -297,7 +297,7 @@ describe("in-band DelegationManager advertisement", () => {
     });
 
     test("/supported kinds[].extra can carry the manager as a discovery document", () => {
-        // Measured against @metamask/x402 0.2.0: its supportedKind flow copies only
+        // Measured against @metamask/x402 1.0.0: its supportedKind flow copies only
         // facilitatorAddresses into offers, so this field does NOT propagate through a
         // third-party seller automatically. It is still the one queryable place an
         // integrator can read the rail's manager from, which is why it rides here too.

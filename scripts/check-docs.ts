@@ -50,6 +50,7 @@ const DOCS = [
     "docs/deployed-contracts.md",
     "docs/mcp-guide.md",
     "docs/seller-guide.md",
+    "docs/x402-reference.md",
     "docs/revocation-runbook.md",
     "docs/giwa-demo-runbook.md",
     "docs/infra-map.md",

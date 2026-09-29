@@ -42,6 +42,8 @@ const LIVE_GITBOOK_URLS = [
 const ADDED_SINCE_GITBOOK = [
     // 2026-08-29 — the @mapae/seller guide.
     "operations/seller-guide",
+    // 2026-09-30 — the tested reference x402 integration.
+    "operations/x402-reference",
 ];
 
 describe("published URLs", () => {
@@ -71,7 +73,7 @@ describe("published URLs", () => {
 describe("pages", () => {
     test("reads order, titles and sections from SUMMARY.md", () => {
         const found = pages(summary);
-        expect(found).toHaveLength(19);
+        expect(found).toHaveLength(20);
         expect(found[0]).toMatchObject({url: "", title: "Mapae one-pager", locale: "en"});
         expect(found[1]).toMatchObject({url: "readme.ko", locale: "ko"});
         expect(found[2]).toMatchObject({

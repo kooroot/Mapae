@@ -43,6 +43,8 @@ async function main(): Promise<void> {
         compositionId: FRAMEWORK_COMPOSITION_ID,
         compositionSpecHash: FRAMEWORK_COMPOSITION_SPEC_HASH,
         sourceRevision: FRAMEWORK_UPSTREAM.delegationFrameworkRevision,
+        // Original bytecode provenance. The installed ABI package may be newer;
+        // assertInstalledFrameworkBytecodes above proves it reproduces these bytes.
         package: {
             name: "@metamask/delegation-abis",
             version: FRAMEWORK_UPSTREAM.delegationAbis.version,

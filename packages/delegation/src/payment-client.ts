@@ -356,17 +356,16 @@ export function assertErc7710Offer(value: unknown): Erc7710PaymentRequirements {
     if (!/^[1-9]\d*$/.test(req.amount)) throw new Error("seller amount is malformed");
     // 스펙 §6.1의 결제 흐름 선언. 우리가 결제할 수 있는 흐름은 두 개다 — 이 레일의
     // `upfront`와 스펙 기본값 `authorization` — 이고, 선언의 부재와 `null`은 그 기본값을
-    // 뜻한다(참조 구현 `@x402/core` 2.20.0의 스키마는 선택 칸의 null을 `.nullish()`로
+    // 뜻한다(참조 구현 `@x402/core` 2.27.0의 스키마는 선택 칸의 null을 `.nullish()`로
     // 부재와 같이 접는다).
     //
     // `authorization`을 부재와 똑같이 통과시키는 이유: 그 흐름은 판매자가 먼저 자원을
     // 주고 나중에 정산하는 것이라 정산 위험을 판매자가 스스로 진다. 우리 에이전트가
     // 서명하는 일회용 leaf의 손실 가능성(금액·만료·redeemer)은 어느 쪽에서도 같으므로
     // 거절할 근거가 없다. 부재만 허용하고 명시를 거절한다면 판정 기준이 흐름이 아니라
-    // "필드를 적었는지"가 되어, 같은 흐름을 성실히 선언한 판매자만 죽는다 — 그리고
-    // 이 키를 아는 참조 구현이 아직 없으니(`@x402/core` 2.20.0·`@metamask/x402` 0.2.0
-    // 어디에도 `paymentFlow` 문자열이 없다) 값을 싣는 쪽은 스펙을 직접 읽고 쓴
-    // 카운터파티다. 부재가 흔한 것도 측정된 사실이다: `@metamask/x402` 0.2.0의
+    // "필드를 적었는지"가 되어, 같은 흐름을 성실히 선언한 판매자만 죽는다.
+    // 최신 참조 core는 흐름을 검사하지만 MetaMask의 오퍼 확장 함수 자체는 이 값을
+    // 추가하지 않는다. `@metamask/x402` 1.0.0의
     // supportedKind 흐름은 우리 /supported의 `extra`에서 `facilitatorAddresses`만
     // 복사하므로, 그 경로로 만들어진 제3자 오퍼에는 선언이 아예 없다
     // (x402-conformance.test.ts가 고정한 측정값).

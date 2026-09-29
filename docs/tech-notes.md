@@ -67,8 +67,12 @@ facilitator → DelegationManager.redeemDelegations
             → mUSDC.transfer(payTo, amount)
 ```
 
-이 문서에서 권한(permission)과 위임(delegation)은 같은 서명 아티팩트를 가리킨다
-— ERC-7715와 ERC-7710의 표기 차이다. parent caveat는 60초 주기 한도와
+마패의 권한은 MetaMask 형식의 서명된 위임 체인이다. ERC-7710은 그 권한을
+상환하는 `redeemDelegations` 인터페이스이고, ERC-7715는 지갑에 권한을 요청하는
+`wallet_requestExecutionPermissions` API다. 둘은 별개이며 현재 둘 다 Draft다.
+마패는 ERC-7715 호출 대신 owner의 직접 EIP-712 서명을 사용한다. 결제는 facilitator
+EOA가 실행하고, ERC-4337 EntryPoint v0.7은 회수 경로에서 사용한다. EIP-7702 계정
+전환과 ERC-6492 배포 전 검증은 제품 경로에 없다. parent caveat는 60초 주기 한도와
 만료창(기본 30분, 데모에서는 `PERMISSION_TTL_SECONDS`로 연장)을 온체인으로
 강제한다. Vendor 프로필은 ERC-20
 `transfer` calldata의 수취인 위치도 고정한다. Manager→Child 재위임에서는
@@ -98,12 +102,12 @@ kind까지 예외 없이 흐름을 선언한다.
 
 **읽는 쪽은 기본 흐름을 세 모습으로 받아들인다.** 결제할 수 있는 흐름은 둘 — 이 레일의
 `upfront`와 스펙 기본값 `authorization` — 이고, 선언의 부재와 `null`은 그 기본값을
-뜻한다(참조 구현 `@x402/core` 2.20.0의 스키마는 선택 칸의 null을 `.nullish()`로 부재와
+뜻한다(참조 구현 `@x402/core` 2.27.0의 스키마는 선택 칸의 null을 `.nullish()`로 부재와
 같이 접는다). `authorization`은 판매자가 먼저 자원을 주고 나중에 정산하는 흐름이라 정산
 위험을 판매자가 스스로 지고, 우리 에이전트가 서명하는 일회용 leaf의 손실 가능성을 바꾸지
 않는다. 명시했는지 여부로 결제와 거절을 가르면 판정 기준이 흐름이 아니라 "필드를
 적었는지"가 되어, 같은 흐름을 성실히 선언한 판매자만 죽는다. 부재는 실제 카운터파티의
-모습이기도 하다 — `@metamask/x402` 0.2.0의 supportedKind 흐름은 `/supported`의
+모습이기도 하다 — `@metamask/x402` 1.0.0의 supportedKind 흐름은 `/supported`의
 `extra`에서 `facilitatorAddresses`만 복사하므로, 그 경로로 만들어진 제3자 오퍼에는
 선언이 아예 없다(컨포먼스 테스트가 고정한 측정값). 반면 `escrow`는 나중 청구라는 다른
 흐름이고 이 클라이언트가 돌려주는 결과가 그 사후 정산을 설명하지 못하므로, 알 수 없는
@@ -117,6 +121,19 @@ kind까지 예외 없이 흐름을 선언한다.
 바꿔 에코한 payload는 판매자가 내건 조건과 다른 것을 승낙한 셈이고 `invalid_payload`가
 된다.
 
+**최신 참조 스택 연동.** 런타임은 Smart Accounts Kit 2.0.0·Delegation ABIs 2.0.0을
+사용한다. 배포된 Framework 1.3.0 구성의 ID·원본 패키지 버전·integrity는 배포 당시
+증거로 유지하고, 설치된 bytecode가 그 구성과 일치하는지는 별도로 검사한다. SDK
+업데이트는 컨트랙트 재배포나 기존 권한 재서명을 뜻하지 않는다.
+
+`@metamask/x402` 1.0.0과 `@x402/core`·`@x402/evm` 2.27.0의 전체 HTTP 연동은
+[참조 연동 가이드](x402-reference.md)와 실행되는 예제로 검증한다. 서버는 `erc7710`의
+`paymentFlows`를 `upfront`로 명시하고, 클라이언트는 GIWA 토큰과 최소 단위의 건당 상한을
+`spendControls.allowedAssets`에 명시한다. 참조 서버의 `upfront`는 `/verify`를 따로
+호출하지 않고 `/settle`을 먼저 호출한다 — 마패 facilitator는 그 경로에서도 독립적으로
+검증·시뮬레이션한다. 미확정 해시의 재조회는 같은 payload로 한 번뿐이며 새 leaf를
+발행하지 않는다. 이 예제는 호스팅 seller의 미들웨어를 교체하지 않는다.
+
 **402의 `extensions`는 봉투다.** 스펙의 `extensions`는 확장 이름 → `{info, schema}`
 맵이다 — `info`는 확장 자신이 선언하는 내용이고, `schema`는 클라이언트가 페이로드에
 에코할 형태를 기술하는 JSON Schema다. 호스팅 상점은 `mapae` 항목 하나를 싣고 판매자와
@@ -124,7 +141,7 @@ kind까지 예외 없이 흐름을 선언한다.
 때문이다. 결제 **페이로드**에도 같은 이름의 칸이 있다. 스펙은 클라이언트가 자기가
 **사용한** 확장만 에코하게 하고, 그 칸의 첫 생산자가 아래의 `payment-identifier`다.
 참조 구현은 그 규정보다
-느슨하다 — `@x402/core` 2.20.0의 `mergeExtensions`는 클라이언트가 보탤 것이 없으면 판매자가
+느슨하다 — `@x402/core` 2.27.0의 `mergeExtensions`는 클라이언트가 보탤 것이 없으면 판매자가
 선언한 맵을 그대로 페이로드에 되싣는다. 그래서 참조 스택 구매자가 호스팅 상점에 결제하면
 `mapae` 항목이 페이로드에 실려 돌아오는데, 퍼실리테이터의 검증기는 자기가 이름 붙인 칸만
 비교하고 객체의 키를 열거하지 않으므로 그 칸은 거절되지 않고 무시된다. 이름이 같아

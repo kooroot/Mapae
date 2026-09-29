@@ -368,6 +368,11 @@ export const GIWA_ENTRY_POINT_V07_IDENTITY = {
         "https://docs.giwa.io/giwa-chain/en/network-information/contracts",
 } as const;
 
+/**
+ * Immutable provenance of the deployed composition, not the installed runtime SDK.
+ * SDK/ABI package updates must keep passing assertInstalledFrameworkBytecodes;
+ * they do not rewrite the original package integrities or invalidate signed grants.
+ */
 export const FRAMEWORK_UPSTREAM = {
     smartAccountsKit: {
         version: "1.7.0",

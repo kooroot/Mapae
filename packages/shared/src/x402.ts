@@ -50,9 +50,9 @@ export interface Erc7710Extra {
      * 타입이 선택이고 유니온인 것은 *읽는* 쪽의 사실을 적은 것이다 — 우리가 읽는
      * 오퍼에는 이 세 모습이 모두 실제로 온다:
      *
-     *   - 부재: `@metamask/x402` 0.2.0의 supportedKind 흐름은 `/supported`의 `extra`에서
+     *   - 부재: `@metamask/x402` 1.0.0의 supportedKind 흐름은 `/supported`의 `extra`에서
      *     `facilitatorAddresses`만 복사한다(`x402-conformance.test.ts`가 고정한 측정값).
-     *   - `null`: 참조 구현은 선택 칸의 null을 부재와 같이 접는다(`@x402/core` 2.20.0의
+     *   - `null`: 참조 구현은 선택 칸의 null을 부재와 같이 접는다(`@x402/core` 2.27.0의
      *     스키마는 `.nullish()`를 쓴다).
      *   - `"authorization"`: 기본값을 성실히 적은 판매자.
      *
@@ -191,8 +191,8 @@ export interface PaymentPayload {
  * produced one; `payment-identifier` is the first, and `payForDelegatedResource` fills it on
  * every payment (see {@link buildPaymentIdentifierEcho}).
  *
- * The reference client is looser than the "only what you used" rule — `@x402/core` 2.20.0
- * `mergeExtensions` (dist/esm/client/index.mjs:283) returns the seller's whole map when the
+ * The reference client is looser than the "only what you used" rule — `@x402/core` 2.27.0
+ * `mergeExtensions` (dist/esm/client/index.mjs) returns the seller's whole map when the
  * client adds nothing of its own, so a reference-stack payer paying our hosted shop echoes
  * the `mapae` entry back without ever using it. That reaches us as an unnamed key, and the
  * facilitator's validator compares the fields it names instead of enumerating the object,
@@ -225,7 +225,7 @@ export interface FacilitatorRequest<
 /**
  * 확장의 이름. 사양은 x402-foundation/x402의
  * `specs/extensions/payment_identifier.md`이고, 그 문서가 이 절의 유일한 맞춤 대상이다 —
- * 참조 구현 `@x402/core` 2.20.0에는 이 확장의 지원이 없다(bun 캐시의 패키지를 grep해
+ * 참조 구현 `@x402/core` 2.27.0에는 이 확장의 지원이 없다(bun 캐시의 패키지를 grep해
  * 확인했다). 그래서 아래 함수들의 주석은 사양의 어느 문단에 대응하는지를 적는다.
  *
  * 사양 "`PaymentRequired`"와 "`PaymentPayload`": 이름이 같은 항목이 402의 `extensions`와
@@ -381,7 +381,7 @@ export interface Erc7710SupportedPayload {
             assetTransferMethod: "erc7710";
             /**
              * 이 레일이 정산 후 제공임을 /supported에서도 선언한다. `@metamask/x402`
-             * 0.2.0의 supportedKind 흐름은 `extra`에서 `facilitatorAddresses`만
+             * 1.0.0의 supportedKind 흐름은 `extra`에서 `facilitatorAddresses`만
              * 복사하므로 이 값은 제3자 판매자의 오퍼까지 전파되지 않는다 — 그래서
              * 실제 카운터파티가 만든 오퍼에는 선언이 빠져 있고, 읽는 쪽이 부재를
              * 허용해야 그 오퍼가 산다. 그래도 /supported는 통합자가 레일의 흐름을
@@ -408,7 +408,7 @@ export interface Erc7710SupportedPayload {
 export function buildErc7710SupportedPayload(params: {
     facilitatorAddresses: Address[];
     /**
-     * Discovery only. Measured against `@metamask/x402` 0.2.0: the supportedKind flow
+     * Discovery only. Measured against `@metamask/x402` 1.0.0: the supportedKind flow
      * copies just `facilitatorAddresses` into offers, so this does not propagate
      * through a third-party seller — but /supported stays the one queryable document
      * where an integrator can read which DelegationManager the rail settles through.

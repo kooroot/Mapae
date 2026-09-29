@@ -208,7 +208,7 @@ describe("x402 conformance — supportedKind flow against the reference implemen
 
         const accepted = assertErc7710Offer(enhanced);
         expect(accepted.extra.facilitatorAddresses).toEqual([FACILITATOR]);
-        // Measured behavior of @metamask/x402 0.2.0, pinned so an upgrade that starts
+        // Measured behavior of @metamask/x402 1.0.0, pinned so an upgrade that starts
         // propagating more of kinds[].extra announces itself here: the flow copies
         // ONLY facilitatorAddresses — neither the in-band manager nor the §6.1 flow
         // declaration survives it, which is exactly why the seller's own offer is the

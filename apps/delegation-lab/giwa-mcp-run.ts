@@ -59,7 +59,7 @@ const balanceOfAbi = [
     },
 ] as const;
 
-/** 정산 서명자의 전역 이름. RELAYER_ADDRESS는 폐기된 옛 철자로, 경고와 함께 읽힌다. */
+/** 정산 서명자의 전역 이름. 옛 철자 RELAYER_ADDRESS는 폐기돼 세 서비스 모두 보이기만 해도 기동을 거부한다. */
 function readFacilitatorSignerEnv(): Address {
     const value =
         process.env.FACILITATOR_SIGNER_ADDRESS?.trim() ?? "";

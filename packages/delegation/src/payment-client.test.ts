@@ -1196,9 +1196,9 @@ describe("declared payment flow", () => {
         // leaf의 손실 가능성은 달라지지 않으므로 거절할 근거가 없다. 판정 기준을 흐름이
         // 아니라 "필드를 적었는지"로 두면 같은 흐름을 성실히 선언한 판매자만 죽는다.
         //
-        // 부재는 실제 카운터파티의 모습이다: @metamask/x402 0.2.0의 supportedKind 흐름은
+        // 부재는 실제 카운터파티의 모습이다: @metamask/x402 1.0.0의 supportedKind 흐름은
         // /supported의 extra에서 facilitatorAddresses만 복사하므로 그 경로로 만들어진
-        // 오퍼에는 선언이 없다. null은 참조 구현(@x402/core 2.20.0)이 선택 칸에서
+        // 오퍼에는 선언이 없다. null은 참조 구현(@x402/core 2.27.0)이 선택 칸에서
         // 부재와 같이 접는 값이다.
         for (const flow of [undefined, null, "authorization"]) {
             const label = JSON.stringify(flow) ?? "undefined";

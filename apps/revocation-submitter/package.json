@@ -8,7 +8,7 @@
   "dependencies": {
     "@mapae/delegation": "workspace:*",
     "@mapae/shared": "workspace:*",
-    "@metamask/delegation-abis": "1.1.0",
+    "@metamask/delegation-abis": "2.0.0",
     "hono": "^4",
     "viem": "^2.55.8"
   }

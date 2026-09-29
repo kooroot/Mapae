@@ -40,6 +40,7 @@ export const URL_FOR_SOURCE: Readonly<Record<string, string>> = {
     "deployed-contracts.md": "operations/deployed-contracts",
     "mcp-guide.md": "operations/mcp-guide",
     "seller-guide.md": "operations/seller-guide",
+    "x402-reference.md": "operations/x402-reference",
     "giwa-demo-runbook.md": "operations/giwa-demo-runbook",
     "revocation-runbook.md": "operations/revocation-runbook",
 };

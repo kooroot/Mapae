@@ -31,15 +31,20 @@ facilitator → DelegationManager.redeemDelegations
             → mUSDC.transfer(payTo, amount)
 ```
 
-In this document, permission and delegation refer to the same signed artifact — the
-difference is ERC-7715 versus ERC-7710 terminology. The parent caveat enforces the
+A Mapae permission is a signed delegation chain in the MetaMask format. ERC-7710
+defines the `redeemDelegations` redemption interface; ERC-7715 defines the wallet
+permission-request API, `wallet_requestExecutionPermissions`. They are separate
+specifications, both currently Draft. Mapae uses direct owner EIP-712 signing, not the
+ERC-7715 API. Payments are executed by the facilitator EOA; ERC-4337 EntryPoint v0.7
+is used for revocation. EIP-7702 account conversion and ERC-6492 counterfactual
+verification are not product paths. The parent caveat enforces the
 60-second period cap and the expiry window (30 minutes by default, extended via
 `PERMISSION_TTL_SECONDS` for the demo) on-chain. The vendor profile also pins the
 recipient position in the ERC-20 `transfer` calldata. In manager-to-child
 re-delegation, the child's individual cap and the manager's aggregate cap apply
 simultaneously.
 
-A parent delegation carries four caveats: the native-value floor (`ValueLteEnforcer`)
+A parent delegation carries four caveats: the zero native-value ceiling (`ValueLteEnforcer`)
 and the period cap (`ERC20PeriodTransferEnforcer`) come from the scope; the validity
 window (`TimestampEnforcer`) and the lifetime total (`ERC20TransferAmountEnforcer`) come
 from the policy. A fixed-vendor policy adds the recipient pin
@@ -67,13 +72,13 @@ declares the flow, down to the `/supported` kind.
 **The reading side accepts the default flow in three shapes.** Two flows are payable —
 this rail's `upfront` and the specification's default `authorization` — and both an absent
 declaration and an explicit `null` mean that default (the reference schemas in
-`@x402/core` 2.20.0 fold a null optional field into absence with `.nullish()`).
+`@x402/core` 2.27.0 fold a null optional field into absence with `.nullish()`).
 `authorization` has the seller serve first and settle after, so the seller carries the
 settlement risk itself and nothing changes about what a one-shot leaf our agent signs can
 lose. Splitting payment from refusal on whether the field was written would make the test
 "did you spell it out?" rather than "which flow is it?", and would kill only the sellers
 who declared the same flow honestly. Absence is also what a real counterparty produces:
-the supportedKind flow in `@metamask/x402` 0.2.0 copies only `facilitatorAddresses` out of
+the supportedKind flow in `@metamask/x402` 1.0.0 copies only `facilitatorAddresses` out of
 `/supported`'s `extra`, so an offer built that way declares no flow at all (a measurement
 the conformance test pins). `escrow`, by contrast, is a different flow — a later claim —
 that this client's result cannot describe, so it is refused together with any unknown
@@ -87,6 +92,21 @@ declared as a later claim. `paymentFlow` is also part of the echo comparison: ou
 offers always carry the value, so a payload that drops or rewrites the field accepted
 terms other than the ones offered, and is `invalid_payload`.
 
+**Current reference-stack integration.** The runtime uses Smart Accounts Kit 2.0.0
+and Delegation ABIs 2.0.0. The deployed Framework 1.3.0 composition ID, original package
+versions and integrities remain deployment provenance; installed bytecode is checked
+against that composition separately. Updating the SDK does not redeploy contracts or
+require existing grants to be signed again.
+
+The [reference integration guide](../../x402-reference.md) and executable example cover the
+full HTTP path with `@metamask/x402` 1.0.0 and `@x402/core` / `@x402/evm` 2.27.0.
+The server explicitly declares `erc7710` / `upfront` in `paymentFlows`; the client opts
+into the GIWA asset with an atomic per-payment cap in `spendControls.allowedAssets`.
+The reference upfront server calls `/settle` directly, without a separate `/verify`;
+Mapae independently validates and simulates at that endpoint. A pending hash is retried
+once with the identical payload, without signing a new leaf. This example does not
+replace the hosted seller middleware.
+
 **The 402's `extensions` is an envelope.** In the specification `extensions` is a map
 from extension name to `{info, schema}` — `info` is what the extension itself declares,
 `schema` a JSON Schema describing the shape a client echoes back in its payload. The
@@ -95,7 +115,7 @@ its `info`. There is no `schema`: nothing there asks the client to echo anything
 payment **payload** carries a slot of the same name. The specification has a client echo
 only the extensions it actually *used*, and the first producer of that slot here is
 `payment-identifier`, below. The reference client
-is looser than that rule — `mergeExtensions` in `@x402/core` 2.20.0 returns the seller's
+is looser than that rule — `mergeExtensions` in `@x402/core` 2.27.0 returns the seller's
 whole map when the client adds nothing of its own, so a reference-stack payer paying the
 hosted shop echoes the `mapae` entry back unused. The facilitator's validator compares the
 fields it names instead of enumerating the object's keys, so that entry is ignored rather

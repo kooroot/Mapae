@@ -20,7 +20,8 @@ import {
  * from env in its own process, a facilitator that is a real listener. What `app.test.ts`
  * cannot see from inside the process — the env parsing, the seed command, the file on
  * disk that a reconciliation script would open, the server's own body limit — is what
- * this suite is for.
+ * this suite is for. Children disable Bun's automatic .env loading: a minimal env
+ * object alone does not stop the app directory's local settings overriding test defaults.
  */
 
 const ONE = 1_000_000n;
@@ -39,7 +40,7 @@ const childEnv = (overrides: Record<string, string>) => ({
 
 /** The operator's command, exactly: the seed script in the app's own directory. */
 function seed(): number {
-    const run = Bun.spawnSync([process.execPath, "run", "seed.ts"], {
+    const run = Bun.spawnSync([process.execPath, "--no-env-file", "run", "seed.ts"], {
         cwd: import.meta.dir,
         env: childEnv({STORE_PATH: storePath, SEED_PAY_TO: PAY_TO}),
         stdout: "ignore",
@@ -66,7 +67,7 @@ function readRows<T>(sql: string): T[] {
  * which used to fire first and leave the booted child listening on its port.
  */
 async function bootRefusal(env: Record<string, string>): Promise<string> {
-    const child = Bun.spawn([process.execPath, "run", "index.ts"], {
+    const child = Bun.spawn([process.execPath, "--no-env-file", "run", "index.ts"], {
         cwd: import.meta.dir,
         env: childEnv({STORE_PATH: storePath, ...env}),
         stdout: "ignore",
@@ -107,7 +108,7 @@ beforeAll(async () => {
     probe.stop(true);
     baseUrl = `http://127.0.0.1:${port}`;
 
-    seller = Bun.spawn([process.execPath, "run", "index.ts"], {
+    seller = Bun.spawn([process.execPath, "--no-env-file", "run", "index.ts"], {
         cwd: import.meta.dir,
         env: childEnv({
             HOST: "127.0.0.1",

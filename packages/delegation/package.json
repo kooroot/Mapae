@@ -20,13 +20,16 @@
   },
   "dependencies": {
     "@mapae/shared": "workspace:*",
-    "@metamask/delegation-abis": "1.1.0",
-    "@metamask/smart-accounts-kit": "1.7.0",
+    "@metamask/delegation-abis": "2.0.0",
+    "@metamask/smart-accounts-kit": "2.0.0",
     "viem": "^2.55.8"
   },
   "devDependencies": {
-    "@metamask/x402": "0.2.0",
-    "@x402/core": "2.20.0",
-    "@x402/evm": "2.20.0"
+    "@metamask/x402": "1.0.0",
+    "@x402/core": "2.27.0",
+    "@x402/evm": "2.27.0",
+    "@x402/fetch": "2.27.0",
+    "@x402/hono": "2.27.0",
+    "hono": "4.13.5"
   }
 }

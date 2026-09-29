@@ -37,9 +37,9 @@ import {createMapaeDelegationProvider, validateDelegatedPayment} from "./x402.js
 
 /**
  * Payload compatibility: what our payer actually PRODUCES — the per-payment leaf that
- * `createMapaeDelegationProvider` (Smart Accounts Kit 1.7.0) mints and signs — against
- * the reference implementations that would consume it: `@metamask/x402` 0.2.0's
- * ERC-7710 client and server, and `@x402/evm` 2.20.0 / `@x402/core` 2.20.0's codecs,
+ * `createMapaeDelegationProvider` (Smart Accounts Kit 2.0.0) mints and signs — against
+ * the reference implementations that would consume it: `@metamask/x402` 1.0.0's
+ * ERC-7710 client and server, and `@x402/evm` 2.27.0 / `@x402/core` 2.27.0's codecs,
  * schemas and payload guards.
  *
  * `x402-conformance.test.ts` proves our wire *types* against the reference with stub
@@ -151,7 +151,7 @@ describe("payload compat — the leaf our payer signs, through the reference cli
         // MetaMask's ERC-7710 scheme extends @x402/evm's ExactEvmScheme — the class a
         // reference resource server registers for EVM networks. This is the path a
         // third-party seller on the reference stack takes to offer GIWA payments.
-        // Measured against 0.2.0: the subclass adds `facilitatorAddresses` only to
+        // Measured against 1.0.0: the subclass adds `facilitatorAddresses` only to
         // requirements that already carry `assetTransferMethod: "erc7710"` — the seller
         // declares the method; the supported kind cannot switch it on. So the bare
         // requirements below name it, exactly as a reference seller's config would.
@@ -197,7 +197,7 @@ describe("payload compat — the leaf our payer signs, through the reference cli
         );
     });
 
-    test("@x402/evm 2.20.0 has no ERC-7710 route of its own — pinned so the day it grows one announces itself", async () => {
+    test("@x402/evm 2.27.0 has no ERC-7710 route of its own — pinned so the day it grows one announces itself", async () => {
         const leaf = await payer()(
             buildErc7710PaymentRequirements({
                 payTo: VENDOR,
@@ -211,7 +211,7 @@ describe("payload compat — the leaf our payer signs, through the reference cli
         const asEvm = leaf as unknown as ExactEvmPayloadV2;
         expect(isEIP3009Payload(asEvm)).toBe(false);
         expect(isPermit2Payload(asEvm)).toBe(false);
-        // @ts-expect-error — "erc7710" is not a member of AssetTransferMethod in 2.20.0.
+        // @ts-expect-error — "erc7710" is not a member of AssetTransferMethod in 2.27.0.
         // When a release adds it, this directive turns into a type error: the moment to
         // test our leaf against the reference facilitator's settlement path.
         const method: AssetTransferMethod = "erc7710";
