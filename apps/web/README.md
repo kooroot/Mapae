@@ -30,6 +30,10 @@ rsync -a ../Mapae-arcade-asset/arcade/ apps/web/public/arcade/
 test -f apps/web/public/arcade/lobby-scene.webp
 ```
 
+CI는 `.github/workflows/ci.yml`에 고정한 에셋 커밋을 내려받아 `SHA256SUMS`를
+검증하고 이미지 디렉터리만 복사한 뒤 전체 검사를 실행한다. 새 에셋을 적용할 때는
+해당 workflow의 에셋 `ref`도 새 커밋으로 갱신한다.
+
 ```bash
 bun run dev
 ```
