@@ -16,10 +16,19 @@ Mapae Arcade는 `/ko/arcade`(한국어), `/arcade`(영어)에서 제공한다.
 기록은 지갑 주소별로 현재 브라우저에 저장하며 서버 계정 동기화는 아니다.
 게임·결제 구현은 `src/arcade/`, 판매 입장권 등록은
 `apps/delegated-seller/seed-arcade.ts`에서 관리한다.
-아케이드 이미지 에셋은 저장소에 포함하지 않는다. 웹을 빌드하거나 배포하기 전에
-별도로 전달된 `mapae-arcade-assets-*.tar.gz`를 저장소 루트에서 풀어
-`apps/web/public/arcade/`를 복원한다. 복사 후
-`test -f apps/web/public/arcade/lobby-scene.webp`로 확인한다.
+아케이드 이미지 에셋은 별도 공개 저장소
+[Mapae-arcade-asset](https://github.com/kooroot/Mapae-arcade-asset)에서 관리한다.
+웹을 빌드하거나 배포하기 전에 메인 저장소의 상위 디렉터리에서 두 저장소를 나란히
+두고 다음 명령으로 복사한다. 에셋 저장소의 `.git`은 웹의 `public/`에 넣지 않는다.
+
+```bash
+test -d ../Mapae-arcade-asset/.git || git clone https://github.com/kooroot/Mapae-arcade-asset.git ../Mapae-arcade-asset
+git -C ../Mapae-arcade-asset pull --ff-only origin main
+(cd ../Mapae-arcade-asset && shasum -a 256 -c SHA256SUMS)
+mkdir -p apps/web/public/arcade
+rsync -a ../Mapae-arcade-asset/arcade/ apps/web/public/arcade/
+test -f apps/web/public/arcade/lobby-scene.webp
+```
 
 ```bash
 bun run dev
