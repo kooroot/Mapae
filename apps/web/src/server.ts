@@ -6,6 +6,7 @@ import {
 import {createServerEntry} from "@tanstack/react-start/server-entry";
 import {siteSurface} from "./lib/config";
 import {createContentSecurityPolicy} from "./lib/security";
+import {arcadeProductionApi} from "./arcade/production-api";
 
 // `siteSurface` is a `VITE_` value fixed at build time, for the SSR bundle as much
 // as the client one: a literal when `build:app` / `build:landing` set the variable,
@@ -20,11 +21,15 @@ const streamWithSecurityHeaders = defineHandlerCallback((context) => {
 
     context.responseHeaders.set(
         "Content-Security-Policy",
-        createContentSecurityPolicy(nonce, siteSurface),
+        createContentSecurityPolicy(nonce, /\/(?:ko\/)?arcade\/?$/.test(new URL(context.request.url).pathname) ? "app" : siteSurface),
     );
     return defaultStreamHandler(context);
 });
 
-const fetch = createStartHandler(streamWithSecurityHeaders);
+const start = createStartHandler(streamWithSecurityHeaders);
 
-export default createServerEntry({fetch});
+export default createServerEntry({fetch: (request, options) =>
+    new URL(request.url).pathname.startsWith("/api/arcade/")
+        ? arcadeProductionApi(request)
+        : start(request, options),
+});

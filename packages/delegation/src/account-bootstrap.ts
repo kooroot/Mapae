@@ -159,7 +159,7 @@ export function assertFundedKeySeparation(roles: Record<string, Address | undefi
  * Which browser origins may drive the sponsor.
  *
  * Unlike {@link parseCorsAllowlist}, this one must accept a public HTTPS origin: the whole
- * point is that `app.mapae.io` can reach it. That makes the origin check weaker here than
+ * point is that `mapae.io` and `app.mapae.io` can reach it. That makes the origin check weaker here than
  * it is for the submitter — a non-browser client omits `Origin` entirely and is never
  * policed by it — which is exactly why the origin list is *not* treated as access control
  * anywhere in this service. Authority comes from the signature inside the body; the budget
@@ -168,6 +168,15 @@ export function assertFundedKeySeparation(roles: Record<string, Address | undefi
  *
  * `*` stays banned for the same reason as the submitter: this service fronts a funded key.
  */
+export const SPONSORED_BROWSER_ORIGINS = [
+    "https://mapae.io",
+    "https://app.mapae.io",
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "http://127.0.0.1:4173",
+    "http://localhost:4173",
+];
+
 export function parseBootstrapOrigins(
     value: string | undefined,
     fallback: string[],

@@ -208,7 +208,7 @@ describe("ticket — one payment, one ticket", () => {
             code: expect.any(String),
             shop: {slug: "demo-cafe", name: "데모 카페"},
             item: {key: "americano", name: "아메리카노"},
-            amount: "1.00 tUSDC",
+            amount: "1.00 mUSDC",
             transaction: TX,
             issuedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
             message: TICKET_LINE,
@@ -288,7 +288,7 @@ describe("ticket — one payment, one ticket", () => {
         await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
         const croissant = await ticketOf(await pay(CROISSANT, paymentHeader(2_500_000n, LEAF_A)));
         expect(stub.paths).toEqual([...SETTLED_ONCE, "/verify", "/settle"]);
-        expect(croissant.ticket).toMatchObject({item: {key: "croissant"}, amount: "2.50 tUSDC"});
+        expect(croissant.ticket).toMatchObject({item: {key: "croissant"}, amount: "2.50 mUSDC"});
         expect(store.orders.summary({sinceMs: 0})).toEqual({total: 2, bySeller: {"demo-cafe": 2}});
     });
 
@@ -374,7 +374,7 @@ describe("tickets — the code is the capability", () => {
             code: ticket.code,
             shop: {slug: "demo-cafe", name: "데모 카페"},
             item: {key: "americano", name: "아메리카노"},
-            amount: "1.00 tUSDC",
+            amount: "1.00 mUSDC",
             transaction: TX,
             issuedAt: ticket.issuedAt,
             status: "paid",
@@ -466,10 +466,10 @@ describe("manifest — JSON for an agent, a page for a person", () => {
         const lines = bodyLines(page);
         expect(lines[0]).toBe(TRIAL_NOTICE);
         expect(lines).toContain("데모 카페");
-        expect(lines).toContain("아메리카노 — 1.00 tUSDC");
-        expect(lines).toContain("크루아상 — 2.50 tUSDC");
+        expect(lines).toContain("아메리카노 — 1.00 mUSDC");
+        expect(lines).toContain("크루아상 — 2.50 mUSDC");
         expect(lines.at(-1)).toBe(PICKUP_LINE);
-        expect(page).not.toContain("mUSDC");
+        expect(page).not.toContain("tUSDC");
     });
 
     test("seller and item names are text on the page, never markup", async () => {

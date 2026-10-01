@@ -1457,30 +1457,10 @@ a.studio-metric:hover {
     line-height: 1.45;
 }
 
-.studio-select-wrap,
 .studio-input-suffix {
     position: relative;
 }
 
-.studio-select-wrap select {
-    appearance: none;
-    padding-right: 36px;
-}
-
-.studio-select-wrap svg {
-    position: absolute;
-    top: 50%;
-    right: 12px;
-    pointer-events: none;
-    color: var(--studio-text-3);
-    transform: translateY(-50%);
-}
-
-.studio-select-wrap select:disabled {
-    cursor: not-allowed;
-    color: var(--studio-text-2);
-    opacity: 1;
-}
 
 .studio-input-suffix input {
     padding-right: 70px;

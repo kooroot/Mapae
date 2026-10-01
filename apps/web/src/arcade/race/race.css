@@ -1,0 +1,114 @@
+.arc-race { max-width: 980px; margin: 0 auto; padding: 28px 24px 60px; }
+.arc-race-title { display: flex; align-items: center; justify-content: space-between; gap: 22px; }
+.arc-race-title h1 { font-size: clamp(27px, 4vw, 40px); font-weight: 900; letter-spacing: -.05em; margin: 9px 0; }
+.arc-race-title p:last-child { font-size: 14px; color: var(--arc-muted); }
+.arc-race-title > .arc-sprite { width: 100px; flex: none; transform: rotate(7deg); }
+.arc-race-mode { display: flex; flex-wrap: wrap; gap: 9px 18px; padding: 13px 0; margin: 14px 0 24px; border-top: 1px dashed #929780; border-bottom: 1px dashed #929780; font-size: 12px; }
+.arc-race-mode strong { background: #dce3cb; padding: 2px 7px; }
+.arc-race-mode span { align-self: center; color: var(--arc-muted); }
+.arc-race-brief { max-width: 620px; margin: 24px auto 35px; text-align: center; line-height: 1.7; }
+.arc-race-brief > p { margin-bottom: 12px; }
+.arc-race-brief > p:nth-child(2) { font-size: 12px; color: var(--arc-muted); }
+.arc-race-strategies { display: grid; grid-template-columns: repeat(3, 1fr); margin: 28px 0; border-top: 2px solid var(--arc-ink); border-bottom: 2px solid var(--arc-ink); }
+.arc-race-strategies > div { display: grid; gap: 3px; padding: 15px 8px; font-size: 13px; }
+.arc-race-strategies > div + div { border-left: 1px dashed #929780; }
+.arc-race-strategies span { font-size: 32px; line-height: 1.5; color: #9c482e; }
+.arc-race-budget { font-size: 13px; padding: 14px; background: #e9e3d4; }
+.arc-race-budget strong { font-size: 18px; }
+.arc-race-budget small { display: block; font-size: 11px; color: var(--arc-muted); }
+.arc-race-brief > button { margin-top: 15px; }
+.arc-race-scoreboard { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 0 4px 16px; font-size: 11px; color: var(--arc-muted); }
+.arc-race-scoreboard strong { display: block; margin-top: 5px; font-family: var(--mono); color: var(--arc-ink); font-size: 18px; }
+.arc-race-scoreboard > span:nth-child(2) { text-align: center; }
+.arc-race-scoreboard > span:last-child { text-align: right; }
+.arc-race-decision { border: 2px solid var(--arc-ink); padding: 15px 20px; background: #fffbef; box-shadow: 4px 4px 0 #282b2518; position: relative; z-index: 1; }
+.arc-race-decision strong { font-size: 15px; }
+.arc-race-decision p { margin: 6px 0; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.arc-race-decision small { color: var(--arc-muted); font-size: 10px; }
+.arc-race-sitout { text-align: center; font-size: 12px; padding: 13px 5px 0; }
+.arc-race-track { background: #e5e9cf; border: 2px solid var(--arc-ink); margin-top: 20px; padding: 12px 20px 5px; overflow: hidden; }
+.arc-race-weather-rain { background: #dfe5dd; }
+.arc-race-weather-wind { background: #e8e4cb; }
+.arc-race-track-label { display: flex; justify-content: space-between; color: #656d53; font: 10px var(--mono); padding-bottom: 6px; }
+.arc-race-track-label strong { font-size: 12px; }
+.arc-race-lane { position: relative; border-top: 1px dashed #697c6170; }
+.arc-race-lane.arc-race-owner { background: #fff8e87d; }
+.arc-race-runner-name { display: flex; align-items: center; gap: 14px; padding: 9px 6px 0; font-size: 12px; }
+.arc-race-runner-name > strong { overflow-wrap: anywhere; }
+.arc-race-runner-name > span { color: var(--arc-muted); font-size: 10px; }
+.arc-race-owner small { color: #a8392c; border: 1px solid #a8392c; font-size: 8px; vertical-align: middle; padding: 1px 3px; margin-left: 4px; white-space: nowrap; }
+.arc-race-runner-name label { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 10px; white-space: nowrap; }
+.arc-race-runner-name meter { width: 64px; height: 10px; }
+.arc-race-lane-svg { display: block; width: 100%; height: 68px; }
+.arc-race-finish-time { position: absolute; bottom: 18px; left: 8px; font: 10px var(--mono); padding: 3px 5px; background: #fff8e8; border: 1px solid #697c6140; }
+.arc-race-running .arc-race-gallop { animation: arc-race-step .24s ease-in-out infinite alternate; }
+@keyframes arc-race-step { from { transform: translateY(0) rotate(-2deg); } to { transform: translateY(5px) rotate(2deg); } }
+.arc-race-playback { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 18px 0 10px; }
+.arc-race-playback .arc-button { min-height: 42px; padding: 8px 14px; font-size: 12px; }
+.arc-race-playback .arc-button-plain { background: var(--arc-paper); }
+.arc-race-text-button { font-size: 12px; text-decoration: underline; text-underline-offset: 4px; min-height: 44px; }
+.arc-race-status { text-align: center; font-size: 11px; color: var(--arc-muted); min-height: 20px; }
+.arc-race-standings { margin-top: 30px; }
+.arc-race-standings h2 { font-size: 20px; font-weight: 800; margin-bottom: 12px; }
+.arc-race-standings table { width: 100%; text-align: left; font-size: 13px; border-collapse: collapse; }
+.arc-race-standings th, .arc-race-standings td { padding: 12px 10px; border-bottom: 1px solid #969d814d; }
+.arc-race-standings thead th { font-size: 11px; color: var(--arc-muted); border-top: 2px solid var(--arc-ink); }
+.arc-race-standings td { font-family: var(--mono); }
+.arc-race-standings tr.arc-race-owner { background: #e8dfbb; }
+.arc-race-standings tbody th > span { margin-right: 12px; font-family: var(--mono); }
+.arc-race-standings p { margin-top: 10px; font-size: 11px; color: var(--arc-muted); }
+.arc-race-notebook { margin-top: 24px; padding: 16px 0; border-top: 1px dashed #929780; border-bottom: 1px dashed #929780; font-size: 13px; }
+.arc-race-notebook summary { cursor: pointer; min-height: 28px; }
+.arc-race-notebook ol { display: grid; gap: 18px; margin: 15px 0 4px; list-style: none; }
+.arc-race-notebook p { margin-top: 5px; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.arc-race-notebook small { font: 10px var(--mono); color: var(--arc-muted); }
+.arc-race-thinking { min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; text-align: center; }
+.arc-race-thinking .arc-sprite { width: 100px; }
+.arc-race-thinking p { color: var(--arc-muted); font-size: 12px; }
+.arc-race-error { padding: 30px 22px; border: 2px solid #a8392c; background: #fff8ed; }
+.arc-race-error h2 { font-size: 18px; }
+.arc-race-error p { font-size: 13px; margin: 12px 0 20px; line-height: 1.7; }
+.arc-race-exit { display: flex; align-items: center; gap: 15px; margin-top: 35px; padding-top: 18px; border-top: 1px solid #92978050; }
+.arc-race-exit button { text-decoration: underline; text-underline-offset: 4px; font-size: 12px; white-space: nowrap; min-height: 42px; }
+.arc-race-exit small { font-size: 10px; color: var(--arc-muted); line-height: 1.5; }
+.arc-race-still .arc-race-gallop { animation: none; }
+@media (prefers-reduced-motion: reduce) { .arc-race-gallop { animation: none !important; } }
+@media (max-width: 600px) {
+    .arc-race { padding: 22px 16px 40px; }
+    .arc-race-title > .arc-sprite { width: 65px; }
+    .arc-race-title p:last-child { font-size: 12px; }
+    .arc-race-mode { font-size: 10px; margin-bottom: 20px; }
+    .arc-race-track { padding: 10px 7px 3px; }
+    .arc-race-decision { padding: 13px; }
+    .arc-race-runner-name { gap: 6px; flex-wrap: wrap; }
+    .arc-race-runner-name > span { font-size: 9px; }
+    .arc-race-runner-name label { font-size: 9px; gap: 3px; }
+    .arc-race-runner-name meter { width: 42px; }
+    .arc-race-finish-time { bottom: 6px; font-size: 8px; }
+    .arc-race-lane-svg { height: 58px; }
+    .arc-race-playback { gap: 10px; }
+    .arc-race-playback .arc-button { font-size: 11px; padding: 8px 10px; }
+    .arc-race-text-button { font-size: 10px; }
+    .arc-race-standings th, .arc-race-standings td { padding: 11px 7px; }
+    .arc-race-standings th { font-size: 11px; }
+    .arc-race-scoreboard { gap: 10px; }
+    .arc-race-scoreboard strong { font-size: 16px; }
+    .arc-race-exit { align-items: flex-start; }
+}
+
+.arc-race-cover { aspect-ratio: 2.7; border-radius: 12px; margin-top: 22px; object-position: center 57%; }
+.arc-race-track { padding-top: 0; background: #e9d5a6; border-color: #735b37; border-radius: 13px; box-shadow: 0 5px 0 #b6a382; }
+.arc-race-panorama { width: calc(100% + 40px); max-width: none; height: 145px; margin: 0 -20px 12px; object-position: center 28%; border-bottom: 4px solid #faf0cc; }
+.arc-race-lane { border-top-color: #b49a66; background: #ead8b4; }
+.arc-race-lane:nth-child(even) { background: #e2c99e; }
+.arc-race-lane.arc-race-owner { background: #fbebbb; }
+.arc-race-lane-svg { height: 92px; }
+.arc-race-runner-name { color: #4e3c25; }
+.arc-race-gallop { transform-origin: center bottom; }
+.arc-rider-jade { filter: drop-shadow(0 2px 0 #3c8f65); }
+.arc-rider-ink { filter: drop-shadow(0 2px 0 #3c587e); }
+@media(max-width:600px) {
+    .arc-race-panorama { width: calc(100% + 14px); margin: 0 -7px 9px; height: 110px; }
+    .arc-race-lane-svg { height: 76px; }
+    .arc-race-cover { aspect-ratio: 2; }
+}

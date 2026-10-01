@@ -10,6 +10,17 @@
 로컬 개발의 기본값은 `combined`다. `/`에서 랜딩을, `/app`에서 Studio를 함께
 확인할 수 있다.
 
+Mapae Arcade는 `/ko/arcade`(한국어), `/arcade`(영어)에서 제공한다.
+지갑 연결 → 빈 캐릭터 목록 → 직접 생성 → GIWA 용돈 승인 → 에이전트 외출 순서다.
+캐릭터 자동 생성·데모 잔액·코인 충전 기능은 없고, 직접 연습은 생성한 캐릭터로 무료 이용한다.
+기록은 지갑 주소별로 현재 브라우저에 저장하며 서버 계정 동기화는 아니다.
+게임·결제 구현은 `src/arcade/`, 판매 입장권 등록은
+`apps/delegated-seller/seed-arcade.ts`에서 관리한다.
+아케이드 이미지 에셋은 저장소에 포함하지 않는다. 웹을 빌드하거나 배포하기 전에
+별도로 전달된 `mapae-arcade-assets-*.tar.gz`를 저장소 루트에서 풀어
+`apps/web/public/arcade/`를 복원한다. 복사 후
+`test -f apps/web/public/arcade/lobby-scene.webp`로 확인한다.
+
 ```bash
 bun run dev
 ```
@@ -35,6 +46,13 @@ Cloudflare가 `mapae.io`와 `app.mapae.io`의 DNS 레코드와 인증서를 관�
 랜딩의 Studio CTA는 `VITE_APP_URL`, Studio의 Mapae 링크는
 `VITE_LANDING_URL`을 사용한다. 기본 프로덕션 값은 각각
 `https://app.mapae.io`, `https://mapae.io`다.
+
+랜딩의 아케이드 초대장은 오른쪽 아래에 고정되어 본문 스크롤 중에도 유지된다. 말풍선은
+접고 펼칠 수 있으며, 접었을 때도 작은 캐릭터를 눌러 입장할 수 있다. 방문 시 십이지신
+하나를 선택하고 같은 탭의 직전 등장과는 겹치지 않는다. 화면을 보는 동안 선택은 유지된다.
+캐릭터는 선명한 원본 아트로 표시하고 `prefers-reduced-motion`에서는 인사 움직임을 끈다. 탭 저장소에는 공개
+zodiac enum 하나만 기록한다(`landing/arcade-greeter-store.ts`). 저장소가 막혀 있어도
+입장 링크는 작동한다. 게임·의복 설명은 아케이드에 두고 랜딩의 제품 본문은 유지한다.
 
 랜딩과 Studio의 기술 문서 링크는 `VITE_DOCS_URL`을 사용한다. 기본 프로덕션
 값은 `https://docs.mapae.io`이며, GitHub 원문 URL을 제품 UI에 직접

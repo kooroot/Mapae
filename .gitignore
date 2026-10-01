@@ -95,6 +95,17 @@ temp/
 # dev-tool artifacts
 .openai/
 .claude/
+.unlazy/
 
 # Generated documentation site — rebuilt by `bun run build:docs`.
 apps/docs/dist/
+
+# Local Arcade planning, security and operator notes stay outside the public repository.
+/apps/delegated-seller/ARCADE-REGISTER.md
+/apps/web/ARCADE.md
+/apps/web/ARCADE-ART.md
+/apps/web/ARCADE-SECURITY.md
+/apps/web/*.prompts.json
+
+# Generated Arcade artwork is transferred to the deployment host separately.
+/apps/web/public/arcade/

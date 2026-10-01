@@ -89,6 +89,7 @@ export function Nav({variant = "paper"}: {variant?: "paper" | "dark"}) {
                     <a href="/#boundaries">{t.boundaries}</a>
                     <a href="/#security">{t.security}</a>
                     <a href="/#evidence">{t.evidence}</a>
+                    <a className="nav-arcade" href={locale === "ko" ? "/ko/arcade" : "/arcade"}>{locale === "ko" ? "오락실" : "Arcade"}<span aria-hidden="true">↗</span></a>
                     <a href={docsUrl} target="_blank" rel="noreferrer noopener">
                         {t.docs}
                     </a>

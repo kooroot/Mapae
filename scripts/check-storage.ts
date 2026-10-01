@@ -1,5 +1,5 @@
 /**
- * Keep browser-storage writes to one reviewed module.
+ * Keep browser-storage writes in the explicitly reviewed persistence modules.
  *
  * The web app persists the Studio grant list, and the invariant that makes that
  * acceptable is narrow: the permission context may be stored, the agent session private
@@ -38,10 +38,17 @@ const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const ROOT = "apps/web/src";
 
 /**
- * The one module allowed to write. Named as a path rather than a basename so a copy
- * elsewhere in the tree does not inherit the allowance by having the same file name.
+ * Both modules project explicit allowlists, with tests proving unknown fields and keys
+ * do not persist. Arcade writes only wallet-scoped game records in its own key; routing those writes
+ * through the grant store would couple a wallet-free game to Studio's signing imports.
+ * Exact paths and API names keep this from becoming a directory-wide exemption.
  */
-export const STORE_MODULE = "apps/web/src/lib/grant-store.ts";
+export const STORE_MODULES = [
+    "apps/web/src/lib/grant-store.ts",
+    "apps/web/src/arcade/state-store.ts",
+];
+// The landing greeter writes only one catalog zodiac name, tested against hostile inputs.
+export const SESSION_STORE_MODULES = ["apps/web/src/arcade/giwa-store.ts", "apps/web/src/landing/arcade-greeter-store.ts"];
 
 /**
  * `locale.tsx` writes the locale cookie, and that predates this rule and is deliberate:
@@ -118,8 +125,9 @@ if (import.meta.main) {
     const problems: string[] = [];
     for (const path of sourceFiles()) {
         const rel = relative(REPO, path);
-        if (rel === STORE_MODULE) continue;
         for (const finding of findStorageWrites(await Bun.file(path).text())) {
+            if (finding.api === "localStorage" && STORE_MODULES.includes(rel)) continue;
+            if (finding.api === "sessionStorage" && SESSION_STORE_MODULES.includes(rel)) continue;
             if (finding.api === "document.cookie" && COOKIE_EXCEPTIONS.includes(rel)) continue;
             problems.push(`${rel}:${finding.line}  ${finding.api} — ${finding.text}`);
         }
@@ -128,11 +136,11 @@ if (import.meta.main) {
         console.error(`[storage] ${problems.length} browser-storage write(s) outside the store:`);
         for (const problem of problems) console.error(`  ✗ ${problem}`);
         console.error("");
-        console.error(`  Route it through ${STORE_MODULE}, or state why it belongs here.`);
+        console.error(`  Route it through a reviewed store: ${STORE_MODULES.join(", ")}.`);
         console.error("  Why: that module's projection is an allowlist that omits the agent");
         console.error("  session private key, and a test pins it. A write elsewhere inherits");
         console.error("  neither, and browser storage is unencrypted and survives restart.");
         process.exit(1);
     }
-    console.log(`[storage] browser-storage writes stay inside ${STORE_MODULE}`);
+    console.log(`[storage] browser-storage writes stay inside ${STORE_MODULES.join(", ")}`);
 }

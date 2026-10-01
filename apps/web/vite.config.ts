@@ -59,6 +59,7 @@ export default defineConfig(({mode}) => {
         server: {
             host: "127.0.0.1",
             port: 5174,
+            proxy: {"^/api/arcade/(?!giwa)": "http://127.0.0.1:3004"},
             // Workspace dependencies and the bundled font packages live at the Bun
             // workspace root. Limiting this to `apps/` makes Vite reject those
             // files during local visual QA even though the production build owns

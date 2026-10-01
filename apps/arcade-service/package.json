@@ -1,0 +1,11 @@
+{
+  "name": "@mapae/arcade-service",
+  "private": true,
+  "type": "module",
+  "scripts": {"dev": "bun --watch index.ts", "test": "bun test", "test:evm": "bun --no-env-file run anvil-integration.ts"},
+  "dependencies": {
+    "@mapae/arcade": "workspace:*", "@mapae/delegation": "workspace:*", "@mapae/seller": "workspace:*",
+    "@mapae/shared": "workspace:*", "@mapae/store": "workspace:*",
+    "@metamask/smart-accounts-kit": "2.0.0", "hono": "^4.13.5", "viem": "^2.55.8"
+  }
+}

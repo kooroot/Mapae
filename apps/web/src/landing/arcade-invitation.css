@@ -1,0 +1,61 @@
+.arcade-invitation-widget {
+    position: fixed;
+    z-index: 40;
+    right: max(24px, env(safe-area-inset-right));
+    bottom: max(24px, env(safe-area-inset-bottom));
+    isolation: isolate;
+}
+.arcade-invitation {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 306px;
+    min-height: 88px;
+    padding: 12px 18px 12px 98px;
+    border: 1px solid #c6985875;
+    border-radius: 22px;
+    background: linear-gradient(120deg, #413323f5, #231e18f5);
+    box-shadow: inset 0 1px #edc38424, 0 8px 30px #0005;
+    color: #f5dcb8;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.arcade-invitation-art {position: absolute; left: 3px; bottom: 4px; width: 88px; height: 100px; pointer-events: none}
+.arcade-invitation-art::before {content: ""; position: absolute; left: 10px; bottom: 2px; width: 72px; height: 72px; border-radius: 50%; background: radial-gradient(circle at 45% 30%, #d5b77c50, #97744112 70%)}
+.arcade-invitation-friend {position: absolute; width: 106px; height: 106px; max-width: none; object-fit: contain; left: -6px; bottom: 0; filter: drop-shadow(0 4px 3px #0005); transform-origin: 50% 90%; opacity: 0; transition: transform 220ms ease, opacity 180ms ease}
+.arcade-invitation[data-ready="true"] .arcade-invitation-friend {opacity: 1; animation: arcade-invitation-hello 1.4s ease .4s 2}
+.arcade-invitation-badge {display: none; position: absolute; bottom: -3px; left: 50%; transform: translateX(-50%); padding: 3px 10px; border: 1px solid #bb925c; border-radius: 20px; background: #2a2218; color: #f2d4a9; font: 11px/1.4 var(--sans); white-space: nowrap}
+.arcade-invitation-copy {display: grid; gap: 5px; min-width: 0}
+.arcade-invitation-copy>span {font: 8px var(--mono); letter-spacing: .14em; color: #c7a678}
+.arcade-invitation-copy>strong {font: 580 16px/1.35 var(--sans); letter-spacing: -.04em; color: #f6dfbb; overflow-wrap: anywhere}
+.arcade-invitation-copy>small {display: flex; gap: 8px; align-items: center; font: 11px/1.5 var(--sans); color: #d8b788}
+.arcade-invitation-copy>small>span {font-size: 14px}
+.arcade-invitation-toggle {position: absolute; top: -20px; right: -6px; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid #8f795a; border-radius: 50%; background: #28231d; color: #e2c599; box-shadow: 0 3px 12px #0004; cursor: pointer; touch-action: manipulation}
+.arcade-invitation-toggle:hover {background: #413323}
+.arcade-invitation:hover,.arcade-invitation:focus-visible {border-color: #e2b978; box-shadow: inset 0 1px #edc38435, 0 8px 36px #8d54202e}
+.arcade-invitation[data-ready="true"]:is(:hover,:focus-visible) .arcade-invitation-friend {animation: none; transform: translateY(-4px) rotate(-4deg)}
+.arcade-invitation:focus-visible,.arcade-invitation-toggle:focus-visible {outline: 2px solid #efc18c; outline-offset: 4px}
+.arcade-invitation-widget[data-minimized="true"] .arcade-invitation {width: 86px; min-height: 94px; padding: 0; border-color: transparent; border-radius: 50%; background: none; box-shadow: none}
+.arcade-invitation-widget[data-minimized="true"] .arcade-invitation-copy {display: none}
+.arcade-invitation-widget[data-minimized="true"] .arcade-invitation-art {left: -1px; bottom: 0}
+.arcade-invitation-widget[data-minimized="true"] .arcade-invitation-badge {display: block}
+.arcade-invitation-widget[data-minimized="true"] .arcade-invitation-toggle {right: calc(100% + 2px); top: 24px}
+@keyframes arcade-invitation-hello {0%,100% {transform: none} 30% {transform: translateY(-5px) rotate(-4deg)} 65% {transform: translateY(-2px) rotate(3deg)}}
+@media(max-width:767px) {
+    .arcade-invitation-widget {right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom))}
+    .arcade-invitation {width: 268px; min-height: 80px; padding: 10px 16px 10px 88px; border-radius: 20px}
+    .arcade-invitation-art {width: 80px; height: 92px; left: 1px; bottom: 3px}
+    .arcade-invitation-art::before {width: 66px; height: 66px; left: 8px}
+    .arcade-invitation-friend {width: 96px; height: 96px; left: -6px}
+    .arcade-invitation-copy {gap: 4px}
+    .arcade-invitation-copy>strong {font-size: 14px}
+    .arcade-invitation-copy>small {font-size: 10px}
+    .arcade-invitation-toggle {width: 44px; height: 44px; top: -23px; right: -5px}
+    .arcade-invitation-widget[data-minimized="true"] .arcade-invitation {width: 80px; min-height: 88px}
+}
+@media(prefers-reduced-motion:reduce) {
+    .arcade-invitation,.arcade-invitation-friend {transition: none}
+    .arcade-invitation[data-ready="true"] .arcade-invitation-friend {animation: none}
+    .arcade-invitation[data-ready="true"]:is(:hover,:focus-visible) .arcade-invitation-friend {transform: none}
+}

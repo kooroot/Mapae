@@ -1,3 +1,4 @@
+import {BrandSelect} from "../components/BrandSelect";
 import {
     signRootPeriodPermission,
     toMapaeOwnerSmartAccount,
@@ -10,7 +11,6 @@ import {
     BadgeCheck,
     Bot,
     Check,
-    ChevronDown,
     CircleAlert,
     Coins,
     FileKey2,
@@ -638,12 +638,7 @@ export function GrantOnboarding({
                         />
                         <div className="studio-form-grid studio-form-grid-three">
                             <Field label={t.assetLabel} htmlFor="grant-asset">
-                                <div className="studio-select-wrap">
-                                    <select id="grant-asset" value="musdc" disabled>
-                                        <option value="musdc">{tokenLabel()}</option>
-                                    </select>
-                                    <ChevronDown size={15} />
-                                </div>
+                                <BrandSelect id="grant-asset" value="musdc" disabled options={[{value: "musdc", label: tokenLabel()}]} />
                             </Field>
                             <Field
                                 label={t.periodCapLabel}
@@ -667,22 +662,7 @@ export function GrantOnboarding({
                                 htmlFor="grant-period"
                                 error={fieldError(validation, attempted, "periodSeconds")}
                             >
-                                <div className="studio-select-wrap">
-                                    <select
-                                        id="grant-period"
-                                        value={draft.periodSeconds}
-                                        disabled={busy}
-                                        onChange={(event) =>
-                                            update("periodSeconds", event.target.value)
-                                        }
-                                    >
-                                        <option value="3600">{t.periodHourly}</option>
-                                        <option value="86400">{t.periodDaily}</option>
-                                        <option value="604800">{t.periodWeekly}</option>
-                                        <option value="2592000">{t.period30Days}</option>
-                                    </select>
-                                    <ChevronDown size={15} />
-                                </div>
+                                <BrandSelect id="grant-period" value={draft.periodSeconds} disabled={busy} onValueChange={value => update("periodSeconds", value)} options={[{value: "3600", label: t.periodHourly}, {value: "86400", label: t.periodDaily}, {value: "604800", label: t.periodWeekly}, {value: "2592000", label: t.period30Days}]} />
                             </Field>
                         </div>
                     </div>
@@ -742,22 +722,7 @@ export function GrantOnboarding({
                                 htmlFor="grant-expiry"
                                 error={fieldError(validation, attempted, "expirySeconds")}
                             >
-                                <div className="studio-select-wrap">
-                                    <select
-                                        id="grant-expiry"
-                                        value={draft.expirySeconds}
-                                        disabled={busy}
-                                        onChange={(event) =>
-                                            update("expirySeconds", event.target.value)
-                                        }
-                                    >
-                                        <option value="86400">{t.expiry1Day}</option>
-                                        <option value="604800">{t.expiry7Days}</option>
-                                        <option value="2592000">{t.expiry30Days}</option>
-                                        <option value="7776000">{t.expiry90Days}</option>
-                                    </select>
-                                    <ChevronDown size={15} />
-                                </div>
+                                <BrandSelect id="grant-expiry" value={draft.expirySeconds} disabled={busy} onValueChange={value => update("expirySeconds", value)} options={[{value: "86400", label: t.expiry1Day}, {value: "604800", label: t.expiry7Days}, {value: "2592000", label: t.expiry30Days}, {value: "7776000", label: t.expiry90Days}]} />
                             </Field>
                         </div>
                     </div>

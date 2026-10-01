@@ -1,0 +1,1 @@
+{"name":"@mapae/arcade","version":"0.0.0","private":true,"type":"module","main":"./src/contracts.ts","types":"./src/contracts.ts","exports":{".":"./src/contracts.ts","./race":"./src/race.ts","./shop":"./src/shop.ts","./tickets":"./src/tickets.ts"},"dependencies":{"@mapae/shared":"workspace:*"}}

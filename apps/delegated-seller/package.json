@@ -5,12 +5,14 @@
   "scripts": {
     "dev": "bun run --filter @mapae/seller build && bun run --hot index.ts",
     "seed": "bun run seed.ts",
+    "seed:arcade": "bun run seed-arcade.ts",
     "test": "bun test"
   },
   "dependencies": {
     "@mapae/delegation": "workspace:*",
     "@mapae/seller": "workspace:*",
     "@mapae/shared": "workspace:*",
+    "@mapae/arcade": "workspace:*",
     "@mapae/store": "workspace:*",
     "hono": "^4",
     "viem": "^2.55.8"

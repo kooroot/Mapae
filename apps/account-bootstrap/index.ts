@@ -4,6 +4,7 @@ import {
     FixedWindowLimiter,
     PaymentIntentSingleFlight,
     SpendBudget,
+    SPONSORED_BROWSER_ORIGINS,
     assertFundedKeySeparation,
     buildSponsoredBootstrapApproval,
     costOfReceipt,
@@ -274,6 +275,9 @@ const RATE_PER_HOUR = Number(readPositiveInteger("BOOTSTRAP_RATE_PER_HOUR", 30n)
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("BOOTSTRAP_RECEIPT_TIMEOUT_MS", 60_000n));
 /** `:memory:` is accepted for dry runs; anything else is a file whose directory is created. */
 const STORE_PATH = process.env.STORE_PATH?.trim() || "./data/bootstrap.sqlite";
+if (ENABLED && STORE_PATH === ":memory:") {
+    throw new Error("enabled bootstrap requires a persistent STORE_PATH");
+}
 
 /**
  * The testnet faucet leg: on by default, and pinned to the testnet by the artifact.
@@ -311,13 +315,7 @@ const limiter = new FixedWindowLimiter(RATE_PER_HOUR, 3_600_000);
 const singleFlight = new PaymentIntentSingleFlight<BootstrapResponse>();
 
 const CORS_POLICY = {
-    allowedOrigins: parseBootstrapOrigins(process.env.BOOTSTRAP_ALLOWED_ORIGINS, [
-        "https://app.mapae.io",
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "http://127.0.0.1:4173",
-        "http://localhost:4173",
-    ]),
+    allowedOrigins: parseBootstrapOrigins(process.env.BOOTSTRAP_ALLOWED_ORIGINS, SPONSORED_BROWSER_ORIGINS),
 };
 
 interface BootstrapResponse {

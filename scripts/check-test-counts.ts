@@ -39,6 +39,8 @@ export const SUITES = [
         cwd: REPO,
         args: [
             "packages/shared/src",
+            "packages/arcade/src",
+            "apps/arcade-service",
             "packages/delegation/src",
             "packages/seller/src",
             "packages/store/src",

@@ -119,7 +119,7 @@ export interface ShopManifestItem {
     key: string;
     name: string;
     description: string;
-    /** Decimal tUSDC, two fractional digits unless the price needs more. */
+    /** Decimal token amount, two fractional digits unless the price needs more. */
     price: string;
     url: string;
 }
@@ -144,7 +144,7 @@ interface TicketFields {
     code: string;
     shop: {slug: string; name: string};
     item: {key: string; name: string};
-    /** `"1.00 tUSDC"` */
+    /** Formatted price with the deployed token symbol. */
     amount: string;
     transaction: string | null;
     issuedAt: string;
@@ -259,7 +259,7 @@ function shopPage(seller: Seller, items: Item[]) {
         seller.name,
         html`<h1>${seller.name}</h1>
 <ul>
-${items.map((item) => html`<li>${item.name} — ${displayAmount(item.priceBase)} tUSDC</li>\n`)}
+${items.map((item) => html`<li>${item.name} — ${displayAmount(item.priceBase)} ${MOCK_USDC.symbol}</li>\n`)}
 </ul>
 <p>${PICKUP_LINE}</p>`,
     );
@@ -284,7 +284,7 @@ function ticketFields(order: Order, seller: Seller, item: Item): TicketFields {
         code: order.ticket,
         shop: {slug: seller.slug, name: seller.name},
         item: {key: item.key, name: item.name},
-        amount: `${displayAmount(order.amountBase)} tUSDC`,
+        amount: `${displayAmount(order.amountBase)} ${MOCK_USDC.symbol}`,
         transaction: order.txHash,
         issuedAt: new Date(order.createdAt).toISOString(),
     };

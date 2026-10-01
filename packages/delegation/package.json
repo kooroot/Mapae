@@ -12,6 +12,7 @@
     "./facilitator-contract": "./src/facilitator-contract.ts",
     "./policy": "./src/policy.ts",
     "./x402": "./src/x402.ts",
+    "./payment-client": "./src/payment-client.ts",
     "./delegation-status": "./src/delegation-status.ts",
     "./faucet-policy": "./src/faucet-policy.ts",
     "./revocation": "./src/revocation.ts",

@@ -369,6 +369,7 @@ describe("revokeRefusalMessage", () => {
         expect(revokeRefusalMessage("already_revoked")).toContain("already revoked");
         expect(revokeRefusalMessage("rate_limited")).toContain("Try again");
         expect(revokeRefusalMessage("invalid_account_signature")).toContain("owner");
+        expect(revokeRefusalMessage("stale_nonce")).toContain("fresh");
         expect(revokeRefusalMessage("budget_exhausted")).toContain("Try again");
         expect(revokeRefusalMessage("sponsor_unfunded")).toContain("Try again");
         expect(revokeRefusalMessage("sender_busy")).toContain("in progress");
@@ -390,6 +391,7 @@ describe("revokeRefusalMessage", () => {
         expect(revokeRefusalMessage("already_revoked", "ko")).toContain("이미 회수");
         expect(revokeRefusalMessage("rate_limited", "ko")).toContain("잠시 후");
         expect(revokeRefusalMessage("invalid_account_signature", "ko")).toContain("소유자");
+        expect(revokeRefusalMessage("stale_nonce", "ko")).toContain("새로 서명");
         expect(revokeRefusalMessage("budget_exhausted", "ko")).toContain("잠시 후");
         expect(revokeRefusalMessage("sponsor_unfunded", "ko")).toContain("잠시 후");
         expect(revokeRefusalMessage("sender_busy", "ko")).toContain("처리 중");

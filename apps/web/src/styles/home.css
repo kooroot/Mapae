@@ -1357,3 +1357,6 @@
         transform: none;
     }
 }
+
+.nav-links .nav-arcade {display: inline-flex; align-items: center; gap: 7px; color: #e6b382}
+.nav-links .nav-arcade>span {font-size: 12px; color: #e6b382}

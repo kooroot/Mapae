@@ -8,8 +8,6 @@ import {
 } from "./security";
 
 const NONCE = "0123456789abcdef0123456789abcdef";
-const TELEMETRY_SCRIPT = "https://static.cloudflareinsights.com";
-const TELEMETRY_CONNECT = "https://cloudflareinsights.com";
 
 /** The sources of one directive, so a test can say "exactly these" and not "contains". */
 function sources(policy: string, directive: string): string[] {
@@ -63,19 +61,12 @@ describe("document security policy", () => {
         expect(policy).not.toContain("'unsafe-eval'");
     });
 
-    test("the landing admits exactly the telemetry pair, and differs in nothing else", () => {
+    test("the landing shares Arcade's origin, so it cannot run third-party scripts", () => {
         const landing = createContentSecurityPolicy(NONCE, "landing");
         const app = createContentSecurityPolicy(NONCE, "app");
-
-        expect(sources(landing, "script-src")).toEqual([
-            "'self'",
-            `'nonce-${NONCE}'`,
-            TELEMETRY_SCRIPT,
-        ]);
-        expect(sources(landing, "connect-src")).toContain(TELEMETRY_CONNECT);
-        expect(
-            landing.replace(` ${TELEMETRY_SCRIPT}`, "").replace(` ${TELEMETRY_CONNECT}`, ""),
-        ).toBe(app);
+        expect(landing).toBe(app);
+        expect(sources(landing, "script-src")).toEqual(["'self'", `'nonce-${NONCE}'`]);
+        expect(landing).not.toContain("cloudflareinsights");
     });
 
     test("a combined build hosts the Studio, so it carries the Studio's policy", () => {

@@ -27,6 +27,7 @@ import {buildRootDelegationTypedData} from "./signing.js";
 import {
     FixedWindowLimiter,
     SPONSORED_BOOTSTRAP_APPROVAL_PREFIX,
+    SPONSORED_BROWSER_ORIGINS,
     SpendBudget,
     assertFundedKeySeparation,
     budgetDay,
@@ -376,6 +377,14 @@ describe("validateAccountBootstrap", () => {
 });
 
 describe("parseBootstrapOrigins", () => {
+    test("both production browser origins can reach sponsored account creation and revocation", () => {
+        expect(SPONSORED_BROWSER_ORIGINS).toContain("https://mapae.io");
+        expect(SPONSORED_BROWSER_ORIGINS).toContain("https://app.mapae.io");
+        expect(parseBootstrapOrigins(undefined, SPONSORED_BROWSER_ORIGINS)).toEqual(
+            SPONSORED_BROWSER_ORIGINS,
+        );
+    });
+
     test("falls back when unset or empty", () => {
         expect(parseBootstrapOrigins(undefined, ["https://app.mapae.io"])).toEqual([
             "https://app.mapae.io",

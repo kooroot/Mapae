@@ -11,10 +11,12 @@ import {
     ipBucket,
     isDelegationRevoked,
     judgeCorsRequest,
+    SPONSORED_BROWSER_ORIGINS,
     judgeSubmissionReadiness,
     parseActiveDeploymentArtifactJson,
     parseBootstrapOrigins,
     parseCorsAllowlist,
+    readRevocationNonce,
     readRevocationPrefundState,
     throttledHttp,
     validateRevocationSubmission,
@@ -30,6 +32,7 @@ import {
     redactForLog,
 } from "@mapae/shared";
 import {EntryPoint as EntryPointAbi} from "@metamask/delegation-abis";
+import {openStore} from "@mapae/store";
 import {
     createPublicClient,
     createWalletClient,
@@ -81,6 +84,7 @@ type RevokeRefusal =
     | "rate_limited"
     | "already_revoked"
     | "invalid_account_signature"
+    | "stale_nonce"
     | "sender_busy"
     | "budget_exhausted"
     | "sponsor_unfunded"
@@ -397,7 +401,16 @@ const sponsorClient = sponsorConfig
     : undefined;
 
 const limiter = sponsorConfig ? new FixedWindowLimiter(sponsorConfig.ratePerHour, 3_600_000) : undefined;
-const budget = sponsorConfig ? new SpendBudget(sponsorConfig.dailyBudget, Date.now()) : undefined;
+// A public sponsor's daily ceiling must survive a process restart. Keep it in a
+// dedicated SQLite file and refuse an in-memory store in sponsored mode.
+const storePath = process.env.STORE_PATH?.trim() || "./data/revocation.sqlite";
+if (sponsorConfig && storePath === ":memory:") {
+    throw new Error("sponsored revocation requires a persistent STORE_PATH");
+}
+const store = sponsorConfig ? openStore(storePath) : undefined;
+const budget = sponsorConfig
+    ? new SpendBudget(sponsorConfig.dailyBudget, Date.now(), store!.budget.scoped("revocation-sponsor"))
+    : undefined;
 
 /**
  * A stable identity for one signed operation.
@@ -552,6 +565,13 @@ async function submitSponsored(submission: ValidatedRevocationSubmission): Promi
         })
     ) {
         throw new SubmissionRefused("already_revoked", {delegationHash: submission.delegationHash});
+    }
+
+    // EntryPoint's AA25 check otherwise runs only after the sponsor has deposited.
+    // Studio signs key 0; a stale or different-key operation must not buy a fresh gift.
+    const currentNonce = await readRevocationNonce({publicClient, entryPoint, sender: submission.sender});
+    if (submission.packed.nonce !== currentNonce) {
+        throw new SubmissionRefused("stale_nonce", {}, 409);
     }
 
     const [prefund, block, relayerBalance] = await Promise.all([
@@ -738,13 +758,7 @@ const CORS_POLICY = {
     allowedOrigins: SPONSORED
         ? parseBootstrapOrigins(
               process.env.REVOCATION_ALLOWED_ORIGINS,
-              [
-                  "https://app.mapae.io",
-                  "http://127.0.0.1:5173",
-                  "http://localhost:5173",
-                  "http://127.0.0.1:4173",
-                  "http://localhost:4173",
-              ],
+              SPONSORED_BROWSER_ORIGINS,
               "REVOCATION_ALLOWED_ORIGINS",
           )
         : parseCorsAllowlist(process.env.REVOCATION_CONSOLE_ORIGINS, isLoopbackHost, [

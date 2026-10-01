@@ -335,7 +335,13 @@ async function spawnAnvil(forkUrl: string | undefined, port: number): Promise<()
         // the Framework, the canonical EntryPoint, and MockUSDC all have code.
         args.push("--fork-block-number", process.env["SUITE_FORK_BLOCK"]?.trim() || String(FORK_BLOCK));
     }
-    const proc = Bun.spawn(["anvil", ...args], {stdout: "ignore", stderr: "pipe"});
+    let proc: Bun.Subprocess;
+    try {
+        proc = Bun.spawn(["anvil", ...args], {stdout: "ignore", stderr: "pipe"});
+    } catch (error) {
+        source?.stop();
+        throw error;
+    }
     // Drain stderr into a buffer. Anvil's panic message is the only place the real cause
     // is written; discarding it is why the rate-limit crash above looked like a network
     // fault for as long as it did.
@@ -357,6 +363,16 @@ async function spawnAnvil(forkUrl: string | undefined, port: number): Promise<()
         const tail = redactUrls(stderr.trim()).split("\n").slice(-6).join("\n");
         return tail ? `\nanvil said:\n${tail}` : "";
     };
+    const stop = () => {
+        if (proc.exitCode !== null && proc.exitCode !== 0) {
+            console.error(`[suite] anvil exited with code ${proc.exitCode}${died()}`);
+        }
+        proc.kill();
+        source?.stop();
+    };
+    // A fork can fail during genesis (for example when its RPC returns 429). Register
+    // cleanup before the readiness loop so that failure cannot strand the proxy.
+    teardowns.push(stop);
 
     const url = `http://127.0.0.1:${port}`;
     for (let i = 0; i < 60; i += 1) {
@@ -368,16 +384,6 @@ async function spawnAnvil(forkUrl: string | undefined, port: number): Promise<()
         }
         try {
             await rpc(url, "eth_chainId");
-            const stop = () => {
-                if (proc.exitCode !== null && proc.exitCode !== 0) {
-                    console.error(`[suite] anvil exited with code ${proc.exitCode}${died()}`);
-                }
-                proc.kill();
-                source?.stop();
-            };
-            // Registered here, not by the caller: the gap this closes is precisely the one
-            // between this return and the caller storing the handle.
-            teardowns.push(stop);
             return stop;
         } catch {
             /* not ready yet */

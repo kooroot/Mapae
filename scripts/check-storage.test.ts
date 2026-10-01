@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {findStorageWrites, STORE_MODULE} from "./check-storage";
+import {findStorageWrites, STORE_MODULES, SESSION_STORE_MODULES} from "./check-storage";
 
 describe("findStorageWrites", () => {
     test("flags a localStorage write", () => {
@@ -39,9 +39,13 @@ describe("findStorageWrites", () => {
         expect(findStorageWrites(`const note = "localStorage.setItem is refused";`)).toEqual([]);
     });
 
-    test("the sanctioned module is named, and it is the grant store", () => {
+    test("only the reviewed grant and demo stores are sanctioned by exact path", () => {
         // If this moves, the allowance moves with it deliberately — a renamed file must
         // not silently inherit permission to write secrets to disk.
-        expect(STORE_MODULE).toBe("apps/web/src/lib/grant-store.ts");
+        expect(STORE_MODULES).toEqual([
+            "apps/web/src/lib/grant-store.ts",
+            "apps/web/src/arcade/state-store.ts",
+        ]);
+        expect(SESSION_STORE_MODULES).toEqual(["apps/web/src/arcade/giwa-store.ts", "apps/web/src/landing/arcade-greeter-store.ts"]);
     });
 });

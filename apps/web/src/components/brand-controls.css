@@ -1,0 +1,58 @@
+.mapae-select {display:block;min-width:0;width:100%;position:relative}
+/* SSR inline styles are blocked by our CSP. Keep Base UI's form inputs visually
+   hidden in the stylesheet as well, without removing their form behavior. */
+.mapae-select>input[aria-hidden="true"],
+.mapae-switch-row>input[aria-hidden="true"],
+.mapae-roles input[aria-hidden="true"] {
+    position:fixed;top:0;left:0;width:1px;height:1px;min-width:0;min-height:0;
+    padding:0;margin:-1px;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;
+}
+.mapae-select-trigger,.mapae-select-popup,.mapae-popover,.arc-ui-theme {
+    --arc-cream:#ede7da;--arc-dim:#b2a695;--arc-gold:#e9c99f;--arc-coral:#e6a17e;--arc-hair:#e9d8bc26;
+    --control-bg:#231e19;--control-fg:#f1e6d5;--control-muted:#b9aa95;--control-border:#aa8c624d;--control-hover:#e9c99f14;--control-accent:#e9c99f;
+    font-family:var(--sans, sans-serif);color-scheme:dark;
+}
+[data-tone="paper"] {--control-bg:#fcf8ef;--control-fg:#30291f;--control-muted:#766b5b;--control-border:#8f74574d;--control-hover:#a4773320;--control-accent:#815922;color-scheme:light}
+button.mapae-select-trigger {
+    display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:48px;padding:12px 14px;
+    border:1px solid var(--control-border);border-radius:11px;background:var(--control-bg);color:var(--control-fg);
+    box-shadow:inset 0 1px 0 #ffffff05,0 2px 4px #00000008;font-size:14px;font-weight:500;line-height:1.45;text-align:left;
+    cursor:pointer;touch-action:manipulation;transition:border-color .16s,background .16s,box-shadow .16s;
+}
+button.mapae-select-trigger:hover:not([data-disabled]),button.mapae-select-trigger[data-popup-open] {border-color:var(--control-accent);background:color-mix(in srgb,var(--control-bg),var(--control-accent) 6%)}
+.mapae-select-trigger:focus-visible,.mapae-switch:focus-visible,.mapae-settings-trigger:focus-visible,.mapae-role:focus-visible {outline:2px solid #dfb584;outline-offset:4px}
+.mapae-select-trigger[data-disabled] {opacity:.45;cursor:not-allowed}
+.mapae-select-value {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mapae-select-leading {display:inline-flex;flex:none;align-items:center;justify-content:center;width:22px;color:var(--control-accent)}
+.mapae-select-leading svg {width:18px;height:18px}
+.mapae-select-chevron {display:flex;margin-left:auto;flex:none;color:var(--control-muted);transition:transform .18s}
+[data-popup-open]>.mapae-select-chevron {transform:rotate(180deg)}
+.mapae-select-positioner {z-index:120;isolation:isolate;outline:0}
+.mapae-select-popup {width:var(--anchor-width);min-width:min(200px,var(--available-width));max-width:var(--available-width);max-height:var(--available-height);border:1px solid var(--control-border);border-radius:13px;background:var(--control-bg);color:var(--control-fg);box-shadow:0 20px 65px #0006,0 2px 8px #0003;outline:0;transform-origin:var(--transform-origin);transition:opacity .12s,transform .12s;overflow:hidden}
+.mapae-select-popup[data-starting-style],.mapae-select-popup[data-ending-style] {opacity:0;transform:translateY(-4px) scale(.98)}
+.mapae-select-list {max-height:min(340px,var(--available-height));overflow-y:auto;padding:6px;overscroll-behavior:contain;scroll-padding:6px;scrollbar-width:thin;scrollbar-color:#8b7354 transparent}
+.mapae-select-item {display:flex;align-items:center;gap:10px;min-height:46px;padding:11px 12px;border-radius:8px;position:relative;cursor:default;user-select:none;outline:0;font-size:14px;line-height:1.5;scroll-margin:6px}
+.mapae-select-item[data-selected] {color:var(--control-accent);background:var(--control-hover)}
+.mapae-select-item[data-highlighted] {background:color-mix(in srgb,var(--control-accent) 17%,var(--control-bg))}
+.mapae-select-item[data-disabled] {opacity:.38}
+.mapae-select-copy {display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;overflow-wrap:anywhere}
+.mapae-select-description {font-size:11px;color:var(--control-muted);line-height:1.55}
+.mapae-select-check {flex:none;margin-left:auto;display:flex}
+.mapae-select-scroll {height:24px;display:flex;align-items:center;justify-content:center;background:var(--control-bg);color:var(--control-accent)}
+.mapae-swatch {width:13px;height:13px;border-radius:50%;box-shadow:0 0 0 3px #ffffff0a,inset 0 0 0 1px #ffffff40}
+.mapae-swatch-red {background:#cd7661}.mapae-swatch-jade {background:#81a193}.mapae-swatch-ink {background:#83828e}
+button.mapae-settings-trigger {display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--arc-hair);border-radius:50%;color:var(--arc-cream);background:transparent;touch-action:manipulation}
+.mapae-settings-trigger:hover,.mapae-settings-trigger[data-popup-open] {color:var(--arc-gold);background:#e9c99f14;border-color:#e9c99f60}
+.mapae-popover {width:min(300px,calc(100vw - 24px));border:1px solid var(--control-border);border-radius:16px;padding:20px;background:var(--control-bg);color:var(--control-fg);box-shadow:0 16px 60px #0007;outline:0}
+.mapae-popover h2 {font-size:15px;font-weight:600;margin:0 0 16px;letter-spacing:-.02em}
+.mapae-switch-row {display:flex;align-items:center;justify-content:space-between;gap:18px;font-size:13px;cursor:pointer}
+.mapae-switch-row>span {display:flex;flex-direction:column;gap:5px}
+.mapae-switch-row small {font-size:11px;color:var(--control-muted);line-height:1.5}
+.mapae-switch {flex:none;display:flex;align-items:center;width:42px;height:26px;padding:3px;border:1px solid #8e795944;border-radius:99px;background:#4b4237;cursor:pointer;touch-action:manipulation;transition:background .15s}
+.mapae-switch[data-checked] {background:#e2bc87}
+.mapae-switch-thumb {display:block;width:18px;height:18px;border-radius:50%;background:#fff9ee;box-shadow:0 1px 3px #0003;transition:transform .15s}
+[data-checked]>.mapae-switch-thumb {transform:translateX(14px);background:#33271c}
+.mapae-roles {display:flex;gap:6px;padding:5px;border:1px solid #bba68b6b;border-radius:13px;background:#ddd1ba38}
+button.mapae-role {white-space:nowrap;flex:1;display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:10px;border:1px solid transparent;border-radius:9px;background:transparent;font:500 14px var(--sans);color:#6d614f;cursor:pointer;touch-action:manipulation}
+button.mapae-role[data-checked] {background:#30271d;color:#f2d4ab;border-color:#755837;box-shadow:0 2px 6px #38281622}
+@media(prefers-reduced-motion:reduce){.mapae-select-trigger,.mapae-select-chevron,.mapae-select-popup,.mapae-switch,.mapae-switch-thumb{transition:none}}

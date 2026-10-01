@@ -54,6 +54,9 @@ import {
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
 import {startForkSourceProxy} from "./fork-source-proxy";
+import {mkdtempSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 
 const ANVIL_PORT = 8547;
 const SUBMITTER_PORT = 8183;
@@ -81,6 +84,7 @@ const signerKey = (label: string) =>
     keccak256(stringToHex(`mapae.revocation-submitter-e2e.v1.${label}`)) as Hex;
 
 const children: {name: string; proc: Bun.Subprocess}[] = [];
+const storeDir = mkdtempSync(join(tmpdir(), "mapae-revoke-e2e-"));
 /** Loopback listeners this run owns — closed alongside the children on any exit path. */
 const listeners: {stop(): void}[] = [];
 
@@ -115,6 +119,7 @@ function shutdown(): void {
             /* already closed */
         }
     }
+    rmSync(storeDir, {recursive: true, force: true});
 }
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
@@ -612,6 +617,7 @@ async function main(): Promise<void> {
         // would refuse the suite itself after two requests — a property of the harness, not
         // of the service. Case O restarts with "1" and is what proves the limit binds.
         REVOCATION_RATE_PER_HOUR: "50",
+        STORE_PATH: join(storeDir, "revocation.sqlite"),
         DELEGATION_DEPLOYMENT_PATH: `${REPO}/deployments/giwa-sepolia.framework.json`,
     };
 
@@ -667,6 +673,15 @@ async function main(): Promise<void> {
     }
     if (typeof sponsoredHealth.budgetRemainingWei !== "string") {
         throw new Error("sponsored health does not report its budget");
+    }
+    for (const origin of ["https://mapae.io", "https://app.mapae.io"]) {
+        const preflight = await fetch(`${SUBMITTER_URL}/revoke`, {
+            method: "OPTIONS",
+            headers: {Origin: origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type"},
+        });
+        if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) {
+            throw new Error(`sponsored revocation browser origin ${origin} cannot pass CORS preflight`);
+        }
     }
     passed("I", `sponsored mode budget ${sponsoredHealth.budgetRemainingWei} wei`);
 
@@ -791,6 +806,34 @@ async function main(): Promise<void> {
     }
     passed("L", "replay done    409 already_revoked, no second deposit");
 
+    // An owner's old, otherwise valid UserOp must be refused before depositTo. Without
+    // the nonce read, EntryPoint reports AA25 only after the sponsor has gifted ETH.
+    const staleBuilt = buildRevocationUserOperation({
+        delegation: delegation3,
+        entryPoint,
+        chainId: chain.id,
+        nonce: nonce2,
+        gas: SPONSORED_REVOCATION_GAS,
+    });
+    const staleBody = buildRevocationSubmissionBody({
+        permissionContext: context3,
+        packed: finalizeRevocationUserOperation(
+            staleBuilt,
+            await owner2.signTypedData(staleBuilt.typedData),
+        ).packed,
+    });
+    const stale = await postRevoke(staleBody);
+    if (stale.status !== 409 || stale.body.reason !== "stale_nonce") {
+        throw new Error(`expected 409 stale_nonce, got ${stale.status} ${JSON.stringify(stale.body)}`);
+    }
+    const sponsorTxCountAfterS = BigInt(
+        (await rpc(forkRpc, "eth_getTransactionCount", [sponsor.address, "latest"])) as string,
+    );
+    if (sponsorTxCountAfterS !== sponsorTxCountAfterL) {
+        throw new Error("a stale UserOp caused a sponsor deposit before AA25");
+    }
+    passed("S", "stale nonce    409 before deposit, sponsor nonce unchanged");
+
     /**
      * ── P. an operation signed below the fee floor is refused ─────────────────────────
      *
@@ -848,6 +891,10 @@ async function main(): Promise<void> {
 
     // ── M. the daily budget is a real bound, not a speed bump ─────────────────────────
     await restartSponsored({REVOCATION_DAILY_WEI: "1"});
+    const persistedBudget = (await (await fetch(`${SUBMITTER_URL}/health`)).json()) as {spentTodayWei?: string};
+    if (!persistedBudget.spentTodayWei || BigInt(persistedBudget.spentTodayWei) <= 0n) {
+        throw new Error("sponsored daily spend reset to zero when the submitter restarted");
+    }
     const ownerSigned3 = finalizeRevocationUserOperation(
         built3,
         await owner2.signTypedData(built3.typedData),

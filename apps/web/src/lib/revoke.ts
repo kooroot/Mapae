@@ -232,6 +232,7 @@ const REFUSAL_COPY: Record<
         alreadyRevoked: string;
         rateLimited: string;
         invalidSignature: string;
+        staleNonce: string;
         senderBusy: string;
         budgetExhausted: string;
         feeBelowBaseFee: string;
@@ -245,6 +246,7 @@ const REFUSAL_COPY: Record<
         rateLimited: "Too many requests. Try again shortly.",
         invalidSignature:
             "The signature does not match this account's owner. Sign again with the owner wallet.",
+        staleNonce: "This request used an old account nonce. Sign a fresh revocation request.",
         senderBusy: "Another revocation for this account is in progress. Try again shortly.",
         budgetExhausted:
             "Today's sponsored revocation allowance is used up. Try again later.",
@@ -258,6 +260,7 @@ const REFUSAL_COPY: Record<
         rateLimited: "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.",
         invalidSignature:
             "서명이 이 계정의 소유자와 일치하지 않습니다. 소유자 지갑으로 다시 서명해 주세요.",
+        staleNonce: "계정의 이전 nonce로 서명한 요청입니다. 회수를 새로 서명해 주세요.",
         senderBusy: "이 계정의 다른 회수가 처리 중입니다. 잠시 후 다시 시도해 주세요.",
         budgetExhausted:
             "오늘 대납 가능한 회수 한도를 모두 사용했습니다. 잠시 후 다시 시도해 주세요.",
@@ -280,6 +283,8 @@ export function revokeRefusalMessage(
             return t.rateLimited;
         case "invalid_account_signature":
             return t.invalidSignature;
+        case "stale_nonce":
+            return t.staleNonce;
         case "sender_busy":
             return t.senderBusy;
         case "budget_exhausted":

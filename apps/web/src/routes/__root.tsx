@@ -26,8 +26,9 @@ import "../styles/app.css";
 
 export const Route = createRootRoute({
     headers: () => DOCUMENT_SECURITY_HEADERS,
-    head: () => {
+    head: ({matches}) => {
         const isApp = siteSurface === "app";
+        const isArcade = /\/(?:ko\/)?arcade\/?$/.test(matches.at(-1)?.pathname ?? "");
         const locale = resolveLocale();
         // Each surface publishes the same page at two addresses, so every response has
         // to say which one it is (`canonical`) and where the other lives (`alternate`).
@@ -36,12 +37,20 @@ export const Route = createRootRoute({
         // English base because that is what an unprefixed request renders for a visitor
         // carrying no cookie — which is every crawler.
         const origin = (isApp ? appUrl : landingUrl).replace(/\/$/, "");
-        const enHref = `${origin}/`;
-        const koHref = `${origin}${LOCALE_PATH_PREFIX}`;
-        const title = isApp
+        const enHref = `${origin}${isArcade ? "/arcade" : "/"}`;
+        const koHref = `${origin}${LOCALE_PATH_PREFIX}${isArcade ? "/arcade" : ""}`;
+        const title = isArcade ? pick(locale, {
+            en: "Mapae Arcade — Send your agent out",
+            ko: "Mapae Arcade — 에이전트의 자유 시간",
+        }) : isApp
             ? "Mapae Studio — Delegated payment control"
             : "Mapae — Limit the authority. Let the agent act.";
-        const description = isApp
+        const description = isArcade
+            ? pick(locale, {
+                  en: "Give your agent an allowance for racing, shopping and stamping. First admission free, no wallet needed. Optional GIWA Sepolia testnet tickets.",
+                  ko: "내 에이전트에게 용돈을 주고, 경주와 가게와 오락실로 보내세요. 지갑 없이 첫 입장 무료. GIWA 테스트넷 입장권도 연결할 수 있어요.",
+              })
+            : isApp
             ? pick(locale, {
                   en: "Approve asset, amount, period, and recipient boundaries from your wallet, and manage agent payment authority and settlement state on GIWA.",
                   ko: "자산·금액·기간·수취인 경계를 지갑으로 승인하고, GIWA에서 에이전트 결제 권한과 정산 상태를 관리합니다.",
@@ -54,10 +63,10 @@ export const Route = createRootRoute({
         return {
             meta: [
                 {charSet: "utf-8"},
-                {name: "viewport", content: "width=device-width, initial-scale=1"},
+                {name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover"},
                 {title},
                 {name: "description", content: description},
-                {name: "theme-color", content: "#050505"},
+                {name: "theme-color", content: isArcade ? "#0e0c0a" : "#050505"},
                 {property: "og:title", content: title},
                 {property: "og:description", content: description},
                 {property: "og:type", content: "website"},
@@ -98,18 +107,18 @@ export const Route = createRootRoute({
                 {rel: "alternate", hrefLang: "x-default", href: enHref},
                 {
                     rel: "icon",
-                    href: "/favicon.ico",
+                    href: isArcade ? "/arcade/arcade-icon.png" : "/favicon.ico",
                     sizes: "any",
                 },
                 {
                     rel: "icon",
-                    href: "/favicon.png",
+                    href: isArcade ? "/arcade/arcade-icon.png" : "/favicon.png",
                     type: "image/png",
                     sizes: "192x192",
                 },
                 {
                     rel: "apple-touch-icon",
-                    href: "/favicon.png",
+                    href: isArcade ? "/arcade/arcade-icon.png" : "/favicon.png",
                     sizes: "192x192",
                 },
                 // Preconnect, not preload: the RPC host is contacted only by routes

@@ -4,6 +4,7 @@ import {InterfaceIcon, type InterfaceIconName} from "../brand/marks";
 import {Footer, Nav} from "../components/Shell";
 import {Reveal} from "../components/Reveal";
 import {Dial} from "../landing/Dial";
+import {ArcadeInvitation} from "../landing/ArcadeInvitation";
 import {
     appUrl,
     docsUrl,
@@ -376,6 +377,7 @@ export function Landing() {
                 <FinalCall />
             </main>
             <Footer variant="dark" />
+            <ArcadeInvitation />
         </>
     );
 }

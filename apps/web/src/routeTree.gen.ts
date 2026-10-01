@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as ArcadeRouteImport } from './routes/arcade'
 import { Route as KoIndexRouteImport } from './routes/ko/index'
 import { Route as KoAppRouteImport } from './routes/ko/app'
+import { Route as KoArcadeRouteImport } from './routes/ko/arcade'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArcadeRoute = ArcadeRouteImport.update({
+  id: '/arcade',
+  path: '/arcade',
   getParentRoute: () => rootRouteImport,
 } as any)
 const KoIndexRoute = KoIndexRouteImport.update({
@@ -34,38 +41,51 @@ const KoAppRoute = KoAppRouteImport.update({
   path: '/ko/app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KoArcadeRoute = KoArcadeRouteImport.update({
+  id: '/ko/arcade',
+  path: '/ko/arcade',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/arcade': typeof ArcadeRoute
   '/ko/app': typeof KoAppRoute
+  '/ko/arcade': typeof KoArcadeRoute
   '/ko/': typeof KoIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/arcade': typeof ArcadeRoute
   '/ko/app': typeof KoAppRoute
+  '/ko/arcade': typeof KoArcadeRoute
   '/ko': typeof KoIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/arcade': typeof ArcadeRoute
   '/ko/app': typeof KoAppRoute
+  '/ko/arcade': typeof KoArcadeRoute
   '/ko/': typeof KoIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app' | '/ko/app' | '/ko/'
+  fullPaths: '/' | '/app' | '/arcade' | '/ko/app' | '/ko/arcade' | '/ko/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/ko/app' | '/ko'
-  id: '__root__' | '/' | '/app' | '/ko/app' | '/ko/'
+  to: '/' | '/app' | '/arcade' | '/ko/app' | '/ko/arcade' | '/ko'
+  id: '__root__' | '/' | '/app' | '/arcade' | '/ko/app' | '/ko/arcade' | '/ko/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
+  ArcadeRoute: typeof ArcadeRoute
   KoAppRoute: typeof KoAppRoute
+  KoArcadeRoute: typeof KoArcadeRoute
   KoIndexRoute: typeof KoIndexRoute
 }
 
@@ -85,6 +105,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/arcade': {
+      id: '/arcade'
+      path: '/arcade'
+      fullPath: '/arcade'
+      preLoaderRoute: typeof ArcadeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ko/': {
       id: '/ko/'
       path: '/ko'
@@ -99,13 +126,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KoAppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ko/arcade': {
+      id: '/ko/arcade'
+      path: '/ko/arcade'
+      fullPath: '/ko/arcade'
+      preLoaderRoute: typeof KoArcadeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
+  ArcadeRoute: ArcadeRoute,
   KoAppRoute: KoAppRoute,
+  KoArcadeRoute: KoArcadeRoute,
   KoIndexRoute: KoIndexRoute,
 }
 export const routeTree = rootRouteImport

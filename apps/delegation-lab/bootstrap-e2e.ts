@@ -388,6 +388,16 @@ async function main(): Promise<void> {
     void forward("bootstrap", service.stderr);
     await waitFor("bootstrap", async () => (await fetch(`${BOOTSTRAP_URL}/health`)).ok);
 
+    for (const origin of ["https://mapae.io", "https://app.mapae.io"]) {
+        const preflight = await fetch(`${BOOTSTRAP_URL}/bootstrap`, {
+            method: "OPTIONS",
+            headers: {Origin: origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type"},
+        });
+        if (preflight.status !== 204 || preflight.headers.get("access-control-allow-origin") !== origin) {
+            throw new Error(`sponsored bootstrap browser origin ${origin} cannot pass CORS preflight`);
+        }
+    }
+
     // ── D. a key that collides with the settlement relayer must not boot ──────────────
     const collided = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
         cwd: `${REPO}/apps/account-bootstrap`,

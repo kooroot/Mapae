@@ -44,14 +44,11 @@ export function createSsrNonce(): string | undefined {
 /**
  * The policy for one response, shaped by which product the build is.
  *
- * Cloudflare Web Analytics is a zone setting: the edge injects a beacon script into
- * the landing's HTML and the beacon posts to `cloudflareinsights.com`, so the landing
- * has to name that pair or the beacon dies in the console. A `script-src` entry is
- * full-page code execution for whoever controls the origin, and the Studio's custody
- * argument is that the agent key never leaves this tab — one policy for both surfaces
- * handed that origin the Studio too, for a beacon that was never injected there. Only
- * a build that is nothing but the landing admits the pair; `combined` hosts the Studio
- * as well, so it takes the Studio's policy.
+ * The landing and Arcade share mapae.io's origin and therefore its sessionStorage.
+ * A pending Arcade payment is a bearer authorization in that storage. Even though the
+ * Arcade route does not load analytics, allowing a third-party script on the landing
+ * would give it access when the user navigates there in the same tab. Every page on
+ * this origin therefore uses the same script policy without external script hosts.
  *
  * `connect-src` is what the page fetches, not what it links to. The explorer is
  * reached only through `<a href>`, which CSP does not police, so it is not here; the
@@ -73,18 +70,15 @@ export function createSsrNonce(): string | undefined {
  * mechanism short of `'unsafe-hashes'` — so the app renders none: the three that
  * existed went to the stylesheet and the CSSOM, which the policy does not police.
  */
-export function createContentSecurityPolicy(nonce: string, surface: SiteSurface): string {
+export function createContentSecurityPolicy(nonce: string, _surface: SiteSurface): string {
     if (!CSP_NONCE_PATTERN.test(nonce)) {
         throw new Error("CSP nonce must be a 128-bit URL-safe value");
     }
-    const telemetry = surface === "landing";
-
     return [
         "default-src 'self'",
         [
             "script-src 'self'",
             `'nonce-${nonce}'`,
-            ...(telemetry ? ["https://static.cloudflareinsights.com"] : []),
         ].join(" "),
         `style-src 'self' 'nonce-${nonce}'`,
         "font-src 'self'",
@@ -93,7 +87,6 @@ export function createContentSecurityPolicy(nonce: string, surface: SiteSurface)
             "connect-src 'self'",
             "https://sepolia-rpc.giwa.io",
             "https://facilitator.mapae.io",
-            ...(telemetry ? ["https://cloudflareinsights.com"] : []),
         ].join(" "),
         "frame-ancestors 'none'",
         "base-uri 'none'",
