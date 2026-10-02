@@ -49,8 +49,8 @@ function AgentArcade({owner, initialGame}: {owner: Address; initialGame: GameId}
     const onPractice = () => setPractice(true);
     const {locale} = useLocale();
     const ko = locale === "ko";
-    const giwa = useGiwaTickets(locale);
     const store = useArcadeState(owner);
+    const giwa = useGiwaTickets(locale, store.saved);
     const {demo, ready, saved, update} = store;
     const current = useRef(demo); current.current = demo;
     const [sound] = useState(() => new ArcadeSound());
@@ -145,7 +145,16 @@ function AgentArcade({owner, initialGame}: {owner: Address; initialGame: GameId}
         const member = value.characters.find(c => c.id === characterId);
         if (!member) {clearQueue(); setError(ko ? "캐릭터를 찾지 못했어요." : "Character not found."); return;}
         const recorded = giwa.pending && value.activities.find(a => a.id === giwa.pending?.requestId && a.source === "mapae-giwa");
-        if (recorded) {try {await store.flush();} catch {setError(ko ? "입장 기록 동기화 후 다시 복구해 주세요." : "Sync the admission record before recovering it."); return;} giwa.acknowledge(); setActivity(recorded); clearQueue(); setScreen("receipt"); return;}
+        if (recorded) {
+            try {
+                await store.flush();
+                const claimed = await giwa.acknowledge();
+                setActivity(recorded); clearQueue();
+                setActiveProfile({name: member.name, color: member.color, temperament: member.temperament, goal: member.agent.goal});
+                setScreen(claimed && recorded.status !== "complete" ? "game" : "receipt");
+            } catch {setError(ko ? "입장 기록을 확인하지 못했어요. 다시 복구해 주세요." : "Admission could not be confirmed. Recover again.");}
+            return;
+        }
         const choice = pending?.game ?? job.choice;
         const rounds = member.agent.rounds;
         busy.current = true;
@@ -179,7 +188,8 @@ function AgentArcade({owner, initialGame}: {owner: Address; initialGame: GameId}
                 return updateCharacter(result.demo, characterId, {configured: true});
             });
             await store.flush();
-            giwa.acknowledge();
+            const claimed = await giwa.acknowledge();
+            if (!claimed) {await store.refresh(); setActivity(admitted); setScreen("receipt"); return;}
             setActivity(admitted); setActiveProfile(request.profile); await sound.enable(value.sound); if (!controller.signal.aborted) setScreen("game");
         } catch (e) {
             if (!controller.signal.aborted) {
@@ -197,7 +207,7 @@ function AgentArcade({owner, initialGame}: {owner: Address; initialGame: GameId}
     const gameProps = {appearance: activity?.appearance, locale, mode: activity?.mode ?? character?.agent.mode ?? "rules", seed: activity ? parseInt(activity.id.slice(0, 8), 16) >>> 0 : 1,
         budget: {balance: Number(giwa.balance ?? 0), allowance: giwa.remaining * ARCADE_TICKET_COST}, decide: modelDecision,
         reducedMotion: demo.reducedMotion, suspended: exitOpen || settingsOpen, autoAdvance, onComplete: complete, onExit: () => setExitOpen(true)};
-    const canLaunch = ready && saved && !giwa.busy && (!!giwa.pending || (members.length > 0 && members.every(c => c.agent.mode !== "llm" || !!service?.model.configured)));
+    const canLaunch = ready && saved && giwa.recoveryReady && !giwa.busy && (!!giwa.pending || (members.length > 0 && members.every(c => c.agent.mode !== "llm" || !!service?.model.configured)));
     function quickLaunch() {
         if (!giwa.pending && giwa.remaining < 1) {
             if (giwaSetup.current) {giwaSetup.current.scrollIntoView({block: "center", behavior: "instant"}); giwaSetup.current.focus({preventScroll: true});}

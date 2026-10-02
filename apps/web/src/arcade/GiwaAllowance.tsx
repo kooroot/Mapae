@@ -37,12 +37,13 @@ export function GiwaAllowance({ref, giwa, admissions, saved, ko, reducedMotion, 
         {giwa.busy ? <AllowanceProgress phase={giwa.phase} walletName={giwa.walletName} ko={ko} reducedMotion={reducedMotion} /> : <>
             {prepared && <p className="arc-allowance-ready" role="status"><Check size={17} />{ko ? "용돈 준비 완료! 이제 친구를 출발시켜 주세요." : "Allowance ready! Send your friends on their way."}</p>}
             {(prepared || giwa.pending) && <button className="arc-button arc-approve-button" disabled={!canLaunch} onClick={onLaunch}>{giwa.pending ? ko ? "입장권 복구" : "Recover ticket" : ko ? "친구 출발시키기" : "Send your friends out"}<ArrowRight size={18} /></button>}
-            {!prepared && !giwa.pending && <button className="arc-button arc-approve-button" disabled={giwa.otherWalletPending || admissions === 0 || !saved} onClick={() => void giwa.approve(admissions)}>{giwa.error ? ko ? "용돈 준비 다시 시도" : "Retry allowance setup" : ko ? "테스트 용돈 준비하기" : "Prepare test allowance"}<ArrowRight size={18} /></button>}
+            {!prepared && !giwa.pending && <button className="arc-button arc-approve-button" disabled={giwa.otherWalletPending || !giwa.recoveryReady || admissions === 0 || !saved} onClick={() => void giwa.approve(admissions)}>{giwa.error ? ko ? "용돈 준비 다시 시도" : "Retry allowance setup" : ko ? "테스트 용돈 준비하기" : "Prepare test allowance"}<ArrowRight size={18} /></button>}
             {!prepared && !giwa.pending && <p className="arc-desk-help">{admissions === 0 ? ko ? "먼저 함께 놀 친구를 선택해 주세요." : "Choose your friends first." : ko ? "지갑 서명 → 계정 준비 → 출발. 필요한 단계는 안내해 드려요." : "Sign → prepare account → head out. We will guide each step."}</p>}
         </>}
         {giwa.error && <p className="arc-notice" role="alert">{giwa.error}</p>}
         </div>
-        {giwa.pending && <p className="arc-notice" role="status">{ko ? "진행 중인 입장권이 있어요. ‘입장권 복구’로 이어 가세요. 새 결제는 만들지 않아요." : "A ticket is pending. Choose Recover ticket to continue without a new charge."}</p>}
+        {!giwa.recoveryReady && saved && <p className="arc-notice" role="status">{ko ? "이전 입장권을 확인하고 있어요…" : "Checking your previous ticket…"}</p>}
+        {giwa.pending && <p className="arc-notice" role="status">{ko ? "진행 중인 입장권이 있어요. ‘입장권 복구’로 이어 가세요. 새 결제는 만들지 않아요." : "A ticket is pending. Choose Recover ticket to continue without a new charge."}<br /><small>{ko ? "문의 번호" : "Support ID"}: {giwa.pending.requestId}</small></p>}
         {giwa.otherWalletPending && <p className="arc-notice" role="alert">{ko ? "다른 지갑의 입장권이 진행 중이에요. 해당 지갑으로 다시 연결해 먼저 복구해 주세요." : "Another wallet has a pending ticket. Reconnect that wallet to recover it first."}</p>}
         <div className="arc-desk-assurance"><ShieldCheck size={16} /><span>{ko ? "서명한 한도 안에서만 · 플레이 중 추가 결제 없음" : "Within your signed limit · no in-game charges"}</span></div>
         <details className="arc-permission-details"><summary>{ko ? "용돈 규칙과 승인 기록" : "Allowance rules & permissions"}<ChevronDown size={16} /></summary><div>

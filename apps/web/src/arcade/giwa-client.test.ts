@@ -65,9 +65,10 @@ describe("GIWA ticket client", () => {
                     facilitatorAddresses: [ARCADE_REDEEMER], delegationManager: manager}}]};
         const fetcher = Object.assign(async (_url: URL | RequestInfo, init?: RequestInit) => {
             if (init?.method !== "POST") return new Response(null, {status: 402, headers: {"Payment-Required": encodePaymentRequiredHeader(offer)}});
-            headers.push(new Headers(init.headers).get("Payment-Signature")!);
+            const input = JSON.parse(String(init.body)); headers.push(input.header);
+            expect(new Headers(init.headers).get("X-Mapae-Wallet")).toBe(owner);
             if (++sends === 1) throw new Error("Connection lost after sending");
-            return Response.json(order);
+            return Response.json({pending: {requestId: input.requestId, game: input.game, owner: owner.toLowerCase(), receipt: {code: order.ticket.code, transaction: tx, payer}}});
         }, {preconnect: fetch.preconnect});
         const args = {game: "race" as const, requestId: crypto.randomUUID(), characterId: "maru", owner, payer, delegationManager: manager, fetcher,
             provider: async () => {signs++; return {delegationManager: manager, permissionContext: "0x1234" as const, delegator: payer};}};

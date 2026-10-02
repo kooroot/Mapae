@@ -344,6 +344,8 @@ export interface MapaeStore {
     readonly items: Items;
     readonly orders: Orders;
     readonly paymentIdentifiers: PaymentIdentifiers;
+    /** Acquire a write transaction without changing financial state. */
+    probe(): void;
     /** Idempotent. */
     close(): void;
 }
@@ -1099,6 +1101,12 @@ export function openStore(path: string): MapaeStore {
     const ledger = createLedger(db);
     return {
         path,
+        probe() {
+            // Health probes must not block Bun's event loop for the settlement write timeout.
+            db.exec("PRAGMA busy_timeout = 100");
+            try {db.transaction(() => {db.query("SELECT 1 FROM budget_days LIMIT 1").get();}).immediate();}
+            finally {db.exec("PRAGMA busy_timeout = 5000");}
+        },
         ledger,
         settlements: createSettlementJournal(db, ledger),
         schedules: createScheduleStore(db),

@@ -1,3 +1,4 @@
+import {ARCADE_PAY_TO} from "@mapae/arcade/tickets";
 import {seedArcade} from "./seed-arcade";
 import {describe, expect, spyOn, test} from "bun:test";
 import {createHash} from "node:crypto";
@@ -97,6 +98,8 @@ function shop(options: {metricsToken?: string; store?: MapaeStore} = {}) {
         baseUrl: BASE_URL,
         facilitatorUrl: PUBLIC_FACILITATOR,
         name: "테스트 상점",
+        arcadeReceiptToken: "test-receipt-token-32-characters-long",
+        readinessFetch: Object.assign(async () => Response.json({ok: true}), {preconnect: fetch.preconnect}),
         ...(options.metricsToken === undefined ? {} : {metricsToken: options.metricsToken}),
     });
     const get = (path: string, headers: Record<string, string> = {}) =>
@@ -566,7 +569,7 @@ describe("metrics", () => {
 describe("health and seed", () => {
     test("/health names the public facilitator and the network", async () => {
         const {get} = shop();
-        expect(await (await get("/health")).json()).toEqual({
+        expect(await (await get("/health")).json()).toMatchObject({
             ok: true,
             name: "테스트 상점",
             network: GIWA_SEPOLIA_CAIP2,
@@ -699,4 +702,30 @@ describe("payment-identifier — 같은 이름으로 다른 결제는 받지 않
         const retry = await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_B), ID));
         expect(retry.status).toBe(409);
     });
+});
+
+test("readiness fails on dependency or database failure; liveness stays independent", async () => {
+    for (const mode of ["rpc", "database"]) {
+        const store = openStore(IN_MEMORY);
+        const app = createShopApp({store, mapae: createMapae({facilitator: PUBLIC_FACILITATOR}), baseUrl: BASE_URL, facilitatorUrl: PUBLIC_FACILITATOR, name: "test",
+            readinessFetch: Object.assign(async () => Response.json({ok: mode !== "rpc"}), {preconnect: fetch.preconnect})});
+        if (mode === "database") store.close();
+        expect((await app.request("/health")).status).toBe(503);
+        expect((await app.request("/live")).status).toBe(200);
+        store.close();
+    }
+});
+test("arcade recovery authenticates the Worker and never exposes pickup capabilities", async () => {
+    const {store, get, pay} = shop();
+    seedArcade(store, NOW);
+    const receipt = await ticketOf(await pay("/s/mapae-arcade/race", paymentHeader(ONE, LEAF_A, ARCADE_PAY_TO)));
+    const order = store.orders.listBySeller("mapae-arcade")[0]!;
+    expect((await get(`/s/mapae-arcade/settlements/${order.paymentIntentId}`)).status).toBe(401);
+    const auth = {Authorization: "Bearer test-receipt-token-32-characters-long"};
+    const recovered = await get(`/s/mapae-arcade/settlements/${order.paymentIntentId}`, auth);
+    expect(recovered.status).toBe(200);
+    const text = await recovered.text(); expect(text).not.toContain(order.ticket);
+    expect(JSON.parse(text)).toMatchObject({intent: order.paymentIntentId, game: "race", transaction: receipt.ticket.transaction, amount: "1000000"});
+    expect((await get("/s/mapae-arcade/settlements/not-an-intent", auth)).status).toBe(400);
+    store.close();
 });

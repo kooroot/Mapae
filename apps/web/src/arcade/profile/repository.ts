@@ -1,5 +1,5 @@
 import type {D1Database} from "@cloudflare/workers-types";
-import {emptyProfile, parseProfile, type Profile, type ProfileSnapshot} from "./model";
+import {PROFILE_GENERATION, emptyProfile, parseProfile, type Profile, type ProfileSnapshot} from "./model";
 
 type Identity = {owner: string; origin: string; expires_at: number};
 export type Challenge = Identity & {message: string};
@@ -28,10 +28,10 @@ export function profileRepository(db: Pick<D1Database, "prepare" | "batch">): Pr
         async logout(hash) {await db.prepare("DELETE FROM arcade_sessions WHERE token_hash = ?").bind(hash).run();},
         async read(owner) {
             const row = await db.prepare("SELECT revision, profile FROM arcade_profiles WHERE owner = ?").bind(owner).first<{revision: number; profile: string}>();
-            if (!row) return {owner, revision: 0, profile: emptyProfile()};
+            if (!row) return {owner, generation: PROFILE_GENERATION, revision: 0, profile: emptyProfile()};
             const profile = parseProfile(JSON.parse(row.profile));
             if (!profile) throw new Error("Stored profile is invalid");
-            return {owner, revision: row.revision, profile};
+            return {owner, generation: PROFILE_GENERATION, revision: row.revision, profile};
         },
         async write(owner, revision, profile, now) {
             const row = revision === 0

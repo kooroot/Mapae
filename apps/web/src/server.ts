@@ -1,4 +1,7 @@
 import {env} from "cloudflare:workers";
+import {checkoutApi, checkoutRepository} from "./arcade/profile/checkout";
+import {derivePayerAccount} from "./lib/grant";
+import {deployment} from "./lib/config";
 import {profileApi} from "./arcade/profile/api";
 import {profileRepository} from "./arcade/profile/repository";
 import {
@@ -33,7 +36,7 @@ const start = createStartHandler(streamWithSecurityHeaders);
 
 export default createServerEntry({fetch: (request, options) =>
     new URL(request.url).pathname.startsWith("/api/arcade/profile")
-        ? profileApi(request, profileRepository(env.ARCADE_DB), {development: import.meta.env.DEV})
+        ? profileApi(request, profileRepository(env.ARCADE_DB), {development: import.meta.env.DEV, checkout: (r, owner, input) => checkoutApi(r, owner, input, {repo: checkoutRepository(env.ARCADE_DB), profiles: profileRepository(env.ARCADE_DB), payer: derivePayerAccount, manager: deployment.environment.DelegationManager, receiptToken: env.ARCADE_RECEIPT_TOKEN})})
         : new URL(request.url).pathname.startsWith("/api/arcade/")
         ? arcadeProductionApi(request)
         : start(request, options),

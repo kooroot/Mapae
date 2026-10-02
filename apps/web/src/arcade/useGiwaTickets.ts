@@ -1,3 +1,6 @@
+import {profileRequest} from "./profile/client";
+import {PROFILE_GENERATION} from "./profile/model";
+import {parseGiwaPending, writeGiwaPending} from "./giwa-store";
 import {useEffect, useRef, useState} from "react";
 import {useAccount, useConfig, useDisconnect, useSwitchChain} from "wagmi";
 import {generatePrivateKey, privateKeyToAccount} from "viem/accounts";
@@ -17,14 +20,15 @@ import type {SessionGrant} from "../lib/grant";
 
 type Session = {owner: Address; payer: Address; context: Hex; expires: number; remaining: number; provider: ReturnType<typeof createMapaeDelegationProvider>};
 export type ApprovalPhase = "idle" | "catalogue" | "wallet" | "switching" | "preparing" | "signing" | "authorizing" | "bootstrap" | "verifying";
-export function useGiwaTickets(locale: Locale) {
+export function useGiwaTickets(locale: Locale, profileReady: boolean) {
     const {address, chainId, connector} = useAccount();
     const config = useConfig();
     const {disconnect: disconnectWallet} = useDisconnect();
     const {switchChainAsync} = useSwitchChain();
+    const [recoveryReady, setRecoveryReady] = useState(false);
     const [busy, setBusy] = useState(false);
     const [phase, setPhase] = useState<ApprovalPhase>("idle");
-    const locked = useRef(false);
+    const locked = useRef(false), acknowledged = useRef<string | null>(null);
     const [error, setError] = useState("");
     const [remaining, setRemaining] = useState(0);
     const [balance, setBalance] = useState<string | null>(null);
@@ -54,8 +58,32 @@ export function useGiwaTickets(locale: Locale) {
         }).catch(() => {if (!cancelled) setError("스마트 계정을 확인하지 못했어요. / Account unavailable.");});
         return () => {cancelled = true;};
     }, [address, chainId, connector?.uid]);
+    useEffect(() => {
+        if (!address || !profileReady || locked.current) return;
+        let cancelled = false, loading = false;
+        setRecoveryReady(false);
+        const reload = () => {
+        if (cancelled || loading || locked.current || document.visibilityState === "hidden") return;
+        loading = true;
+        void profileRequest(address, "/checkout").then(value => {
+            if (cancelled || activeOwner.current !== address || locked.current) return;
+            const raw = value && typeof value === "object" && "pending" in value ? value.pending : null;
+            if (raw && typeof raw === "object") {
+                const cloud = parseGiwaPending(JSON.stringify({...raw, header: null}));
+                if (cloud.requestId === acknowledged.current) return;
+                const local = readGiwaPending();
+                const recovered = local?.requestId === cloud.requestId ? {...cloud, header: local.header} : cloud;
+                writeGiwaPending(recovered); setPending(recovered);
+            } else {clearGiwaPending(); setPending(null);}
+            setRecoveryReady(true);
+        }).catch(() => {if (!cancelled) setError(locale === "ko" ? "입장권 복구 상태를 확인하지 못했어요. 연결을 확인하고 다시 불러와 주세요." : "Ticket recovery is unavailable. Check your connection and refresh.");}).finally(() => {loading = false;});
+        };
+        reload(); const poll = setInterval(reload, 30_000);
+        window.addEventListener("focus", reload); window.addEventListener("online", reload);
+        return () => {cancelled = true; clearInterval(poll); window.removeEventListener("focus", reload); window.removeEventListener("online", reload);};
+    }, [address, profileReady]);
     async function approve(admissions: number) {
-        if (!address || !connector || locked.current) return;
+        if (!address || !connector || locked.current || !recoveryReady) return;
         locked.current = true; setBusy(true); setError("");
         try {
             if (readGiwaPending()) throw new GiwaTicketError("먼저 진행 중인 입장권을 복구해 주세요. / Recover the pending ticket first.");
@@ -145,16 +173,20 @@ export function useGiwaTickets(locale: Locale) {
             setPending(readGiwaPending());
         }
     }
-    function acknowledge() {
-        if (!address || activeOwner.current !== address) return;
+    async function acknowledge(): Promise<boolean> {
+        if (!address || activeOwner.current !== address) return false;
         const ticket = readGiwaPending();
-        if (ticket && getAddress(ticket.owner) !== getAddress(address)) return;
+        if (!ticket || getAddress(ticket.owner) !== getAddress(address)) return false;
+        const result = await profileRequest(address, "/checkout/ack", "POST", {generation: PROFILE_GENERATION, requestId: ticket.requestId});
+        const admitted = !!result && typeof result === "object" && "admitted" in result && result.admitted === true;
+        acknowledged.current = ticket.requestId;
         clearGiwaPending(); setPending(null);
-        if (session.current) {session.current.remaining = Math.max(0, session.current.remaining - 1); setRemaining(session.current.remaining);}
+        if (session.current && admitted) {session.current.remaining = Math.max(0, session.current.remaining - 1); setRemaining(session.current.remaining);}
+        return admitted;
     }
     function finish() {session.current = null; setRemaining(0);}
     function revoked(context: Hex) {if (session.current?.context === context) finish();}
     function disconnect() {finish(); disconnectWallet();}
     const ownPending = pending && address && getAddress(pending.owner) === getAddress(address) ? pending : null;
-    return {address, payer, balance, remaining, busy, phase, chainId, walletName: connector?.name ?? "", error, pending: ownPending, otherWalletPending: !!pending && !ownPending, grants, revoked, disconnect, approve, buy, acknowledge, finish};
+    return {address, payer, balance, remaining, recoveryReady, busy, phase, chainId, walletName: connector?.name ?? "", error, pending: ownPending, otherWalletPending: !!pending && !ownPending, grants, revoked, disconnect, approve, buy, acknowledge, finish};
 }

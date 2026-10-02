@@ -1,6 +1,6 @@
 import {getAddress, isAddress, verifyMessage, type Address, type Hex} from "viem";
 import {createSiweMessage, generateSiweNonce} from "viem/siwe";
-import {MAX_PROFILE_BYTES, parseProfile} from "./model";
+import {PROFILE_GENERATION, MAX_PROFILE_BYTES, parseProfile} from "./model";
 import type {ProfileRepository} from "./repository";
 
 const SESSION = "__Host-mapae-arcade-session", CHALLENGE = "__Host-mapae-arcade-challenge";
@@ -9,6 +9,11 @@ const ORIGINS = new Set(["https://mapae.io", "https://app.mapae.io"]);
 const HEADERS = {"Cache-Control": "private, no-store", "Content-Type": "application/json; charset=utf-8", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "Referrer-Policy": "no-referrer"};
 const json = (value: unknown, status = 200, cookie?: string) => Response.json(value, {status, headers: {...HEADERS, ...(cookie ? {"Set-Cookie": cookie} : {})}});
 const error = (code: string, status: number) => json({error: {code}}, status);
+function limited(until: number, now: number) {
+    const response = error("rate_limited", 429);
+    response.headers.set("Retry-After", String(Math.max(1, Math.ceil((until - now) / 1000))));
+    return response;
+}
 export const tokenHash = async (token: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))), b => b.toString(16).padStart(2, "0")).join("");
 const token = () => crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
 const cookie = (name: string, value: string, seconds: number) => `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${seconds}`;
@@ -27,7 +32,7 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 export type ProfileVerifier = (input: {address: Address; message: string; signature: Hex}) => Promise<boolean>;
 
 /** The stored challenge supplies the identity and message; no client-selected profile owner. */
-export async function profileApi(request: Request, repo: ProfileRepository, options: {verify?: ProfileVerifier; now?: number; development?: boolean} = {}): Promise<Response> {
+export async function profileApi(request: Request, repo: ProfileRepository, options: {verify?: ProfileVerifier; now?: number; development?: boolean; checkout?: (request: Request, owner: Address, input: unknown) => Promise<Response>} = {}): Promise<Response> {
     const url = new URL(request.url), now = options.now ?? Date.now();
     const local = options.development && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
     if ((!ORIGINS.has(url.origin) && !local) || url.search) return error("origin_denied", 403);
@@ -35,7 +40,7 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
     const write = request.method !== "GET";
     if (write && (request.headers.get("Origin") !== url.origin || request.headers.get("Content-Type")?.split(";")[0] !== "application/json")) return error("origin_denied", 403);
     const path = url.pathname;
-    if (!["/api/arcade/profile", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout"].includes(path)) return error("not_found", 404);
+    if (!["/api/arcade/profile", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout", "/api/arcade/profile/checkout", "/api/arcade/profile/checkout/ack"].includes(path)) return error("not_found", 404);
     try {
         if (path.endsWith("/challenge") && request.method === "POST") {
             const input = await body(request, 1024);
@@ -44,7 +49,7 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
             // Only Cloudflare's own IP header is trusted; client-forwarded headers are ignored.
             const ip = request.headers.get("CF-Connecting-IP");
             const window = Math.floor(now / 600_000), until = (window + 1) * 600_000;
-            if (!await repo.rateLimit(`owner:${owner}:${window}`, until, 20) || (ip && !await repo.rateLimit(`ip:${await tokenHash(ip)}:${window}`, until, 60))) return error("rate_limited", 429);
+            if (!await repo.rateLimit(`owner:${owner}:${window}`, until, 20) || (ip && !await repo.rateLimit(`ip:${await tokenHash(ip)}:${window}`, until, 60))) return limited(until, now);
             await repo.cleanup(now);
             const message = createSiweMessage({address: getAddress(owner), chainId: 91342, domain: url.host, uri: `${url.origin}/ko/arcade`, version: "1", nonce: generateSiweNonce(), issuedAt: new Date(now), expirationTime: new Date(now + 300_000), statement: "Sign in to Mapae Arcade to sync your characters and play history. This does not authorize payments or spending."});
             const nonce = token();
@@ -72,14 +77,29 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
         const requestedOwner = request.headers.get("X-Mapae-Wallet");
         if (!identity || !requestedOwner || !isAddress(requestedOwner) || requestedOwner.toLowerCase() !== identity.owner) return error("login_required", 401);
         if (path.endsWith("/logout") && request.method === "POST") {await repo.logout(await tokenHash(session!)); return json({ok: true}, 200, cookie(SESSION, "", 0));}
+        const ip = request.headers.get("CF-Connecting-IP"), requestWindow = Math.floor(now / 60_000);
+        if (ip && !await repo.rateLimit(`authenticated-ip:${await tokenHash(ip)}:${requestWindow}`, (requestWindow + 1) * 60_000, 600)) return limited((requestWindow + 1) * 60_000, now);
+        if (path.startsWith("/api/arcade/profile/checkout")) {
+            const window = Math.floor(now / 60_000), until = (window + 1) * 60_000;
+            if (!await repo.rateLimit(`checkout:${identity.owner}:${window}`, until, 30)) return limited(until, now);
+            if (await repo.rateLimit(`cleanup:${window}`, until, 1)) await repo.cleanup(now);
+            if (!options.checkout) return error("checkout_unavailable", 503);
+            return await options.checkout(request, getAddress(identity.owner).toLowerCase() as Address, request.method === "GET" ? null : await body(request, 27_000));
+        }
         if (path !== "/api/arcade/profile") return error("method_not_allowed", 405);
+        if (request.method !== "GET" && request.method !== "PUT") return error("method_not_allowed", 405);
+        const window = Math.floor(now / 60_000), until = (window + 1) * 60_000;
+        // One wallet shares its limit across tabs, devices and Worker isolates.
+        if (!await repo.rateLimit(`profile:${identity.owner}:${request.method}:${window}`, until, request.method === "GET" ? 60 : 30)) return limited(until, now);
+        if (await repo.rateLimit(`cleanup:${window}`, until, 1)) await repo.cleanup(now);
         if (request.method === "GET") return json(await repo.read(identity.owner));
         if (request.method !== "PUT") return error("method_not_allowed", 405);
         const input = await body(request, MAX_PROFILE_BYTES + 1024);
         if (!object(input) || typeof input.revision !== "number" || !Number.isSafeInteger(input.revision) || input.revision < 0) return error("invalid_profile", 400);
+        if (input.generation !== PROFILE_GENERATION) return json({error: {code: "server_restored"}, snapshot: await repo.read(identity.owner)}, 409);
         const profile = parseProfile(input.profile); if (!profile) return error("invalid_profile", 400);
         if (!await repo.write(identity.owner, input.revision, profile, now)) return json({error: {code: "revision_conflict"}, snapshot: await repo.read(identity.owner)}, 409);
-        return json({owner: identity.owner, revision: input.revision + 1, profile});
+        return json({owner: identity.owner, generation: PROFILE_GENERATION, revision: input.revision + 1, profile});
     } catch (e) {
         return error(e instanceof Error && e.message === "body_too_large" ? "body_too_large" : e instanceof SyntaxError ? "invalid_json" : "profile_unavailable", e instanceof Error && e.message === "body_too_large" ? 413 : e instanceof SyntaxError ? 400 : 503);
     }

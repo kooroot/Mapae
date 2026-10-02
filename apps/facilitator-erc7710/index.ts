@@ -1,3 +1,4 @@
+import {healthDeadline, paymentReady} from "./health";
 import {Hono} from "hono";
 import {DelegationManager} from "@metamask/smart-accounts-kit/contracts";
 import {
@@ -330,6 +331,8 @@ const relayerBalance = new CachedProbe(
     {ttlMs: PROBE_TTL_MS, cacheFailures: true},
 );
 
+const databaseReadiness = new CachedProbe(async () => {store.probe(); return true;}, {ttlMs: 15_000, cacheFailures: true});
+
 /** Pre-broadcast refusals are best-effort diagnostics; terminal accounting is atomic in the journal. */
 function recordRejection(event: SettlementEventInput): void {
     try {store.ledger.record(event);}
@@ -427,6 +430,7 @@ app.use("*", async (c, next) => {
 // Public: the tunnel's catch-all forwards it, and facilitator.mapae.io/health answers
 // anyone. Everything here is either a closed enum or an address that is already on
 // chain; the one free-text field it used to carry is now a log line.
+app.get("/live", c => c.json({ok: true}));
 app.get("/health", async (c) => {
     let framework: FrameworkLiveVerification | undefined;
     // Why it is unhealthy, not just that it is. Verification throws for a paused
@@ -436,21 +440,26 @@ app.get("/health", async (c) => {
     // down and which viem was talking to it. `frameworkPaused` is read off the same
     // word: a verification that threw returned no flag, so the pause is only ever known
     // through its classification.
+    const balanceRead = healthDeadline(relayerBalance.read()).catch(() => undefined);
     let frameworkError: FrameworkHealthError | null = null;
     try {
-        framework = await readiness.read();
+        framework = await healthDeadline(readiness.read());
     } catch (error) {
         frameworkError = classifyFrameworkError(error);
     }
     // Degrade like the framework check above rather than throwing: a health probe
     // that 500s when the RPC blips tells the operator less than one that reports
     // which dependency is down.
-    const balance = await relayerBalance.read().catch(() => undefined);
+    const balance = await balanceRead;
     // The remaining budget is deliberately not here. "How much gas is left today" is a
     // targeting number for anyone deciding whether draining the day is worth it; it is
     // reported behind /metrics' token.
+    let database = false, remaining = 0n;
+    try {database = await databaseReadiness.read(); remaining = budget.remaining(Date.now());} catch { /* Public readiness never contains DB exception text. */ }
+    const acceptingPayments = remaining > 0n;
+    const ok = paymentReady(Boolean(framework), database, balance, remaining);
     return c.json({
-        ok: Boolean(framework) && balance !== undefined && balance > 0n,
+        ok, database, acceptingPayments,
         network: GIWA_SEPOLIA_CAIP2,
         composition: deployment.compositionId,
         delegationManager: manager,
@@ -459,7 +468,7 @@ app.get("/health", async (c) => {
         frameworkError,
         facilitator: relayer.address,
         relayerFunded: balance === undefined ? null : balance > 0n,
-    });
+    }, ok ? 200 : 503);
 });
 
 app.get("/supported", (c) =>

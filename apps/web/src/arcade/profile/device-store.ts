@@ -13,7 +13,7 @@ export function readDeviceDraft(owner: Address): Draft {
         if (raw) {
             const v = JSON.parse(raw);
             const profile = parseProfile(v.base?.profile);
-            const base = profile && v.base?.owner === owner.toLowerCase() && Number.isSafeInteger(v.base?.revision) && v.base.revision >= 0 ? {owner: owner.toLowerCase(), revision: v.base.revision, profile} : null;
+            const base = profile && v.base?.owner === owner.toLowerCase() && Number.isSafeInteger(v.base?.revision) && v.base.revision >= 0 ? {owner: owner.toLowerCase(), revision: v.base.revision, generation: typeof v.base.generation === "string" ? v.base.generation : "", profile} : null;
             return {state: parseArcadeState(JSON.stringify(v.state), reduced), base, pending: v.pending === true, imported: v.imported === true};
         }
         // Existing wallet-bound records must survive the move to server storage.
@@ -26,7 +26,7 @@ export function writeDeviceDraft(owner: Address, draft: Draft): boolean {
     try {
         localStorage.setItem(key(owner), JSON.stringify({
             state: JSON.parse(serializeArcadeState(draft.state)),
-            base: draft.base ? {owner: owner.toLowerCase(), revision: draft.base.revision, profile: projectProfile({...draft.state, ...draft.base.profile})} : null,
+            base: draft.base ? {owner: owner.toLowerCase(), revision: draft.base.revision, generation: draft.base.generation, profile: projectProfile({...draft.state, ...draft.base.profile})} : null,
             pending: draft.pending, imported: draft.imported,
         }));
         if (draft.imported) localStorage.removeItem(arcadeStorageKey(owner));

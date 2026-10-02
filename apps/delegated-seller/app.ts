@@ -114,6 +114,8 @@ export interface ShopAppOptions {
     name: string;
     /** Bearer for `/metrics`; absent, the route answers 503 rather than opening up. */
     metricsToken?: string;
+    readinessFetch?: typeof fetch;
+    arcadeReceiptToken?: string;
 }
 
 export interface ShopManifestItem {
@@ -360,7 +362,7 @@ function readDelegation(header: string): Delegation | undefined {
     return {delegationManager: getAddress(delegationManager), permissionContext};
 }
 
-export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metricsToken}: ShopAppOptions) {
+export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metricsToken, readinessFetch = fetch, arcadeReceiptToken}: ShopAppOptions) {
     const app = new Hono<ShopEnv>();
     app.use("*", async (c, next) => {
         await next();
@@ -475,15 +477,26 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
         }
     };
 
-    app.get("/health", (c) =>
-        c.json({
-            ok: true,
-            name,
-            network: GIWA_SEPOLIA_CAIP2,
-            paymentMethod: "erc7710",
-            facilitator: facilitatorUrl,
-        }),
-    );
+    app.get("/live", c => c.json({ok: true}));
+    let health: {at: number; ok: boolean; database: boolean; facilitatorReady: boolean} | undefined;
+    let checking: Promise<NonNullable<typeof health>> | undefined;
+    app.get("/health", async c => {
+        const check = async () => {
+            let database = false, facilitatorReady = false;
+            try {store.probe(); database = true;} catch { /* Closed health enum only. */ }
+            try {
+                const response = await readinessFetch(`${facilitatorUrl.replace(/\/$/, "")}/health`, {redirect: "error", signal: AbortSignal.timeout(10_000)});
+                const value: unknown = await response.json();
+                facilitatorReady = response.ok && !!value && typeof value === "object" && "ok" in value && value.ok === true;
+            } catch { /* Dependency unavailable. */ }
+            return {at: Date.now(), ok: database && facilitatorReady, database, facilitatorReady};
+        };
+        if (!health || Date.now() - health.at > 15_000) {
+            checking ??= check().finally(() => {checking = undefined;});
+            health = await checking;
+        }
+        return c.json({...health, arcadeRecovery: !!arcadeReceiptToken, name, network: GIWA_SEPOLIA_CAIP2, paymentMethod: "erc7710", facilitator: facilitatorUrl}, health.ok ? 200 : 503);
+    });
 
     app.get("/s/:slug", (c) => {
         const seller = findShop(c.req.param("slug"));
@@ -589,6 +602,20 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
 
     // The code is the capability: 80 random bits, minted by the store, good only at the
     // shop that issued it. Whoever can show it is shown what it bought.
+    // Worker-only receipt lookup: game history must not become a public wallet index.
+    app.get("/s/mapae-arcade/settlements/:intent", c => {
+        if (!arcadeReceiptToken) return c.json({error: "recovery_unavailable"}, 503);
+        if (!bearerTokenMatches(c.req.header("authorization"), arcadeReceiptToken)) return c.json({error: "unauthorized"}, 401);
+        const intent = c.req.param("intent");
+        if (!/^0x[0-9a-fA-F]{64}$/.test(intent)) return c.json({error: "invalid_intent"}, 400);
+        const order = store.orders.getByIntent(intent as `0x${string}`);
+        const seller = findShop("mapae-arcade");
+        if (!order || !seller || order.sellerSlug !== seller.slug || order.status !== "paid" || !order.txHash) return c.json({error: "not_found"}, 404);
+        return c.json({intent: order.paymentIntentId, game: order.itemKey, payer: order.payer.toLowerCase(),
+            transaction: order.txHash, network: GIWA_SEPOLIA_CAIP2, amount: order.amountBase.toString(),
+            asset: MOCK_USDC.address.toLowerCase(), payTo: seller.payTo.toLowerCase()});
+    });
+
     app.get("/s/:slug/tickets/:code", (c) => {
         const seller = findShop(c.req.param("slug"));
         if (!seller) return c.json({error: "unknown_shop"}, 404);

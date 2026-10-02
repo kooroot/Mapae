@@ -1,10 +1,11 @@
+import {PROFILE_GENERATION} from "./profile/model";
 import type {GameId} from "@mapae/arcade";
 import {ARCADE_PAY_TO, ARCADE_REDEEMER, ARCADE_SELLER, ARCADE_TICKETS, ARCADE_TICKET_PRICE, ARCADE_TICKET_AMOUNT} from "@mapae/arcade/tickets";
 import {payForDelegatedResource, type DelegatedLeafProvider} from "@mapae/delegation/payment-client";
 import type {PeriodPolicy} from "@mapae/delegation/policy";
 import {GIWA_SEPOLIA_CAIP2, MOCK_USDC, toTokenAmount} from "@mapae/shared";
 import {decodeEventLog, erc20Abi, getAddress, isAddress, isHash, type Address, type Log} from "viem";
-import {readGiwaPending, writeGiwaPending, clearGiwaPending, type GiwaPending, type GiwaReceipt} from "./giwa-store";
+import {readGiwaPending, writeGiwaPending, type GiwaPending, type GiwaReceipt} from "./giwa-store";
 
 export class GiwaTicketError extends Error {}
 
@@ -63,8 +64,19 @@ export async function buyGiwaTicket(params: {game: GameId; requestId: string; ch
         getAddress(pending.owner) !== getAddress(owner) || getAddress(pending.payer) !== getAddress(payer))) throw new GiwaTicketError("Recover the pending ticket before a new payment.");
     if (pending?.receipt) return pending.receipt;
     async function submit(value: GiwaPending, signal?: AbortSignal | null) {
-        return fetcher(`/api/arcade/giwa/${game}`, {method: "POST", headers: {"Payment-Signature": value.header},
-            redirect: "error", signal: signal ?? AbortSignal.timeout(55_000)});
+        if (!value.header) throw new GiwaTicketError("정산을 확인 중이에요. 다시 불러오거나 결제 식별자로 문의해 주세요. 새 결제는 만들지 않아요. / Settlement unresolved; refresh or contact support. No new charge.");
+        const response = await fetcher("/api/arcade/profile/checkout", {method: "POST", credentials: "same-origin",
+            headers: {"Content-Type": "application/json", "X-Mapae-Wallet": owner},
+            body: JSON.stringify({generation: PROFILE_GENERATION, requestId, characterId, game, header: value.header}),
+            redirect: "error", signal: signal ?? AbortSignal.timeout(70_000)});
+        if (!response.ok) return response;
+        const result: unknown = await response.json();
+        const v = object(result) && object(result.pending) ? result.pending : null;
+        const r = v && object(v.receipt) ? v.receipt : null;
+        if (!v || v.requestId !== requestId || v.game !== game || v.owner !== owner.toLowerCase() || !r) throw new GiwaTicketError("Ticket unresolved; no new payment was made.");
+        // Adapt the authenticated cloud receipt to the existing strict receipt parser.
+        return Response.json({ticket: {code: r.code, shop: {slug: "mapae-arcade"}, item: {key: game}, transaction: r.transaction},
+            receipt: {...r, method: "erc7710", amount: ARCADE_TICKET_PRICE, asset: MOCK_USDC.address, payTo: ARCADE_PAY_TO, network: GIWA_SEPOLIA_CAIP2}});
     }
     let receipt: GiwaReceipt;
     if (pending) {
@@ -86,7 +98,7 @@ export async function buyGiwaTicket(params: {game: GameId; requestId: string; ch
             }, {preconnect: fetcher.preconnect}),
         });
         if (!result.ok) {
-            if (result.code === "PAYMENT_REJECTED") clearGiwaPending();
+            // Keep the exact request until the server confirms admission.
             throw new GiwaTicketError(`GIWA 입장권을 확인하지 못했어요 (${result.code}). 확인 전 새 결제를 만들지 않아요. / No fresh payment until resolved.`);
         }
         receipt = parseGiwaReceipt(result.resource, game, payer);

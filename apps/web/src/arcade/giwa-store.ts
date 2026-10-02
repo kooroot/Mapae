@@ -3,7 +3,7 @@ import {isAddress, isHash, type Address, type Hex} from "viem";
 
 export type GiwaReceipt = {code: string; transaction: Hex; payer: Address};
 export type GiwaPending = {requestId: string; characterId: string; game: GameId; owner: Address; payer: Address;
-    header: string; receipt: GiwaReceipt | null};
+    header: string | null; receipt: GiwaReceipt | null};
 const KEY = "mapae.arcade.giwa.pending";
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 export function parseGiwaPending(raw: string): GiwaPending {
@@ -11,8 +11,7 @@ export function parseGiwaPending(raw: string): GiwaPending {
     if (!object(v) || typeof v.requestId !== "string" || !/^[a-f0-9-]{36}$/i.test(v.requestId) ||
         typeof v.characterId !== "string" || !v.characterId || v.characterId.length > 64 ||
         !["stamp", "race", "shop"].includes(String(v.game)) || typeof v.owner !== "string" || !isAddress(v.owner) ||
-        typeof v.payer !== "string" || !isAddress(v.payer) || typeof v.header !== "string" ||
-        v.header.length > 24_000 || !/^[A-Za-z0-9+/=]+$/.test(v.header) ||
+        typeof v.payer !== "string" || !isAddress(v.payer) || (v.header !== null && (typeof v.header !== "string" || v.header.length > 24_000 || !/^[A-Za-z0-9+/=]+$/.test(v.header))) ||
         !(v.receipt === null || (object(v.receipt) && typeof v.receipt.code === "string" && /^[a-zA-Z0-9_-]{8,100}$/.test(v.receipt.code) &&
             typeof v.receipt.transaction === "string" && isHash(v.receipt.transaction) && v.receipt.payer === v.payer))) throw new Error("Invalid pending GIWA ticket. Check the seller receipt before another payment.");
     return {requestId: v.requestId, characterId: v.characterId, game: v.game as GameId, owner: v.owner, payer: v.payer,

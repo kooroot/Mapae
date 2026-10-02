@@ -18,24 +18,22 @@ export async function arcadeProductionApi(request: Request, upstream: typeof fet
     const match = /^\/api\/arcade\/giwa(?:\/(stamp|race|shop))?$/.exec(url.pathname);
     if (!match) return error("not_available", 404);
     const game = match[1];
+    if (request.method === "POST") return error("authenticated_checkout_required", 403);
     const signature = request.headers.get("Payment-Signature");
     if (request.method !== "GET" && request.method !== "POST") return error("method_not_allowed", 405);
-    // Browser submission is a same-origin POST. GET is strictly a public quotation,
-    // so crawlers, previews, prefetches and cross-site images can never pay.
-    if (request.method === "GET" && signature) return error("post_required", 405);
-    if (request.method === "POST" && (!game || !signature || request.headers.get("Origin") !== url.origin ||
-        request.headers.get("Sec-Fetch-Site") === "cross-site")) return error("origin_denied", 403);
-    if (request.body || (signature && (signature.length > 24_000 || !/^[A-Za-z0-9+/=]+$/.test(signature)))) return error("invalid_request", 400);
+    if (request.method !== "GET") return error("method_not_allowed", 405);
+    if (signature) return error("post_required", 405);
+    if (request.body) return error("invalid_request", 400);
     if (game && !Object.hasOwn(ARCADE_TICKETS, game)) return error("not_available", 404);
     try {
         const response = await upstream(`${ARCADE_SELLER}${game ? `/${game}` : ""}`, {
             method: "GET", redirect: "manual", signal: AbortSignal.timeout(50_000),
-            headers: {Accept: "application/json", ...(signature ? {"Payment-Signature": signature} : {})},
+            headers: {Accept: "application/json"},
         });
         // workerd rejects redirect: "error". Stop every redirect explicitly so a
         // bearer payment header can never be forwarded to a second destination.
         if (response.status >= 300 && response.status < 400) {
-            await response.body?.cancel(); return error(signature ? "settlement_unknown" : "seller_unavailable", 502);
+            await response.body?.cancel(); return error("seller_unavailable", 502);
         }
         if (!response.headers.get("Content-Type")?.startsWith("application/json")) {
             await response.body?.cancel(); return error("seller_unavailable", 502);
@@ -59,8 +57,7 @@ export async function arcadeProductionApi(request: Request, upstream: typeof fet
         }
         return new Response(bytes, {status: response.status, headers});
     } catch {
-        // A timeout after submission is ambiguous. Never relay upstream exception
-        // text, which can contain the bearer signature or a provider URL.
-        return error(signature ? "settlement_unknown" : "seller_unavailable", 504);
+        // Never relay upstream exceptions or provider details.
+        return error("seller_unavailable", 504);
     }
 }

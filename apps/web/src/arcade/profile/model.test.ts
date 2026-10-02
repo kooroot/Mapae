@@ -1,3 +1,4 @@
+import {PROFILE_GENERATION, serverRestored} from "./model";
 import {describe, expect, test} from "bun:test";
 import {addCharacter, admitPracticeRun, finishPracticeRun, newArcadeState, newCompanion, updateCharacter} from "../state";
 import {emptyProfile, importDeviceProfile, mergeProfiles, parseProfile, profileState, projectProfile} from "./model";
@@ -42,4 +43,12 @@ describe("cross-device profile reconciliation", () => {
         const remote = {...p, characters: Array.from({length: 12}, (_, i) => ({...p.characters[0]!, id: `friend-${i}`}))};
         expect(() => importDeviceProfile(p, remote)).toThrow("character_limit");
     });
+});
+
+test("restoration is detected even when the restored revision catches up", () => {
+    const base = {revision: 7, generation: PROFILE_GENERATION};
+    expect(serverRestored(base, {revision: 6, generation: PROFILE_GENERATION})).toBe(true);
+    expect(serverRestored(base, {revision: 7, generation: "recovery-new"})).toBe(true);
+    expect(serverRestored(base, {revision: 10, generation: "recovery-new"})).toBe(true);
+    expect(serverRestored(base, {revision: 8, generation: PROFILE_GENERATION})).toBe(false);
 });

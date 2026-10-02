@@ -29,17 +29,17 @@ describe("public arcade boundary", () => {
         for (const [path, init] of cases) expect((await arcadeProductionApi(request(path, init), upstream)).status).toBeGreaterThanOrEqual(400);
         expect(calls).toBe(0);
     });
-    test("only fixed seller receives the single payment header, never cookies or client auth", async () => {
+    test("quotations use the fixed seller, without forwarding cookies or client auth", async () => {
         const upstream = Object.assign(async (url: URL | RequestInfo, init?: RequestInit) => {
             expect(String(url)).toBe(`${ARCADE_SELLER}/race`);
             expect(init?.redirect).toBe("manual");
-            expect(new Headers(init?.headers).get("Payment-Signature")).toBe("YQ==");
+            expect(new Headers(init?.headers).has("Payment-Signature")).toBe(false);
             expect(new Headers(init?.headers).has("Cookie")).toBe(false);
             expect(new Headers(init?.headers).has("Authorization")).toBe(false);
             return Response.json({ticket: "example"}, {headers: {"Set-Cookie": "secret", "Payment-Response": "receipt"}});
         }, {preconnect: fetch.preconnect});
-        const response = await arcadeProductionApi(request("giwa/race", {method: "POST", headers: {Origin: origin,
-            "Payment-Signature": "YQ==", Cookie: "private", Authorization: "private"}}), upstream);
+        const response = await arcadeProductionApi(request("giwa/race", {headers: {Origin: origin,
+            Cookie: "private", Authorization: "private"}}), upstream);
         expect(response.status).toBe(200);
         expect(response.headers.has("Set-Cookie")).toBe(false);
         expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -56,6 +56,7 @@ describe("public arcade boundary", () => {
                 }, {preconnect: fetch.preconnect});
                 const response = await arcadeProductionApi(request("giwa/race", signed ? {method: "POST",
                     headers: {Origin: origin, "Payment-Signature": "YQ=="}} : undefined), upstream);
+                if (signed) {expect(calls).toBe(0); expect(response.status).toBe(403); continue;}
                 expect(calls).toBe(1);
                 expect(response.status).toBe(502);
                 expect(response.headers.has("Location")).toBe(false);
@@ -70,7 +71,7 @@ describe("public arcade boundary", () => {
             expect((await arcadeProductionApi(request("giwa/race"), upstream)).status).toBe(502);
         }
         const upstream = Object.assign(async () => {throw new Error("a private bearer authorization");}, {preconnect: fetch.preconnect});
-        const response = await arcadeProductionApi(request("giwa/race", {method: "POST", headers: {Origin: origin, "Payment-Signature": "YQ=="}}), upstream);
+        const response = await arcadeProductionApi(request("giwa/race"), upstream);
         expect(response.status).toBe(504);
         expect(await response.text()).not.toContain("private bearer");
     });

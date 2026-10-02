@@ -119,6 +119,8 @@ const BASE_URL = readBaseUrl(HOST, PORT);
 const mapae = createMapae({facilitator: FACILITATOR_URL, baseUrl: BASE_URL});
 const PUBLIC_FACILITATOR_URL = readPublicFacilitatorUrl(mapae.facilitator, BASE_URL);
 const METRICS_TOKEN = readMetricsToken();
+const ARCADE_RECEIPT_TOKEN = process.env.ARCADE_RECEIPT_TOKEN?.trim();
+if (ARCADE_RECEIPT_TOKEN !== undefined && ARCADE_RECEIPT_TOKEN.length < 32) throw new Error("ARCADE_RECEIPT_TOKEN must be at least 32 characters");
 const NAME = "Mapae hosted shop";
 
 const store = openStore(STORE_PATH);
@@ -129,6 +131,7 @@ const app = createShopApp({
     facilitatorUrl: PUBLIC_FACILITATOR_URL,
     name: NAME,
     metricsToken: METRICS_TOKEN,
+    arcadeReceiptToken: ARCADE_RECEIPT_TOKEN,
 });
 
 const shops = store.sellers.list().filter((seller) => seller.kind === "hosted");

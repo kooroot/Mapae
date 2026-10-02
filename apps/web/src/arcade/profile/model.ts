@@ -2,7 +2,12 @@ import {newArcadeState, parseArcadeState, MAX_CHARACTERS, type ArcadeState, type
 import {serializeArcadeState} from "../state-store";
 
 export type Profile = Pick<ArcadeState, "characters" | "runs" | "activities">;
-export type ProfileSnapshot = {owner: string; revision: number; profile: Profile};
+// Rotate and deploy to BOTH web Workers before reopening traffic after a DB restore.
+export const PROFILE_GENERATION = "2026-10-02-a";
+export type ProfileSnapshot = {owner: string; revision: number; generation: string; profile: Profile};
+export function serverRestored(base: Pick<ProfileSnapshot, "revision" | "generation">, next: Pick<ProfileSnapshot, "revision" | "generation">): boolean {
+    return base.generation !== next.generation || next.revision < base.revision;
+}
 export const MAX_PROFILE_BYTES = 786_432;
 export const emptyProfile = (): Profile => ({characters: [], runs: [], activities: []});
 export const sameProfile = (a: Profile, b: Profile) => JSON.stringify(a) === JSON.stringify(b);
@@ -28,7 +33,7 @@ export function parseProfile(value: unknown): Profile | null {
     return projectProfile(clean);
 }
 export class ProfileConflict extends Error {
-    constructor(readonly code: "concurrent_edit" | "character_limit" = "concurrent_edit") {super(code);}
+    constructor(readonly code: "concurrent_edit" | "character_limit" | "server_restored" = "concurrent_edit") {super(code);}
 }
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 function field<T>(base: T | undefined, local: T, remote: T): T {

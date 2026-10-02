@@ -2,7 +2,7 @@ import type {Address} from "viem";
 import {useEffect, useRef, useState} from "react";
 import {useSignMessage} from "wagmi";
 import {newArcadeState, type ArcadeState} from "./state";
-import {emptyProfile, importDeviceProfile, mergeProfiles, ProfileConflict, profileState, projectProfile, sameProfile, type ProfileSnapshot} from "./profile/model";
+import {serverRestored, emptyProfile, importDeviceProfile, mergeProfiles, ProfileConflict, profileState, projectProfile, sameProfile, type ProfileSnapshot} from "./profile/model";
 import {loginProfile, ProfileError, profileErrorMessage, readProfile, writeProfile} from "./profile/client";
 import {preserveDeviceDraft, readDeviceDraft, writeDeviceDraft} from "./profile/device-store";
 
@@ -19,7 +19,7 @@ export function useArcadeState(owner: Address) {
     const saving = useRef<Promise<void> | null>(null), authenticating = useRef(false), refreshing = useRef(false);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const conflict = useRef<ProfileSnapshot | null>(null);
-    const draftStored = useRef(true);
+    const draftStored = useRef(true), retryAt = useRef(0), restored = useRef(false);
     function cache() {
         draftStored.current = writeDeviceDraft(owner, {state: current.current, base: base.current, pending: !base.current || !sameProfile(projectProfile(current.current), base.current.profile), imported: imported.current});
         return draftStored.current;
@@ -27,11 +27,13 @@ export function useArcadeState(owner: Address) {
     function show(next: ArcadeState) {current.current = next; if (alive.current) setDemo(next);}
     function failed(e: unknown) {
         if (!alive.current) return;
+        if (e instanceof ProfileError) retryAt.current = e.retryAt;
         setFailure(!initialized.current && e instanceof ProfileError && e.code === "login_required" ? null : e);
         setStatus(e instanceof ProfileError && e.code === "login_required" ? "login" : e instanceof ProfileConflict ? "conflict" : "error");
         if (initialized.current) cache();
     }
     async function flush(): Promise<void> {
+        if (Date.now() < retryAt.current) throw new ProfileError("rate_limited", undefined, retryAt.current);
         if (saving.current) return saving.current;
         if (conflict.current) throw new ProfileConflict();
         const task = async () => {
@@ -41,7 +43,7 @@ export function useArcadeState(owner: Address) {
                 setStatus("saving");
                 const sent = projectProfile(current.current), previous = base.current;
                 try {
-                    const next = await writeProfile(owner, previous.revision, sent);
+                    const next = await writeProfile(owner, previous, sent);
                     if (!alive.current) return;
                     const merged = mergeProfiles(sent, projectProfile(current.current), next.profile);
                     base.current = next;
@@ -49,6 +51,7 @@ export function useArcadeState(owner: Address) {
                     cache();
                 } catch (e) {
                     if (!(e instanceof ProfileError) || !e.snapshot || ++collisions > 3) throw e;
+                    if (serverRestored(previous, e.snapshot)) {restored.current = true; conflict.current = e.snapshot; throw new ProfileConflict("server_restored");}
                     try {
                         const merged = mergeProfiles(previous.profile, projectProfile(current.current), e.snapshot.profile);
                         base.current = e.snapshot; show(profileState(merged, current.current));
@@ -61,14 +64,19 @@ export function useArcadeState(owner: Address) {
         return saving.current;
     }
     async function refresh() {
-        if (refreshing.current || saving.current || conflict.current) return;
+        if (Date.now() < retryAt.current || refreshing.current || saving.current || conflict.current) return;
         refreshing.current = true;
         try {
             const next = await readProfile(owner);
-            if (!alive.current || (base.current && next.revision < base.current.revision)) return;
+            if (!alive.current) return;
+            if (base.current && serverRestored(base.current, next)) {restored.current = true; conflict.current = next; throw new ProfileConflict("server_restored");}
             if (!initialized.current) {
                 const draft = readDeviceDraft(owner);
                 const local = projectProfile(draft.state);
+                if (draft.base && serverRestored(draft.base, next)) {
+                    restored.current = true; conflict.current = next; base.current = next;
+                    show(draft.state); initialized.current = true; setReady(true); throw new ProfileConflict("server_restored");
+                }
                 let merged = next.profile;
                 if (draft.pending || !draft.imported) {
                     try {merged = draft.base ? mergeProfiles(draft.base.profile, local, next.profile) : importDeviceProfile(local, next.profile);}
@@ -131,7 +139,8 @@ export function useArcadeState(owner: Address) {
             // finished on this device while the editor was in conflict.
             const ids = new Set(remote.profile.characters.map(c => c.id));
             const retained = {...local, characters: local.characters.filter(c => ids.has(c.id)), runs: local.runs.filter(r => ids.has(r.characterId)), activities: local.activities.filter(a => ids.has(a.characterId))};
-            base.current = remote; show(profileState(importDeviceProfile(retained, remote.profile), current.current));
+            base.current = remote; show(profileState(restored.current ? remote.profile : importDeviceProfile(retained, remote.profile), current.current));
+            restored.current = false;
             conflict.current = null; await refresh();
         } catch (e) {failed(e);}
     }

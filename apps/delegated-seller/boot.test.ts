@@ -95,6 +95,7 @@ beforeAll(async () => {
         hostname: "127.0.0.1",
         port: 0,
         fetch: (request) =>
+            new URL(request.url).pathname === "/hop/health" ? Response.json({ok: true}) :
             FACILITATOR_ROUTES[new URL(request.url).pathname.replace(/^\/hop/, "") as FacilitatorPath]?.() ??
             new Response("", {status: 404}),
     });
