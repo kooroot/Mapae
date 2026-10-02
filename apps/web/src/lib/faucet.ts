@@ -1,5 +1,5 @@
 import {FAUCET_TARGET_BASE} from "@mapae/delegation/faucet-policy";
-import {fromTokenAmount} from "@mapae/shared";
+import {fromTokenAmount, MOCK_USDC} from "@mapae/shared";
 import type {Delegation} from "@metamask/smart-accounts-kit";
 import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {isHash, type Hash} from "viem";
@@ -15,7 +15,7 @@ import type {Locale} from "./i18n";
  * is an outcome, not an error — it is the policy working, and a person who reads it as a
  * failure will retry until it is one.
  *
- * Copy rule: the token is always "tUSDC (testnet, not real money)", never the bare ticker.
+ * Copy rule: the token is always `${MOCK_USDC.symbol} (testnet, not real money)`, never the bare ticker.
  * The wallet shows a dollar sign, and nobody reading fast should have to wonder.
  */
 export type TopUpOutcome =
@@ -65,8 +65,8 @@ export function interpretTopUp(reply: {ok: boolean; body: unknown}): TopUpOutcom
 }
 
 export const TESTNET_TOKEN: Record<Locale, string> = {
-    en: "tUSDC (testnet, not real money)",
-    ko: "tUSDC (테스트넷, 실제 돈 아님)",
+    en: `${MOCK_USDC.symbol} (testnet, not real money)`,
+    ko: `${MOCK_USDC.symbol} (테스트넷, 실제 돈 아님)`,
 };
 
 export const FAUCET_COPY: Record<

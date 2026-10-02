@@ -53,7 +53,7 @@ export function renderNotFound(all: DocPage[]): string {
         `<h1>페이지를 찾을 수 없습니다</h1>\n` +
         `<p lang="en">This page does not exist. The full contents are in the sidebar, and ` +
         `the <a href="/">one-pager</a> is the place to start.</p>\n` +
-        `<p>이 주소에는 문서가 없습니다. 전체 목차는 왼쪽에 있고, ` +
+        `<p>이 주소에는 문서가 없습니다. 상단 목차에서 문서를 찾거나, ` +
         `<a href="/">원페이저</a>에서 시작하면 됩니다.</p>\n`;
     return renderPage({
         page: {url: "404", source: "", title: "404", locale: "ko"},
@@ -70,6 +70,15 @@ export function renderPage(params: {
     hasDiagram: boolean;
 }): string {
     const {page, all, body, hasDiagram} = params;
+    const ko = page.locale === "ko";
+    const siblings = all.filter(item => item.locale === page.locale);
+    const index = siblings.findIndex(item => item.url === page.url);
+    const previous = index > 0 ? siblings[index - 1] : undefined;
+    const next = index >= 0 ? siblings[index + 1] : undefined;
+    const counterpartSource = page.source === "README.md" ? "README.ko.md" : page.source === "README.ko.md" ? "README.md" : page.source.startsWith("tech/en/") ? page.source.replace("tech/en/", "tech/") : page.source.startsWith("tech/") ? page.source.replace("tech/", "tech/en/") : undefined;
+    const counterpart = all.find(item => item.source === counterpartSource);
+    const localeLink = counterpart ? `<a href="/${counterpart.url}" lang="${counterpart.locale}" aria-label="${ko ? 'Read this page in English' : '이 문서 한국어로 읽기'}">${ko ? "English" : "한국어"}</a>` : "";
+    const pageLink = (item: DocPage | undefined, label: string) => item ? `<a href="/${item.url}"><small>${label}</small><strong>${escapeHtml(item.title)}</strong></a>` : "<span></span>";
     const root = relativeRoot(page.url);
     const canonical = `${SITE_URL}/${page.url}`;
     const title = page.url === "" ? "Mapae — 기술 문서" : `${page.title} · Mapae`;
@@ -94,30 +103,38 @@ export function renderPage(params: {
 <link rel="stylesheet" href="${root}assets/docs.css">
 </head>
 <body>
-<a class="skip" href="#content">Skip to content</a>
+<a class="skip" href="#content">${ko ? "본문으로 바로 가기" : "Skip to content"}</a>
 <header class="top">
-  <a class="brand" href="${LANDING_URL}">
+  <a class="brand" href="${LANDING_URL}${ko ? "/ko" : ""}">
     <img src="${root}brand/emblem.png" alt="" width="26" height="30">
     <span>Mapae</span>
     <em>docs</em>
   </a>
   <nav class="top-links">
-    <a href="${LANDING_URL}">mapae.io</a>
-    <a href="https://app.mapae.io">Studio</a>
+    <a href="${LANDING_URL}${ko ? "/ko" : ""}">mapae.io</a>
+    <a href="https://app.mapae.io${ko ? "/ko" : ""}">Studio</a>
+    ${localeLink}
     <a href="${GITHUB_URL}" target="_blank" rel="noreferrer noopener">GitHub</a>
   </nav>
 </header>
 <div class="frame">
-  <nav class="side" aria-label="Contents">
-${sidebar(all, page)}
-  </nav>
+  <details class="docs-nav"><summary>${ko ? "목차 · 문서 검색" : "Contents · Search"}<span aria-hidden="true">＋</span></summary>
+  <nav class="side" aria-label="${ko ? "문서 목차" : "Contents"}">
+    <label class="docs-search-label" for="docs-search">${ko ? "문서 검색" : "Search documentation"}</label>
+    <input id="docs-search" type="search" placeholder="${ko ? "오류, 결제, 설정…" : "Errors, payments, settings…"}" autocomplete="off" aria-controls="docs-search-results">
+    <p id="docs-search-status" role="status"></p><ul id="docs-search-results"></ul>
+    <div id="docs-contents">${sidebar(all, page)}</div>
+  </nav></details>
   <main id="content" class="doc">
+<div class="doc-location">${escapeHtml(page.section ?? (ko ? "시작하기" : "Getting started"))} · ${escapeHtml(page.title)}</div>
 ${body}
+<nav class="doc-pagination" aria-label="${ko ? "앞뒤 문서" : "Previous and next pages"}">${pageLink(previous, ko ? "← 이전" : "← Previous")}${pageLink(next, ko ? "다음 →" : "Next →")}</nav>
   </main>
 </div>
 <footer class="foot">
   <p>GIWA Sepolia · eip155:91342 · 테스트넷 자산으로만 동작합니다.</p>
 </footer>
+<script type="module" src="${root}assets/navigation.js"></script>
 ${diagramScript}
 </body>
 </html>

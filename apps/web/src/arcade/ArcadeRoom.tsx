@@ -90,6 +90,6 @@ export function ArcadeRoom({locale, selected, onSelect, locked = false, reducedM
         </div>
         <div className="arc-room-selection" role="status" aria-live="polite" aria-atomic="true"><strong>{names[GAMES[visible]!]}</strong><span>{DESCRIPTIONS[locale][GAMES[visible]!]}</span></div>
         <p className="arc-room-hint"><span className="arc-room-swipe-hint">{ko ? "← 좌우로 밀어서 고르세요 →" : "← Swipe to choose →"}</span><span className="arc-room-click-hint">{ko ? "게임기를 눌러 놀 거리를 골라 보세요" : "Pick a cabinet. Find your next little adventure."}</span></p>
-        <div className="arc-room-dock">{children}</div>
+        {children && <div className="arc-room-dock">{children}</div>}
     </section>;
 }

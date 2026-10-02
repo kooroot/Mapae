@@ -18,20 +18,11 @@
 html:has(.arcade.arc-still){scroll-behavior:auto}
 @media(max-width:620px){.agent-arcade[data-screen=receipt]{padding-bottom:calc(105px + env(safe-area-inset-bottom))}.agent-receipt-actions{position:fixed;z-index:30;bottom:0;left:0;right:0;flex-direction:row;gap:10px;padding:14px 16px calc(14px + env(safe-area-inset-bottom));margin:0;background:#211c17fa;border-top:1px solid var(--arc-hair)}.agent-receipt-actions .arc-button{flex:1;min-width:0;padding:12px 10px;font-size:12px;gap:7px}}
 
-.agent-giwa-body { padding: 24px; display: grid; gap: 18px; color: var(--arc-cream); }
-.agent-giwa-body > p, .agent-giwa-body > small { max-width: 70ch; margin: 0; line-height: 1.65; }
-.agent-giwa-body label { display: grid; gap: 8px; }
-.agent-giwa-body .mapae-select-trigger { max-width: 400px; }
-.agent-giwa-body dl { display: flex; flex-wrap: wrap; gap: 22px 40px; margin: 0; }
-.agent-giwa-body dt { font-size: 12px; opacity: .7; margin-bottom: 8px; }
-.agent-giwa-body dd { margin: 0; font-weight: 650; }
-.agent-giwa-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .arcade-revocations { margin-top: 18px; border-top: 1px solid #8d7658; padding-top: 14px; }
 .arcade-revocations > summary { cursor: pointer; color: #e9c99f; }
 .arcade-revocation { padding: 12px 0; border-bottom: 1px solid #5e4b38; }
 .arcade-revocation > p { overflow-wrap: anywhere; }
 .arcade-revocation .studio-revoke-action { margin-top: 8px; }
-@media (max-width: 620px) { .agent-giwa-body { padding: 18px; } .agent-giwa-actions .arc-button { width: 100%; } }
 
 .agent-quick-profile .agent-mobile-budget { display: none; }
 @media (max-width: 620px) { .agent-quick-profile .agent-mobile-budget { display: block; color: var(--arc-gold); font-size: 10px; } }

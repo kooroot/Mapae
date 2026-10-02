@@ -2,16 +2,18 @@ import {useRouter, type ErrorComponentProps} from "@tanstack/react-router";
 import type {Locale} from "../lib/i18n";
 import {useLocale} from "../lib/locale";
 
-const COPY: Record<Locale, {title: string; body: string; retry: string}> = {
+const COPY: Record<Locale, {title: string; body: string; retry: string; detail: string}> = {
     en: {
         title: "Something went wrong.",
-        body: "This page could not be drawn. Try again, and reload the page if that does not help.",
+        body: "Please try loading this page again.",
         retry: "Try again",
+        detail: "Error details",
     },
     ko: {
         title: "문제가 생겼습니다.",
-        body: "이 페이지를 그리지 못했습니다. 다시 시도하고, 그래도 안 되면 페이지를 새로고침해 주세요.",
+        body: "페이지를 불러오지 못했습니다. 다시 시도해 주세요.",
         retry: "다시 시도",
+        detail: "오류 상세",
     },
 };
 
@@ -29,7 +31,7 @@ const COPY: Record<Locale, {title: string; body: string; retry: string}> = {
  * matched loaders and, because the match boundary keys on `loadedAt`, clears the caught
  * error with them. `reset` alone re-renders the same failed match, which throws again.
  *
- * The message is shown as it is: a render failure has no vocabulary of its own to map
+ * The message is kept in an optional disclosure: a render failure has no vocabulary to map
  * it to, and the sentence is what a bug report needs. Rendered inside the root shell,
  * so `useLocale` reads the document's language.
  */
@@ -42,7 +44,7 @@ export function RouteError({error}: ErrorComponentProps) {
             <div className="wrap">
                 <h1>{t.title}</h1>
                 <p>{t.body}</p>
-                {error.message ? <code className="route-error-detail">{error.message}</code> : null}
+                {error.message ? <details><summary>{t.detail}</summary><code className="route-error-detail">{error.message}</code></details> : null}
                 <button type="button" className="btn" onClick={() => router.invalidate()}>
                     <span>{t.retry}</span>
                 </button>

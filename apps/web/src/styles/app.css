@@ -42,7 +42,7 @@
     color: rgba(242, 238, 231, 0.62);
     background: #080807;
     font-family: var(--mono);
-    font-size: 9px;
+    font-size:14px;
     letter-spacing: 0.22em;
 }
 
@@ -140,7 +140,7 @@
     border: 1px solid transparent;
     border-radius: 9px;
     color: var(--studio-text-3);
-    font-size: 13px;
+    font-size:14px;
     font-weight: 550;
     text-align: left;
     transition:
@@ -182,7 +182,7 @@
     gap: 8px;
     padding: 0 8px;
     color: var(--studio-text-3);
-    font-size: 11px;
+    font-size:14px;
 }
 
 .studio-sidebar-foot a:hover {
@@ -327,7 +327,7 @@
     border-radius: 9px;
     color: #140d08;
     background: linear-gradient(135deg, var(--studio-metal-bright), #e39b70);
-    font-size: 13px;
+    font-size:14px;
     font-weight: 650;
     box-shadow: 0 16px 34px rgba(133, 62, 29, 0.2);
 }
@@ -349,7 +349,7 @@
     gap: 8px;
     margin-top: 15px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
     line-height: 1.6;
     word-break: keep-all;
 }
@@ -380,7 +380,7 @@
 .studio-page-head p {
     margin-top: 5px;
     color: var(--studio-text-3);
-    font-size: 12px;
+    font-size:14px;
 }
 
 .studio-head-actions {
@@ -404,7 +404,7 @@
 
 .studio-secondary-button {
     padding: 0 14px;
-    font-size: 11px;
+    font-size:14px;
 }
 
 .studio-icon-button:hover,
@@ -448,7 +448,7 @@
 .studio-amount-label {
     margin-top: 45px;
     color: var(--studio-text-3);
-    font-size: 11px;
+    font-size:14px;
 }
 
 .studio-amount {
@@ -471,7 +471,7 @@
 .studio-amount span {
     color: var(--studio-text-3);
     font-family: var(--mono);
-    font-size: 12px;
+    font-size:14px;
 }
 
 /*
@@ -488,7 +488,7 @@
     margin-top: 10px;
     max-width: 46ch;
     color: var(--studio-text-3);
-    font-size: 12px;
+    font-size:14px;
     line-height: 1.6;
 }
 
@@ -703,21 +703,21 @@ a.studio-metric:hover {
 .studio-metric > span {
     margin-top: 17px;
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-metric > strong {
     margin-top: 4px;
     color: var(--studio-text);
     font-family: var(--mono);
-    font-size: 13px;
+    font-size:14px;
     font-weight: 500;
 }
 
 .studio-metric > small {
     margin-top: 5px;
     color: rgba(242, 238, 231, 0.3);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-metric-arrow {
@@ -756,7 +756,7 @@ a.studio-metric:hover {
     align-items: center;
     gap: 6px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
 }
 
 .studio-detail-card > header a:hover {
@@ -783,14 +783,14 @@ a.studio-metric:hover {
 
 .studio-detail-list dt {
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
 }
 
 .studio-detail-list dd {
     min-width: 0;
     color: var(--studio-text-2);
     font-family: var(--mono);
-    font-size: 10px;
+    font-size:14px;
     text-align: right;
     overflow-wrap: anywhere;
 }
@@ -812,7 +812,7 @@ a.studio-metric:hover {
 
 .studio-activity-summary span {
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-activity-summary strong {
@@ -831,7 +831,7 @@ a.studio-metric:hover {
 .studio-activity-summary p {
     margin-top: 8px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
 }
 
 .studio-receipt-card {
@@ -883,7 +883,7 @@ a.studio-metric:hover {
     display: block;
     color: var(--studio-text);
     font-family: var(--mono);
-    font-size: 13px;
+    font-size:14px;
     font-weight: 500;
 }
 
@@ -891,13 +891,13 @@ a.studio-metric:hover {
     display: block;
     margin-top: 3px;
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-receipt-list code {
     color: var(--studio-text-3);
     font-family: var(--mono);
-    font-size: 9px;
+    font-size:14px;
     transition: color 160ms ease;
 }
 
@@ -930,7 +930,7 @@ a.studio-metric:hover {
     max-width: 52ch;
     margin-top: 8px;
     color: var(--studio-text-3);
-    font-size: 11px;
+    font-size:14px;
     line-height: 1.6;
 }
 
@@ -973,7 +973,7 @@ a.studio-metric:hover {
     max-width: 72ch;
     margin-top: 9px;
     color: var(--studio-text-3);
-    font-size: 11px;
+    font-size:14px;
     line-height: 1.65;
     word-break: keep-all;
 }
@@ -997,7 +997,7 @@ a.studio-metric:hover {
     border-radius: 9px;
     color: var(--studio-red);
     background: var(--studio-red-wash);
-    font-size: 12px;
+    font-size:14px;
     font-weight: 600;
     cursor: pointer;
     transition:
@@ -1024,7 +1024,7 @@ a.studio-metric:hover {
 .studio-revoke-note {
     max-width: 62ch;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
     line-height: 1.6;
     word-break: keep-all;
 }
@@ -1082,7 +1082,7 @@ a.studio-metric:hover {
 .studio-security-check p {
     margin-top: 8px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
     line-height: 1.6;
     word-break: keep-all;
 }
@@ -1125,14 +1125,14 @@ a.studio-metric:hover {
 
 .studio-security-detail strong {
     color: var(--studio-text);
-    font-size: 12px;
+    font-size:14px;
     font-weight: 580;
 }
 
 .studio-security-detail p {
     margin-top: 7px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
     line-height: 1.6;
     word-break: keep-all;
 }
@@ -1148,7 +1148,7 @@ a.studio-metric:hover {
     border: 1px solid var(--studio-line);
     color: var(--studio-text-3);
     background: var(--studio-panel);
-    font-size: 11px;
+    font-size:14px;
 }
 
 .studio-loading[data-compact="true"] {
@@ -1188,7 +1188,7 @@ a.studio-metric:hover {
 .studio-read-fault p {
     margin-top: 4px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
 }
 
 .studio-read-fault button {
@@ -1198,7 +1198,7 @@ a.studio-metric:hover {
     border-color: rgba(227, 107, 98, 0.3);
     border-radius: 8px;
     color: var(--studio-red);
-    font-size: 10px;
+    font-size:14px;
 }
 
 .studio-create-page,
@@ -1244,7 +1244,7 @@ a.studio-metric:hover {
     max-width: 640px;
     margin-top: 14px;
     color: var(--studio-text-2);
-    font-size: 13px;
+    font-size:14px;
     line-height: 1.7;
     word-break: keep-all;
 }
@@ -1259,7 +1259,7 @@ a.studio-metric:hover {
 .studio-wallet-block small {
     max-width: 230px;
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
     line-height: 1.45;
     text-align: right;
 }
@@ -1279,7 +1279,7 @@ a.studio-metric:hover {
     border-radius: 9px;
     color: #1a100b;
     background: linear-gradient(135deg, var(--studio-metal-bright), #e39b70);
-    font-size: 11px;
+    font-size:14px;
     font-weight: 650;
     box-shadow: 0 12px 28px rgba(116, 50, 26, 0.2);
 }
@@ -1306,7 +1306,7 @@ a.studio-metric:hover {
     gap: 7px;
     color: var(--studio-text-2);
     font-family: var(--mono);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-wallet-connected i {
@@ -1322,7 +1322,7 @@ a.studio-metric:hover {
     padding: 0 8px;
     border-left: 1px solid var(--studio-line);
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-create-layout {
@@ -1391,7 +1391,7 @@ a.studio-metric:hover {
     max-width: 62ch;
     margin-top: 5px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
     line-height: 1.55;
     word-break: keep-all;
 }
@@ -1411,7 +1411,7 @@ a.studio-metric:hover {
     display: grid;
     gap: 8px;
     color: var(--studio-text-2);
-    font-size: 10px;
+    font-size:14px;
     font-weight: 560;
 }
 
@@ -1427,7 +1427,7 @@ a.studio-metric:hover {
     color: var(--studio-text);
     background: #080807;
     font-family: var(--sans);
-    font-size: 12px;
+    font-size:14px;
     transition:
         border-color 160ms ease,
         box-shadow 160ms ease;
@@ -1452,7 +1452,7 @@ a.studio-metric:hover {
 
 .studio-field > small {
     color: var(--studio-red);
-    font-size: 9px;
+    font-size:14px;
     font-weight: 450;
     line-height: 1.45;
 }
@@ -1493,7 +1493,7 @@ a.studio-metric:hover {
     padding: 0 13px;
     border-radius: 6px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
 }
 
 .studio-segmented button[data-active="true"] {
@@ -1512,7 +1512,7 @@ a.studio-metric:hover {
     border-radius: 8px;
     color: rgba(227, 107, 98, 0.82);
     background: var(--studio-red-wash);
-    font-size: 9px;
+    font-size:14px;
     line-height: 1.55;
 }
 
@@ -1542,14 +1542,14 @@ a.studio-metric:hover {
 
 .studio-account-gate strong {
     color: var(--studio-text-2);
-    font-size: 10px;
+    font-size:14px;
     font-weight: 590;
 }
 
 .studio-account-gate p {
     margin-top: 3px;
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
     line-height: 1.55;
     word-break: keep-all;
 }
@@ -1568,7 +1568,7 @@ a.studio-metric:hover {
 }
 
 .studio-sign-error {
-    font-size: 10px;
+    font-size:14px;
     line-height: 1.55;
 }
 
@@ -1646,7 +1646,7 @@ a.studio-metric:hover {
 .studio-grant-preview > p {
     margin-top: 7px;
     color: var(--studio-text-3);
-    font-size: 10px;
+    font-size:14px;
     line-height: 1.6;
     word-break: keep-all;
 }
@@ -1667,14 +1667,14 @@ a.studio-metric:hover {
 
 .studio-grant-preview dt {
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-grant-preview dd {
     min-width: 0;
     color: var(--studio-text-2);
     font-family: var(--mono);
-    font-size: 9px;
+    font-size:14px;
     text-align: right;
     overflow-wrap: anywhere;
 }
@@ -1685,7 +1685,7 @@ a.studio-metric:hover {
     gap: 8px;
     margin-top: 19px;
     color: var(--studio-metal);
-    font-size: 9px;
+    font-size:14px;
     line-height: 1.45;
 }
 
@@ -1712,7 +1712,7 @@ a.studio-metric:hover {
     align-items: center;
     gap: 9px;
     color: var(--studio-text-2);
-    font-size: 11px;
+    font-size:14px;
 }
 
 .studio-manual-import > summary svg {
@@ -1736,14 +1736,14 @@ a.studio-metric:hover {
 
 .studio-manual-import h2 {
     color: var(--studio-text);
-    font-size: 13px;
+    font-size:14px;
     font-weight: 560;
 }
 
 .studio-manual-import form > div > p {
     margin-top: 5px;
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
     line-height: 1.5;
 }
 
@@ -1752,7 +1752,7 @@ a.studio-metric:hover {
     padding-block: 11px;
     resize: vertical;
     font-family: var(--mono);
-    font-size: 9px;
+    font-size:14px;
     line-height: 1.5;
     overflow-wrap: anywhere;
 }
@@ -1769,7 +1769,7 @@ a.studio-metric:hover {
 .studio-import-error {
     grid-column: 2;
     color: var(--studio-red);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-agents-head {
@@ -1801,7 +1801,7 @@ a.studio-metric:hover {
 
 .studio-session-note p {
     max-width: 88ch;
-    font-size: 10px;
+    font-size:14px;
     line-height: 1.55;
     word-break: keep-all;
 }
@@ -1809,7 +1809,7 @@ a.studio-metric:hover {
 .studio-agent-copy-fault {
     margin-top: 10px;
     color: var(--studio-red);
-    font-size: 9px;
+    font-size:14px;
 }
 
 .studio-agents-empty {
@@ -1844,7 +1844,7 @@ a.studio-metric:hover {
     max-width: 48ch;
     margin-top: 8px;
     color: var(--studio-text-3);
-    font-size: 11px;
+    font-size:14px;
     line-height: 1.6;
 }
 
@@ -1941,7 +1941,7 @@ a.studio-metric:hover {
     margin-top: 9px;
     color: var(--studio-text-2);
     font-family: var(--mono);
-    font-size: 9px;
+    font-size:14px;
     overflow-wrap: anywhere;
 }
 
@@ -1962,7 +1962,7 @@ a.studio-metric:hover {
     align-items: center;
     gap: 7px;
     color: var(--studio-metal);
-    font-size: 10px;
+    font-size:14px;
 }
 
 @media (max-width: 1080px) {
@@ -2022,7 +2022,7 @@ a.studio-metric:hover {
         padding: 0 8px;
         border: 0;
         border-radius: 10px;
-        font-size: 9px;
+        font-size:14px;
     }
 
     .studio-nav button[data-active="true"] {
@@ -2352,7 +2352,7 @@ a.studio-metric:hover {
 
     .studio-create-head > div:first-child > p,
     .studio-agents-head p {
-        font-size: 12px;
+        font-size:14px;
     }
 
     .studio-create-layout {
@@ -2502,7 +2502,7 @@ a.studio-metric:hover {
 }
 
 /* Delegate field: the generate action is inlaid in the input, mirroring the
-   tUSDC suffix pattern — one control, not a detached box beside the grid. */
+   mUSDC suffix pattern — one control, not a detached box beside the grid. */
 .studio-delegate-row {
     position: relative;
 }
@@ -2528,7 +2528,7 @@ a.studio-metric:hover {
     border-radius: 6px;
     color: var(--studio-text-2);
     background: rgba(255, 255, 255, 0.035);
-    font-size: 9px;
+    font-size:14px;
     font-weight: 550;
     white-space: nowrap;
     cursor: pointer;
@@ -2560,7 +2560,7 @@ a.studio-metric:hover {
 .studio-bundle-note {
     margin-top: 10px;
     color: var(--studio-text-3);
-    font-size: 9px;
+    font-size:14px;
     line-height: 1.55;
 }
 
@@ -2579,7 +2579,7 @@ a.studio-metric:hover {
     border: 0;
     color: var(--studio-text-3);
     background: none;
-    font-size: 11px;
+    font-size:14px;
     cursor: pointer;
 }
 
@@ -2598,7 +2598,7 @@ a.studio-metric:hover {
     border-radius: 10px;
     background: var(--studio-red-wash);
     color: var(--studio-text-2);
-    font-size: 12px;
+    font-size:14px;
     line-height: 1.6;
 }
 
@@ -2609,7 +2609,7 @@ a.studio-metric:hover {
     border-radius: 999px;
     background: none;
     color: var(--studio-text-2);
-    font-size: 11px;
+    font-size:14px;
     cursor: pointer;
 }
 
@@ -2658,7 +2658,7 @@ a.studio-metric:hover {
 .studio-nav-group-head strong {
     overflow: hidden;
     color: var(--studio-text);
-    font-size: 13px;
+    font-size:14px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2667,7 +2667,7 @@ a.studio-metric:hover {
 .studio-nav-group-head small {
     color: var(--studio-text-3);
     font-family: var(--mono);
-    font-size: 10px;
+    font-size:14px;
 }
 
 .studio-nav-group-head:hover strong {
@@ -2690,3 +2690,11 @@ a.studio-metric:hover {
     min-height: 38px;
     font-size: 12.5px;
 }
+
+/* One decision per step, with the signed summary kept next to its approval. */
+.studio-wizard{max-width:900px;margin:0 auto}.studio-wizard .studio-create-head{align-items:flex-start}.studio-wizard .studio-create-layout{display:block}.studio-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;list-style:none;margin:28px 0;padding:0}.studio-steps li{display:flex;align-items:center;gap:10px;color:#ad9d88;font-size:14px;min-height:56px;border-bottom:2px solid #8c755b3d}.studio-steps li>span{display:grid;place-items:center;width:28px;height:28px;border:1px solid #8c755b7d;border-radius:50%;flex:none}.studio-steps li[aria-current]{color:#f1cf98;border-color:#e1b477}.studio-steps li[data-done=true]{color:#b8c6ac}.studio-step-heading{font-size:22px;margin:25px 0;outline:none}.studio-step-actions{display:flex;justify-content:space-between;gap:14px;margin-top:24px}.studio-step-actions>:last-child{margin-left:auto}.studio-connect-intro{padding:30px 0 40px;max-width:620px}.studio-connect-intro>svg{color:#d3aa72}.studio-connect-intro h3{font-size:24px;line-height:1.4;margin:18px 0 12px}.studio-connect-intro p{color:#b6a991;line-height:1.8;font-size:16px}.studio-wizard .studio-form-grid{grid-template-columns:1fr}.studio-wizard .studio-form-grid-three{grid-template-columns:repeat(3,minmax(0,1fr))}.studio-agent-choice{display:grid;gap:12px}.studio-agent-address{display:flex;align-items:center;gap:12px;font-size:14px;color:#c6b69b}.studio-advanced{border-top:1px solid #a38a6038;padding-top:10px}.studio-advanced summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:#d8bf98;font-size:14px}.studio-advanced .studio-field{margin:12px 0}.studio-wizard .studio-grant-preview{position:static;margin:0 0 24px}.studio-wizard .studio-grant-preview dl{font-size:15px}.studio-wizard .studio-grant-preview .studio-preview-orbit{display:none}.studio-storage-guide{padding:18px 20px;border:1px solid #bca06d44;border-radius:14px;margin:18px 0;background:#e9c99f05}.studio-storage-guide summary{font-size:15px;color:#dfc69f;cursor:pointer;min-height:32px}.studio-storage-guide dl{margin:14px 0}.studio-storage-guide dl>div{padding:10px 0;border-top:1px solid #bca06d22}.studio-storage-guide dt{font-size:14px;color:#ecdbbd;font-weight:600}.studio-storage-guide dd{margin:5px 0 0;font-size:14px;line-height:1.7;color:#bdb09c}.studio-storage-guide a{font-size:14px;color:#edc88f;text-underline-offset:4px}
+@media(max-width:620px){.studio-steps{gap:6px}.studio-steps li{flex-direction:column;justify-content:center;gap:8px;text-align:center;font-size:14px;padding:10px 0}.studio-wizard .studio-create-head{display:grid;gap:20px}.studio-wizard .studio-form-grid-three{grid-template-columns:1fr}.studio-step-actions{position:sticky;bottom:0;padding:15px 0 max(15px,env(safe-area-inset-bottom));background:#11100e;z-index:2}.studio-step-actions>*{flex:1}.studio-wallet-connected{flex-wrap:wrap}.studio-wizard .studio-wallet-connected button{min-height:44px}.studio-wizard .studio-field input{font-size:16px}.studio-grant-preview dd{overflow-wrap:anywhere}.studio-connect-intro{padding:12px 0}}
+
+.studio-wizard .studio-grant-form{padding:28px;border:1px solid #b2976950;border-radius:20px;background:linear-gradient(145deg,#211d1740,#10100e)}.studio-wizard .studio-connect-intro{padding:8px 0 24px}.studio-wizard .studio-form-section{border:0;padding:0 0 26px}.studio-wizard .studio-form-section-head{margin-bottom:24px}.studio-wizard .studio-grant-preview{background:#191711;border-radius:16px}.studio-wizard .studio-step-actions{border-radius:0 0 16px 16px}@media(max-width:620px){.studio-wizard .studio-grant-form{padding:20px 16px}.studio-wizard .studio-form-section-head{gap:10px}.studio-wizard .studio-form-section-head>i{display:none}.studio-wizard .studio-form-section-head h2{font-size:21px}.studio-wizard .studio-create-head h1{font-size:30px;line-height:1.35}}
+
+.studio-step-heading { scroll-margin-top: 88px; }

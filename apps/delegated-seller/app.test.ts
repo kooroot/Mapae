@@ -1,3 +1,4 @@
+import {seedArcade} from "./seed-arcade";
 import {describe, expect, spyOn, test} from "bun:test";
 import {createHash} from "node:crypto";
 import {
@@ -470,6 +471,20 @@ describe("manifest — JSON for an agent, a page for a person", () => {
         expect(lines).toContain("크루아상 — 2.50 mUSDC");
         expect(lines.at(-1)).toBe(PICKUP_LINE);
         expect(page).not.toContain("tUSDC");
+    });
+
+    test("Arcade HTML leads back to the game without changing shop pickup or ticket prices", async () => {
+        const {store, get, stub} = shop();
+        seedArcade(store, NOW);
+        const page = await (await get("/s/mapae-arcade", {Accept: BROWSER})).text();
+        expect(page).toContain("달려라 마패");
+        expect(page).toContain("흥정상회");
+        expect(page).toContain('href="https://mapae.io/ko/arcade"');
+        expect(page).not.toContain(PICKUP_LINE);
+        expect(page).toContain(TRIAL_NOTICE);
+        expect(page.match(/1\.00 mUSDC/g)).toHaveLength(3);
+        expect(await (await get("/s/demo-cafe", {Accept: BROWSER})).text()).toContain(PICKUP_LINE);
+        expect(stub.paths).toEqual([]);
     });
 
     test("seller and item names are text on the page, never markup", async () => {

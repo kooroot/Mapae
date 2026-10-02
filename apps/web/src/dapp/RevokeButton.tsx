@@ -1,3 +1,5 @@
+import {WalletPicker} from "../components/WalletPicker";
+import {ActionProgress} from "../components/ActionProgress";
 import type {Delegation} from "@metamask/smart-accounts-kit";
 import {
     SPONSORED_REVOCATION_GAS,
@@ -9,7 +11,7 @@ import {redactUrls} from "@mapae/shared";
 import {useQuery} from "@tanstack/react-query";
 import {useMemo, useState} from "react";
 import {getAddress, isHash, type Hex} from "viem";
-import {useAccount, useConnect, useSignTypedData} from "wagmi";
+import {useAccount, useSignTypedData} from "wagmi";
 import {
     bootstrapAvailability,
     chain,
@@ -107,7 +109,6 @@ export function RevokeButton({
     // config's first chain while disconnected, so it can never report a mismatch, and a
     // guard that cannot fire is worse than none.
     const {address: connected, chainId: connectedChainId} = useAccount();
-    const {connect, connectors, isPending: connecting} = useConnect();
     const {signTypedDataAsync} = useSignTypedData();
     const [progress, setProgress] = useState<RevokeProgress>({phase: "idle"});
 
@@ -178,18 +179,13 @@ export function RevokeButton({
 
     return (
         <div className="studio-revoke-action">
-            <button
+            {gate.kind === "disconnected" ? <WalletPicker context="studio" /> : <button
                 type="button"
                 className="studio-revoke-button"
                 disabled={
-                    busy || connecting || (gate.kind !== "ready" && gate.kind !== "disconnected")
+                    busy || gate.kind !== "ready"
                 }
                 onClick={() => {
-                    if (gate.kind === "disconnected") {
-                        const connector = connectors[0];
-                        if (connector) connect({connector});
-                        return;
-                    }
                     void run();
                 }}
             >
@@ -198,7 +194,8 @@ export function RevokeButton({
                         ? t.signing
                         : t.submitting
                     : studioRevokeButtonLabel(gate, locale)}
-            </button>
+            </button>}
+            {busy && <ActionProgress ko={locale === "ko"} current={progress.phase === "signing" ? 0 : 1} steps={locale === "ko" ? ["회수 서명", "체인 확인"] : ["Sign revocation", "Confirm on-chain"]} title={progress.phase === "signing" ? t.signing : t.submitting} />}
             {endpoint.kind === "refused" ? (
                 <small className="studio-revoke-note fault">
                     {t.endpointMisconfigured} — {endpoint.reason}

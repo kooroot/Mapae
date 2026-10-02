@@ -25,7 +25,3 @@ export function arcadeStorageKey(owner: Address): string {
 export function readArcadeState(owner: Address, reducedMotion = false): ArcadeState {
     return parseArcadeState(localStorage.getItem(arcadeStorageKey(owner)), reducedMotion);
 }
-export function saveArcadeState(owner: Address, demo: ArcadeState): boolean {
-    try {localStorage.setItem(arcadeStorageKey(owner), serializeArcadeState(demo)); return true;}
-    catch {return false;}
-}

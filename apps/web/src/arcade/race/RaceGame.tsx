@@ -1,3 +1,4 @@
+import {MOCK_USDC} from "@mapae/shared";
 import {useEffect, useRef, useState} from "react";
 import type {ActivityOutcome, AgentDecision} from "@mapae/arcade";
 import {applyRaceRound, createRaceSeason, makeRaceCourse, raceFrameAt,
@@ -72,13 +73,15 @@ export function raceOutcome(season: RaceSeason, notes: Note[], locale: "ko" | "e
     };
 }
 
-export function RaceGame({appearance, profile, locale, mode, seed, budget, decide, reducedMotion, onComplete, onExit}: AutonomousGameProps) {
+export function RaceGame({appearance, profile, locale, mode, seed, budget, decide, reducedMotion, suspended = false, autoAdvance = false, onComplete, onExit}: AutonomousGameProps) {
     const t = COPY[locale];
     const [season, setSeason] = useState(() => createRaceSeason(seed, profile.name || t.sample, locale));
     const [phase, setPhase] = useState<Phase>("brief");
     const [notes, setNotes] = useState<Note[]>([]);
     const [progress, setProgress] = useState(0);
     const [paused, setPaused] = useState(false);
+    const [speed, setSpeed] = useState(1);
+    const blocked = paused || suspended;
     const [error, setError] = useState("");
     const busy = useRef(false);
     const finished = useRef(false);
@@ -98,7 +101,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         const pauseIfHidden = () => {if (document.hidden) setPaused(true);};
         const pauseOnBlur = () => setPaused(true);
         const pauseOnEscape = (event: KeyboardEvent) => {
-            if (event.key === "Escape") setPaused(value => !value);
+            if (!event.defaultPrevented && event.key === "Escape") setPaused(value => !value);
         };
         document.addEventListener("visibilitychange", pauseIfHidden);
         window.addEventListener("blur", pauseOnBlur);
@@ -134,21 +137,19 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     };
 
     useEffect(() => {
-        if (phase !== "brief") return;
-        const timer = window.setTimeout(() => void beginRound(), 2_000);
+        if (phase !== "brief" || !autoAdvance || blocked) return;
+        const timer = window.setTimeout(() => void beginRound(), 5000);
         return () => window.clearTimeout(timer);
-        // Admission already represents the owner's permission to play this whole season.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [phase]);
+    }, [phase, autoAdvance, blocked]);
 
     useEffect(() => {
-        if (phase !== "race" || paused) return;
+        if (phase !== "race" || blocked) return;
         let frame = 0;
         let last: number | null = null;
         let painted = 0;
         let elapsed = progress * 14_000;
         const tick = (time: number) => {
-            if (last !== null) elapsed += Math.min(200, time - last);
+            if (last !== null) elapsed += Math.min(200, time - last) * speed;
             last = time;
             if (time - painted >= 40 || elapsed >= 14_000) {setProgress(Math.min(1, elapsed / 14_000)); painted = time;}
             if (elapsed >= 14_000) setPhase("recap");
@@ -158,7 +159,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         return () => cancelAnimationFrame(frame);
         // The current progress is captured only when starting or resuming this animation.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [phase, paused]);
+    }, [phase, blocked, speed]);
 
     const advance = () => {
         if (phase !== "recap") return;
@@ -167,22 +168,22 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     };
 
     useEffect(() => {
-        if (phase !== "recap" || paused) return;
+        if (phase !== "recap" || blocked || !autoAdvance) return;
         const timer = window.setTimeout(advance, 5_000);
         return () => window.clearTimeout(timer);
         // Only a settled round starts its next-stage clock; a paused clock restarts on resume.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [phase, paused, season.round]);
+    }, [phase, blocked, autoAdvance, season.round]);
 
     useEffect(() => {if (phase === "recap") recapButton.current?.focus({preventScroll: true});}, [phase]);
 
-    const exit = () => {request.current?.abort(); finished.current = true; onExit();};
+    const exit = () => onExit();
     const latest = notes.at(-1);
     const owner = season.runners.find(runner => runner.id === "owner")!;
 
     return <section className={`arc-race ${reducedMotion ? "arc-race-still" : ""}`} aria-label={GAME_NAMES[locale].race}>
         <header className="arc-race-title">
-            <div><p className="arc-overline">AUTO RACE / {t.season}</p><h1>{t.title}</h1><p>{t.subtitle}</p></div>
+            <div><p className="arc-overline">{GAME_NAMES[locale].race} / {t.season}</p><h1>{t.title}</h1><p>{t.subtitle}</p></div>
             <GuardianAvatar appearance={appearance} color={profile.color} />
         </header>
         <div className="arc-race-mode"><strong>{mode === "llm" ? t.llm : t.rules}</strong><span>{t.ticket}</span></div>
@@ -190,8 +191,9 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
             <p>{t.fairness}</p><p>{t.points}</p>
             <GameArt game="race" className="arc-race-cover" /><div className="arc-race-strategies">{(["burst", "conserve", "surge"] as const).map((strategy, index) =>
                 <div key={strategy}><span aria-hidden="true">{["⚡", "◒", "↗"][index]}</span><strong>{t[strategy]}</strong></div>)}</div>
-            <p className="arc-race-budget">{t.budget}: <strong>{budget.allowance}</strong> <small>{t.budgetNote}</small></p>
-            <p role="status">{t.starting}</p>
+            <p className="arc-race-budget">{t.budget}: <strong>{budget.allowance} {MOCK_USDC.symbol}</strong> <small>{t.budgetNote}</small></p>
+
+            {autoAdvance && <p role="status">{locale === "ko" ? "자동 진행 · 5초 뒤 출발해요. 위에서 자동 진행을 끌 수 있어요." : "Automatic play · Starts in 5 seconds. Turn it off above to wait."}</p>}
             <button type="button" className="arc-button" onClick={() => {setPaused(false); void beginRound();}}>{t.start} →</button>
         </div> : <>
             <div className="arc-race-scoreboard">
@@ -208,13 +210,14 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                     <small>{t.source}: {latest.decision.source === "llm" ? latest.decision.model || "LLM" : t.local} · {t.entry}: {latest.enter ? "−1" : "0"}</small>
                 </div>
                 {!latest.enter && <p className="arc-race-sitout">{t.noEntry}</p>}
-                <RaceTrack race={current.simulation} progress={phase === "recap" ? 1 : progress} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !paused} />
+                <RaceTrack race={current.simulation} progress={phase === "recap" ? 1 : progress} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} />
                 <div className="arc-race-playback">
                     <button type="button" className="arc-button arc-button-plain" onClick={() => setPaused(value => !value)}>{paused ? t.resume : t.pause}</button>
+                    <div className="mapae-speed" role="group" aria-label={locale === "ko" ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>
                     {phase === "race" ? <button type="button" className="arc-race-text-button" onClick={() => {setProgress(1); setPhase("recap");}}>{t.fast} →</button>
                         : <button type="button" ref={recapButton} className="arc-button" onClick={advance}>{season.round < RACE_ROUNDS ? t.next : t.result} →</button>}
                 </div>
-                <p className="arc-race-status" role="status">{paused ? t.held : phase === "recap" ? season.round < RACE_ROUNDS ? t.auto : t.settled : t.watching}</p>
+                <p className="arc-race-status" role="status">{blocked ? t.held : phase === "recap" ? autoAdvance && season.round < RACE_ROUNDS ? t.auto : t.settled : t.watching}</p>
                 {reducedMotion && <p className="arc-race-status">{t.reduce}</p>}
             </>}
             {phase === "recap" && <div className="arc-race-standings">
@@ -250,7 +253,7 @@ function RaceTrack({race, progress, locale, color, reducedMotion, running}: {
     }, []);
     const frame = raceFrameAt(race, reducedMotion ? Math.floor(progress * 4) / 4 : progress);
     return <div ref={track} className={`arc-race-track arc-race-weather-${race.course.weather} ${running ? "arc-race-running" : ""}`}>
-        <GameArt game="race" className="arc-race-panorama" /><div className="arc-race-track-label"><span>START</span><strong>{Math.min(100, Math.round(progress * 100))}%</strong><span>FINISH</span></div>
+        <GameArt game="race" className="arc-race-panorama" /><div className="arc-race-track-label"><span>{locale === "ko" ? "출발" : "START"}</span><strong>{Math.min(100, Math.round(progress * 100))}%</strong><span>{locale === "ko" ? "도착" : "FINISH"}</span></div>
         {race.entrants.map((runner, index) => {
             const position = frame.positions.find(item => item.id === runner.id)!;
             const finish = race.finish.find(item => item.id === runner.id)!;

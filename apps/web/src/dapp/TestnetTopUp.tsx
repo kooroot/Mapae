@@ -1,3 +1,4 @@
+import {ActionProgress} from "../components/ActionProgress";
 import type {Delegation} from "@metamask/smart-accounts-kit";
 import {Droplets} from "lucide-react";
 import {useMemo, useState} from "react";
@@ -65,6 +66,7 @@ export function TestnetTopUp({root, onMinted}: {root: Delegation; onMinted: () =
                 <Droplets size={14} />
                 {busy ? t.busy : t.action}
             </button>
+            {busy && <ActionProgress ko={locale === "ko"} steps={locale === "ko" ? ["테스트 잔액 요청"] : ["Request test balance"]} current={0} title={t.busy} hint={locale === "ko" ? "GIWA에서 계정과 충전 결과를 확인하고 있어요." : "Checking the account and funding result on GIWA."} />}
             <p
                 className="studio-amount-note"
                 role={state.kind === "failed" ? "alert" : state.kind === "done" ? "status" : undefined}

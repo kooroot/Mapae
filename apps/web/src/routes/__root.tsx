@@ -47,8 +47,8 @@ export const Route = createRootRoute({
             : "Mapae — Limit the authority. Let the agent act.";
         const description = isArcade
             ? pick(locale, {
-                  en: "Give your agent an allowance for racing, shopping and stamping. First admission free, no wallet needed. Optional GIWA Sepolia testnet tickets.",
-                  ko: "내 에이전트에게 용돈을 주고, 경주와 가게와 오락실로 보내세요. 지갑 없이 첫 입장 무료. GIWA 테스트넷 입장권도 연결할 수 있어요.",
+                  en: "Connect your wallet, create a guardian and send them racing, trading or stamping with a bounded GIWA Sepolia test-token allowance. Free manual practice is available.",
+                  ko: "지갑을 연결하고 나만의 십이지신 친구를 만드세요. GIWA 테스트 용돈 안에서 경주와 흥정, 도장찍기를 즐겨요. 직접 하는 연습은 무료예요.",
               })
             : isApp
             ? pick(locale, {

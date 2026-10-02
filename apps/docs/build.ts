@@ -95,11 +95,13 @@ async function main(): Promise<void> {
     const all = pages(await Bun.file(join(DOCS, "SUMMARY.md")).text());
     const repoDocs = markdownUnder(DOCS);
 
+    const searchIndex: {title: string; url: string; text: string; locale: string}[] = [];
     let diagrams = 0;
     for (const page of all) {
         const markdown = await Bun.file(join(DOCS, page.source)).text();
         const {html, hasDiagram} = renderMarkdown(page, markdown, repoDocs);
         if (hasDiagram) diagrams += 1;
+        searchIndex.push({title: page.title, url: `/${page.url}`, locale: page.locale, text: markdown.replace(/```[\s\S]*?```/g, " ").replace(/[#*_`|>]/g, " ").replace(/\s+/g, " ").trim()});
         // Directory-style output: `/tech/01-architecture` is a directory holding
         // `index.html`, which is what makes the extensionless URL resolve without a
         // rewrite rule — and what makes the eighteen paths identical to GitBook's.
@@ -110,6 +112,7 @@ async function main(): Promise<void> {
     // `wrangler.jsonc` names this in `not_found_handling`, so it has to exist or an
     // unknown path falls back to a bare Cloudflare error page.
     write("404.html", renderNotFound(all));
+    write("assets/search-index.json", JSON.stringify(searchIndex));
 
     cpSync(join(HERE, "assets"), join(OUT, "assets"), {recursive: true});
 

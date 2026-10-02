@@ -73,7 +73,7 @@ export function MapaeScene({
             renderer = new THREE.WebGLRenderer({
                 alpha: true,
                 antialias: true,
-                powerPreference: "high-performance",
+                powerPreference: "low-power",
             });
         } catch {
             onRenderState("fallback");
@@ -201,9 +201,22 @@ export function MapaeScene({
         timer.connect(document);
         let smoothStage = 0;
         let smoothProgress = 0;
-        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+        let reducedMotion = motion.matches;
+        let visible = false;
+        const schedule = () => {
+            if (!disposed && visible && !document.hidden && !frame) frame = requestAnimationFrame(render);
+        };
+        const observeVisibility = () => {
+            cancelAnimationFrame(frame); frame = 0;
+            host.dataset.rendering = visible && !document.hidden ? reducedMotion ? "static" : "active" : "paused";
+            schedule();
+        };
+        const visibility = new IntersectionObserver(entries => {visible = entries[0]?.isIntersecting ?? false; observeVisibility();});
+        const onMotion = () => {reducedMotion = motion.matches; observeVisibility();};
         const render = () => {
-            if (!renderer || disposed) return;
+            frame = 0;
+            if (!renderer || disposed || !visible || document.hidden) return;
             timer.update();
             const elapsed = timer.getElapsed();
             const stage = stageRef.current;
@@ -239,16 +252,24 @@ export function MapaeScene({
             field.rotation.z = -drift * 0.012;
 
             renderer.render(scene, camera);
-            frame = requestAnimationFrame(render);
+            if (!reducedMotion) schedule();
         };
 
         onRenderState("ready");
-        render();
+        visibility.observe(host);
+        document.addEventListener("visibilitychange", observeVisibility);
+        motion.addEventListener("change", onMotion);
+        resizeObserver.disconnect();
+        resizeObserver = new ResizeObserver(() => {resize(); schedule();});
+        resizeObserver.observe(host);
 
         return () => {
             disposed = true;
             cancelAnimationFrame(frame);
             resizeObserver?.disconnect();
+            visibility.disconnect();
+            document.removeEventListener("visibilitychange", observeVisibility);
+            motion.removeEventListener("change", onMotion);
             timer.dispose();
             pointTexture?.dispose();
             shellGeometry.dispose();

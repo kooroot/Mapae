@@ -55,8 +55,6 @@
 .arc-entry-dock .arc-button { min-width: min(100%, 360px); }
 .arc-entry-dock > small { display: block; font-size: 10px; color: #c2b39d; margin-top: 10px; }
 .arc-entry-dock .arc-notice { margin-top: 16px; }
-.arc-room-dock .agent-quickstart { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
-.arc-room-dock .agent-quick-budget { padding-inline: 18px; }
 .arc-room-dock .arc-empty-departure { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .arc-empty-departure h2 { font-size: 21px; font-weight: 550; letter-spacing: -.035em; }
 .arc-empty-departure p { color: var(--arc-dim); font-size: 12px; margin-top: 6px; }
@@ -95,14 +93,9 @@
     .arc-entry-dock h2 { font-size: 19px; }
     .arc-entry-dock p { font-size: 11px; margin-bottom: 14px; }
     .arc-entry-dock .arc-button { width: 100%; min-width: 0; font-size: 13px; padding-inline: 16px; gap: 16px; }
-    .arc-room-dock .agent-quickstart { position: static; display: flex; flex-direction: column; gap: 16px; border-radius: 0; }
-    .arc-room-dock .agent-quick-profile { text-align: center; }
-    .arc-room-dock .agent-quick-profile strong { font-size: 18px; }
-    .arc-room-dock .agent-quick-action { width: 100%; min-width: 0; }
     .arc-room-dock .arc-empty-departure { flex-direction: column; text-align: center; gap: 16px; }
     .arc-empty-departure h2 { font-size: 20px; }
     .arc-empty-departure a { width: 100%; }
-    .agent-in-lobby { padding-bottom: 0; }
 }
 @media (max-width: 360px) { .arc-room { margin-inline: -12px; } }
 @media (prefers-reduced-motion: reduce) { .arc-room-cabinet { transition: none; } }

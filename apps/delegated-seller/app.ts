@@ -1,3 +1,4 @@
+import {ARCADE_TICKETS} from "@mapae/arcade/tickets";
 import {createHash, timingSafeEqual} from "node:crypto";
 import {Hono, type Context, type MiddlewareHandler} from "hono";
 import {accepts} from "hono/accepts";
@@ -66,7 +67,7 @@ export const TICKET_LINE = "픽업 시 이 코드를 보여 주세요";
  * drift apart: a stylesheet edited here is re-hashed on the next module load.
  */
 const PAGE_STYLE =
-    "body{font-family:system-ui,sans-serif;max-width:36rem;margin:2rem auto;padding:0 1rem;line-height:1.6}.notice{color:#7a4b00;background:#fff4dc;padding:.75rem 1rem;border-radius:.5rem}ul{padding-left:1.25rem}code{font-size:1.5rem;letter-spacing:.1em}";
+    "body{font-family:system-ui,sans-serif;max-width:36rem;margin:2rem auto;padding:0 1rem;line-height:1.6}.notice{color:#7a4b00;background:#fff4dc;padding:.75rem 1rem;border-radius:.5rem}ul{padding-left:1.25rem}code{font-size:1.5rem;letter-spacing:.1em}.eyebrow{font-size:.85rem;letter-spacing:.15em;color:#785833}.arcade-tickets{list-style:none;padding:0}.arcade-tickets li{display:flex;justify-content:space-between;gap:20px;align-items:center;border:1px solid #c7b69a;border-radius:14px;padding:20px;margin:12px 0}.arcade-tickets strong{font-size:1.1rem}.arcade-tickets p{font-size:.9rem;color:#685c4c;margin:8px 0 0}.arcade-tickets b{white-space:nowrap}.arcade-entry{display:flex;align-items:center;justify-content:center;min-height:48px;padding:12px 20px;background:#34271a;color:#fff0d9;border-radius:12px;text-decoration:none;font-weight:600}.arcade-catalog{background:#14110d;color:#f5e5c9;max-width:44rem;padding:0 20px}.arcade-catalog .eyebrow{color:#d2b177}.arcade-catalog header{margin:36px 0 24px}.arcade-catalog h1{font-size:clamp(28px,6vw,38px);letter-spacing:-.04em;margin:10px 0}.arcade-catalog p{color:#c8b99e;word-break:keep-all;overflow-wrap:anywhere}.arcade-catalog .notice{background:#e3b77b0e;border:1px solid #a88b5940;font-size:14px;line-height:1.8}.arcade-catalog .arcade-tickets li{background:#eed7a906;border-color:#a88b5940}.arcade-catalog .arcade-tickets p{color:#c8b99e}.arcade-catalog .arcade-tickets b{color:#edc786}.arcade-catalog .arcade-entry{background:linear-gradient(105deg,#ecd3a8,#dd997b);color:#291d11;margin-top:24px}.arcade-entry:focus-visible{outline:3px solid #ac6c23;outline-offset:3px}@media(max-width:400px){.arcade-tickets li{align-items:flex-start;flex-direction:column;gap:12px}}";
 
 /**
  * Sent with every response, JSON included. Escaping is what keeps a seller's name text
@@ -237,7 +238,7 @@ function wantsHtml(c: Context<ShopEnv>): boolean {
  * served must be the bytes the policy hashed, and escaping could alter them. The
  * notice is the first text of the body.
  */
-function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
+function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>, arcade = false) {
     return html`<!doctype html>
 <html lang="ko">
 <head>
@@ -246,7 +247,7 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
 <title>${title}</title>
 <style>${raw(PAGE_STYLE)}</style>
 </head>
-<body>
+<body class="${arcade ? "arcade-catalog" : ""}">
 <p class="notice">${TRIAL_NOTICE}</p>
 ${body}
 </body>
@@ -255,6 +256,10 @@ ${body}
 }
 
 function shopPage(seller: Seller, items: Item[]) {
+    if (seller.slug === "mapae-arcade") return page(seller.name, html`<header><span class="eyebrow">MAPAE ARCADE</span><h1>어디로 놀러 갈까요?</h1><p>내 캐릭터를 보내는 GIWA 테스트넷 입장권이에요.</p></header><ul class="arcade-tickets">${items.map(item => {
+        const ticket = Object.prototype.hasOwnProperty.call(ARCADE_TICKETS, item.key) ? ARCADE_TICKETS[item.key as keyof typeof ARCADE_TICKETS] : undefined;
+        return html`<li><div><strong>${ticket?.name ?? item.name}</strong><p>${ticket?.description ?? item.description}</p></div><b>${displayAmount(item.priceBase)} ${MOCK_USDC.symbol}</b></li>`;
+    })}</ul><a class="arcade-entry" href="https://mapae.io/ko/arcade">오락실에서 입장하기 →</a><p>직접 연습은 무료예요. 입장권은 에이전트를 보낼 때 한 번 사용합니다.</p>`, true);
     return page(
         seller.name,
         html`<h1>${seller.name}</h1>

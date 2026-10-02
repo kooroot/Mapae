@@ -3,8 +3,8 @@ import {Switch} from "@base-ui/react/switch";
 import {Settings2} from "lucide-react";
 import "../components/brand-controls.css";
 
-export function PlaySettings({ko, reducedMotion, onReducedMotionChange}: {ko: boolean; reducedMotion: boolean; onReducedMotionChange: (checked: boolean) => void}) {
-    return <Popover.Root>
+export function PlaySettings({ko, reducedMotion, onReducedMotionChange, onOpenChange}: {onOpenChange?: (open: boolean) => void; ko: boolean; reducedMotion: boolean; onReducedMotionChange: (checked: boolean) => void}) {
+    return <Popover.Root onOpenChange={onOpenChange}>
         <Popover.Trigger className="mapae-settings-trigger" aria-label={ko ? "플레이 설정" : "Play settings"}><Settings2 size={18} /></Popover.Trigger>
         <Popover.Portal><Popover.Positioner className="mapae-select-positioner" align="end" sideOffset={10} collisionPadding={12}>
             <Popover.Popup className="mapae-popover">

@@ -1,7 +1,7 @@
 // Subpath import on purpose: the package barrel also pulls in the Bun-only agent
 // runtime, which does not resolve in a browser bundle.
 import {parseActiveDeploymentArtifactJson} from "@mapae/delegation/config";
-import {explorerAddressUrl, explorerTxUrl, giwaSepolia} from "@mapae/shared";
+import {explorerAddressUrl, explorerTxUrl, giwaSepolia, MOCK_USDC} from "@mapae/shared";
 import {createPublicClient, http} from "viem";
 import frameworkArtifact from "../../../../deployments/giwa-sepolia.framework.json";
 import type {Locale} from "./i18n";
@@ -72,13 +72,13 @@ export {explorerAddressUrl, explorerTxUrl};
 /** Settled payments, each linkable. Amounts are what the seller charged. */
 export const settlements = [
     {
-        label: "에이전트 결제 · 1 tUSDC",
-        labelEn: "Delegated payment · 1 tUSDC",
+        label: `에이전트 결제 · 1 ${MOCK_USDC.symbol}`,
+        labelEn: `Delegated payment · 1 ${MOCK_USDC.symbol}`,
         hash: "0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d",
     },
     {
-        label: "에이전트 결제 · 2.5 tUSDC",
-        labelEn: "Delegated payment · 2.5 tUSDC",
+        label: `에이전트 결제 · 2.5 ${MOCK_USDC.symbol}`,
+        labelEn: `Delegated payment · 2.5 ${MOCK_USDC.symbol}`,
         hash: "0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4",
     },
     {

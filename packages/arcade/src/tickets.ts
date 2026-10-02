@@ -10,6 +10,6 @@ export const ARCADE_TICKET_COST = Number(ARCADE_TICKET_PRICE);
 export const ARCADE_TICKET_AMOUNT = toTokenAmount(ARCADE_TICKET_PRICE);
 export const ARCADE_TICKETS: Readonly<Record<GameId, {name: string; description: string}>> = {
     stamp: {name: "도깨비 도장찍기", description: "60초 도장 놀이 입장권 · GIWA Sepolia 테스트 토큰"},
-    race: {name: "Auto Race", description: "3경기 시즌 입장권 · GIWA Sepolia 테스트 토큰"},
-    shop: {name: "Tiny Shop", description: "손님 3명 또는 가게 3곳 입장권 · GIWA Sepolia 테스트 토큰"},
+    race: {name: "달려라 마패", description: "3경기 시즌 입장권 · GIWA Sepolia 테스트 토큰"},
+    shop: {name: "흥정상회", description: "손님 3명 또는 가게 3곳 입장권 · GIWA Sepolia 테스트 토큰"},
 };

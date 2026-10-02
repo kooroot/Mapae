@@ -1,3 +1,6 @@
+import {env} from "cloudflare:workers";
+import {profileApi} from "./arcade/profile/api";
+import {profileRepository} from "./arcade/profile/repository";
 import {
     createStartHandler,
     defaultStreamHandler,
@@ -29,7 +32,9 @@ const streamWithSecurityHeaders = defineHandlerCallback((context) => {
 const start = createStartHandler(streamWithSecurityHeaders);
 
 export default createServerEntry({fetch: (request, options) =>
-    new URL(request.url).pathname.startsWith("/api/arcade/")
+    new URL(request.url).pathname.startsWith("/api/arcade/profile")
+        ? profileApi(request, profileRepository(env.ARCADE_DB), {development: import.meta.env.DEV})
+        : new URL(request.url).pathname.startsWith("/api/arcade/")
         ? arcadeProductionApi(request)
         : start(request, options),
 });

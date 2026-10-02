@@ -7,7 +7,7 @@ const request = (path: string, options?: RequestInit) => new Request(`${origin}/
 describe("public arcade boundary", () => {
     test("shared payer and model endpoints are absent; status is explicit", async () => {
         const status = await arcadeProductionApi(request("status"));
-        const body = await status.json();
+        const body = await status.json<{model: {configured: boolean}; giwa: object; payments: object}>();
         expect(body.model.configured).toBe(false);
         expect(body.giwa).toMatchObject({ticketPrice: "1.00", unit: "mUSDC"});
         expect(body.payments).toMatchObject({ticketPrice: "1.00", unit: "mUSDC"});
@@ -59,7 +59,7 @@ describe("public arcade boundary", () => {
                 expect(calls).toBe(1);
                 expect(response.status).toBe(502);
                 expect(response.headers.has("Location")).toBe(false);
-                expect(await response.json()).toEqual({error: {code: signed ? "settlement_unknown" : "seller_unavailable",
+                expect(await response.json<object>()).toEqual({error: {code: signed ? "settlement_unknown" : "seller_unavailable",
                     message: "The arcade request could not be completed."}});
             }
         }

@@ -4,7 +4,7 @@ import {
     type DelegationStatus,
     type SettlementReceipt,
 } from "@mapae/delegation/delegation-status";
-import {fromTokenAmount} from "@mapae/shared";
+import {fromTokenAmount, MOCK_USDC} from "@mapae/shared";
 import {
     Activity,
     ArrowLeft,
@@ -56,7 +56,7 @@ import {useGrantLibrary} from "../lib/grant-library";
 import {useAccount} from "wagmi";
 import type {Address} from "viem";
 import {parsePermissionContext, type ParsedPermission} from "../lib/permission";
-import {pick, type Locale} from "../lib/i18n";
+import {localizeUrl, pick, type Locale} from "../lib/i18n";
 import {LocaleSwitch, useLocale} from "../lib/locale";
 import {STUDIO_SECTIONS, type DetailSection} from "../lib/studio-sections";
 
@@ -187,10 +187,10 @@ const COPY: Record<
             note: "This permission has not reached its start time. Payments made with it are rejected until then.",
         },
         balanceNote: (cap, balance) =>
-            `The cap is ${cap} tUSDC, but the payer account balance is ${balance} tUSDC. Fund the payer account with tUSDC to pay.`,
+            `The cap is ${cap} ${MOCK_USDC.symbol}, but the payer account balance is ${balance} ${MOCK_USDC.symbol}. Fund the payer account with ${MOCK_USDC.symbol} to pay.`,
         usageAria: "Current period usage",
-        spentLegend: (amount) => `Spent ${amount} tUSDC`,
-        capLegend: (amount) => `Cap ${amount} tUSDC`,
+        spentLegend: (amount) => `Spent ${amount} ${MOCK_USDC.symbol}`,
+        capLegend: (amount) => `Cap ${amount} ${MOCK_USDC.symbol}`,
         noCapCaveat: "This delegation has no period cap caveat.",
         metricsAria: "Key permission details",
         payerAccount: "Payer account",
@@ -218,7 +218,7 @@ const COPY: Record<
         emptyWindowTitle: "No settlements in this window.",
         emptyWindowNote: (fromBlock) =>
             `This does not necessarily mean no payment ever happened. The current window starts at block ${fromBlock}.`,
-        periodTotal: (amount) => `Period total ${amount} tUSDC`,
+        periodTotal: (amount) => `Period total ${amount} ${MOCK_USDC.symbol}`,
         revokedHeading: "This permission has already been revoked.",
         expiredHeading: "This permission has expired.",
         ownerOnlyHeading: "Only the owner can end this permission.",
@@ -281,10 +281,10 @@ const COPY: Record<
             note: "이 권한은 아직 시작 시각에 도달하지 않았습니다. 그때까지의 결제는 거부됩니다.",
         },
         balanceNote: (cap, balance) =>
-            `한도는 ${cap} tUSDC이지만 지불 계정 잔액이 ${balance} tUSDC입니다. 결제하려면 지불 계정에 tUSDC를 채워 주세요.`,
+            `한도는 ${cap} ${MOCK_USDC.symbol}이지만 지불 계정 잔액이 ${balance} ${MOCK_USDC.symbol}입니다. 결제하려면 지불 계정에 ${MOCK_USDC.symbol}를 채워 주세요.`,
         usageAria: "현재 주기 사용률",
-        spentLegend: (amount) => `사용 ${amount} tUSDC`,
-        capLegend: (amount) => `한도 ${amount} tUSDC`,
+        spentLegend: (amount) => `사용 ${amount} ${MOCK_USDC.symbol}`,
+        capLegend: (amount) => `한도 ${amount} ${MOCK_USDC.symbol}`,
         noCapCaveat: "이 위임에는 주기 한도 caveat이 없습니다.",
         metricsAria: "권한 핵심 정보",
         payerAccount: "지불 계정",
@@ -312,7 +312,7 @@ const COPY: Record<
         emptyWindowTitle: "이 조회 구간에는 정산이 없습니다.",
         emptyWindowNote: (fromBlock) =>
             `이는 결제가 한 번도 없었다는 뜻이 아닐 수 있습니다. 현재 창은 블록 ${fromBlock}부터 시작합니다.`,
-        periodTotal: (amount) => `주기 누적 ${amount} tUSDC`,
+        periodTotal: (amount) => `주기 누적 ${amount} ${MOCK_USDC.symbol}`,
         revokedHeading: "이 권한은 이미 회수되었습니다.",
         expiredHeading: "이 권한은 만료되었습니다.",
         ownerOnlyHeading: "소유자만 권한을 끝낼 수 있습니다.",
@@ -473,7 +473,7 @@ function StudioBody() {
 
             <main className="studio-main">
                 <header className="studio-topbar">
-                    <a className="studio-mobile-brand" href={landingUrl} aria-label={t.mobileHomeAria}>
+                    <a className="studio-mobile-brand" href={localizeUrl(landingUrl, locale)} aria-label={t.mobileHomeAria}>
                         <span className="studio-mobile-mark">
                             <PassEmblem size={18} />
                         </span>
@@ -508,7 +508,7 @@ function StudioBody() {
                     <div className="studio-workspace">
                         <header className="studio-page-head">
                             <div>
-                                <span className="studio-kicker">{meta.eyebrow}</span>
+                                <span className="studio-kicker">{locale === "ko" ? section === "overview" ? "사용 가능한 권한" : section === "activity" ? "결제 내역" : "소유자 관리" : meta.eyebrow}</span>
                                 <h1>{sectionCopy.title}</h1>
                                 <p>{sectionCopy.description}</p>
                             </div>
@@ -596,7 +596,7 @@ function StudioSidebar({
     const t = COPY[locale];
     return (
         <aside className="studio-sidebar">
-            <a className="studio-brand" href={landingUrl} aria-label={t.landingAria}>
+            <a className="studio-brand" href={localizeUrl(landingUrl, locale)} aria-label={t.landingAria}>
                 <span>
                     <PassEmblem size={27} />
                 </span>
@@ -658,11 +658,11 @@ function StudioSidebar({
             ) : null}
 
             <div className="studio-sidebar-foot">
-                <a href={landingUrl}>
+                <a href={localizeUrl(landingUrl, locale)}>
                     <ArrowLeft size={15} />
                     <span>{t.aboutMapae}</span>
                 </a>
-                <a href={docsUrl} target="_blank" rel="noreferrer noopener">
+                <a href={locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl} target="_blank" rel="noreferrer noopener">
                     <span>{t.techDocs}</span>
                     <ArrowUpRight size={15} />
                 </a>
@@ -736,7 +736,7 @@ function Overview({
             <section className="studio-authority-card" data-halted={!live}>
                 <div className="studio-authority-copy">
                     <div className="studio-card-label">
-                        <span>CURRENT SPENDING AUTHORITY</span>
+                        <span>{locale === "ko" ? "현재 지출 권한" : "CURRENT SPENDING AUTHORITY"}</span>
                         <StatusPill status={status} />
                     </div>
 
@@ -747,7 +747,7 @@ function Overview({
                             </p>
                             <div className="studio-amount" data-halted={!live}>
                                 <strong>{fromTokenAmount(verdict.spendable)}</strong>
-                                <span>tUSDC</span>
+                                <span>{MOCK_USDC.symbol}</span>
                             </div>
                             {verdict.limitedBy === "halted" && halt ? (
                                 // Why the number is zero. Without it the card reads as an
@@ -857,7 +857,7 @@ function Overview({
             <section className="studio-detail-card">
                 <header>
                     <div>
-                        <span className="studio-kicker">AUTHORITY DETAILS</span>
+                        <span className="studio-kicker">{locale === "ko" ? "권한 상세" : "AUTHORITY DETAILS"}</span>
                         <h2>{t.engravingTitle}</h2>
                     </div>
                     <a
@@ -953,7 +953,7 @@ function ActivityView({receipts}: {receipts: ReadState<ReceiptWindow>}) {
         <div className="studio-activity-view">
             <section className="studio-activity-summary">
                 <div>
-                    <span className="studio-kicker">SETTLEMENT RECEIPTS</span>
+                    <span className="studio-kicker">{locale === "ko" ? "결제 영수증" : "SETTLEMENT RECEIPTS"}</span>
                     <strong>{rows.length}</strong>
                     <p>{t.settlementsInWindow}</p>
                 </div>
@@ -993,7 +993,7 @@ function ActivityView({receipts}: {receipts: ReadState<ReceiptWindow>}) {
                                     <div>
                                         <strong>
                                             {receipt.amount !== undefined
-                                                ? `${fromTokenAmount(receipt.amount)} tUSDC`
+                                                ? `${fromTokenAmount(receipt.amount)} ${MOCK_USDC.symbol}`
                                                 : t.periodTotal(
                                                       fromTokenAmount(
                                                           receipt.transferredInCurrentPeriod,
@@ -1037,7 +1037,7 @@ function SecurityView({
                     {halted ? <ShieldOff size={28} /> : <RotateCcwKey size={28} />}
                 </div>
                 <div>
-                    <span className="studio-kicker">OWNER KILL SWITCH</span>
+                    <span className="studio-kicker">{locale === "ko" ? "권한 회수" : "OWNER KILL SWITCH"}</span>
                     <h2>
                         {status.revoked
                             ? t.revokedHeading
@@ -1100,10 +1100,10 @@ function SecurityView({
             <section className="studio-security-detail">
                 <header>
                     <div>
-                        <span className="studio-kicker">REVOCATION PATH</span>
+                        <span className="studio-kicker">{locale === "ko" ? "회수 방법" : "REVOCATION PATH"}</span>
                         <h2>{t.revocationPathTitle}</h2>
                     </div>
-                    <span>{permission.links} LINK AUTHORITY</span>
+                    <span>{permission.links} {locale === "ko" ? "단계 위임" : "link authority"}</span>
                 </header>
                 <ol>
                     <li>

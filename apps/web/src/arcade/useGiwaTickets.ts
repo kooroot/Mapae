@@ -16,7 +16,7 @@ import {loadGrants, writeGrants} from "../lib/grant-store";
 import type {SessionGrant} from "../lib/grant";
 
 type Session = {owner: Address; payer: Address; context: Hex; expires: number; remaining: number; provider: ReturnType<typeof createMapaeDelegationProvider>};
-export type ApprovalPhase = "idle" | "catalogue" | "wallet" | "switching" | "preparing" | "signing" | "bootstrap" | "verifying";
+export type ApprovalPhase = "idle" | "catalogue" | "wallet" | "switching" | "preparing" | "signing" | "authorizing" | "bootstrap" | "verifying";
 export function useGiwaTickets(locale: Locale) {
     const {address, chainId, connector} = useAccount();
     const config = useConfig();
@@ -80,6 +80,7 @@ export function useGiwaTickets(locale: Locale) {
             const signature = await requestGiwaSignature({config, connector, owner, typedData: signing.typedData,
                 signal: AbortSignal.timeout(90_000), onRequest: () => setPhase("signing")});
             if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
+            setPhase("authorizing");
             const artifact = assembleRootPermission({role: policy.role, unsignedDelegation: signing.unsignedDelegation, signature, createdAt: startDate});
             await verifyPermissionArtifact(artifact, locale);
             if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");

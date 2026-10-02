@@ -1,7 +1,9 @@
-import {Link} from "@tanstack/react-router";
+import {Dialog} from "@base-ui/react/dialog";
+import {Menu, X} from "lucide-react";
+import "./brand-controls.css";
 import {Lockup, PassEmblem, Tagline, Wordmark} from "../brand/marks";
 import {appUrl, docsUrl, githubUrl} from "../lib/config";
-import type {Locale} from "../lib/i18n";
+import {localizePath, localizeUrl, type Locale} from "../lib/i18n";
 import {LocaleSwitch, useLocale} from "../lib/locale";
 
 /*
@@ -81,21 +83,24 @@ export function Nav({variant = "paper"}: {variant?: "paper" | "dark"}) {
     return (
         <header className={`nav nav-${variant}`}>
             <div className="wrap nav-inner">
-                <Link to="/" aria-label={t.homeAria}>
+                <a href={localizePath("/", locale)} aria-label={t.homeAria}>
                     <Lockup />
-                </Link>
+                </a>
                 <nav className="nav-links">
-                    <a href="/#authority">{t.product}</a>
-                    <a href="/#boundaries">{t.boundaries}</a>
-                    <a href="/#security">{t.security}</a>
-                    <a href="/#evidence">{t.evidence}</a>
+                    <a href={`${localizePath("/", locale)}#authority`}>{t.product}</a>
+                    <a href={`${localizePath("/", locale)}#boundaries`}>{t.boundaries}</a>
+                    <a href={`${localizePath("/", locale)}#security`}>{t.security}</a>
+                    <a href={`${localizePath("/", locale)}#evidence`}>{t.evidence}</a>
                     <a className="nav-arcade" href={locale === "ko" ? "/ko/arcade" : "/arcade"}>{locale === "ko" ? "오락실" : "Arcade"}<span aria-hidden="true">↗</span></a>
-                    <a href={docsUrl} target="_blank" rel="noreferrer noopener">
+                    <a href={locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl} target="_blank" rel="noreferrer noopener">
                         {t.docs}
                     </a>
                 </nav>
                 <div className="nav-actions">
                     <LocaleSwitch />
+                    <Dialog.Root><Dialog.Trigger className="nav-menu-toggle" aria-label={locale === "ko" ? "메뉴 열기" : "Open menu"}><Menu size={21} /></Dialog.Trigger><Dialog.Portal><Dialog.Backdrop className="mapae-dialog-backdrop" /><Dialog.Popup className="mapae-confirm nav-menu-popup"><div className="nav-menu-top"><Dialog.Title>{locale === "ko" ? "어디로 갈까요?" : "Explore Mapae"}</Dialog.Title><Dialog.Close className="mapae-icon-button" aria-label={locale === "ko" ? "메뉴 닫기" : "Close menu"}><X size={22} /></Dialog.Close></div><Dialog.Description className="sr-only">{locale === "ko" ? "제품, 보안, 오락실과 문서로 이동" : "Product, security, arcade and documentation"}</Dialog.Description><nav aria-label={locale === "ko" ? "모바일 메뉴" : "Mobile navigation"}>
+                    {[{href: `${localizePath("/", locale)}#authority`, label:t.product}, {href:`${localizePath("/",locale)}#boundaries`,label:t.boundaries}, {href:`${localizePath("/",locale)}#security`,label:t.security}, {href:`${localizePath("/",locale)}#evidence`,label:t.evidence}, {href:localizePath("/arcade",locale),label:locale === "ko" ? "마패 오락실" : "Mapae Arcade"}, {href:locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl,label:t.docs}].map(link => <Dialog.Close key={link.href} render={<a href={link.href} />}>{link.label}<span aria-hidden="true">↗</span></Dialog.Close>)}
+                    </nav></Dialog.Popup></Dialog.Portal></Dialog.Root>
                     <a
                         href={githubUrl}
                         className="nav-github"
@@ -106,7 +111,7 @@ export function Nav({variant = "paper"}: {variant?: "paper" | "dark"}) {
                         <GitHubMark />
                         <span>GitHub</span>
                     </a>
-                    <a href={appUrl} className="btn">
+                    <a href={localizeUrl(appUrl, locale)} className="btn">
                         <span>{t.openStudio}</span>
                         <span aria-hidden="true">↗</span>
                     </a>

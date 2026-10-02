@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test";
 import {getAddress} from "viem";
 import {admitPracticeRun, addCharacter, newCompanion, selectedCharacter, selectCharacter, updateCharacter, MAX_CHARACTERS, finishPracticeRun, newArcadeState, parseArcadeState, type ArcadeState} from "./state";
-import {arcadeStorageKey, readArcadeState, saveArcadeState, serializeArcadeState} from "./state-store";
+import {arcadeStorageKey, readArcadeState, serializeArcadeState} from "./state-store";
 
 const owner = "0x1111111111111111111111111111111111111111";
 const other = "0x2222222222222222222222222222222222222222";
@@ -49,10 +49,10 @@ describe("Wallet-first arcade state", () => {
         expect(readArcadeState(owner)).toEqual(newArcadeState());
         expect(data.size).toBe(1);
     }));
-    test("wallet switches isolate rosters and reconnect restores only that wallet", () => withStorage(() => {
-        expect(saveArcadeState(owner, created())).toBe(true);
+    test("wallet switches isolate rosters and reconnect restores only that wallet", () => withStorage(data => {
+        data.set(arcadeStorageKey(owner), serializeArcadeState(created()));
         expect(readArcadeState(other)).toEqual(newArcadeState());
-        expect(saveArcadeState(other, addCharacter(newArcadeState(), friend()))).toBe(true);
+        data.set(arcadeStorageKey(other), serializeArcadeState(addCharacter(newArcadeState(), friend())));
         expect(readArcadeState(owner)).toEqual(created());
         expect(readArcadeState(other).characters.map(c => c.name)).toEqual(["구름"]);
     }));

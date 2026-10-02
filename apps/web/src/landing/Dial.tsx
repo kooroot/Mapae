@@ -67,6 +67,17 @@ export function Dial() {
     const progressRef = useRef(0);
     const pointerRef = useRef({x: 0, y: 0});
     const burstRef = useRef(0);
+    const [sceneEnabled, setSceneEnabled] = useState(false);
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return;
+        const motion = matchMedia("(prefers-reduced-motion: reduce)");
+        let near = false;
+        const update = () => setSceneEnabled(near && !motion.matches);
+        const observer = new IntersectionObserver(entries => {near = entries[0]?.isIntersecting ?? false; update();}, {rootMargin: "160px"});
+        observer.observe(root); motion.addEventListener("change", update);
+        return () => {observer.disconnect(); motion.removeEventListener("change", update);};
+    }, []);
     const [selected, setSelected] = useState(0);
     const [phase, setPhase] = useState(0);
     const [renderState, setRenderState] = useState<MapaeRenderState>("loading");
@@ -119,6 +130,7 @@ export function Dial() {
         chooseBoundary((selected + 1) % BOUNDARIES.length);
     }
 
+    const labels = locale === "ko" ? {SCOPE: ["사용 범위", "자산 · 수취인"], BUDGET: ["지출 한도", "금액 · 주기"], CONTROL: ["내 통제권", "만료 · 회수"]} : {SCOPE: ["Scope", "Asset · Payee"], BUDGET: ["Budget", "Amount · Period"], CONTROL: ["Control", "Expiry · Revoke"]};
     const current = BOUNDARIES[selected] ?? BOUNDARIES[0];
 
     return (
@@ -132,14 +144,14 @@ export function Dial() {
             <button
                 className="ritual-object"
                 type="button"
-                aria-label={`${current.key}: ${t.details[current.key]}. ${t.nextBoundary}`}
+                aria-label={`${labels[current.key][0]}: ${t.details[current.key]}. ${t.nextBoundary}`}
                 onPointerMove={onPointerMove}
                 onPointerLeave={() => {
                     pointerRef.current = {x: 0, y: 0};
                 }}
                 onClick={selectNextBoundary}
             >
-                <ClientOnly fallback={<SceneFallback />}>
+                {sceneEnabled && <ClientOnly fallback={<SceneFallback />}>
                     <Suspense fallback={<SceneFallback />}>
                         <LazyMapaeScene
                             stageRef={stageRef}
@@ -149,7 +161,7 @@ export function Dial() {
                             onRenderState={setRenderState}
                         />
                     </Suspense>
-                </ClientOnly>
+                </ClientOnly>}
                 <span className="ritual-medallion" aria-hidden="true">
                     <span>
                         <img
@@ -162,22 +174,22 @@ export function Dial() {
                     </span>
                 </span>
                 <span className="ritual-tap" aria-hidden="true">
-                    TRACE THE BOUNDARY
+                    {locale === "ko" ? "눌러서 권한 경계 살펴보기" : "Explore the boundaries"}
                 </span>
             </button>
 
-            <dl className="ritual-proof" aria-label="Mapae product principles">
+            <dl className="ritual-proof" aria-label={locale === "ko" ? "마패의 작동 원리" : "Mapae product principles"}>
                 <div>
-                    <dt>OWNER</dt>
-                    <dd>SETS THE SCOPE</dd>
+                    <dt>{locale === "ko" ? "소유자" : "OWNER"}</dt>
+                    <dd>{locale === "ko" ? "범위를 정하고" : "SETS THE SCOPE"}</dd>
                 </div>
                 <div>
-                    <dt>CHAIN</dt>
-                    <dd>ENFORCES IT</dd>
+                    <dt>{locale === "ko" ? "체인" : "CHAIN"}</dt>
+                    <dd>{locale === "ko" ? "한도를 지키고" : "ENFORCES IT"}</dd>
                 </div>
                 <div>
-                    <dt>AGENT</dt>
-                    <dd>ACTS WITHIN</dd>
+                    <dt>{locale === "ko" ? "에이전트" : "AGENT"}</dt>
+                    <dd>{locale === "ko" ? "안에서 행동해요" : "ACTS WITHIN"}</dd>
                 </div>
             </dl>
 
@@ -187,24 +199,24 @@ export function Dial() {
                         <button
                             type="button"
                             onClick={() => chooseBoundary(index)}
-                            aria-label={`${boundary.key}: ${t.details[boundary.key]}`}
+                            aria-label={`${labels[boundary.key][0]}: ${t.details[boundary.key]}`}
                         >
                             <i aria-hidden="true" />
-                            <span>{boundary.key}</span>
-                            <strong>{boundary.value}</strong>
+                            <span>{labels[boundary.key][0]}</span>
+                            <strong>{labels[boundary.key][1]}</strong>
                         </button>
                     </li>
                 ))}
             </ol>
 
             <p className="ritual-readout" aria-live="polite">
-                <span>{current.key}</span>
-                <strong>{current.value}</strong>
+                <span>{labels[current.key][0]}</span>
+                <strong>{labels[current.key][1]}</strong>
                 <small>{t.details[current.key]}</small>
             </p>
 
             <div className="ritual-scroll-cue" aria-hidden="true">
-                <span>SCROLL TO OPEN THE MANDATE</span>
+                <span>{locale === "ko" ? "아래에서 더 알아보기" : "Scroll to explore"}</span>
                 <i />
             </div>
         </div>

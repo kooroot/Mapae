@@ -1,3 +1,5 @@
+import {WalletPicker} from "../components/WalletPicker";
+import {ActionProgress} from "../components/ActionProgress";
 import {BrandSelect} from "../components/BrandSelect";
 import {
     signRootPeriodPermission,
@@ -24,7 +26,6 @@ import {
 import {useEffect, useMemo, useRef, useState, type FormEvent} from "react";
 import {
     useAccount,
-    useConnect,
     useDisconnect,
     useSwitchChain,
     useWalletClient,
@@ -88,8 +89,6 @@ const COPY: Record<
         privacyNote: string;
         walletConnecting: string;
         walletConnect: string;
-        walletBrowserFallback: string;
-        walletUsing: (name: string) => string;
         walletSwitching: string;
         walletSwitch: string;
         walletNoSignHere: string;
@@ -130,10 +129,10 @@ const COPY: Record<
         headTitleLead: "Before the agent can spend, ",
         headTitleStrong: "set the boundaries.",
         headIntro:
-            "Review the asset, amount, period, and recipient, then sign once in your wallet. Studio connects the resulting permission code right away and adds it to your agent list.",
+            "Set a spending limit and recipient, then approve the permission in your wallet.",
         s1Title: "Which agent are you delegating to?",
         s1Desc:
-            "The name identifies the agent in Studio only; the address is the actual recipient of the permission.",
+            "Enter the agent’s address or create a new agent key.",
         agentNameLabel: "Agent name",
         agentNamePlaceholder: "e.g. Invoice agent",
         delegateLabel: "Agent wallet address",
@@ -141,7 +140,7 @@ const COPY: Record<
         keygenNote:
             "This key was just generated in this browser. It is never sent to a server; after signing, it is available only as the MCP connection bundle in ‘My agents’.",
         s2Title: "How much, and how often?",
-        s2Desc: "Not a one-time amount — a total limit that reopens every period.",
+        s2Desc: "The total spending limit resets every period.",
         assetLabel: "Asset",
         periodCapLabel: "Period cap",
         paymentPeriodLabel: "Payment period",
@@ -168,11 +167,9 @@ const COPY: Record<
         submitSwitchChain: "Switch to GIWA Sepolia",
         submitCreate: "Confirm the scope and create the permission",
         privacyNote:
-            "This step transfers no tokens. The signature only creates delegated authority within the scope shown, and the chain checks it again at every actual payment.",
+            "Signing lets this agent spend within the limits shown. No tokens are transferred now.",
         walletConnecting: "Connecting wallet…",
         walletConnect: "Connect wallet",
-        walletBrowserFallback: "browser wallet",
-        walletUsing: (name) => `Using ${name}`,
         walletSwitching: "Switching network…",
         walletSwitch: "Switch to GIWA Sepolia",
         walletNoSignHere: "Nothing is signed on the current network.",
@@ -190,7 +187,7 @@ const COPY: Record<
             `The expected account ${account} is not deployed yet. No account setup service is configured in this environment, so the permission cannot be signed.`,
         gateErrorTitle: "Could not check the payer account.",
         gateReadyTitle: "Payer account ready",
-        gateReadyBody: (account) => `${account} · ERC-1271 verification runs after signing.`,
+        gateReadyBody: (account) => `${account} · We will verify your signature next.`,
         previewUnset: "Not set",
         previewFallbackName: "New agent permission",
         previewIntro: "Your wallet shows one delegation signature covering the entire scope below.",
@@ -218,9 +215,9 @@ const COPY: Record<
         headTitleLead: "에이전트가 쓸 수 있는 ",
         headTitleStrong: "경계를 먼저 정하세요.",
         headIntro:
-            "자산·금액·기간·수취인을 확인한 뒤 지갑에서 한 번 서명합니다. 생성된 권한 코드는 Studio가 바로 연결하고 에이전트 목록에 추가합니다.",
+            "지출 한도와 수취인을 정하고 지갑에서 승인하세요.",
         s1Title: "어떤 에이전트에게 맡길까요?",
-        s1Desc: "이름은 Studio에서만 식별용으로 쓰고, 주소가 실제 권한 수신자입니다.",
+        s1Desc: "에이전트 주소를 입력하거나 새 키를 만드세요.",
         agentNameLabel: "에이전트 이름",
         agentNamePlaceholder: "예: Invoice agent",
         delegateLabel: "에이전트 지갑 주소",
@@ -228,7 +225,7 @@ const COPY: Record<
         keygenNote:
             "이 브라우저에서 방금 만든 키입니다. 서버로 전송되지 않으며, 서명 후 ‘내 에이전트’의 MCP 연결 번들로만 받을 수 있습니다.",
         s2Title: "얼마나, 얼마나 자주 쓸 수 있나요?",
-        s2Desc: "한 번의 숫자가 아니라 매 주기마다 다시 열리는 총한도입니다.",
+        s2Desc: "선택한 주기마다 지출 한도가 초기화됩니다.",
         assetLabel: "자산",
         periodCapLabel: "주기 한도",
         paymentPeriodLabel: "결제 주기",
@@ -255,11 +252,9 @@ const COPY: Record<
         submitSwitchChain: "GIWA Sepolia로 전환하세요",
         submitCreate: "범위 확인하고 권한 만들기",
         privacyNote:
-            "이 단계는 토큰을 전송하지 않습니다. 서명은 표시된 범위의 위임 권한만 만들며, 실제 결제 때 체인이 다시 검사합니다.",
+            "서명하면 이 에이전트가 표시된 한도 안에서 결제할 수 있습니다. 지금 토큰이 전송되지는 않습니다.",
         walletConnecting: "지갑 연결 중…",
         walletConnect: "지갑 연결",
-        walletBrowserFallback: "브라우저 지갑",
-        walletUsing: (name) => `${name} 사용`,
         walletSwitching: "네트워크 전환 중…",
         walletSwitch: "GIWA Sepolia로 전환",
         walletNoSignHere: "현재 네트워크에서는 서명하지 않습니다.",
@@ -276,7 +271,7 @@ const COPY: Record<
             `예상 계정 ${account}이 아직 배포되지 않았습니다. 이 환경에는 계정 준비 서버가 설정되어 있지 않아 권한 서명을 진행할 수 없습니다.`,
         gateErrorTitle: "지불 계정을 확인하지 못했습니다.",
         gateReadyTitle: "지불 계정 준비 완료",
-        gateReadyBody: (account) => `${account} · 서명 후 ERC-1271 검증까지 진행합니다.`,
+        gateReadyBody: (account) => `${account} · 서명 후 권한을 확인합니다.`,
         previewUnset: "미지정",
         previewFallbackName: "새 에이전트 권한",
         previewIntro: "지갑에는 아래 범위를 한 번에 확인할 수 있는 위임 서명이 표시됩니다.",
@@ -351,6 +346,13 @@ export function GrantOnboarding({
     const {locale} = useLocale();
     const t = COPY[locale];
     const [draft, setDraft] = useState<GrantDraft>(INITIAL_DRAFT);
+    const [step, setStep] = useState(0);
+    const [readAttempt, setReadAttempt] = useState(0);
+    const stepHeading = useRef<HTMLHeadingElement>(null);
+    useEffect(() => {
+        stepHeading.current?.focus({preventScroll: true});
+        if (step > 0) stepHeading.current?.scrollIntoView({block: "start"});
+    }, [step]);
     const [attempted, setAttempted] = useState(false);
     const [progress, setProgress] = useState<SigningProgress>({kind: "idle"});
     const [generatedKey, setGeneratedKey] = useState<AgentSessionKey>();
@@ -358,7 +360,6 @@ export function GrantOnboarding({
     // one fired before the first has re-rendered `busy` into the button.
     const signing = useRef(false);
     const {address, chainId, isConnected} = useAccount();
-    const {connect, connectors, isPending: connecting, error: connectError} = useConnect();
     const {disconnect} = useDisconnect();
     const {switchChain, isPending: switching} = useSwitchChain();
     const {data: walletClient} = useWalletClient({chainId: chain.id});
@@ -407,7 +408,7 @@ export function GrantOnboarding({
         return () => {
             current = false;
         };
-    }, [address, locale, walletClient, wrongChain]);
+    }, [address, locale, walletClient, wrongChain, readAttempt]);
 
     function update<K extends keyof GrantDraft>(key: K, value: GrantDraft[K]) {
         setDraft((current) => ({...current, [key]: value}));
@@ -436,7 +437,7 @@ export function GrantOnboarding({
 
     async function signGrant(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        if (signing.current) return;
+        if (signing.current || step !== 3 || wrongChain) return;
         setAttempted(true);
         // Readiness no longer gates signing. The signature is what proves ownership to
         // the sponsor, so it must come first; `DelegationManager` still requires the
@@ -528,13 +529,13 @@ export function GrantOnboarding({
             setDraft(INITIAL_DRAFT);
             setAttempted(false);
             setGeneratedKey(undefined);
+            setStep(1);
             onGranted(grant, placement);
         } finally {
             signing.current = false;
         }
     }
 
-    const connector = connectors[0];
     const busy =
         progress.kind === "signing" ||
         progress.kind === "bootstrapping" ||
@@ -545,35 +546,38 @@ export function GrantOnboarding({
             (accountReadiness.kind === "missing" && sponsor.kind === "configured")) &&
         !busy;
 
+    const ko = locale === "ko";
+    const steps = ko ? ["지갑 연결", "에이전트", "지출 한도", "승인 검토"] : ["Wallet", "Agent", "Limits", "Review"];
+    const activeStep = !isConnected || wrongChain ? 0 : step;
+    function nextStep() {
+        setAttempted(true);
+        if (activeStep === 0 && (!isConnected || wrongChain)) return;
+        if (activeStep === 1 && (!draft.agentName.trim() || !isAddress(draft.delegate.trim()))) return;
+        if (activeStep === 2 && validation.kind !== "ok") return;
+        setAttempted(false); setStep(activeStep + 1);
+    }
+    const walletControl = <WalletState address={address} chainId={chainId} switching={switching} busy={busy}
+        onSwitch={() => switchChain({chainId: chain.id})} onDisconnect={() => disconnect()} />;
     return (
-        <div className="studio-create-page">
+        <div className="studio-create-page studio-wizard">
             <header className="studio-create-head">
                 <div>
-                    <span className="studio-kicker">CREATE AUTHORITY</span>
+                    <span className="studio-kicker">{locale === "ko" ? "결제 권한 만들기" : "CREATE AUTHORITY"}</span>
                     <h1>
                         {t.headTitleLead}
                         <strong>{t.headTitleStrong}</strong>
                     </h1>
                     <p>{t.headIntro}</p>
                 </div>
-                <WalletState
-                    address={address}
-                    chainId={chainId}
-                    connecting={connecting}
-                    switching={switching}
-                    connectorName={connector?.name}
-                    connectError={connectError ? faultLine(connectError, locale) : undefined}
-                    onConnect={() => {
-                        if (connector) connect({connector});
-                    }}
-                    onSwitch={() => switchChain({chainId: chain.id})}
-                    onDisconnect={() => disconnect()}
-                />
+                {activeStep > 0 && walletControl}
             </header>
 
+            <ol className="studio-steps" aria-label={ko ? "권한 만들기 단계" : "Create permission steps"}>{steps.map((label, index) => <li key={label} aria-current={activeStep === index ? "step" : undefined} data-done={activeStep > index}><span>{index + 1}</span>{label}</li>)}</ol>
+            <h2 className="studio-step-heading" ref={stepHeading} tabIndex={-1}>{steps[activeStep]}</h2>
             <div className="studio-create-layout">
-                <form className="studio-grant-form" onSubmit={(event) => void signGrant(event)}>
-                    <div className="studio-form-section">
+                <form className="studio-grant-form" onSubmit={event => {if (activeStep < 3) {event.preventDefault(); nextStep();} else void signGrant(event);}}>
+                    {activeStep === 0 && <div className="studio-connect-intro"><Wallet size={36} /><h3>{isConnected && !wrongChain ? ko ? "지갑이 연결됐어요" : "Your wallet is connected" : ko ? "결제를 맡길 지갑부터 연결하세요" : "Start with your wallet"}</h3><p>{ko ? "연결만으로 결제 권한이 생기지 않아요. 마지막 단계에서 범위를 확인하고 서명합니다." : "Connecting grants no spending authority. You review and sign the limits in the last step."}</p>{walletControl}</div>}
+                    {activeStep === 1 && <div className="studio-form-section">
                         <FormSectionHead
                             index="01"
                             icon={Bot}
@@ -595,41 +599,19 @@ export function GrantOnboarding({
                                     onChange={(event) => update("agentName", event.target.value)}
                                 />
                             </Field>
-                            <Field
-                                label={t.delegateLabel}
-                                htmlFor="grant-delegate"
-                                error={fieldError(validation, attempted, "delegate")}
-                            >
-                                <div className="studio-delegate-row">
-                                    <input
-                                        id="grant-delegate"
-                                        value={draft.delegate}
-                                        spellCheck={false}
-                                        autoComplete="off"
-                                        placeholder="0x…"
-                                        disabled={busy}
-                                        onChange={(event) =>
-                                            update("delegate", event.target.value)
-                                        }
-                                    />
-                                    <button
-                                        type="button"
-                                        className="studio-keygen-button"
-                                        disabled={busy}
-                                        onClick={createAgentKey}
-                                    >
-                                        <KeyRound size={14} />
-                                        {t.newAgentKey}
-                                    </button>
-                                </div>
-                                {generatedKey ? (
-                                    <small className="studio-keygen-note">{t.keygenNote}</small>
-                                ) : null}
-                            </Field>
+                            <div className="studio-agent-choice">
+                                <button type="button" className="mapae-action mapae-action-secondary" disabled={busy} onClick={createAgentKey}><KeyRound size={18} />{generatedKey ? ko ? "새 키로 다시 만들기" : "Generate a new key" : ko ? "새 에이전트 만들기" : "Create an agent"}</button>
+                                {generatedKey && <p className="studio-keygen-note" role="status">{t.keygenNote}</p>}
+                                {draft.delegate && <p className="studio-agent-address">{ko ? "에이전트 주소" : "Agent address"} <code>{short(draft.delegate)}</code></p>}
+                                <details className="studio-advanced"><summary>{ko ? "기존 에이전트 주소 사용" : "Use an existing agent address"}</summary>
+                                    <Field label={t.delegateLabel} htmlFor="grant-delegate" error={fieldError(validation, attempted, "delegate")}><input id="grant-delegate" value={draft.delegate} spellCheck={false} autoComplete="off" placeholder="0x…" disabled={busy} onChange={event => update("delegate", event.target.value)} /></Field>
+                                </details>
+                                {attempted && !isAddress(draft.delegate.trim()) && <p role="alert">{ko ? "새 에이전트를 만들거나 유효한 주소를 입력하세요." : "Create an agent or enter a valid address."}</p>}
+                            </div>
                         </div>
-                    </div>
+                    </div>}
 
-                    <div className="studio-form-section">
+                    {activeStep === 2 && <><div className="studio-form-section">
                         <FormSectionHead
                             index="02"
                             icon={Coins}
@@ -654,7 +636,7 @@ export function GrantOnboarding({
                                         disabled={busy}
                                         onChange={(event) => update("amount", event.target.value)}
                                     />
-                                    <span>tUSDC</span>
+                                    <span>{MOCK_USDC.symbol}</span>
                                 </div>
                             </Field>
                             <Field
@@ -727,7 +709,9 @@ export function GrantOnboarding({
                         </div>
                     </div>
 
-                    <AccountGate state={accountReadiness} sponsor={sponsor} />
+                    </>}
+                    {activeStep === 3 && <><GrantPreview draft={draft} validation={validation} /><AccountGate state={accountReadiness} sponsor={sponsor} />{accountReadiness.kind === "error" && <button type="button" className="mapae-action mapae-action-secondary" onClick={() => setReadAttempt(n => n + 1)}>{ko ? "계정 상태 다시 확인" : "Check account again"}</button>}</>}
+                    {busy && <ActionProgress ko={ko} current={progress.kind === "signing" ? 0 : progress.kind === "bootstrapping" ? 1 : 2} steps={ko ? ["지갑 서명", "계정 준비", "권한 확인"] : ["Wallet signature", "Account setup", "Verify permission"]} title={progress.kind === "signing" ? t.submitSigning : progress.kind === "bootstrapping" ? t.submitBootstrapping : t.verifyingOnChain} hint={ko ? "서명 뒤에는 이 창을 유지해 주세요. 서명된 권한은 확인 결과와 함께 보관됩니다." : "Keep this page open after signing. Signed permissions are retained even if verification fails."} />}
 
                     {progress.kind === "error" ? (
                         <div className="studio-sign-error" role="alert">
@@ -736,7 +720,7 @@ export function GrantOnboarding({
                         </div>
                     ) : null}
 
-                    <button type="submit" className="studio-primary-button" disabled={!formReady}>
+                    {activeStep === 3 && <><button type="submit" className="studio-primary-button" disabled={!formReady}>
                         {progress.kind === "signing"
                             ? t.submitSigning
                             : progress.kind === "bootstrapping"
@@ -753,65 +737,33 @@ export function GrantOnboarding({
                     <p className="studio-privacy">
                         <LockKeyhole size={15} />
                         {t.privacyNote}
-                    </p>
+                    </p></>}
+                    {(activeStep > 0 || (isConnected && !wrongChain)) && <div className="studio-step-actions">
+                        {activeStep > 0 && <button type="button" className="mapae-action mapae-action-secondary" disabled={busy} onClick={() => {setAttempted(false); setStep(activeStep - 1);}}>{ko ? "이전" : "Back"}</button>}
+                        {activeStep < 3 && <button type="button" className="mapae-action mapae-action-primary" disabled={!isConnected || wrongChain || busy} onClick={nextStep}>{activeStep === 2 ? ko ? "승인할 내용 확인" : "Review permission" : ko ? "다음" : "Continue"}<ArrowRight size={18} /></button>}
+                    </div>}
                 </form>
-
-                <GrantPreview draft={draft} validation={validation} />
             </div>
 
-            <ManualPermissionImport onImported={onImported} />
+            {isConnected && !busy && <ManualPermissionImport onImported={onImported} />}
         </div>
     );
 }
 
-function WalletState({
-    address,
-    chainId,
-    connecting,
-    switching,
-    connectorName,
-    connectError,
-    onConnect,
-    onSwitch,
-    onDisconnect,
-}: {
-    address?: `0x${string}`;
-    chainId?: number;
-    connecting: boolean;
-    switching: boolean;
-    connectorName?: string;
-    connectError?: string;
-    onConnect: () => void;
-    onSwitch: () => void;
-    onDisconnect: () => void;
+function WalletState({address, chainId, switching, busy, onSwitch, onDisconnect}: {
+    address?: `0x${string}`; chainId?: number; switching: boolean; busy: boolean;
+    onSwitch: () => void; onDisconnect: () => void;
 }) {
     const {locale} = useLocale();
     const t = COPY[locale];
-    if (!address) {
-        return (
-            <div className="studio-wallet-block">
-                <button
-                    type="button"
-                    className="studio-wallet-button"
-                    disabled={connecting}
-                    onClick={onConnect}
-                >
-                    <Wallet size={17} />
-                    {connecting ? t.walletConnecting : t.walletConnect}
-                </button>
-                <small>
-                    {connectError ?? t.walletUsing(connectorName ?? t.walletBrowserFallback)}
-                </small>
-            </div>
-        );
-    }
+    if (!address) return <WalletPicker context="studio" />;
     if (chainId !== chain.id) {
         return (
             <div className="studio-wallet-block" data-tone="warning">
                 <button
                     type="button"
                     className="studio-wallet-button"
-                    disabled={switching}
+                    disabled={switching || busy}
                     onClick={onSwitch}
                 >
                     <CircleAlert size={17} />
@@ -827,7 +779,7 @@ function WalletState({
                 <i />
                 {short(address)}
             </span>
-            <button type="button" onClick={onDisconnect}>
+            <button type="button" disabled={busy} onClick={onDisconnect}>
                 {t.walletDisconnect}
             </button>
         </div>
@@ -979,7 +931,7 @@ function GrantPreview({
                 <span />
                 <ShieldCheck size={35} />
             </div>
-            <span className="studio-kicker">SIGNING PREVIEW</span>
+            <span className="studio-kicker">{locale === "ko" ? "승인할 내용" : "SIGNING PREVIEW"}</span>
             <h2>{draft.agentName.trim() || t.previewFallbackName}</h2>
             <p>{t.previewIntro}</p>
             <dl>
@@ -989,7 +941,7 @@ function GrantPreview({
                 </div>
                 <div>
                     <dt>{t.previewPeriodCap}</dt>
-                    <dd>{amount === "—" ? amount : `${amount} tUSDC`}</dd>
+                    <dd>{amount === "—" ? amount : `${amount} ${MOCK_USDC.symbol}`}</dd>
                 </div>
                 <div>
                     <dt>{t.previewPeriod}</dt>

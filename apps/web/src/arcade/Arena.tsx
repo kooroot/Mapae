@@ -28,9 +28,10 @@ const COPY = {
     },
 } satisfies Record<Locale, Record<string, string>>;
 
-export function Arena({locale, character, reducedMotion, sound, onFinish, autopilot}: {
+export function Arena({locale, character, reducedMotion, sound, onFinish, autopilot, suspended = false}: {
     locale: Locale; character: Character; reducedMotion: boolean; sound: ArcadeSound;
     onFinish: (game: Game, early: boolean) => void;
+    suspended?: boolean;
     autopilot?: "careful" | "quick";
 }) {
     const t = COPY[locale];
@@ -42,6 +43,8 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const countdownRef = useRef(3_000);
     const [paused, setPaused] = useState(false);
     const pauseRef = useRef(false);
+    const suspendedRef = useRef(suspended); suspendedRef.current = suspended;
+    useEffect(() => {last.current = null;}, [suspended]);
     const done = useRef(false);
     const last = useRef<number | null>(null);
     const field = useRef<HTMLDivElement>(null);
@@ -69,7 +72,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
         let painted = 0;
         const tick = (time: number) => {
             if (done.current) return;
-            if (!pauseRef.current) {
+            if (!pauseRef.current && !suspendedRef.current) {
                 const delta = last.current === null ? 0 : time - last.current;
                 if (countdownRef.current > 0) {
                     countdownRef.current = Math.max(0, countdownRef.current - delta);
@@ -113,7 +116,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     }, []);
 
     function hit(index: number) {
-        if (autopilot || pauseRef.current || countdownRef.current > 0 || done.current) return;
+        if (autopilot || pauseRef.current || suspendedRef.current || countdownRef.current > 0 || done.current) return;
         // Account for time since the last frame before accepting an input at expiry.
         const now = performance.now();
         if (last.current !== null) state.current = advance(state.current, now - last.current);
@@ -130,7 +133,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     hitRef.current = hit;
     useEffect(() => {
         const key = (event: KeyboardEvent) => {
-            if (event.defaultPrevented || isControlTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+            if (suspendedRef.current || event.defaultPrevented || isControlTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
             if (event.code === "Escape") {
                 event.preventDefault();
                 setPause(!pauseRef.current);
@@ -146,7 +149,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const seconds = Math.ceil((ROUND_MS - view.elapsed) / 1_000);
     return (
         <section className={`arc-arena ${reducedMotion ? "arc-still" : ""}`} aria-label={t.playfield}>
-            <div className="arc-arena-heading"><span>01 / DOKKAEBI STAMP</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
+            <div className="arc-arena-heading"><span>{locale === "ko" ? "도깨비 도장찍기" : "Dokkaebi Stamp"}</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
             <div className="arc-scoreboard">
                 <div><span>{t.score}</span><strong data-testid="score">{view.score.toLocaleString()}</strong></div>
                 <div className={seconds <= 10 ? "arc-time arc-urgent" : "arc-time"}><span>{t.time}</span><strong data-testid="timer">{seconds}<small>s</small></strong></div>
@@ -154,7 +157,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
             </div>
             <div className="arc-playfield" ref={field} tabIndex={-1}>
                 <div className="arc-field-caption"><span>{t.rules}</span><span>馬牌</span></div>
-                <div className="arc-windows" inert={paused || countdown > 0}>
+                <div className="arc-windows" inert={suspended || paused || countdown > 0}>
                     {view.cells.map((cell, i) => (
                         <button key={i} className={`arc-window ${cell.actor ? `arc-has-${cell.actor.kind}` : ""} ${cell.impact ? `arc-impact-${cell.impact.kind}` : ""}`}
                             data-testid={`cell-${i}`} data-actor={cell.actor?.kind ?? "empty"} aria-disabled={!!autopilot}
@@ -176,7 +179,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     ))}
                 </div>
                 {(countdown > 0 || paused) && <div className="arc-game-overlay" role={paused ? "region" : "status"} aria-label={paused ? t.paused : t.ready}>
-                    {paused ? <><span className="arc-overline">PAUSE</span><h2>{t.paused}</h2><p>{t.pauseNote}</p>
+                    {paused ? <><span className="arc-overline">{t.pause}</span><h2>{t.paused}</h2><p>{t.pauseNote}</p>
                         <button ref={resumeButton} className="arc-button" onClick={() => setPause(false)}>{t.resume} →</button>
                         <button className="arc-text-button" onClick={() => {if (!done.current) {done.current = true; finishRef.current(state.current, true);}}}>{t.quit}</button>
                         <small>{t.stopped}</small></> : <><span>{t.ready}</span><strong className="arc-countdown">{countdown}</strong><p>{t.rules}</p></>}

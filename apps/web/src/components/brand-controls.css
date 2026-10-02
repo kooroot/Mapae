@@ -56,3 +56,23 @@ button.mapae-settings-trigger {display:grid;place-items:center;width:44px;height
 button.mapae-role {white-space:nowrap;flex:1;display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:10px;border:1px solid transparent;border-radius:9px;background:transparent;font:500 14px var(--sans);color:#6d614f;cursor:pointer;touch-action:manipulation}
 button.mapae-role[data-checked] {background:#30271d;color:#f2d4ab;border-color:#755837;box-shadow:0 2px 6px #38281622}
 @media(prefers-reduced-motion:reduce){.mapae-select-trigger,.mapae-select-chevron,.mapae-select-popup,.mapae-switch,.mapae-switch-thumb{transition:none}}
+
+/* Shared interaction language across Studio, the workshop and game receipts. */
+:root{--ui-touch:44px;--ui-radius:12px;--ui-copy:15px;--ui-label:14px;--ui-focus:#e9c99f}
+.mapae-action{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:48px;padding:12px 20px;border:1px solid transparent;border-radius:var(--ui-radius);font:600 var(--ui-copy)/1.45 var(--sans,sans-serif);text-decoration:none;cursor:pointer;touch-action:manipulation;text-align:center}
+.mapae-action-primary{background:linear-gradient(110deg,#efd3a4,#df9c7c);color:#211911;border-color:#f4d6af}
+.mapae-action-secondary{background:#e9c99f0a;color:#ecd8b8;border-color:#b8986c70}
+.mapae-action-tertiary{background:transparent;color:#e9c99f;text-decoration:underline;text-underline-offset:4px}
+.mapae-action:disabled{opacity:.45;cursor:not-allowed}.mapae-action:hover:not(:disabled){filter:brightness(1.1)}
+:is(.mapae-action,.mapae-icon-button,.mapae-check input):focus-visible{outline:2px solid var(--ui-focus);outline-offset:4px}
+.mapae-dialog-backdrop{position:fixed;inset:0;z-index:140;background:#000a;backdrop-filter:blur(5px)}
+.mapae-confirm{position:fixed;z-index:150;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;background:#211c16;color:#f1e5d2;border:1px solid #b79a69;border-radius:22px;padding:28px;box-shadow:0 28px 100px #0009;outline:none;font-family:var(--sans,sans-serif)}
+.mapae-confirm h2{font-size:24px;letter-spacing:-.04em;margin:0 0 16px}.mapae-confirm p{font-size:15px;line-height:1.8;color:#cec0ab}.mapae-confirm-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}.mapae-confirm-actions>*{flex:1}
+.mapae-icon-button{width:44px;height:44px;display:grid;place-items:center;border:1px solid #b8986c70;background:transparent;color:inherit;border-radius:50%;cursor:pointer;flex:none}
+.mapae-progress{padding:20px;border:1px solid #bca06d55;border-radius:16px;background:#e9c99f08;color:#e8d5b5;margin:18px 0;line-height:1.65}
+.mapae-progress>div{display:flex;align-items:center;gap:10px}.mapae-progress strong{font-size:16px}.mapae-progress ol{display:flex;gap:12px;list-style:none;padding:0;margin:18px 0;flex-wrap:wrap}.mapae-progress li{display:flex;gap:8px;align-items:center;font-size:14px;color:#a99c88}.mapae-progress li>span{display:grid;place-items:center;width:26px;height:26px;border:1px solid currentColor;border-radius:50%;flex:none}.mapae-progress li[aria-current]{color:#ffe0a6}.mapae-progress li[data-done=true]{color:#b1d0ad}.mapae-progress p,.mapae-progress small{font-size:14px;color:#c7bba8;line-height:1.7}.mapae-spinner{animation:mapae-spin 1.2s linear infinite;flex:none}@keyframes mapae-spin{to{transform:rotate(360deg)}}
+.mapae-speed{display:inline-flex;gap:4px;border:1px solid #8f74575c;border-radius:10px;padding:3px}.mapae-speed button{min-height:40px;min-width:44px;border:0;border-radius:7px;background:transparent;color:inherit;font:600 14px var(--sans,sans-serif);cursor:pointer}.mapae-speed button[aria-pressed=true]{background:#382c1e;color:#ffe5bf}.mapae-check{display:flex;align-items:center;gap:10px;min-height:44px;font-size:14px;cursor:pointer}.mapae-check input{width:20px;height:20px;accent-color:#dcb37c;flex:none}
+.mapae-select-description,.mapae-switch-row small{font-size:14px}.mapae-switch-row{font-size:15px;min-height:44px}.mapae-switch{min-width:44px}
+.arc-wallet-dialog{z-index:150}.arc-wallet-dialog-top button{width:44px;height:44px}.arc-wallet-list small,.arc-wallet-mobile-entry small,.arc-wallet-dialog .arc-wallet-assurance{font-size:14px}.arc-loading-icon{animation:mapae-spin 1.2s linear infinite}
+@media(max-width:480px){.mapae-confirm{padding:22px}.mapae-confirm-actions{flex-direction:column}.mapae-progress ol{flex-direction:column}.mapae-action{padding:12px 16px}}
+@media(prefers-reduced-motion:reduce){.mapae-spinner,.arc-loading-icon{animation:none}}

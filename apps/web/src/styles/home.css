@@ -165,9 +165,16 @@
 /* ── Header and footer variants ───────────────────────────────────────── */
 
 .nav-dark {
+    color: #f1ede5;
     border-bottom-color: rgba(241, 237, 229, 0.09);
     background: rgba(5, 5, 5, 0.82);
     backdrop-filter: saturate(1.3) blur(18px);
+}
+
+.nav-dark .lang-switch {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
 }
 
 .nav-dark .lockup img {
@@ -1360,3 +1367,6 @@
 
 .nav-links .nav-arcade {display: inline-flex; align-items: center; gap: 7px; color: #e6b382}
 .nav-links .nav-arcade>span {font-size: 12px; color: #e6b382}
+.nav-menu-toggle{display:none;width:44px;height:44px;place-items:center;border:1px solid currentColor;border-radius:50%;color:inherit;background:transparent;cursor:pointer}.nav-menu-top{display:flex;align-items:center;justify-content:space-between;gap:20px}.nav-menu-top h2{margin:0}.nav-menu-popup nav{display:grid;margin-top:20px}.nav-menu-popup nav a{display:flex;align-items:center;justify-content:space-between;min-height:54px;color:#ead7b6;text-decoration:none;border-bottom:1px solid #baa07933;font-size:16px}.nav-menu-popup a:focus-visible{outline:2px solid #edc98e;outline-offset:3px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media(max-width:1100px){.nav-menu-toggle{display:grid}}
+@media(max-width:620px){.nav-actions{gap:8px}.nav-actions .nav-github{display:none}.nav-inner{gap:10px}.nav-actions>.btn{padding:10px 12px;min-height:44px;font-size:13px}.nav .lockup{gap:8px}.nav .lockup svg{max-width:100px}.nav-inner>.nav-links{display:none}}

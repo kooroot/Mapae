@@ -38,14 +38,17 @@ const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const ROOT = "apps/web/src";
 
 /**
- * Both modules project explicit allowlists, with tests proving unknown fields and keys
+ * These modules project explicit allowlists, with tests proving unknown fields and keys
  * do not persist. Arcade writes only wallet-scoped game records in its own key; routing those writes
- * through the grant store would couple a wallet-free game to Studio's signing imports.
+ * through the grant store would couple game records to Studio's signing imports.
+ * The profile recovery store projects both its pending state and server base; its
+ * tests pin credential exclusion and preservation of existing mobile records.
  * Exact paths and API names keep this from becoming a directory-wide exemption.
  */
 export const STORE_MODULES = [
     "apps/web/src/lib/grant-store.ts",
     "apps/web/src/arcade/state-store.ts",
+    "apps/web/src/arcade/profile/device-store.ts",
 ];
 // The landing greeter writes only one catalog zodiac name, tested against hostile inputs.
 export const SESSION_STORE_MODULES = ["apps/web/src/arcade/giwa-store.ts", "apps/web/src/landing/arcade-greeter-store.ts"];

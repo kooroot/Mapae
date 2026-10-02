@@ -1,3 +1,4 @@
+import {MOCK_USDC} from "@mapae/shared";
 import {createFileRoute} from "@tanstack/react-router";
 import {Suspense, lazy, type ReactNode} from "react";
 import {InterfaceIcon, type InterfaceIconName} from "../brand/marks";
@@ -15,7 +16,7 @@ import {
     siteSurface,
 } from "../lib/config";
 import {short} from "../lib/dial";
-import {pick, type Locale} from "../lib/i18n";
+import {localizeUrl, pick, type Locale} from "../lib/i18n";
 import {resolveLocale, useLocale} from "../lib/locale";
 
 const LazyStudio = lazy(() =>
@@ -128,7 +129,7 @@ const COPY: Record<
         hero: {
             titleLine1: "Accept x402 on GIWA in one line.",
             titleLine2: "No server? One form.",
-            sub: "Builders open a paid route with one line of Hono middleware; a shop with no server gets a payment URL instead. Customers order from a desktop agent and pick up in person. What arrives is tUSDC on GIWA Sepolia — testnet, not real money.",
+            sub: `Add agent payments with one line of code or a shop payment URL. Try it with ${MOCK_USDC.symbol} on GIWA Sepolia — test tokens, not real money.`,
             openStudio: "Open Studio",
             sellerGuide: "Seller guide",
         },
@@ -147,7 +148,7 @@ const COPY: Record<
         },
         mandate: {
             title: "The owner sets the boundaries. The chain enforces them.",
-            body: "The numbers are not fixed in the product. Each grant is composed for its purpose, and the agent cannot step past the engraved scope.",
+            body: "Choose the asset, recipient, spending limit and expiry for each agent.",
         },
         flow: {
             titleLine1: "Payments flow automatically,",
@@ -161,9 +162,9 @@ const COPY: Record<
         },
         evidence: {
             title: "Before the explanation, a record you can verify.",
-            body: "The links below are delegated payments actually settled on testnet. They are public evidence of technical behavior, not fixed product limits or operating metrics.",
+            body: "View settled testnet payments in the GIWA explorer.",
             testnetNote:
-                "The current public evidence was produced with GIWA Sepolia test assets. It does not indicate operational readiness for real-value assets.",
+                "Test tokens only. Real-value payments are not available.",
         },
         finalCall: {
             titleLine1: "Set the boundaries.",
@@ -178,7 +179,7 @@ const COPY: Record<
         hero: {
             titleLine1: "GIWA에서 x402 받기 = 마패 한 줄",
             titleLine2: "서버가 없으면 폼 하나.",
-            sub: "빌더는 Hono 미들웨어 한 줄로 유료 경로를 열고, 서버 없는 가게는 결제 URL 하나를 받습니다. 손님은 데스크톱에서 시켜 두고 가게에서 찾습니다. 들어오는 것은 GIWA Sepolia의 tUSDC(테스트넷, 실제 돈 아님)입니다.",
+            sub: `코드 한 줄 또는 가게 결제 URL로 에이전트 결제를 시작하세요. GIWA Sepolia의 ${MOCK_USDC.symbol} 테스트 토큰을 사용합니다.`,
             openStudio: "Studio 열기",
             sellerGuide: "셀러 가이드",
         },
@@ -197,7 +198,7 @@ const COPY: Record<
         },
         mandate: {
             title: "소유자가 정하고, 체인이 지킵니다.",
-            body: "숫자는 제품에 고정되어 있지 않습니다. 각 권한은 사용 목적에 맞게 구성되고, 에이전트는 새겨진 범위를 넘어설 수 없습니다.",
+            body: "에이전트마다 자산·수취인·한도·유효 기간을 정하세요.",
         },
         flow: {
             titleLine1: "결제는 자동으로 흐르지만,",
@@ -211,9 +212,9 @@ const COPY: Record<
         },
         evidence: {
             title: "설명보다 먼저, 확인할 수 있는 기록.",
-            body: "아래 링크는 테스트넷에서 실제로 정산된 위임 결제입니다. 제품의 고정 한도나 운영 지표가 아니라 기술 동작을 검증하는 공개 증거입니다.",
+            body: "GIWA 탐색기에서 실제 정산된 테스트넷 결제를 확인하세요.",
             testnetNote:
-                "현재 공개 증거는 GIWA Sepolia의 테스트 자산으로 생성되었습니다. 실제 가치 자산을 위한 운영 준비 상태를 의미하지 않습니다.",
+                "테스트 토큰만 사용합니다. 실제 자금 결제는 제공하지 않습니다.",
         },
         finalCall: {
             titleLine1: "경계를 정하세요.",
@@ -233,9 +234,7 @@ const STANDARDS = [
 ] as const;
 
 /*
- * Structural fields — index, icon, all-caps meta, and the English step titles — are
- * single-sourced, and only the prose carries a per-locale pair, so the two locales
- * cannot drift apart structurally.
+ * Keep step order and icons shared while rendering user-facing labels in each locale.
  */
 const BOUNDARY_SOURCE: Array<{
     index: string;
@@ -359,7 +358,7 @@ const FLOW_SOURCE: Array<{
 
 const FLOW: Record<Locale, Array<{icon: InterfaceIconName; title: string; body: ReactNode}>> = {
     en: FLOW_SOURCE.map(({icon, title, body}) => ({icon, title, body: body.en})),
-    ko: FLOW_SOURCE.map(({icon, title, body}) => ({icon, title, body: body.ko})),
+    ko: FLOW_SOURCE.map(({icon, body}, index) => ({icon, title: ["요청", "권한 구성", "범위 검사", "정산", "이용"][index]!, body: body.ko})),
 };
 
 export function Landing() {
@@ -396,7 +395,7 @@ function Hero() {
                     </h1>
                     <p>{t.sub}</p>
                     <div className="home-actions">
-                        <a href={appUrl} className="home-button home-button-primary">
+                        <a href={localizeUrl(appUrl, locale)} className="home-button home-button-primary">
                             {t.openStudio}
                             <span aria-hidden="true">↗</span>
                         </a>
@@ -422,14 +421,16 @@ function Hero() {
 }
 
 function StandardRail() {
+    const {locale} = useLocale();
+    const details = locale === "ko" ? ["정산 네트워크", "결제 통신", "위임 권한", "스마트 계정"] : STANDARDS.map(item => item.detail);
     return (
         <section className="home-standard-rail" aria-label="Mapae protocol foundation">
             <div className="home-wrap home-standard-grid">
-                <p>BUILT ON OPEN RAILS</p>
-                {STANDARDS.map((standard) => (
+                <p>{locale === "ko" ? "기반 기술" : "BUILT ON OPEN RAILS"}</p>
+                {STANDARDS.map((standard, index) => (
                     <div key={standard.name}>
                         <strong>{standard.name}</strong>
-                        <span>{standard.detail}</span>
+                        <span>{details[index]}</span>
                     </div>
                 ))}
             </div>
@@ -444,7 +445,7 @@ function Authority() {
         <section className="home-section home-authority" id="authority">
             <div className="home-wrap">
                 <Reveal className="home-section-head">
-                    <span className="home-kicker">THE CONTROL LAYER</span>
+                    <span className="home-kicker">{locale === "ko" ? "내가 정하는 결제 권한" : "THE CONTROL LAYER"}</span>
                     <h2 className="home-authority-title">
                         <span>{t.titleA}</span>
                         <span>{t.titleB}</span>
@@ -453,7 +454,7 @@ function Authority() {
                 </Reveal>
                 <div className="home-contrast">
                     <Reveal className="home-contrast-panel home-contrast-before">
-                        <span className="home-panel-index">WITHOUT MAPAE</span>
+                        <span className="home-panel-index">{locale === "ko" ? "직접 키를 맡기면" : "WITHOUT MAPAE"}</span>
                         <h3>{t.withoutTitle}</h3>
                         <ul>
                             <li>{t.without1}</li>
@@ -465,7 +466,7 @@ function Authority() {
                         <span aria-hidden="true">→</span>
                     </Reveal>
                     <Reveal className="home-contrast-panel home-contrast-after" delay={120}>
-                        <span className="home-panel-index">WITH MAPAE</span>
+                        <span className="home-panel-index">{locale === "ko" ? "마패로 범위를 정하면" : "WITH MAPAE"}</span>
                         <h3>{t.withTitle}</h3>
                         <ul>
                             <li>{t.with1}</li>
@@ -487,7 +488,7 @@ function Mandate() {
             <div className="home-wrap">
                 <Reveal className="home-section-head home-section-head-split">
                     <div>
-                        <span className="home-kicker">ONE MANDATE · FOUR BOUNDARIES</span>
+                        <span className="home-kicker">{locale === "ko" ? "권한 하나, 네 가지 경계" : "ONE MANDATE · FOUR BOUNDARIES"}</span>
                         <h2>{t.title}</h2>
                     </div>
                     <p>{t.body}</p>
@@ -505,7 +506,7 @@ function Mandate() {
                                 height={512}
                             />
                         </span>
-                        <small>OWNER-SIGNED AUTHORITY</small>
+                        <small>{locale === "ko" ? "소유자가 승인한 권한" : "OWNER-SIGNED AUTHORITY"}</small>
                     </div>
                     <ol className="home-boundary-list">
                         {BOUNDARIES[locale].map((boundary, index) => (
@@ -520,7 +521,7 @@ function Mandate() {
                                         />
                                     </span>
                                     <div>
-                                        <span className="home-boundary-meta">{boundary.meta}</span>
+                                        {locale === "en" && <span className="home-boundary-meta">{boundary.meta}</span>}
                                         <h3>{boundary.title}</h3>
                                         <p>{boundary.body}</p>
                                     </div>
@@ -541,7 +542,7 @@ function PaymentFlow() {
         <section className="home-section home-flow" id="flow">
             <div className="home-wrap">
                 <Reveal className="home-section-head">
-                    <span className="home-kicker">REQUEST · PAY · PROCEED</span>
+                    <span className="home-kicker">{locale === "ko" ? "요청부터 이용까지" : "REQUEST · PAY · PROCEED"}</span>
                     <h2>
                         {t.titleLine1}
                         <strong>{t.titleLine2}</strong>
@@ -579,13 +580,13 @@ function Security() {
         <section className="home-section home-security" id="security">
             <div className="home-wrap home-security-grid">
                 <Reveal className="home-security-copy">
-                    <span className="home-kicker">SECURITY BY REFUSAL</span>
+                    <span className="home-kicker">{locale === "ko" ? "범위를 벗어나면 거절" : "SECURITY BY REFUSAL"}</span>
                     <h2>
                         {t.titleLine1}
                         <strong>{t.titleLine2}</strong>
                     </h2>
                     <p>{t.body}</p>
-                    <a href={docsUrl} target="_blank" rel="noreferrer noopener">
+                    <a href={locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl} target="_blank" rel="noreferrer noopener">
                         {t.docsLink} <span aria-hidden="true">↗</span>
                     </a>
                 </Reveal>
@@ -598,7 +599,7 @@ function Security() {
                                     <h3>{refusal.attempt}</h3>
                                     <code>{refusal.revert}</code>
                                 </div>
-                                <strong>REFUSED</strong>
+                                <strong>{locale === "ko" ? "거절" : "REFUSED"}</strong>
                             </article>
                         </Reveal>
                     ))}
@@ -616,7 +617,7 @@ function Evidence() {
             <div className="home-wrap">
                 <Reveal className="home-section-head home-section-head-split">
                     <div>
-                        <span className="home-kicker">GIWA SEPOLIA EVIDENCE</span>
+                        <span className="home-kicker">{locale === "ko" ? "GIWA Sepolia 정산 기록" : "GIWA SEPOLIA EVIDENCE"}</span>
                         <h2>{t.title}</h2>
                     </div>
                     <p>{t.body}</p>
@@ -624,9 +625,9 @@ function Evidence() {
 
                 <div className="home-evidence-table">
                     <div className="home-evidence-head" aria-hidden="true">
-                        <span>RECEIPT</span>
-                        <span>NETWORK</span>
-                        <span>TRANSACTION</span>
+                        <span>{locale === "ko" ? "영수증" : "RECEIPT"}</span>
+                        <span>{locale === "ko" ? "네트워크" : "NETWORK"}</span>
+                        <span>{locale === "ko" ? "거래" : "TRANSACTION"}</span>
                     </div>
                     {settlements.map((settlement, index) => (
                         <Reveal key={settlement.hash} delay={index * 70}>
@@ -636,7 +637,7 @@ function Evidence() {
                                 target="_blank"
                                 rel="noreferrer noopener"
                             >
-                                <span>SETTLEMENT {String(index + 1).padStart(2, "0")}</span>
+                                <span>{locale === "ko" ? "정산" : "SETTLEMENT"} {String(index + 1).padStart(2, "0")}</span>
                                 <span>GIWA SEPOLIA</span>
                                 <strong>
                                     {short(settlement.hash)}
@@ -647,7 +648,7 @@ function Evidence() {
                     ))}
                 </div>
                 <Reveal className="home-testnet-note">
-                    <span>TESTNET ONLY</span>
+                    <span>{locale === "ko" ? "테스트넷 전용" : "TESTNET ONLY"}</span>
                     <p>{t.testnetNote}</p>
                 </Reveal>
             </div>
@@ -670,12 +671,12 @@ function FinalCall() {
                     </h2>
                     <p>{t.body}</p>
                     <div className="home-actions home-final-actions">
-                        <a href={appUrl} className="home-button home-button-primary">
+                        <a href={localizeUrl(appUrl, locale)} className="home-button home-button-primary">
                             {t.openStudio} <span aria-hidden="true">↗</span>
                         </a>
                         <a
                             className="home-button home-button-secondary"
-                            href={docsUrl}
+                            href={locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl}
                             target="_blank"
                             rel="noreferrer noopener"
                         >

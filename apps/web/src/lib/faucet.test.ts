@@ -137,7 +137,7 @@ describe("faucet copy", () => {
             ];
             for (const sentence of sentences) {
                 for (const match of sentence.matchAll(/USDC[^,]*(?:,[^)]*\))?/g)) {
-                    // Every USDC is the full label: "tUSDC (testnet, not real money)".
+                    // Every USDC is the full label: "mUSDC (testnet, not real money)".
                     expect(sentence.slice(match.index - 1)).toStartWith(TESTNET_TOKEN[locale]);
                 }
             }
@@ -148,11 +148,11 @@ describe("faucet copy", () => {
     test("the outcome sentence carries the amount that was actually minted", () => {
         const minted = {kind: "minted", amount: 1_000_000_000n} as const;
         expect(topUpMessage(minted, "en")).toBe(
-            "Received 1000.0 tUSDC (testnet, not real money).",
+            "Received 1000.0 mUSDC (testnet, not real money).",
         );
-        expect(topUpMessage(minted, "ko")).toBe("1000.0 tUSDC (테스트넷, 실제 돈 아님)를 받았습니다.");
+        expect(topUpMessage(minted, "ko")).toBe("1000.0 mUSDC (테스트넷, 실제 돈 아님)를 받았습니다.");
         expect(topUpMessage({kind: "at_target", target: 1_000_000_000n}, "ko")).toContain(
-            "1000.0 tUSDC (테스트넷, 실제 돈 아님) 이상",
+            "1000.0 mUSDC (테스트넷, 실제 돈 아님) 이상",
         );
     });
 

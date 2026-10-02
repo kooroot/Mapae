@@ -23,7 +23,7 @@ export function StampAgent(props: AutonomousGameProps & {sound: ArcadeSound}) {
     }, [attempt]);
     if (!decision) return <section className="agent-wait"><h2>{locale === "ko" ? "어떻게 찍을지 생각 중…" : "Choosing a stamping strategy…"}</h2>{error && <><p role="alert">{error}</p><button className="arc-button" onClick={() => setAttempt(a => a + 1)}>{locale === "ko" ? "다시 판단" : "Retry decision"}</button></>}<button className="arc-text-button" onClick={onExit}>{locale === "ko" ? "외출 중단" : "Stop outing"}</button></section>;
     return <><p className="agent-thought"><b>{decision.model ?? (locale === "ko" ? "규칙 기반 에이전트" : "Rule agent")}</b> {decision.explanation}<small>{locale === "ko" ? "전략 판단 후 규칙 기반 손동작으로 실행해요." : "Strategy is executed by a rule-based motor."}</small></p>
-        <Arena locale={locale} character={{...profile, appearance: props.appearance}} reducedMotion={reducedMotion} sound={sound} autopilot={decision.action.tempo === "quick" ? "quick" : "careful"} onFinish={game => onComplete({
+        <Arena suspended={props.suspended} locale={locale} character={{...profile, appearance: props.appearance}} reducedMotion={reducedMotion} sound={sound} autopilot={decision.action.tempo === "quick" ? "quick" : "careful"} onFinish={game => onComplete({
             game: "stamp", score: game.score, summary: {ko: `${game.hits}번 찍고 최대 ${game.bestCombo}콤보를 만들었어요.`, en: `${game.hits} stamps, best combo ${game.bestCombo}.`},
             metrics: [{label: {ko: "최대 콤보", en: "Best combo"}, value: game.bestCombo}, {label: {ko: "퇴치", en: "Hits"}, value: game.hits}, {label: {ko: "실수", en: "Mistakes"}, value: game.mistakes}],
             transcript: [{speaker: profile.name, text: decision.explanation}], ranking: [],

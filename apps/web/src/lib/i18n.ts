@@ -87,3 +87,12 @@ export function localizePath(pathname: string, locale: Locale): string {
     if (locale === "en") return base;
     return base === "/" ? LOCALE_PATH_PREFIX : `${LOCALE_PATH_PREFIX}${base}`;
 }
+
+/** Carry the selected language across Mapae surfaces, including local preview paths. */
+export function localizeUrl(href: string, locale: Locale): string {
+    const url = new URL(href, "https://mapae.invalid");
+    url.pathname = localizePath(url.pathname, locale);
+    return href.startsWith("/") && !href.startsWith("//")
+        ? `${url.pathname}${url.search}${url.hash}`
+        : url.href;
+}

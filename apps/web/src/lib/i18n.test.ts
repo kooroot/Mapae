@@ -3,6 +3,7 @@ import {
     LOCALE_COOKIE,
     LOCALE_PATH_PREFIX,
     localizePath,
+    localizeUrl,
     parseLocale,
     pick,
     readLocaleFromCookieString,
@@ -28,6 +29,16 @@ describe("parseLocale", () => {
         expect(parseLocale("jp")).toBe("en");
         expect(parseLocale("KO")).toBe("en");
         expect(parseLocale("ko; path=/")).toBe("en");
+    });
+});
+
+describe("cross-surface locale links", () => {
+    test("keeps Korean when moving between production hosts and local routes", () => {
+        expect(localizeUrl("https://app.mapae.io", "ko")).toBe("https://app.mapae.io/ko");
+        expect(localizeUrl("https://mapae.io/ko?from=studio#authority", "ko")).toBe("https://mapae.io/ko?from=studio#authority");
+        expect(localizeUrl("/app?from=home", "ko")).toBe("/ko/app?from=home");
+        expect(localizeUrl("https://app.mapae.io/ko", "en")).toBe("https://app.mapae.io/");
+        expect(localizeUrl("/ko/app#grant", "en")).toBe("/app#grant");
     });
 });
 

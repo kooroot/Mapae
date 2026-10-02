@@ -1,4 +1,4 @@
-import {fromTokenAmount} from "@mapae/shared";
+import {fromTokenAmount, MOCK_USDC} from "@mapae/shared";
 import {
     ArrowRight,
     Bot,
@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import {useEffect, useState} from "react";
 import {buildMcpBundle} from "../lib/agent-key";
-import {deployment} from "../lib/config";
+import {docsUrl, deployment} from "../lib/config";
 import {short} from "../lib/dial";
 import type {SessionGrant} from "../lib/grant";
 import type {Locale} from "../lib/i18n";
@@ -54,12 +54,12 @@ const COPY: Record<
     en: {
         clipboardFault: "The browser did not allow clipboard access.",
         title: "My agents",
-        subtitle: "Manage the payment grants signed or imported in this Studio session.",
+        subtitle: "Manage your agents’ spending permissions.",
         newGrant: "New grant",
         recover: "Recover from chain",
         recovering: "Reading chain…",
         sessionNote:
-            "Grant issuance is an off-chain signature, so a grant that has never settled exists nowhere but here. This list is kept in this browser — never sent to a server, never placed in a URL. The agent session key is the one thing not kept: copy its bundle before you leave.",
+            "Permissions are stored in this browser. Back up their codes; unused permissions cannot be recovered from the chain. Copy the agent key bundle before closing the tab.",
         forget: "Forget",
         forgetWarning:
             "This removes the grant from this browser only. It does not revoke anything — the delegation stays live inside its caveat until it expires or you revoke it. Copy the permission code first if you want to keep it.",
@@ -67,7 +67,7 @@ const COPY: Record<
         forgetCancel: "Keep",
         emptyTitle: "No agents registered yet.",
         emptyBody:
-            "Set the asset, amount, period, and recipient boundaries, sign in your wallet, and the grant appears here.",
+            "Create a spending permission to add your first agent.",
         createFirst: "Create your first grant",
         periodCap: "Period cap",
         paymentPeriod: "Payment period",
@@ -85,19 +85,19 @@ const COPY: Record<
     ko: {
         clipboardFault: "브라우저가 클립보드 접근을 허용하지 않았습니다.",
         title: "내 에이전트",
-        subtitle: "이 Studio 세션에서 서명하거나 불러온 결제 권한을 관리합니다.",
+        subtitle: "에이전트의 결제 권한을 관리하세요.",
         newGrant: "새 권한",
         recover: "체인에서 복구",
         recovering: "체인 읽는 중…",
         sessionNote:
-            "위임 발급은 오프체인 서명이라, 한 번도 정산되지 않은 권한은 여기 말고는 어디에도 없습니다. 이 목록은 이 브라우저에 보관됩니다 — 서버로 보내지 않고 URL에도 남기지 않습니다. 보관하지 않는 단 하나는 에이전트 세션 키이니, 떠나기 전에 번들을 복사해 두세요.",
+            "권한은 이 브라우저에 저장됩니다. 사용 전인 권한은 체인에서 복구할 수 없으니 코드를 보관하세요. 에이전트 키 번들은 탭을 닫기 전에 복사해 주세요.",
         forget: "목록에서 지우기",
         forgetWarning:
             "이 브라우저의 목록에서만 지웁니다. 회수가 아닙니다 — 위임은 만료되거나 회수하기 전까지 caveat 안에서 그대로 살아 있습니다. 보관하려면 먼저 권한 코드를 복사하세요.",
         forgetConfirm: "지웁니다",
         forgetCancel: "그대로 두기",
         emptyTitle: "아직 등록된 에이전트가 없습니다.",
-        emptyBody: "자산·금액·기간·수취인 경계를 정하고 지갑에서 서명하면 여기에 바로 추가됩니다.",
+        emptyBody: "첫 결제 권한을 만들어 에이전트를 등록하세요.",
         createFirst: "첫 권한 만들기",
         periodCap: "주기 한도",
         paymentPeriod: "결제 주기",
@@ -182,7 +182,7 @@ export function AgentGrantList({
         <div className="studio-agents-page">
             <header className="studio-agents-head">
                 <div>
-                    <span className="studio-kicker">GRANTED AGENTS</span>
+                    <span className="studio-kicker">{locale === "ko" ? "결제 권한 관리" : "Granted agents"}</span>
                     <h1>{t.title}</h1>
                     <p>{t.subtitle}</p>
                 </div>
@@ -207,6 +207,11 @@ export function AgentGrantList({
                 <Info size={17} />
                 <p>{t.sessionNote}</p>
             </div>
+            <details className="studio-storage-guide"><summary>{locale === "ko" ? "무엇이 동기화되고, 무엇을 보관해야 하나요?" : "What syncs, and what should I back up?"}</summary><dl>
+                <div><dt>{locale === "ko" ? "아케이드 캐릭터 · 기록" : "Arcade characters & history"}</dt><dd>{locale === "ko" ? "같은 지갑으로 로그인하면 다른 기기에서도 이어집니다." : "Sign in with the same wallet to continue on another device."}</dd></div>
+                <div><dt>{locale === "ko" ? "Studio 결제 권한" : "Studio permissions"}</dt><dd>{locale === "ko" ? "이 브라우저에 보관됩니다. 각 권한의 ‘권한 코드 복사’로 백업하세요. 아직 사용하지 않은 권한은 체인에서 복구할 수 없습니다." : "Stored in this browser. Use Copy permission code on each grant to back it up. Unused grants cannot be recovered from the chain."}</dd></div>
+                <div><dt>{locale === "ko" ? "에이전트 비밀 키" : "Agent private key"}</dt><dd>{locale === "ko" ? "만든 탭에만 있습니다. 탭을 닫기 전에 아래 에이전트 카드에서 MCP 연결 번들을 복사해 안전하게 보관하세요." : "Held only in the tab that created it. Copy the MCP bundle from the agent card below before closing the tab."}</dd></div>
+            </dl><a href={`${docsUrl}/operations/mcp-guide`} target="_blank" rel="noreferrer">{locale === "ko" ? "MCP 연결·키 보관 방법 ↗" : "MCP connection & key storage guide ↗"}</a></details>
             {copyFault ? (
                 <p className="studio-agent-copy-fault" role="alert">
                     {copyFault}
@@ -259,7 +264,7 @@ export function AgentGrantList({
                                         </dt>
                                         <dd>
                                             {grant.amount !== undefined
-                                                ? `${fromTokenAmount(grant.amount)} tUSDC`
+                                                ? `${fromTokenAmount(grant.amount)} ${MOCK_USDC.symbol}`
                                                 : t.readFromChain}
                                         </dd>
                                     </div>

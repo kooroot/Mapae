@@ -28,6 +28,6 @@ export function WardrobePicker({value, onChange, ko, lock}: {value?: Wardrobe; o
         <div className="wardrobe-parts" role="group" aria-label={ko ? "신발 선택" : "Choose footwear"}>{SHOES.map(shoes => <button type="button" key={shoes} aria-label={SHOE_NAMES[shoes][locale]} aria-pressed={value?.shoes === shoes} onClick={() => onChange({...(value ?? initial), shoes})}>
             <img src={wardrobeAsset("shoes", shoes)} width={64} height={48} alt="" loading="lazy" /><span>{SHOE_NAMES[shoes][locale]}</span>
         </button>)}</div>
-        <p className="wardrobe-footnote">{ko ? "조선 복식을 재해석한 놀이용 차림이에요. 신분 분류는 추천 테마이며, 장비 제한이나 능력치 차이는 없어요." : "Playful interpretations of Joseon dress. Social groups are outfit themes; they never restrict items or change abilities."}</p>
+
     </section>;
 }
