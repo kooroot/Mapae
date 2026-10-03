@@ -16,3 +16,8 @@
 @media(max-width:620px){.practice-game-picker{gap:8px}.practice-game-picker img{height:78px}.practice-game-picker span{font-size:14px;margin:10px 8px 0}.practice-game-picker small{font-size:10px;margin:8px 8px 0}.practice-race-choice{padding:16px}.practice-strategies{grid-template-columns:1fr;gap:8px}.practice-strategies button{min-height:75px;padding:12px 14px}.practice-turn-actions>.arc-button{width:100%;justify-content:center}.practice-race-choice h2{font-size:19px}}
 
 .practice-turn-actions .arc-button-plain{background:transparent;color:#463822;border:1px solid #9c8561;box-shadow:none}.arc-practice .arc-race-exit button{border:1px solid #9c8561;border-radius:9px;background:transparent;color:inherit;min-height:48px;padding:10px 14px;font:inherit}
+
+.practice-drill-button{display:block;margin:0 auto 20px;min-height:44px;padding:10px 18px;border:1px solid var(--arc-gold);border-radius:10px;background:#2b2419;color:var(--arc-cream);font:inherit;cursor:pointer}
+.practice-drill-result{max-width:720px;margin:24px auto;padding:clamp(20px,4vw,40px);border:1px solid var(--arc-gold);border-radius:20px;background:#211c16;color:var(--arc-cream)}
+.practice-drill-result h1{font-size:clamp(24px,4vw,36px)}.practice-drill-result>p{line-height:1.6;color:#c9bba5}.practice-drill-result .practice-turn-actions{margin-bottom:0}
+.practice-drill-result .arc-result-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.practice-drill-result .arc-result-stats>div{min-width:0}.practice-drill-result .arc-result-stats b{white-space:nowrap;font-size:clamp(24px,5vw,32px)}

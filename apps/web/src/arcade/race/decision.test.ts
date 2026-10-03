@@ -1,6 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import type {AgentDecision, AgentProfile, Decide} from "@mapae/arcade";
-import {createRaceSeason} from "@mapae/arcade/race";
+import {createRaceSeason, RACE_HABITS} from "@mapae/arcade/race";
 import {requestRaceDecision} from "./decision";
 
 const profile: AgentProfile = {name: "말랑", color: "jade", temperament: "curious", goal: "score"};
@@ -25,6 +25,9 @@ describe("Auto Race decision boundary", () => {
             calls++;
             expect(request.kind).toBe("race");
             expect(request.observation).toMatchObject({round: 1, seasonTokens: 3});
+            expect(request.observation.rivalHabit).toBe(RACE_HABITS[season.runners.find(runner => runner.id === season.rivalId)!.strategy].en);
+            expect(String(request.observation.trafficRules)).toContain("within 22m");
+            expect(String(request.observation.rules)).toContain("Unused entries expire");
             expect(passedSignal).toBe(signal);
             return valid;
         }, signal));

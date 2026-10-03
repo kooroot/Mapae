@@ -5,7 +5,7 @@ import {ConfirmDialog} from "../components/ConfirmDialog";
 import {RaceGame} from "./race/RaceGame";
 import {ShopGame} from "./shop/ShopGame";
 import {AgentReceipt} from "./AgentReceipt";
-import {admitHumanActivity, completeActivity, practiceBest, type Activity} from "./activity";
+import {admitHumanActivity, completeActivity, practiceBest, latestShopMemory, type Activity} from "./activity";
 import {GAME_NAMES} from "./game-names";
 import "./practice.css";
 import {ProfileSyncStatus} from "./ProfileSync";
@@ -81,7 +81,7 @@ const COPY = {
 } satisfies Record<Locale, Record<string, string>>;
 type Screen = "lobby" | "setup" | "play" | "result";
 
-export function PracticeArcade({onBack, store, character, initialGame, initialReplay}: {initialGame: GameId; initialReplay?: {seed: number; name: string; score: number} & Pick<NonNullable<ActivityOutcome["replay"]>, "shop">; onBack: () => void; store: ReturnType<typeof useArcadeState>; character: Companion}) {
+export function PracticeArcade({onBack, store, character, initialGame, initialReplay}: {initialGame: GameId; initialReplay?: {seed: number; name: string; score: number} & Pick<NonNullable<ActivityOutcome["replay"]>, "shop" | "shopMemory">; onBack: () => void; store: ReturnType<typeof useArcadeState>; character: Companion}) {
     const {locale} = useLocale();
     const t = COPY[locale];
     const {demo, ready, update} = store;
@@ -99,6 +99,8 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
     const [sound] = useState(() => new ArcadeSound());
     const [manual, setManual] = useState<Activity | null>(null);
     const [shopConfig, setShopConfig] = useState<NonNullable<ActivityOutcome["replay"]>["shop"]>(initialReplay?.shop);
+    const [shopMemory, setShopMemory] = useState<NonNullable<ActivityOutcome["replay"]>["shopMemory"]>(initialReplay?.shopMemory);
+    const [drillSeed, setDrillSeed] = useState<number | null>(null);
     const [exitOpen, setExitOpen] = useState(false);
     const [ticket, setTicket] = useState<Run | null>(null);
     const [finishedGame, setFinishedGame] = useState<Game | null>(null);
@@ -120,13 +122,15 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
     useEffect(() => {
         if (!ready || !initialReplay || startedChallenge.current) return;
         startedChallenge.current = true;
-        begin(demo, initialReplay.seed, initialReplay.shop);
+        begin(demo, initialReplay.seed, initialReplay.shop, initialReplay.shopMemory);
     }, [ready, initialReplay]);
 
-    function begin(next: ArcadeState = demo, scenario?: number, shop?: NonNullable<ActivityOutcome["replay"]>["shop"]) {
+    function begin(next: ArcadeState = demo, scenario?: number, shop?: NonNullable<ActivityOutcome["replay"]>["shop"], memory?: NonNullable<ActivityOutcome["replay"]>["shopMemory"]) {
         if (entryLock.current || !ready) return;
         entryLock.current = true;
+        setDrillSeed(null);
         setShopConfig(shop);
+        setShopMemory(scenario === undefined ? latestShopMemory(next, next.selectedCharacterId!) : memory);
         setTicket(null); setManual(null); setResult(null); setFinishedGame(null); setEarly(false); setRecord(false);
         if (selectedGame !== "stamp") {
             const admission = admitHumanActivity(next, crypto.randomUUID(), next.selectedCharacterId!, selectedGame, Date.now(), scenario);
@@ -145,9 +149,20 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         void sound.enable(next.sound).then(ok => {if (!ok) setNotice(t.soundError);});
         setScreen("play");
     }
+    function beginDrill(seed = crypto.getRandomValues(new Uint32Array(1))[0]!) {
+        if (entryLock.current || !ready) return;
+        entryLock.current = true;
+        setTicket(null); setManual(null); setResult(null); setFinishedGame(null); setEarly(false); setRecord(false);
+        setDrillSeed(seed); setNotice("");
+        void sound.enable(demo.sound).then(ok => {if (!ok) setNotice(t.soundError);});
+        setScreen("play");
+    }
     function finish(game: Game, stopped: boolean) {
+        if (game.practice === "boss") {
+            setFinishedGame(game); setEarly(stopped); setScreen("result"); return;
+        }
         if (!ticket) return;
-        setRecord((game.score > (demo.characters.find(c => c.id === ticket.characterId)?.best ?? 0)));
+        setRecord((game.score > practiceBest(demo, ticket.characterId, "stamp")));
         const next = update(value => finishPracticeRun(value, ticket.id, game));
         const run = next.runs.find(r => r.id === ticket.id);
         if (run) setResult(run);
@@ -207,6 +222,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                                     if (!character.configured) {setEditing(false); setScreen("setup");} else begin();
                                 }}>{!ready ? t.loading : t.play}<span>→</span></button><div className="arc-arcade-buttons" aria-hidden="true"><i /><i /></div></div>
                                 <p className="arc-cabinet-caption">{t.oneTicket}</p>
+                                {selectedGame === "stamp" && <button className="practice-drill-button" disabled={!ready} onClick={() => beginDrill()}>{ko ? "대장만 10초 연습 →" : "Practice the chief · 10 seconds →"}</button>}
                             </section>
                             {selectedGame === "stamp" && <div className="arc-instructions"><span className="arc-overline">{t.how}</span><div className="arc-rule-pair"><div><Goblin /><span><b>{t.hit}</b><small>{t.hitSub}</small></span></div><div><GuardianAvatar appearance={character.appearance} color={character.color} /><span><b>{t.skip}</b><small>{t.skipSub}</small></span></div></div><GameGuide game="stamp" locale={locale} /><p>{t.ruleMiss}</p></div>}
 
@@ -225,13 +241,14 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                     if (editing) lobby(); else begin(next);
                 }} />}
                 {screen === "play" && initialReplay && initialGame === selectedGame && (manual?.source === "practice" ? manual.replaySeed : ticket?.replaySeed) === initialReplay.seed && <p className="arc-replay-invite">{ko ? `${initialReplay.name}의 ${initialReplay.score.toLocaleString()}점에 도전 · 같은 출발 조건 · 무료` : `Challenge ${initialReplay.name}'s ${initialReplay.score.toLocaleString()} points · Same starting scenario · Free`}</p>}
+                {screen === "play" && drillSeed !== null && <Arena key={`drill-${drillSeed}`} practice="boss" seed={drillSeed} suspended={settingsOpen || exitOpen} locale={locale} character={character} reducedMotion={demo.reducedMotion} sound={sound} onFinish={finish} />}
                 {screen === "play" && ticket && <Arena seed={gameSeed(ticket)} suspended={settingsOpen || exitOpen} key={ticket.id} locale={locale} character={{...character, name: ticket.name, color: ticket.color, appearance: ticket.appearance}} reducedMotion={demo.reducedMotion} sound={sound} onFinish={finish} />}
                 {screen === "play" && manual && (() => {
                     const props = {mode: "human" as const, profile: {name: manual.name, color: manual.color, temperament: character.temperament, goal: character.agent.goal}, appearance: manual.appearance,
                         locale, seed: gameSeed(manual), reducedMotion: demo.reducedMotion, suspended: settingsOpen || exitOpen, onComplete: finishManual, onExit: () => setExitOpen(true)};
-                    return manual.game === "race" ? <RaceGame key={manual.id} {...props} /> : <ShopGame key={manual.id} {...props} initialConfig={shopConfig} />;
+                    return manual.game === "race" ? <RaceGame key={manual.id} {...props} /> : <ShopGame key={manual.id} {...props} initialConfig={shopConfig} memory={shopMemory} />;
                 })()}
-                {screen === "result" && manual && <><AgentReceipt activity={manual} locale={locale} best={practiceBest(demo, manual.characterId, manual.game)} /><div className="practice-turn-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)), gameSeed(manual), manual.outcome?.replay?.shop)}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"} →</button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button><button className="arc-text-button" onClick={onBack}>{t.lobby}</button></div></>}
+                {screen === "result" && manual && <><AgentReceipt activity={manual} locale={locale} best={practiceBest(demo, manual.characterId, manual.game)} /><div className="practice-turn-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)), gameSeed(manual), manual.outcome?.replay?.shop, manual.outcome?.replay?.shopMemory)}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"} →</button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button><button className="arc-text-button" onClick={onBack}>{t.lobby}</button></div></>}
                 {screen === "result" && result && <section className="arc-result-layout"><div className="arc-result-paper">
                     <div className="arc-section-label"><span>{t.result}</span><span>NO. {demo.runs.length.toString().padStart(3, "0")}</span></div>
                     <div className="arc-result-character"><GuardianAvatar appearance={result.appearance} color={result.color} /><span>{result.name}<small>{t.human}</small></span><span className="arc-result-seal">{locale === "ko" ? early ? "수고" : "완주" : "GG!"}</span></div>
@@ -239,9 +256,17 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                     <div className="arc-result-score"><span>{record ? t.record : t.game}</span><strong>{result.score.toLocaleString()}</strong><small>{t.points}</small></div>
                     <div className="arc-result-stats"><div><span>{t.maxCombo}</span><b>{result.bestCombo}</b></div><div><span>{t.stamped}</span><b>{result.hits}</b></div><div><span>{t.errors}</span><b>{result.mistakes}</b></div><div><span>{t.missed}</span><b>{result.missed}</b></div></div>
                     {finishedGame && <><TurningPoints highlights={stampHighlights(finishedGame)} locale={locale} /><StampChallenges game={finishedGame} locale={locale} early={early} result /><StampCoach game={finishedGame} locale={locale} early={early} /></>}
-                    <dl className="arc-receipt-lines"><div><dt>{t.spent}</dt><dd>{t.free}</dd></div><div><dt>{t.best}</dt><dd>{(demo.characters.find(c => c.id === result.characterId)?.best ?? 0).toLocaleString()} {t.points}</dd></div></dl>
+                    <dl className="arc-receipt-lines"><div><dt>{t.spent}</dt><dd>{t.free}</dd></div><div><dt>{t.best}</dt><dd>{practiceBest(demo, result.characterId, "stamp").toLocaleString()} {t.points}</dd></div></dl>
                     <p className="arc-receipt-disclaimer">{t.demo}</p>
-                </div><div className="arc-result-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, result.characterId)), gameSeed(result))}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"} →</button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, result.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={onBack}><ArrowLeft size={16} /> {t.lobby}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button><ResultImage run={result} best={demo.characters.find(c => c.id === result.characterId)?.best ?? 0} locale={locale} /></div></section>}
+                </div><div className="arc-result-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, result.characterId)), gameSeed(result))}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"} →</button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, result.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={onBack}><ArrowLeft size={16} /> {t.lobby}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button><button className="arc-text-button" onClick={() => beginDrill()}>{ko ? "대장만 10초 연습" : "Practice the chief · 10 seconds"}</button><ResultImage run={result} best={practiceBest(demo, result.characterId, "stamp")} locale={locale} /></div></section>}
+                {screen === "result" && finishedGame?.practice === "boss" && <section className="practice-drill-result">
+                    <span className="arc-overline">{ko ? "대장 구간 연습 · 10초" : "CHIEF PRACTICE · 10 SECONDS"}</span>
+                    <h1 ref={focusHeading} tabIndex={-1}>{ko ? "열리는 순간을 익혀 봐요" : "Find your moment"}</h1>
+                    <div className="arc-result-stats"><div><span>{ko ? "성공한 타격" : "Successful stamps"}</span><b>{finishedGame.bossHits} / 3</b></div><div><span>{ko ? "정통 타격" : "Perfect stamps"}</span><b>{finishedGame.perfectHits} / 3</b></div></div>
+                    <StampCoach game={finishedGame} locale={locale} early={early} />
+                    <p>{ko ? "짧은 연습이에요. 용돈·입장권을 쓰지 않고 최고 기록에도 포함되지 않아요." : "A short drill. No allowance, ticket or personal-best record."}</p>
+                    <div className="practice-turn-actions"><button className="arc-button" onClick={() => beginDrill(drillSeed!)}>{ko ? "대장 다시 연습" : "Retry chief drill"} →</button><button className="arc-button arc-button-paper" onClick={() => begin()}>{ko ? "60초 한 판 시작" : "Start a full 60-second round"}</button><button className="arc-text-button" onClick={lobby}>{ko ? "놀이 고르기" : "Choose a game"}</button></div>
+                </section>}
                 <ConfirmDialog open={exitOpen} onOpenChange={setExitOpen} title={ko ? "연습을 마칠까요?" : "Leave practice?"} confirm={ko ? "연습 마치기" : "Leave practice"} cancel={ko ? "계속하기" : "Keep playing"} onConfirm={leave}><p>{ko ? "이번 연습은 중단으로 남고 점수는 저장되지 않아요. 사용되는 토큰은 없어요." : "This practice stays unfinished without a score. No tokens are spent."}</p></ConfirmDialog>
                 {screen !== "play" && <footer className="arc-footer"><p>{t.demo}</p><a href={localizePath("/", locale)}>MAPAE.IO ↗</a></footer>}
             </div>

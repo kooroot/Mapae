@@ -1,4 +1,6 @@
-import type {ShopConfig} from "./shop";
+import type {ShopConfig, ShopMemory} from "./shop";
+
+export const ARCADE_RULESET_VERSION = 2;
 
 export type GameId = "stamp" | "race" | "shop";
 export type AgentMode = "rules" | "llm";
@@ -16,7 +18,9 @@ export type ActivityOutcome = {
     /** Engine-observed turning points, never model-generated claims about the result. */
     highlights?: {ko: string; en: string}[];
     /** A versioned starting scenario for free practice, not a payment or replay authorization. */
-    replay?: {seed: number; version: number; shop?: ShopConfig};
+    replay?: {seed: number; version: number; shop?: ShopConfig; shopMemory?: ShopMemory};
+    /** Authored customer follow-up only; never a balance or spending authorization. */
+    shopMemory?: ShopMemory;
     metrics: ActivityMetric[]; transcript: {speaker: string; text: string}[];
     /** Engine-computed comparison under equal initial conditions, never a global leaderboard. */
     ranking: {name: string; score: number}[];

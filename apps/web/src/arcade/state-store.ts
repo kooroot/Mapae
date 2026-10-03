@@ -7,13 +7,14 @@ import {projectActivity} from "./activity";
 export function serializeArcadeState(demo: ArcadeState): string {
     return JSON.stringify({
         characters: demo.characters.map(c => ({id: c.id, name: c.name, color: c.color, appearance: projectGuardian(c.appearance), temperament: c.temperament, configured: c.configured,
-            agent: {mode: c.agent.mode, goal: c.agent.goal, rounds: c.agent.rounds}, best: c.best, bests: {stamp: c.bests.stamp, race: c.bests.race, shop: c.bests.shop}})),
+            agent: {mode: c.agent.mode, goal: c.agent.goal, rounds: c.agent.rounds}, ...(c.recordVersion === undefined ? {} : {recordVersion: c.recordVersion}), best: c.best, bests: {stamp: c.bests.stamp, race: c.bests.race, shop: c.bests.shop}})),
         selectedCharacterId: demo.selectedCharacterId, sound: demo.sound, reducedMotion: demo.reducedMotion,
         activities: demo.activities.map(projectActivity),
         runs: demo.runs.slice(0, 40).map(run => ({
             id: run.id, characterId: run.characterId, name: run.name, color: run.color, appearance: projectGuardian(run.appearance), at: run.at,
             score: run.score, bestCombo: run.bestCombo, hits: run.hits,
             mistakes: run.mistakes, missed: run.missed, status: run.status,
+            ...(run.ruleset === undefined ? {} : {ruleset: run.ruleset}),
             ...(run.replaySeed === undefined ? {} : {replaySeed: run.replaySeed}),
         })),
     });

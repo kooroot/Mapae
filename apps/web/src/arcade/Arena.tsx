@@ -4,7 +4,7 @@ import type {Locale} from "../lib/i18n";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {guardianLayers} from "./guardian-layers";
 import {Goblin} from "./Characters";
-import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldParade, stampWave, multiplier, newGame, ROUND_MS, FEVER_TARGET, FEVER_MS, BOSS_OPENINGS, stamp, type Game, type FeverMode} from "./game";
+import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldParade, stampWave, multiplier, newGame, newBossPractice, FEVER_TARGET, FEVER_MS, BOSS_OPENINGS, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, stamp, type Game, type FeverMode, type Actor} from "./game";
 import {cellForKey, isControlTarget} from "./input";
 import type {Character} from "./state";
 import type {ArcadeSound} from "./sound";
@@ -32,16 +32,19 @@ const COPY = {
     },
 } satisfies Record<Locale, Record<string, string>>;
 
-export function Arena({locale, character, reducedMotion, sound, onFinish, autopilot, suspended = false, seed}: {
+export function Arena({locale, character, reducedMotion, sound, onFinish, autopilot, suspended = false, seed, practice}: {
     locale: Locale; character: Character; reducedMotion: boolean; sound: ArcadeSound;
     onFinish: (game: Game, early: boolean) => void;
-    suspended?: boolean; seed?: number;
+    suspended?: boolean; seed?: number; practice?: "boss";
     autopilot?: "careful" | "quick";
 }) {
     const t = COPY[locale];
     if (character.appearance) for (const layer of guardianLayers(character.appearance)) preload(layer.src, {as: "image"});
     for (const asset of ["goblin", "goblin-armored", "goblin-chief", "stamp-impact", "stamp-window"]) preload(`/arcade/${asset}-512.webp`, {as: "image"});
-    const [view, setView] = useState<Game>(() => newGame(seed ?? Math.floor(Math.random() * 2 ** 32), autopilot === "careful" ? "manual" : "auto"));
+    const [view, setView] = useState<Game>(() => {
+        const chosenSeed = seed ?? Math.floor(Math.random() * 2 ** 32);
+        return practice === "boss" ? newBossPractice(chosenSeed) : newGame(chosenSeed, autopilot === "careful" ? "manual" : "auto");
+    });
     const state = useRef(view);
     const [countdown, setCountdown] = useState(3);
     const countdownRef = useRef(3_000);
@@ -85,7 +88,8 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     const previous = state.current;
                     state.current = autopilot ? advanceAgent(previous, delta, autopilot) : advance(previous, delta);
                     if (autopilot && state.current !== previous) {
-                        if (state.current.feverActivations > previous.feverActivations) soundRef.current.play("fever");
+                        if (state.current.perfectHits > previous.perfectHits) soundRef.current.play("perfect");
+                        else if (state.current.feverActivations > previous.feverActivations) soundRef.current.play("fever");
                         else if (state.current.hits > previous.hits) soundRef.current.play(state.current.goldHits > previous.goldHits ? "golden" : "hit", state.current.combo);
                     }
                     if (time - painted >= 40 || state.current.finished) {
@@ -122,7 +126,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
         const before = state.current;
         const after = stamp(before, index);
         if (after !== before) {
-            soundRef.current.play(after.feverUntil > before.feverUntil ? "fever" : after.cells[index]?.impact?.kind === "guard" ? "guard" : after.cells[index]?.impact?.kind === "crack" ? "hit" : after.hits > before.hits ? before.cells[index]?.actor?.golden ? "golden" : "hit" : "wrong", after.combo);
+            soundRef.current.play(after.perfectHits > before.perfectHits ? "perfect" : after.feverUntil > before.feverUntil ? "fever" : after.cells[index]?.impact?.kind === "guard" ? "guard" : after.cells[index]?.impact?.kind === "crack" ? "hit" : after.hits > before.hits ? before.cells[index]?.actor?.golden ? "golden" : "hit" : "wrong", after.combo);
             state.current = after;
             setView(after);
         }
@@ -168,6 +172,9 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     }, []);
 
     const ko = locale === "ko";
+    const drill = view.practice === "boss";
+    const rules = drill ? ko ? "대장만 10초 · 빈틈마다 한 번!" : "Ten-second chief drill · one stamp per opening!" : t.rules;
+    const chief = view.cells.find(cell => cell.actor?.special === "boss")?.actor;
     const fever = view.feverUntil > view.elapsed;
     const charged = view.feverCharge === FEVER_TARGET;
     const parade = goldParade(view.elapsed);
@@ -175,23 +182,23 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const wave = stampWave(view.elapsed);
     const warning = wave.next && wave.next.at - view.elapsed <= 3000;
     const stage = warning ? `${ko ? "곧" : "NEXT"}: ${wave.next![locale]}` : wave.current[locale];
-    const seconds = Math.ceil((ROUND_MS - view.elapsed) / 1_000);
+    const seconds = Math.ceil((view.durationMs - view.elapsed) / 1_000);
     return (
         <section className={`arc-arena ${reducedMotion ? "arc-still" : ""} ${fever ? "stamp-fever" : ""}`} aria-label={t.playfield}>
-            <div className="arc-arena-heading"><span>{locale === "ko" ? "도깨비 도장찍기" : "Dokkaebi Stamp"}</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
+            <div className="arc-arena-heading"><span>{drill ? ko ? "대장 10초 연습" : "Ten-second chief drill" : ko ? "도깨비 도장찍기" : "Dokkaebi Stamp"}</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
             <div className="arc-scoreboard">
                 <div><span>{t.score}</span><strong data-testid="score">{view.score.toLocaleString()}</strong></div>
                 <div className={seconds <= 10 ? "arc-time arc-urgent" : "arc-time"}><span>{t.time}</span><strong data-testid="timer">{seconds}<small>s</small></strong></div>
-                <div><span>{t.combo}</span><strong data-testid="combo">{view.combo}<small> ×{multiplier(view.combo)}</small></strong></div>
+                <div><span>{drill ? ko ? "정통" : "PERFECT" : t.combo}</span><strong data-testid={drill ? "perfect-hits" : "combo"}>{drill ? view.perfectHits : view.combo}<small>{drill ? ` / ${BOSS_OPENINGS}` : ` ×${multiplier(view.combo)}`}</small></strong></div>
             </div>
-            <div className="stamp-wave-steps" aria-label={ko ? "이번 판 진행 단계" : "Round stages"}>
+            {!drill && <div className="stamp-wave-steps" aria-label={ko ? "이번 판 진행 단계" : "Round stages"}>
                 {[ko ? "몸풀기" : "Warm up", ko ? "순찰" : "Patrol", ko ? "잔치" : "Parade", ko ? "대장" : "Chief", ko ? "소동" : "Rush"].map((label, i) => <span key={i} aria-current={wave.index === i ? "step" : undefined} className={i <= wave.index ? "is-reached" : ""}>{label}</span>)}
-            </div>
-            <div className={`stamp-fever-strip ${charged ? "stamp-fever-ready" : ""}`}>
+            </div>}
+            {!drill && <div className={`stamp-fever-strip ${charged ? "stamp-fever-ready" : ""}`}>
                 <div><strong role="status">{fever ? ko ? "암행어사 출두! 점수 ×2" : "ROYAL INSPECTOR! SCORE ×2" : stage}</strong><span>{fever ? `${Math.ceil((view.feverUntil - view.elapsed) / 1000)}s` : `${view.feverCharge} / ${FEVER_TARGET}`}</span></div>
                 <progress className="stamp-fever-meter" aria-label={ko ? "출두 게이지" : "Fever charge"} value={feverValue} max={100} />
                 <div className="stamp-fever-controls">
-                    {autopilot ? <span className="stamp-fever-strategy">{autopilot === "careful" ? ko ? "신중하게 · 행렬과 대장에 맞춰 출두" : "Careful · fever for gold and chief openings" : ko ? "빠르게 · 충전되면 바로 출두" : "Quick · fever as soon as charged"}</span> : <>
+                    {autopilot ? <span className="stamp-fever-strategy">{autopilot === "careful" ? ko ? "신중하게 · 대장 정통과 금도깨비 출두를 노려요" : "Careful · precise chief stamps and fever for gold" : ko ? "빠르게 · 첫 빈틈에 타격하고 바로 출두" : "Quick · hit the first opening and use fever immediately"}</span> : <>
                         <div className="stamp-fever-mode" role="group" aria-label={ko ? "출두 방식" : "Fever control"}>
                             <button type="button" aria-pressed={view.feverMode === "auto"} disabled={paused || suspended} onClick={() => changeFeverMode("auto")}>{ko ? "자동 출두" : "Auto fever"}</button>
                             <button type="button" aria-pressed={view.feverMode === "manual"} disabled={paused || suspended} onClick={() => changeFeverMode("manual")}>{ko ? "직접 출두" : "Manual fever"}</button>
@@ -201,17 +208,17 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     </>}
                 </div>
                 <p className={`stamp-parade-cue ${parade ? `is-${parade.phase}` : ""}`} role="status">{parade ? parade.phase === "soon" ? ko ? `★ 금도깨비 행렬 ${Math.ceil(parade.remaining / 1000)}초 전 · 출두를 준비해요` : `★ Gold parade in ${Math.ceil(parade.remaining / 1000)}s · ready your fever` : ko ? "★ 금도깨비 행렬! 출두로 두 배를 노려요" : "★ GOLD PARADE! Catch gold during fever" : charged && !fever ? ko ? "출두 준비 완료 · 지금 쓰거나 행렬을 기다려요" : "Fever ready · use it now or wait for gold" : ko ? "금도깨비 행렬은 2초 먼저 알려드려요" : "Watch for the two-second gold parade warning"}</p>
-            </div>
+            </div>}
             <div className={`arc-playfield ${parade ? `stamp-parade-${parade.phase}` : ""}`} ref={field} tabIndex={-1}>
-                <div className="arc-field-caption"><span>{t.rules}</span><span>馬牌</span></div>
+                {chief || drill ? <BossTimingCue actor={chief ?? null} game={view} locale={locale} /> : <div className="arc-field-caption"><span>{rules}</span><span>馬牌</span></div>}
                 <div className="arc-windows" inert={suspended || paused || countdown > 0}>
                     {view.cells.map((cell, i) => {
                         const boss = cell.actor?.special === "boss" ? bossWindow(cell.actor, view.elapsed) : null;
-                        const bossCue = boss?.phase === "open" ? ko ? `찍어! · ${cell.actor!.hp}` : `OPEN! · ${cell.actor!.hp}` : boss?.phase === "recover" ? ko ? "명중! 기다려" : "HIT! WAIT" : ko ? "방어 · 기다려" : "GUARD · WAIT";
+                        const bossCue = boss?.perfect ? ko ? "◆ 정통!" : "◆ PERFECT!" : boss?.phase === "open" ? ko ? `찍어! · ${cell.actor!.hp}` : `OPEN! · ${cell.actor!.hp}` : boss?.phase === "recover" ? ko ? "명중! 기다려" : "HIT! WAIT" : ko ? "방어 · 기다려" : "GUARD · WAIT";
                         const targetCue = boss ? bossCue : cell.actor?.special ? `${ko ? "갑옷" : "ARMOR"} · ${cell.actor.hp}` : cell.actor?.kind === "goblin" ? cell.actor.golden ? ko ? "★ 금도깨비" : "★ GOLD" : t.target : t.friendly;
                         return (
-                        <button key={i} className={`arc-window ${cell.actor ? `arc-has-${cell.actor.kind}` : ""} ${cell.impact ? `arc-impact-${cell.impact.kind}` : ""} ${cell.actor?.golden ? "stamp-golden" : ""} ${cell.actor?.special ? `stamp-${cell.actor.special}` : ""} ${boss ? `stamp-boss-${boss.phase}` : ""}`}
-                            data-testid={`cell-${i}`} data-actor={cell.actor?.kind ?? "empty"} data-special={cell.actor?.special ?? "normal"} data-boss-phase={boss?.phase} aria-disabled={!!autopilot}
+                        <button key={i} className={`arc-window ${cell.actor ? `arc-has-${cell.actor.kind}` : ""} ${cell.impact ? `arc-impact-${cell.impact.kind}` : ""} ${cell.impact?.perfect ? "stamp-perfect-hit" : ""} ${cell.actor?.golden ? "stamp-golden" : ""} ${cell.actor?.special ? `stamp-${cell.actor.special}` : ""} ${boss ? `stamp-boss-${boss.phase}` : ""} ${boss?.perfect ? "stamp-boss-perfect" : ""}`}
+                            data-testid={`cell-${i}`} data-actor={cell.actor?.kind ?? "empty"} data-special={cell.actor?.special ?? "normal"} data-boss-phase={boss?.phase} data-perfect={boss?.perfect} aria-disabled={!!autopilot}
                             aria-label={`${i + 1}: ${cell.actor ? cell.actor.special ? `${ko ? cell.actor.special === "boss" ? "대장 도깨비" : "갑옷 도깨비" : cell.actor.special === "boss" ? "Chief goblin" : "Armored goblin"} ${boss ? bossCue : ""} · ${cell.actor.hp} ${ko ? "번 남음" : "hits left"}` : cell.actor.golden ? ko ? "금도깨비 · 보너스" : "Golden goblin · bonus" : t[cell.actor.kind] : t.empty}`}
                             onPointerDown={event => {if (event.button === 0) {event.preventDefault(); hit(i);}}}
                             onClick={event => {if (event.detail === 0) hit(i);}}>
@@ -222,10 +229,10 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                                 <span className="arc-target-label">{targetCue}</span>
                             </span>}
                             {cell.actor?.special && <progress className="stamp-enemy-hp" aria-label={ko ? "남은 타격" : "Hits remaining"} max={cell.actor.special === "boss" ? BOSS_OPENINGS : 2} value={cell.actor.hp} />}
-                            {cell.impact && cell.impact.kind !== "crack" && cell.impact.until > view.elapsed && <span className="arc-impact" key={cell.impact.until}>
+                            {cell.impact && (cell.impact.kind !== "crack" || cell.impact.perfect) && cell.impact.until > view.elapsed && <span className="arc-impact" key={cell.impact.until} role={cell.impact.perfect ? "status" : undefined}>
                                 {cell.impact.kind === "stamp" && <Goblin className="stamp-squash" />}
-                                {cell.impact.kind === "stamp" && <img className="arc-impact-art" src="/arcade/stamp-impact-512.webp" alt="" />}
-                                <b>{cell.impact.kind === "stamp" ? t.hit : cell.impact.kind === "wrong" ? t.wrong : cell.impact.kind === "guard" ? ko ? "방어 중!" : "GUARDED!" : t.miss}</b>
+                                {(cell.impact.kind === "stamp" || cell.impact.perfect) && <img className="arc-impact-art" src="/arcade/stamp-impact-512.webp" alt="" />}
+                                <b>{cell.impact.perfect ? ko ? "◆ 정통!" : "◆ PERFECT!" : cell.impact.kind === "stamp" ? t.hit : cell.impact.kind === "wrong" ? t.wrong : cell.impact.kind === "guard" ? ko ? "방어 중!" : "GUARDED!" : t.miss}</b>
                                 {cell.impact.kind !== "miss" && cell.impact.kind !== "guard" && <em>{cell.impact.points > 0 ? "+" : ""}{cell.impact.points}</em>}
                             </span>}
                         </button>
@@ -235,17 +242,39 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     {paused ? <><span className="arc-overline">{t.pause}</span><h2>{t.paused}</h2><p>{t.pauseNote}</p>
                         <button ref={resumeButton} className="arc-button" onClick={() => setPause(false)}>{t.resume} →</button>
                         <button className="arc-text-button" onClick={() => {if (!done.current) {done.current = true; finishRef.current(state.current, true);}}}>{t.quit}</button>
-                        <small>{t.stopped}</small></> : <><span>{t.ready}</span><strong className="arc-countdown">{countdown}</strong><p>{t.rules}</p></>}
+                        <small>{drill ? ko ? "연습 점수는 기록에 남지 않아요" : "Drill scores do not change your records" : t.stopped}</small></> : <><span>{t.ready}</span><strong className="arc-countdown">{countdown}</strong><p>{rules}</p></>}
                 </div>}
             </div>
             <div className="arc-play-footer"><span><i className="arc-live-dot" /> {character.name} · {autopilot ? locale === "ko" ? "에이전트 관전 중" : "WATCHING AGENT" : t.human}</span><span>{autopilot ? "AUTO" : t.touch}</span></div>
             <StampChallenges game={view} locale={locale} />
-            <div className="stamp-cast" aria-label={ko ? "오늘의 도깨비" : "Meet the goblins"}>
+            {!drill && <div className="stamp-cast" aria-label={ko ? "오늘의 도깨비" : "Meet the goblins"}>
                 <div><Goblin /><span><strong>{ko ? "장난꾸러기" : "Trickster"}</strong><small>{ko ? "한 번 콕!" : "One stamp"}</small></span></div>
                 <div><Goblin variant="armored" /><span><strong>{ko ? "철갑 도깨비" : "Iron guard"}</strong><small>{ko ? "두 번 콕!" : "Two stamps"}</small></span></div>
-                <div><Goblin variant="boss" /><span><strong>{ko ? "도깨비 대장" : "Goblin chief"}</strong><small>{ko ? "빈틈마다 한 번!" : "One per opening"}</small></span></div>
-            </div>
-            <p className="arc-keyboard-help">{autopilot ? locale === "ko" ? "에이전트가 조작하고 있어요 · Esc 일시정지" : "Your agent is playing · Esc to pause" : t.keyboard}</p>
+                <div><Goblin variant="boss" /><span><strong>{ko ? "도깨비 대장" : "Goblin chief"}</strong><small>{ko ? "◆ 정통 +200점" : "◆ PERFECT +200"}</small></span></div>
+            </div>}
+            <p className="arc-keyboard-help">{autopilot ? locale === "ko" ? "에이전트가 조작하고 있어요 · Esc 일시정지" : "Your agent is playing · Esc to pause" : drill ? ko ? "가운데 창문 터치 또는 5 / S · Esc 일시정지" : "Tap the center window or press 5 / S · Esc to pause" : t.keyboard}</p>
         </section>
     );
+}
+
+function BossTimingCue({actor, game, locale}: {actor: Actor | null; game: Game; locale: Locale}) {
+    const ko = locale === "ko";
+    const window = actor ? bossWindow(actor, game.elapsed) : null;
+    let cue = ko ? "가운데 창문을 보세요" : "WATCH THE CENTER WINDOW";
+    if (window?.perfect) cue = ko ? "◆ 정통! 지금 한 번" : "◆ PERFECT! STAMP ONCE";
+    else if (window?.phase === "guard") cue = ko ? "방어 · 손을 떼고 기다려요" : "GUARD · WAIT WITHOUT TAPPING";
+    else if (window?.phase === "recover") cue = ko ? "명중 · 다음 빈틈을 기다려요" : "HIT · WAIT FOR THE NEXT OPENING";
+    else if (window?.phase === "open") cue = window.perfectBlocked || window.perfectPassed ? ko ? "빈틈! 일반 타격 가능" : "OPEN! NORMAL HIT AVAILABLE" : ko ? "빈틈! ◆ 띠를 노려요" : "OPEN! AIM FOR THE ◆ BAND";
+    else if (game.bossSpawned) cue = game.bossDefeated ? ko ? "대장 퇴치!" : "CHIEF DEFEATED!" : ko ? "대장이 달아났어요" : "THE CHIEF ESCAPED";
+    return <div className={`stamp-boss-timing ${window?.perfect ? "is-perfect" : ""}`} data-testid="boss-timing">
+        <div className="stamp-boss-timing-heading"><strong role="status">{cue}</strong><span>{ko ? "정통" : "PERFECT"} {game.perfectHits}/{BOSS_OPENINGS}</span></div>
+        <svg className="stamp-timing-track" aria-hidden="true">
+            <rect className="stamp-timing-guard" width={`${BOSS_GUARD_MS / BOSS_CYCLE_MS * 100}%`} height="100%" />
+            <text className="stamp-timing-guard-label" x={`${BOSS_GUARD_MS / BOSS_CYCLE_MS * 50}%`} y="50%" dominantBaseline="central" textAnchor="middle">{ko ? "방어" : "GUARD"}</text>
+            <rect className="stamp-timing-band" x={`${BOSS_PERFECT_START_MS / BOSS_CYCLE_MS * 100}%`} width={`${BOSS_PERFECT_MS / BOSS_CYCLE_MS * 100}%`} height="100%" />
+            <text className="stamp-timing-band-label" x={`${(BOSS_PERFECT_START_MS + BOSS_PERFECT_MS / 2) / BOSS_CYCLE_MS * 100}%`} y="50%" dominantBaseline="central" textAnchor="middle">◆</text>
+            {window && <line className="stamp-timing-hand" x1={`${window.progress * 100}%`} x2={`${window.progress * 100}%`} y1="0" y2="100%" />}
+        </svg>
+        <p>{window?.perfectBlocked ? ko ? "먼저 눌러 이번 정통 보너스는 사라졌어요. 빈틈 타격은 가능해요." : "An early tap spent this opening's bonus. You can still hit while OPEN." : ko ? `빈틈은 1.4초 · 밝은 띠에 선이 오면 한 번, 정통 +${BOSS_PERFECT_POINTS}점` : `OPEN lasts 1.4s · stamp once when the line enters the bright band: PERFECT +${BOSS_PERFECT_POINTS}`}</p>
+    </div>;
 }

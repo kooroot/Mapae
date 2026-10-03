@@ -1,8 +1,8 @@
-import type {ActivityOutcome, AgentMode, GameId} from "@mapae/arcade";
+import {ARCADE_RULESET_VERSION, type ActivityOutcome, type AgentMode, type GameId} from "@mapae/arcade";
 import {validGuardian, projectGuardian, type Guardian} from "./guardian";
-import type {Color, ArcadeState} from "./state";
+import {currentRecords, type Color, type ArcadeState} from "./state";
 import {validReplaySeed} from "./replay";
-import {parseShopConfig} from "@mapae/arcade/shop";
+import {parseShopConfig, parseShopMemory, type ShopMemory} from "@mapae/arcade/shop";
 
 export type TicketSource = "mapae-giwa";
 type ActivityRecord = {
@@ -27,7 +27,9 @@ export function isOutcome(v: unknown): v is ActivityOutcome {
     return object(v) && GAME_IDS.includes(v.game as GameId) && finite(v.score) && bilingual(v.summary) &&
         (v.highlights === undefined || Array.isArray(v.highlights) && v.highlights.length <= 2 && v.highlights.every(bilingual)) &&
         (v.replay === undefined || object(v.replay) && validReplaySeed(v.replay.seed) && natural(v.replay.version) && v.replay.version > 0 &&
-            (v.replay.shop === undefined || v.game === "shop" && parseShopConfig(v.replay.shop) !== null)) &&
+            (v.replay.shop === undefined || v.game === "shop" && parseShopConfig(v.replay.shop) !== null) &&
+            (v.replay.shopMemory === undefined || v.game === "shop" && parseShopMemory(v.replay.shopMemory) !== null)) &&
+        (v.shopMemory === undefined || v.game === "shop" && parseShopMemory(v.shopMemory) !== null) &&
         Array.isArray(v.metrics) && v.metrics.length <= 24 && v.metrics.every(m => object(m) && bilingual(m.label) && finite(m.value) && (m.unit === undefined || text(m.unit, 20))) &&
         Array.isArray(v.transcript) && v.transcript.length <= 100 && v.transcript.every(m => object(m) && text(m.speaker, 80) && text(m.text, 1000)) &&
         Array.isArray(v.ranking) && v.ranking.length <= 24 && v.ranking.every(m => object(m) && text(m.name, 80) && finite(m.score));
@@ -57,7 +59,8 @@ export function projectActivity(a: Activity): Activity {
         outcome: a.outcome && {game: a.outcome.game, score: a.outcome.score,
             summary: {ko: a.outcome.summary.ko, en: a.outcome.summary.en},
             ...(a.outcome.highlights === undefined ? {} : {highlights: a.outcome.highlights.map(h => ({ko: h.ko, en: h.en}))}),
-            ...(a.outcome.replay === undefined ? {} : {replay: {seed: a.outcome.replay.seed, version: a.outcome.replay.version, ...(a.outcome.replay.shop ? {shop: parseShopConfig(a.outcome.replay.shop)!} : {})}}),
+            ...(a.outcome.replay === undefined ? {} : {replay: {seed: a.outcome.replay.seed, version: a.outcome.replay.version, ...(a.outcome.replay.shop ? {shop: parseShopConfig(a.outcome.replay.shop)!} : {}), ...(a.outcome.replay.shopMemory ? {shopMemory: parseShopMemory(a.outcome.replay.shopMemory)!} : {})}}),
+            ...(a.outcome.shopMemory ? {shopMemory: parseShopMemory(a.outcome.shopMemory)!} : {}),
             metrics: a.outcome.metrics.map(m => ({label: {ko: m.label.ko, en: m.label.en}, value: m.value, ...(m.unit === undefined ? {} : {unit: m.unit})})),
             transcript: a.outcome.transcript.map(m => ({speaker: m.speaker, text: m.text})),
             ranking: a.outcome.ranking.map(m => ({name: m.name, score: m.score})),
@@ -77,7 +80,7 @@ export function admitActivity(demo: ArcadeState, a: Pick<PaidActivity, "id" | "c
 export function completeActivity(demo: ArcadeState, id: string, outcome: ActivityOutcome | null): ArcadeState {
     const a = demo.activities.find(a => a.id === id);
     if (!a || a.status !== "active" || (outcome !== null && (!isOutcome(outcome) || a.game !== outcome.game))) return demo;
-    return {...demo, characters: outcome && a.source === "mapae-giwa" ? demo.characters.map(c => c.id === a.characterId ? {...c, bests: {...c.bests, [a.game]: Math.max(c.bests[a.game], outcome.score)}} : c) : demo.characters, activities: demo.activities.map(a => a.id === id ? {...a, outcome, status: outcome ? "complete" : "stopped"} : a)};
+    return {...demo, characters: outcome && outcome.replay?.version === ARCADE_RULESET_VERSION && a.source === "mapae-giwa" ? demo.characters.map(c => c.id === a.characterId ? {...currentRecords(c), bests: {...currentRecords(c).bests, [a.game]: Math.max(currentRecords(c).bests[a.game], outcome.score)}} : c) : demo.characters, activities: demo.activities.map(a => a.id === id ? {...a, outcome, status: outcome ? "complete" : "stopped"} : a)};
 }
 
 export function admitHumanActivity(demo: ArcadeState, id: string, characterId: string, game: GameId, at: number, replaySeed?: number): {ok: true; demo: ArcadeState; activity: HumanActivity} | {ok: false} {
@@ -89,7 +92,19 @@ export function admitHumanActivity(demo: ArcadeState, id: string, characterId: s
     return {ok: true, activity, demo: {...demo, activities: [activity, ...demo.activities].slice(0, 40)}};
 }
 export function practiceBest(demo: ArcadeState, characterId: string, game: GameId): number {
-    if (game === "stamp") return demo.characters.find(c => c.id === characterId)?.best ?? 0;
-    const scores = demo.activities.filter(a => a.characterId === characterId && a.game === game && a.source === "practice" && a.status === "complete" && a.outcome !== null).map(a => a.outcome!.score);
+    const character = demo.characters.find(c => c.id === characterId);
+    if (game === "stamp") return character ? currentRecords(character).best : 0;
+    const scores = demo.activities.filter(a => a.characterId === characterId && a.game === game && a.source === "practice" && a.status === "complete" && a.outcome?.replay?.version === ARCADE_RULESET_VERSION).map(a => a.outcome!.score);
     return scores.length ? Math.max(...scores) : 0;
+}
+
+export function paidBest(demo: ArcadeState, characterId: string, game: GameId): number {
+    const character = demo.characters.find(c => c.id === characterId);
+    return character ? currentRecords(character).bests[game] : 0;
+}
+/** Small authored follow-up, scoped to a character and derived only from completed visits. */
+export function latestShopMemory(demo: ArcadeState, characterId: string): ShopMemory | undefined {
+    const visit = demo.activities.filter(a => a.characterId === characterId && a.status === "complete" && a.game === "shop" && a.outcome?.replay?.version === ARCADE_RULESET_VERSION && a.outcome.shopMemory)
+        .sort((a, b) => b.at - a.at || a.id.localeCompare(b.id))[0];
+    return visit?.outcome?.shopMemory;
 }

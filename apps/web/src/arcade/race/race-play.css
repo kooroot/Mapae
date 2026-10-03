@@ -13,3 +13,5 @@
 .race-command-dock .race-pace-options{margin-top:8px;gap:7px}.race-pace-options button{min-height:68px;padding:9px 7px;gap:4px;align-content:center}.race-pace-options button>span{display:none}.race-pace-options strong{font-size:13px;line-height:1.3}.race-pace-options small{font-size:11px;line-height:1.35}
 .race-calls{font-size:11px!important;padding-top:7px}
 }
+
+.race-command-dock kbd{display:inline-block;font:700 10px var(--mono);border:1px solid currentColor;border-radius:4px;padding:1px 4px;opacity:.75;vertical-align:middle}.race-command-dock .race-traffic-scout{border-left:3px solid #d6dba1;padding:8px 10px;background:#ffffff0c;color:#fff0cb}.arc-race button:focus-visible{outline:3px solid #ab532e;outline-offset:3px}.race-command-dock button:focus-visible{outline-color:#fff1cb}.arc-race-exit button{min-height:44px}

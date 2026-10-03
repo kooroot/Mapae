@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseBuyerAction, parseSellerAction, parseShopConfig, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOffersRemaining, shopOfferChoices, shopOutcome, shopPatience, shopSellerObservation, simulateShop, SHOP_GOALS, SHOP_STORIES, type ShopGoal, type ShopState, type SellerAction} from "./shop";
+import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseBuyerAction, parseSellerAction, parseShopConfig, parseShopMemory, shopForecast, shopCampaign, shopReturnLine, type ShopMemory, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOffersRemaining, shopOfferChoices, shopOutcome, shopPatience, shopSellerObservation, simulateShop, SHOP_GOALS, SHOP_STORIES, type ShopGoal, type ShopState, type SellerAction} from "./shop";
 
 function ready(): ShopState {
     return applyBuyerAction(createShop(32), {type: "request", wants: ["water"], reason: "need"});
@@ -84,15 +84,15 @@ describe("shop economics and negotiation", () => {
         const bought = applyBuyerAction(applySellerAction(state, {type: "offer", items: [{id: "charm", quantity: 1}], price: 4, message: "Treat yourself"}), {type: "buy", reason: "need"});
         expect(bought.capBlocks).toBe(0);
         expect(bought.receipts[0]!.goalAchievement).toBe(0);
-        expect(bought.receipts[0]!.satisfaction).toBeLessThan(50);
+        expect(bought.receipts[0]!.value).toBeLessThan(50);
         expect(bought.receipts[0]!.revisit).toBe(false);
     });
 
     test("ads cost real scenario cash and net profit even with no sales", () => {
         const free = createShop(13);
         const paid = createShop(13, {...DEFAULT_SHOP_CONFIG, advertising: "parade"});
-        expect(paid.cash).toBe(free.cash - 8);
-        expect(shopMetrics(paid).profit).toBe(-8);
+        expect(paid.cash).toBe(free.cash - 2);
+        expect(shopMetrics(paid).profit).toBe(-2);
         expect(paid.buyers.map(b => b.cap)).toEqual(free.buyers.map(b => b.cap));
     });
 
@@ -371,9 +371,9 @@ describe("Authored shop situations and consequential offers", () => {
         const state = visit();
         const partial = lastCustomer(buyTactic(state, "essentials"));
         const complete = lastCustomer(buyTactic(state, "generous"));
-        expect(partial.receipts[0]!.satisfaction).toBe(100);
+        expect(partial.receipts[0]!.value).toBe(85);
         expect(partial.referral).toBeNull();
-        expect(complete.referral).toMatchObject({from: state.buyers[0]!.name, satisfaction: 100});
+        expect(complete.referral).toMatchObject({from: state.buyers[0]!.name, value: 100});
         expect(complete.transcript.at(-1)!.text.en).toContain("recommended");
         expect(shopPatience(complete)).toBe(shopPatience(partial) + 1);
         expect(complete.buyers[2]!.cap).toBe(partial.buyers[2]!.cap);
@@ -434,5 +434,165 @@ describe("Same-day shop replay configuration", () => {
             {...DEFAULT_SHOP_CONFIG, name: "a".repeat(19)}]) expect(parseShopConfig(value)).toBeNull();
         const missing: Partial<typeof DEFAULT_SHOP_CONFIG> = {...DEFAULT_SHOP_CONFIG}; delete missing.buyerGoal;
         expect(parseShopConfig(missing)).toBeNull();
+    });
+});
+
+describe("Forecast, stock reservations, and bounded returning guests", () => {
+    const memory: ShopMemory = {npc: "twins", visits: 1, service: "complete", value: 100};
+    const skip = (state: ShopState) => nextShopCustomer(applySellerAction(applyBuyerAction(state, {type: "request", reason: "need"}), {type: "close", message: "See you"}));
+    function finalGuest(seed: number, previous?: ShopMemory) {
+        return skip(skip(createShop(seed, {...DEFAULT_SHOP_CONFIG, focus: "gifts"}, previous)));
+    }
+    test("forecast is public before setup and exactly matches the third guest with every campaign", () => {
+        for (let seed = 0; seed < 50; seed++) for (const previous of [undefined, memory]) {
+            const forecast = shopForecast(seed, previous);
+            for (const advertising of ["none", "poster", "parade"] as const) {
+                const state = createShop(seed, {...DEFAULT_SHOP_CONFIG, advertising}, previous);
+                expect(state.buyers).toHaveLength(3);
+                expect(state.buyers[2]!.goal).toBe(forecast.goal);
+                expect(shopSellerObservation(state).finalGuest).toMatchObject({visit: forecast.visit, trusted: forecast.trusted});
+                expect(shopSellerObservation(state).finalGuestReserve).toEqual(forecast.target);
+            }
+        }
+    });
+    test("offers expose an actual final-guest stock shortage before the sale", () => {
+        const initial = createShop(22);
+        initial.buyers[0]!.goal = initial.buyers[0]!.story = "study";
+        initial.buyers[0]!.temperament = "particular";
+        initial.inventory.charm = 2;
+        const state = applyBuyerAction(initial, {type: "request", reason: "need"});
+        const option = shopOfferChoices(shopSellerObservation(state), "en").find(o => o.tactic === "generous")!;
+        expect(option.reserveShortfall).toEqual({water: 0, snack: 0, charm: 1});
+        const sold = applyBuyerAction(applySellerAction(state, {type: "serve", tactic: "generous", message: "For your exam"}), {type: "buy", reason: "need"});
+        expect(sold.inventory.charm).toBe(1);
+        const preserved = applySellerAction(state, {type: "close", message: "Reserved for the twins"});
+        expect(preserved.inventory.charm).toBe(2);
+        expect(sold.revenue).toBeGreaterThan(preserved.revenue);
+    });
+    test("purchase value varies with price while incomplete or padded orders never earn trust", () => {
+        const initial = createShop(22); initial.buyers[0]!.goal = "picnic"; initial.buyers[0]!.cap = 30; initial.buyers[0]!.balance = 30;
+        const state = applyBuyerAction(initial, {type: "request", reason: "need"});
+        const buy = (price: number, items: {id: "water" | "snack" | "charm"; quantity: number}[]) => applyBuyerAction(applySellerAction(state, {type: "offer", price, items, message: "Supplies"}), {type: "buy", reason: "need"}).receipts[0]!;
+        const partial = buy(8, [{id: "water", quantity: 1}, {id: "snack", quantity: 1}]);
+        expect(partial).toMatchObject({value: 100, goalAchievement: 67, revisit: false});
+        const complete = [{id: "water" as const, quantity: 1}, {id: "snack" as const, quantity: 2}];
+        expect(buy(16, complete)).toMatchObject({value: 85, goalAchievement: 100, revisit: true});
+        expect(buy(20, complete)).toMatchObject({value: 68, goalAchievement: 100, revisit: false});
+        expect(buy(1, [...complete, {id: "charm", quantity: 1}]).revisit).toBe(false);
+    });
+    test("a good first service changes return dialogue, patience, and an actual retail decision", () => {
+        const good = finalGuest(22, memory);
+        const poor = finalGuest(22, {...memory, service: "missed", value: 0});
+        expect(good.transcript.at(-1)!.text.en).toContain("matching gifts");
+        expect(poor.transcript.at(-1)!.text.en).toContain("weren't quite right");
+        expect(shopPatience(good)).toBe(shopPatience(poor) + 1);
+        expect(good.buyers.map(b => [b.cap, b.balance])).toEqual(poor.buyers.map(b => [b.cap, b.balance]));
+        for (const state of [good, poor]) {
+            state.buyers[2]!.cap = state.buyers[2]!.balance = 20;
+        }
+        const offer = (state: ShopState) => applySellerAction(applyBuyerAction(state, {type: "request", reason: "need"}), {type: "offer", items: [{id: "charm", quantity: 2}], price: 16, message: "Matching charms"});
+        expect(ruleBuyerAction(shopBuyerObservation(offer(good)))).toMatchObject({type: "buy"});
+        expect(ruleBuyerAction(shopBuyerObservation(offer(poor)))).toMatchObject({type: "decline", reason: "price"});
+        const capped = offer(good); capped.buyers[2]!.cap = 15;
+        expect(applyBuyerAction(capped, {type: "buy", reason: "need"}).capBlocks).toBe(1);
+    });
+    test("trust never hides a cap refusal; a public rejection can still lead to a complete cheaper pack", () => {
+        let state = finalGuest(22, memory);
+        state.buyers[2]!.cap = 13; state.buyers[2]!.balance = 30;
+        state = applyBuyerAction(state, ruleBuyerAction(shopBuyerObservation(state)));
+        state = applySellerAction(state, ruleSellerAction(shopSellerObservation(state), "en"));
+        expect(state.offer!.price).toBe(16);
+        state = applyBuyerAction(state, ruleBuyerAction(shopBuyerObservation(state)));
+        expect(state.rejected).toBe("price");
+        state = applySellerAction(state, ruleSellerAction(shopSellerObservation(state), "en"));
+        expect(state.offer!.price).toBe(13);
+        state = applyBuyerAction(state, ruleBuyerAction(shopBuyerObservation(state)));
+        expect(state.receipts.at(-1)).toMatchObject({price: 13, goalAchievement: 100});
+    });
+    test("seller memory is detached, strictly parsed, and never leaks private values", () => {
+        expect(parseShopMemory({...memory})).toEqual(memory);
+        expect(() => createShop(22, DEFAULT_SHOP_CONFIG, {...memory, value: -1})).toThrow("INVALID_SHOP_MEMORY");
+        for (const value of [null, [], {...memory, visits: 3}, {...memory, value: 101}, {...memory, value: .5}, {...memory, npc: "stranger"}, {...memory, service: "unknown"}, {...memory, cap: 100}, {...memory, service: "missed"}, {...memory, value: 84}, {npc: "twins", visits: 1, value: 100}]) expect(parseShopMemory(value)).toBeNull();
+        const state = finalGuest(22, memory);
+        const before = shopSellerObservation(state);
+        state.buyers[2]!.cap = 918273; state.buyers[2]!.balance = 827364;
+        expect(shopSellerObservation(state)).toEqual(before);
+        const outcome = shopOutcome(skipFinal(state), "Merchant", "en");
+        expect(JSON.stringify(outcome)).not.toContain("918273");
+        expect(JSON.stringify(outcome)).not.toContain("827364");
+        expect(outcome.shopMemory).toEqual({npc: "twins", visits: 2, service: "missed", value: 0});
+        expect(outcome.replay!.shopMemory).toEqual(memory);
+        outcome.replay!.shopMemory!.value = 85;
+        expect(state.startingMemory!.value).toBe(100);
+    });
+    function skipFinal(state: ShopState) {
+        return nextShopCustomer(applySellerAction(applyBuyerAction(state, {type: "request", reason: "need"}), {type: "close", message: "Closing time"}));
+    }
+    test("only sellers save relationship state, and a two-visit story ends without an unbounded counter", () => {
+        const buyer = simulateShop(22, {...DEFAULT_SHOP_CONFIG, role: "buyer"}, "careful", memory);
+        const buyerResult = shopOutcome(buyer, "Buyer", "en");
+        expect(buyer.forecast).toBeNull(); expect(buyer.startingMemory).toBeNull();
+        expect(buyerResult.shopMemory).toBeUndefined(); expect(buyerResult.replay!.shopMemory).toBeUndefined();
+        expect(shopForecast(23, {...memory, visits: 2})).toMatchObject({npc: "courier", visit: 1, previous: null, trusted: false});
+        expect(shopReturnLine(shopForecast(23, {...memory, npc: "courier"})).en).toContain("deliveries");
+    });
+    test("comparisons and replay preserve exactly the same starting memory", () => {
+        const config = {...DEFAULT_SHOP_CONFIG, focus: "gifts" as const};
+        const state = simulateShop(22, config, "careful", memory);
+        const outcome = shopOutcome(state, "Merchant", "en");
+        expect(outcome.replay!.shopMemory).toEqual(memory);
+        expect(simulateShop(outcome.replay!.seed, outcome.replay!.shop!, "careful", outcome.replay!.shopMemory)).toEqual(state);
+        expect(outcome.ranking.find(r => r.name === "Baseline · rules")!.score).toBe(shopMetrics(simulateShop(22, {...config, pricing: 100, advertising: "none", negotiation: "loyalty"}, "careful", memory)).score);
+        expect(outcome.highlights![0]!.en).toContain("second visit");
+    });
+});
+
+describe("Matched market economics under the default rules agent", () => {
+    test("advertised demand and costs are visible, with no new guest or private purchasing power", () => {
+        for (const focus of ["balanced", "everyday", "gifts"] as const) for (const advertising of ["poster", "parade"] as const) {
+            const config = {...DEFAULT_SHOP_CONFIG, focus, advertising};
+            const campaign = shopCampaign(config);
+            const state = createShop(193, config), baseline = createShop(193, {...config, advertising: "none"});
+            expect(state.buyers).toHaveLength(3);
+            expect(state.buyers.slice(0, campaign.matches).every(b => b.goal === campaign.goal)).toBe(true);
+            expect(state.cash).toBe(baseline.cash - campaign.cost);
+            expect(state.buyers.map(b => [b.cap, b.balance])).toEqual(baseline.buyers.map(b => [b.cap, b.balance]));
+        }
+    });
+    test("targeted gift ads repay their cost over 300 spread seeds, while balanced ads can lose", () => {
+        for (const focus of ["gifts", "balanced"] as const) {
+            const profits = {none: 0, poster: 0, parade: 0};
+            for (let i = 0; i < 300; i++) for (const advertising of ["none", "poster", "parade"] as const) {
+                const state = simulateShop(Math.imul(i + 1, 2654435761) >>> 0, {...DEFAULT_SHOP_CONFIG, focus, advertising});
+                expect(state.buyers).toHaveLength(3);
+                expect(state.buyers.every(b => b.spent <= b.cap && b.spent <= b.balance)).toBe(true);
+                profits[advertising] += shopMetrics(state).profit;
+            }
+            if (focus === "gifts") {
+                expect(profits.poster).toBeGreaterThan(profits.none + 300);
+                expect(profits.parade).toBeGreaterThan(profits.none + 300);
+            } else expect(profits.parade).toBeLessThan(profits.none);
+        }
+    });
+    test("profit and service strategies deliver different measured outcomes, and earned trust pays on a later outing", () => {
+        let profitTotal = 0, loyaltyTotal = 0, profitGoal = 0, loyaltyGoal = 0, returnGain = 0, returns = 0;
+        for (let i = 0; i < 200; i++) {
+            const seed = Math.imul(i + 1, 2654435761) >>> 0;
+            const config = {...DEFAULT_SHOP_CONFIG, focus: "balanced" as const};
+            const profit = simulateShop(seed, {...config, negotiation: "profit"});
+            const loyal = simulateShop(seed, {...config, negotiation: "loyalty"});
+            profitTotal += shopMetrics(profit).profit; loyaltyTotal += shopMetrics(loyal).profit;
+            profitGoal += shopMetrics(profit).goal; loyaltyGoal += shopMetrics(loyal).goal;
+            const memory = shopOutcome(loyal, "Shop", "en").shopMemory!;
+            if (memory.service !== "complete") continue;
+            const trusted = simulateShop(seed, config, "careful", memory);
+            const untrusted = simulateShop(seed, config, "careful", {...memory, service: "missed", value: 0});
+            returnGain += shopMetrics(trusted).profit - shopMetrics(untrusted).profit;
+            returns++;
+        }
+        expect(profitTotal).toBeGreaterThan(loyaltyTotal);
+        expect(loyaltyGoal).toBeGreaterThan(profitGoal);
+        expect(returns).toBeGreaterThan(50);
+        expect(returnGain).toBeGreaterThan(returns);
     });
 });

@@ -9,6 +9,10 @@ export const BOSS_GUARD_MS = 1_000;
 export const BOSS_OPEN_MS = 1_400;
 export const BOSS_CYCLE_MS = BOSS_GUARD_MS + BOSS_OPEN_MS;
 export const BOSS_OPENINGS = 3;
+export const BOSS_PERFECT_START_MS = BOSS_GUARD_MS + 450;
+export const BOSS_PERFECT_MS = 300;
+export const BOSS_PERFECT_POINTS = 200;
+export const BOSS_PRACTICE_MS = 10_000;
 export type FeverMode = "auto" | "manual";
 
 export function goldParade(elapsed: number): {phase: "soon" | "active"; at: number; remaining: number} | null {
@@ -32,11 +36,14 @@ export function stampWave(elapsed: number) {
     return {index, current: STAMP_WAVES[index]!, next: STAMP_WAVES[index + 1]};
 }
 
-export type Actor = {kind: "goblin" | "courier"; expiresAt: number; bornAt: number; golden?: boolean; special?: "armored" | "boss"; hp?: number; lastHitAt?: number; lastOpeningHit?: number};
-export type Impact = {kind: "stamp" | "wrong" | "miss" | "crack" | "guard"; until: number; points: number; golden?: boolean};
+export type Actor = {kind: "goblin" | "courier"; expiresAt: number; bornAt: number; golden?: boolean; special?: "armored" | "boss"; hp?: number; lastHitAt?: number; lastOpeningHit?: number; lastGuardedOpening?: number};
+export type Impact = {kind: "stamp" | "wrong" | "miss" | "crack" | "guard"; until: number; points: number; golden?: boolean; perfect?: boolean};
 export type Cell = {actor: Actor | null; impact: Impact | null};
 export type Game = {
     seed: number;
+    practice: "full" | "boss";
+    durationMs: number;
+    perfectHits: number;
     feverMode: FeverMode;
     feverActivations: number;
     feverBonus: number;
@@ -56,6 +63,7 @@ export type Game = {
     goldHits: number;
     spawnCount: number;
     bossSpawned: boolean;
+    bossHits: number;
     bossDefeated: number;
     armorHits: number;
     finished: boolean;
@@ -64,13 +72,19 @@ export type Game = {
 export function newGame(seed = 0, feverMode: FeverMode = "auto"): Game {
     if (!Number.isSafeInteger(seed)) throw new Error("Invalid stamp seed");
     return {
-        seed, feverMode, feverActivations: 0, feverBonus: 0, feverGoldHits: 0, guardedHits: 0,
+        seed, practice: "full", durationMs: ROUND_MS, perfectHits: 0,
+        feverMode, feverActivations: 0, feverBonus: 0, feverGoldHits: 0, guardedHits: 0,
         elapsed: 0, nextSpawn: 300,
         cells: Array.from({length: CELL_COUNT}, () => ({actor: null, impact: null})),
         score: 0, combo: 0, bestCombo: 0, hits: 0, mistakes: 0, missed: 0,
-        feverCharge: 0, feverUntil: 0, goldHits: 0, spawnCount: 0, bossSpawned: false, bossDefeated: 0, armorHits: 0,
+        feverCharge: 0, feverUntil: 0, goldHits: 0, spawnCount: 0, bossSpawned: false, bossHits: 0, bossDefeated: 0, armorHits: 0,
         finished: false,
     };
+}
+
+/** A short local drill shares the chief's rules, with no ordinary arrivals or fever. */
+export function newBossPractice(seed = 0): Game {
+    return {...newGame(seed), practice: "boss", durationMs: BOSS_PRACTICE_MS};
 }
 
 function expire(game: Game, at: number) {
@@ -100,10 +114,17 @@ function spawnRandom(seed: number, at: number, sample: number): number {
 export function advance(game: Game, deltaMs: number): Game {
     if (game.finished || !Number.isFinite(deltaMs) || deltaMs <= 0) return game;
     const next: Game = {...game, cells: game.cells.map(cell => ({...cell}))};
-    const end = Math.min(ROUND_MS, game.elapsed + deltaMs);
-    while (next.nextSpawn <= end && next.nextSpawn < ROUND_MS) {
+    const end = Math.min(game.durationMs, game.elapsed + deltaMs);
+    while (next.nextSpawn <= end && next.nextSpawn < game.durationMs) {
         const at = next.nextSpawn;
         expire(next, at);
+        if (next.practice === "boss") {
+            next.cells[4]!.actor = {kind: "goblin", special: "boss", hp: BOSS_OPENINGS, bornAt: at, expiresAt: at + BOSS_CYCLE_MS * BOSS_OPENINGS};
+            next.bossSpawned = true;
+            next.spawnCount++;
+            next.nextSpawn = next.durationMs;
+            continue;
+        }
         const wave = stampWave(at);
         const empty = next.cells.map((cell, index) => ({cell, index})).filter(({cell}) => !cell.actor && !cell.impact);
         const active = next.cells.filter(cell => cell.actor).length;
@@ -131,7 +152,7 @@ export function advance(game: Game, deltaMs: number): Game {
     }
     expire(next, end);
     next.elapsed = end;
-    next.finished = end === ROUND_MS;
+    next.finished = end === game.durationMs;
     if (next.finished) next.cells = next.cells.map(cell => ({...cell, actor: null}));
     return next;
 }
@@ -139,23 +160,32 @@ export function advance(game: Game, deltaMs: number): Game {
 export function stamp(game: Game, index: number): Game {
     if (game.finished || !Number.isInteger(index) || !game.cells[index]) return game;
     const actor = game.cells[index]!.actor;
-    if (!actor || actor.expiresAt <= game.elapsed || game.elapsed >= ROUND_MS || (actor.lastHitAt !== undefined && game.elapsed - actor.lastHitAt < 110)) return game;
+    if (!actor || actor.expiresAt <= game.elapsed || game.elapsed >= game.durationMs || (actor.lastHitAt !== undefined && game.elapsed - actor.lastHitAt < 110)) return game;
     const next = {...game, cells: game.cells.map(cell => ({...cell}))};
     const cell = next.cells[index]!;
+    let precisionPoints = 0;
     if (actor.special === "boss") {
         const window = bossWindow(actor, game.elapsed);
         if (window.phase === "recover") return game;
         if (window.phase === "guard") {
             if (cell.impact?.kind === "guard" && cell.impact.until > game.elapsed) return game;
+            // Early tapping spends this cycle's precision chance, never its broad success window.
+            cell.actor = {...actor, lastGuardedOpening: window.opening};
             cell.impact = {kind: "guard", until: game.elapsed + 240, points: 0};
             next.guardedHits++;
             return next;
         }
+        next.bossHits++;
         cell.actor = {...actor, lastOpeningHit: window.opening, lastHitAt: game.elapsed};
+        if (window.perfect) {
+            next.perfectHits++;
+            precisionPoints = BOSS_PERFECT_POINTS;
+            next.score += precisionPoints;
+        }
     }
     if (actor.kind === "goblin" && (actor.hp ?? 1) > 1) {
         cell.actor = {...cell.actor!, hp: actor.hp! - 1, lastHitAt: game.elapsed};
-        cell.impact = {kind: "crack", until: game.elapsed + 100, points: 0};
+        cell.impact = {kind: "crack", until: game.elapsed + (precisionPoints ? 650 : 100), points: precisionPoints, perfect: precisionPoints > 0};
         return next;
     }
     cell.actor = null;
@@ -177,16 +207,16 @@ export function stamp(game: Game, index: number): Game {
         if (actor.golden) next.goldHits++;
         if (actor.special === "boss") next.bossDefeated++;
         if (actor.special === "armored") next.armorHits++;
-        if (!fever) {
+        if (!fever && game.practice === "full") {
             next.feverCharge = Math.min(FEVER_TARGET, next.feverCharge + 1);
             if (next.feverMode === "auto" && next.feverCharge === FEVER_TARGET) {
-                next.feverUntil = Math.min(ROUND_MS, game.elapsed + FEVER_MS);
+                next.feverUntil = Math.min(game.durationMs, game.elapsed + FEVER_MS);
                 next.feverCharge = 0;
                 next.feverActivations++;
             }
         }
         next.score += points;
-        cell.impact = {kind: "stamp", until: game.elapsed + 380, points, golden: actor.golden};
+        cell.impact = {kind: "stamp", until: game.elapsed + (precisionPoints ? 650 : 380), points: points + precisionPoints, golden: actor.golden, perfect: precisionPoints > 0};
     }
     return next;
 }
@@ -197,16 +227,19 @@ export function bossWindow(actor: Actor, elapsed: number) {
     const opening = Math.floor(age / BOSS_CYCLE_MS);
     const phaseTime = age % BOSS_CYCLE_MS;
     const phase = elapsed >= actor.expiresAt || opening >= BOSS_OPENINGS || actor.lastOpeningHit === opening ? "recover" : phaseTime < BOSS_GUARD_MS ? "guard" : "open";
-    return {phase, opening, remaining: phase === "guard" ? BOSS_GUARD_MS - phaseTime : BOSS_CYCLE_MS - phaseTime} as const;
+    const perfectBlocked = actor.lastGuardedOpening === opening;
+    const perfectPassed = phaseTime >= BOSS_PERFECT_START_MS + BOSS_PERFECT_MS;
+    const perfect = phase === "open" && !perfectBlocked && phaseTime >= BOSS_PERFECT_START_MS && phaseTime < BOSS_PERFECT_START_MS + BOSS_PERFECT_MS;
+    return {phase, opening, perfect, perfectBlocked, perfectPassed, progress: phaseTime / BOSS_CYCLE_MS, remaining: phase === "guard" ? BOSS_GUARD_MS - phaseTime : BOSS_CYCLE_MS - phaseTime} as const;
 }
 
 export function activateFever(game: Game): Game {
-    if (game.finished || game.elapsed >= ROUND_MS || game.feverUntil > game.elapsed || game.feverCharge < FEVER_TARGET) return game;
-    return {...game, feverCharge: 0, feverUntil: Math.min(ROUND_MS, game.elapsed + FEVER_MS), feverActivations: game.feverActivations + 1};
+    if (game.practice === "boss" || game.finished || game.elapsed >= game.durationMs || game.feverUntil > game.elapsed || game.feverCharge < FEVER_TARGET) return game;
+    return {...game, feverCharge: 0, feverUntil: Math.min(game.durationMs, game.elapsed + FEVER_MS), feverActivations: game.feverActivations + 1};
 }
 
 export function setFeverMode(game: Game, mode: FeverMode): Game {
-    if (game.finished || mode === game.feverMode) return game;
+    if (game.practice === "boss" || game.finished || mode === game.feverMode) return game;
     const next = {...game, feverMode: mode};
     return mode === "auto" ? activateFever(next) : next;
 }
@@ -215,13 +248,24 @@ export function setFeverMode(game: Game, mode: FeverMode): Game {
 export function advanceAgent(game: Game, deltaMs: number, tempo: "careful" | "quick"): Game {
     if (game.finished || !Number.isFinite(deltaMs) || deltaMs <= 0) return game;
     const interval = tempo === "quick" ? 260 : 510;
-    const end = Math.min(ROUND_MS, game.elapsed + deltaMs);
+    const end = Math.min(game.durationMs, game.elapsed + deltaMs);
     let next = setFeverMode(game, tempo === "quick" ? "auto" : "manual");
-    for (let at = (Math.floor(game.elapsed / interval) + 1) * interval; at <= end; at += interval) {
+    let beat = (Math.floor(game.elapsed / interval) + 1) * interval;
+    while (next.elapsed < end) {
+        const chief = tempo === "careful" ? next.cells.find(cell => cell.actor?.special === "boss")?.actor : null;
+        // The careful motor waits for the same visible cue a person uses. Absolute event
+        // times keep this choice identical whether one frame or many spans the cue.
+        const cycle = chief ? Math.max(0, Math.floor((next.elapsed - chief.bornAt) / BOSS_CYCLE_MS)) : 0;
+        let preciseAt = chief ? chief.bornAt + cycle * BOSS_CYCLE_MS + BOSS_PERFECT_START_MS + BOSS_PERFECT_MS / 2 : Infinity;
+        if (preciseAt <= next.elapsed || chief?.lastOpeningHit === cycle) preciseAt += BOSS_CYCLE_MS;
+        if (chief && preciseAt >= chief.expiresAt) preciseAt = Infinity;
+        const at = Math.min(beat, preciseAt);
+        if (at > end) break;
         next = advance(next, at - next.elapsed);
+        if (at === beat) beat += interval;
         if (next.finished) break;
-        if (tempo === "careful" && (goldParade(at)?.phase === "active" || at >= ROUND_MS - FEVER_MS || next.cells.some(c => c.actor?.special === "boss" && bossWindow(c.actor, at).phase === "open"))) next = activateFever(next);
-        const targets = next.cells.map((cell, index) => ({actor: cell.actor, index})).filter(({actor}) => actor?.kind === "goblin" && at - actor.bornAt >= (tempo === "quick" ? 180 : 390) && (actor.special !== "boss" || bossWindow(actor, at).phase === "open"));
+        if (tempo === "careful" && (goldParade(at)?.phase === "active" || at >= game.durationMs - FEVER_MS || at === preciseAt)) next = activateFever(next);
+        const targets = next.cells.map((cell, index) => ({actor: cell.actor, index})).filter(({actor}) => actor?.kind === "goblin" && at - actor.bornAt >= (tempo === "quick" ? 180 : 390) && (actor.special !== "boss" || (tempo === "careful" ? at === preciseAt : bossWindow(actor, at).phase === "open")));
         targets.sort((a, b) => Number(b.actor!.special === "boss") - Number(a.actor!.special === "boss") || Number(!!b.actor!.golden) - Number(!!a.actor!.golden) || a.actor!.expiresAt - b.actor!.expiresAt);
         if (targets[0]) next = stamp(next, targets[0].index);
     }
@@ -231,6 +275,7 @@ export function advanceAgent(game: Game, deltaMs: number, tempo: "careful" | "qu
 /** Only measured outcomes become highlights; unused fever and unfinished bosses never become invented successes. */
 export function stampHighlights(game: Game): {ko: string; en: string}[] {
     const highlights: {ko: string; en: string}[] = [];
+    if (game.perfectHits) highlights.push({ko: `대장에게 정통 ${game.perfectHits}회! 타이밍 보너스 ${game.perfectHits * BOSS_PERFECT_POINTS}점을 얻었어요.`, en: `${game.perfectHits} precise chief stamps earned ${game.perfectHits * BOSS_PERFECT_POINTS} timing bonus points.`});
     if (game.bossDefeated) highlights.push({ko: "대장의 세 번의 빈틈을 모두 잡아 퇴치했어요.", en: "You caught all three chief openings and defeated it."});
     if (game.feverGoldHits) highlights.push({ko: `출두 시간에 금도깨비 ${game.feverGoldHits}마리를 잡았어요.`, en: `You stamped ${game.feverGoldHits} golden goblins during fever.`});
     else if (game.feverBonus) highlights.push({ko: `출두로 ${game.feverBonus.toLocaleString("en-US")}점을 더 얻었어요.`, en: `Fever added ${game.feverBonus.toLocaleString("en-US")} bonus points.`});
@@ -244,16 +289,27 @@ export function multiplier(combo: number): number {
 
 export function stampAdvice(game: Game, early: boolean, locale: "ko" | "en"): string {
     const ko = locale === "ko";
+    if (game.practice === "boss") {
+        if (early) return ko ? "10초 동안 세 번의 빈틈을 연습해 보세요. 연습은 기록에 남지 않아요." : "Practice all three openings in ten seconds. Drills do not change your records.";
+        if (game.guardedHits) return ko ? "방어 중에는 손을 떼세요. 먼저 누르면 이번 빈틈의 정통 보너스는 사라지지만 일반 타격은 할 수 있어요." : "Wait through the guard. An early tap spends that opening's precision bonus, but a normal hit still works.";
+        if (game.perfectHits === BOSS_OPENINGS) return ko ? "세 번 모두 정통! 전체 판에서도 띠 안에 선이 올 때 한 번씩 찍어 보세요." : "Three precise stamps! Use the same timing when the line enters the band in a full round.";
+        return ko ? "밝은 띠에 선이 올 때 한 번 찍으면 정통 +200점. 빈틈에서는 언제든 일반 타격이 가능해요." : "Stamp once when the line enters the bright band for PERFECT +200. The whole opening still accepts a normal hit.";
+    }
     if (early) return ko ? "다음 판에는 45초 뒤 등장하는 대장까지 도전해 보세요." : "Next round, stay for the chief arriving after 45 seconds.";
     if (game.mistakes > 0) return ko ? `배달부를 ${game.mistakes}번 찍었어요. 초록색 ‘통과!’ 표시는 건너뛰면 콤보를 지킬 수 있어요.` : `You stamped ${game.mistakes} couriers. Skip the green PASS signs to protect your combo.`;
     if (game.missed > game.hits / 2) return ko ? "놓친 도깨비가 많았어요. 둘레 → 지그재그 순서로 눈을 움직여 보세요." : "Many goblins escaped. Follow the ring, then the zigzag pattern.";
     if (!game.bossDefeated) return ko ? "대장의 ‘찍어!’ 표시를 기다려 한 번씩 찍어 보세요. 세 번의 빈틈을 잡으면 퇴치할 수 있어요." : "Wait for the chief's OPEN sign, then stamp once. Catch all three openings to defeat it.";
+    if (game.perfectHits < BOSS_OPENINGS) return ko ? "대장 퇴치 성공! 밝은 띠에 선이 올 때 한 번 찍으면 정통 +200점. 10초 대장 연습에서 감을 익혀 보세요." : "Chief defeated! Time a single stamp for the bright band to earn PERFECT +200. Try the ten-second chief drill.";
     if (!game.feverGoldHits) return ko ? "대장까지 퇴치했어요! 직접 출두를 켜고 금도깨비 행렬에 맞춰 발동해 보세요." : "Chief defeated! Try manual fever and time it for a golden parade.";
     return ko ? `출두 중 금도깨비 ${game.feverGoldHits}마리를 잡았어요. 다음엔 실수 없이 기록을 높여 보세요.` : `You caught ${game.feverGoldHits} golden goblins during fever. Try a clean round for a new best.`;
 }
 
 /** Round objectives are earned by play, never by an extra payment or a profile perk. */
 export function stampChallenges(game: Game, early = false) {
+    if (game.practice === "boss") return [
+        {id: "boss", done: game.bossHits === BOSS_OPENINGS, progress: game.bossHits, target: BOSS_OPENINGS, ko: "세 빈틈 모두 명중", en: "Hit all three openings"},
+        {id: "precision", done: game.perfectHits === BOSS_OPENINGS, progress: game.perfectHits, target: BOSS_OPENINGS, ko: "대장 정통 세 번", en: "Three precise stamps"},
+    ];
     return [
         {id: "hunter", done: game.hits >= 20, progress: Math.min(20, game.hits), target: 20, ko: "도깨비 20마리", en: "Stamp 20 goblins"},
         {id: "boss", done: game.bossDefeated > 0, progress: game.bossDefeated, target: 1, ko: "대장 도깨비 퇴치", en: "Defeat the chief"},

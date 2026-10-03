@@ -19,10 +19,10 @@ export class ArcadeSound {
         }
     }
 
-    play(kind: "hit" | "wrong" | "start" | "end" | "fever" | "golden" | "guard", combo = 0) {
+    play(kind: "hit" | "wrong" | "start" | "end" | "fever" | "golden" | "guard" | "perfect", combo = 0) {
         const ctx = this.context;
         if (!this.enabled || !ctx || ctx.state !== "running") return;
-        const notes = kind === "fever" ? [523, 784, 1046, 1318] : kind === "golden" ? [784, 1046] : kind === "end" ? [523, 659, 784] :
+        const notes = kind === "perfect" ? [880, 1320, 1760] : kind === "fever" ? [523, 784, 1046, 1318] : kind === "golden" ? [784, 1046] : kind === "end" ? [523, 659, 784] :
             kind === "start" ? [330, 440, 660] : [kind === "wrong" ? 110 : kind === "guard" ? 170 : 420 + Math.min(combo, 20) * 24];
         notes.forEach((frequency, i) => {
             const start = ctx.currentTime + i * 0.09;

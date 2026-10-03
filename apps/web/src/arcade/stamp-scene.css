@@ -37,4 +37,10 @@
 .arc-arena .arc-impact-guard .arc-impact{background:#253149b8;border:2px solid #bac5d9;border-radius:12px;color:#eef3ff;inset:23% 6%;font-size:10px;box-shadow:none}
 .arc-arena .arc-impact-guard .arc-impact b{color:#eef3ff;background:transparent;border:0;font-size:12px;line-height:1.3;padding:2px;transform:none;animation:none}
 .arc-arena.arc-still .stamp-boss .arc-goblin{transform:none}
+.arc-arena .stamp-boss-perfect{outline:4px double #fff6be;outline-offset:-5px;background-color:#755529}
+.arc-arena .stamp-boss-perfect .arc-target-label{background:#fff6c8;color:#312012;border:1px solid #fff}
+.arc-arena .stamp-perfect-hit .arc-impact b{color:#fff6bf;background:#503c26f5;border-color:#ffe995;font-size:clamp(10px,2.8vw,16px)}
+.arc-arena .stamp-perfect-hit .arc-impact-art{width:92%;height:92%;filter:sepia(.5) saturate(1.5);animation-duration:.16s}
+.arc-arena .stamp-perfect-hit.arc-impact-crack::after{display:none}
+.arc-arena.arc-still *{animation:none!important;transition:none!important}
 .arc-arena .stamp-parade-soon .arc-field-caption,.arc-arena .stamp-parade-active .arc-field-caption{box-shadow:0 0 0 1px #f3cf79,0 0 16px #c79a4938;color:#ffe49f}

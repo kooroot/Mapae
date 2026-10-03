@@ -54,3 +54,11 @@
     .shop-agent-line{display:flex;flex-wrap:wrap;gap:5px;font-size:10px}.shop-scoreboard{margin-top:8px}.shop-heading.shop-running{margin-bottom:8px}
 }
 @media(prefers-reduced-motion:reduce){.shop-game *{animation:none!important;transition:none!important}}
+
+.shop-forecast{margin:14px 0;padding:15px;border:1px solid #ba9d67;border-left:4px solid #517258;border-radius:12px;background:#faf2d9;color:#3c432c;min-width:0}
+.shop-forecast-title{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:7px}.shop-forecast-title>span{font-size:10px;letter-spacing:.07em;font-weight:700}.shop-forecast-title>b{font-size:14px}
+.shop-forecast-goods{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}.shop-forecast-goods>span{display:flex;align-items:center;gap:5px;font-size:12px}.shop-forecast-goods img{object-fit:contain}.shop-forecast-goods small{display:block;margin-top:3px;color:#596348}
+.shop-forecast p{font-size:12px;line-height:1.6;margin:8px 0}.shop-forecast>small{display:block;font-size:11px;line-height:1.6;color:#62674e}.shop-campaign-note,.shop-service-note{font-size:12px;line-height:1.7;color:#5c614d}.shop-reserve-warning,.shop-forecast-goods .shop-reserve-warning{color:#99472f!important;font-weight:700}.shop-contextual-choices .shop-reserve-warning{display:block;line-height:1.5;padding-top:4px}
+.shop-deal-totals{flex-wrap:wrap}.shop-deal-totals>span{flex:1 1 100px}
+@media(max-width:760px){.shop-forecast{padding:12px;margin:12px 0}.shop-forecast-goods{gap:8px}.shop-forecast-goods>span{font-size:11px}.shop-forecast-goods img{width:30px;height:30px}.shop-forecast p{font-size:12px}}
+.shop-metric-guide{font-size:12px;line-height:1.7;border-top:1px solid #bca77b;padding-top:7px}.shop-metric-guide>summary{min-height:44px;align-content:center;cursor:pointer;font-weight:700}.shop-metric-guide>summary:focus-visible{outline:3px solid #b76c31;outline-offset:3px}.shop-metric-guide p{margin:0 0 8px}.shop-metric-guide small{display:block;margin-bottom:12px}

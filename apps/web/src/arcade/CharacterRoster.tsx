@@ -3,7 +3,7 @@ import {BrandSelect} from "../components/BrandSelect";
 import {useEffect, useId, useRef, useState} from "react";
 import {Check, Plus, X, Bot, Sparkles} from "lucide-react";
 import type {AgentMode, AgentGoal} from "@mapae/arcade";
-import {addCharacter, MAX_CHARACTERS, newCompanion, updateCharacter, type Companion, type ArcadeState} from "./state";
+import {addCharacter, currentRecords, MAX_CHARACTERS, newCompanion, updateCharacter, type Companion, type ArcadeState} from "./state";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {GuardianCustomizer} from "./GuardianCustomizer";
 import {guardianSeed, rollGuardian, GUARDIAN_NAMES} from "./guardian";
@@ -79,7 +79,7 @@ export function CharacterEditor({member, creating, ko, onClose, onSave}: {member
             </div>
             <p className="arc-editor-note">{draft.agent.mode === "rules" ? ko ? "정해진 규칙대로 플레이하며 LLM을 호출하지 않아요." : "Plays by preset rules without calling an LLM." : ko ? "LLM 서버 연결이 필요해요. 연결 실패 시 봇으로 바꾸지 않아요." : "Requires an LLM service. Failed calls never switch to a bot."}</p>
             </details>
-            {!creating && <dl className="arc-character-records"><div><dt>{GAME_NAMES[ko ? "ko" : "en"].race}</dt><dd>{member.bests.race}</dd></div><div><dt>{GAME_NAMES[ko ? "ko" : "en"].shop}</dt><dd>{member.bests.shop}</dd></div><div><dt>{ko ? "도장찍기 봇" : "Stamp bot"}</dt><dd>{member.bests.stamp}</dd></div><div><dt>{ko ? "직접 플레이" : "Human play"}</dt><dd>{member.best}</dd></div></dl>}
+            {!creating && <dl className="arc-character-records"><div><dt>{GAME_NAMES[ko ? "ko" : "en"].race}</dt><dd>{currentRecords(member).bests.race}</dd></div><div><dt>{GAME_NAMES[ko ? "ko" : "en"].shop}</dt><dd>{currentRecords(member).bests.shop}</dd></div><div><dt>{ko ? "도장찍기 봇" : "Stamp bot"}</dt><dd>{currentRecords(member).bests.stamp}</dd></div><div><dt>{ko ? "직접 플레이" : "Human play"}</dt><dd>{currentRecords(member).best}</dd></div></dl>}
             <div className="arc-editor-actions"><button type="submit" className="arc-button" disabled={!valid}>{creating ? ko ? "캐릭터 만들기" : "Create character" : ko ? "설정 저장" : "Save changes"} <span>→</span></button></div>
         </form>
     </Dialog.Popup></Dialog.Portal></Dialog.Root>;

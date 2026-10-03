@@ -43,6 +43,7 @@ export function HumanShopControls(props: Props) {
                 <strong>{choice.label}</strong><b>{choice.price} <small>{unit}</small></b>
                 <span className="shop-choice-items">{choice.items.map(item => `${SHOP_PRODUCTS.find(p => p.id === item.id)!.name[locale]} ×${item.quantity}`).join(" + ")}</span>
                 <span>{ko ? "거래 이익" : "Trade profit"} {choice.price - choice.cost > 0 ? "+" : ""}{choice.price - choice.cost} {unit} · {choice.completesOrder ? ko ? "요청량 충족" : "Full request" : ko ? "일부만 충족" : "Partial request"}</span>
+                {Object.values(choice.reserveShortfall).some(amount => amount > 0) && <span className="shop-reserve-warning">{ko ? "이 거래 뒤 마지막 손님 재고 부족: " : "After this sale, final guest needs: "}{SHOP_PRODUCTS.filter(p => choice.reserveShortfall[p.id] > 0).map(p => `${p.name[locale]} ×${choice.reserveShortfall[p.id]}`).join(" · ")}</span>}
                 <small>{!choice.available ? ko ? "재고가 부족해요" : "Not enough stock" : choice.hint}</small>
             </button>)}</div>
             {!choices.length && <p className="shop-limit-note">{ko ? "먼저 손님에게 필요한 물건을 물어보세요." : "Ask what the customer needs first."}</p>}

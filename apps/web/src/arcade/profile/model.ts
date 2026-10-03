@@ -51,8 +51,7 @@ export function mergeProfiles(base: Profile, local: Profile, remote: Profile): P
             name: field(old?.name, c.name, other.name), color: field(old?.color, c.color, other.color),
             temperament: field(old?.temperament, c.temperament, other.temperament),
             appearance: field(old?.appearance, c.appearance, other.appearance), agent: field(old?.agent, c.agent, other.agent),
-            configured: c.configured || other.configured, best: Math.max(c.best, other.best),
-            bests: {stamp: Math.max(c.bests.stamp, other.bests.stamp), race: Math.max(c.bests.race, other.bests.race), shop: Math.max(c.bests.shop, other.bests.shop)}};
+            configured: c.configured || other.configured, ...mergeRecords(c, other)};
         characters.set(c.id, merged);
     }
     if (characters.size > MAX_CHARACTERS) throw new ProfileConflict("character_limit");
@@ -69,6 +68,15 @@ export function mergeProfiles(base: Profile, local: Profile, remote: Profile): P
 /** Preserve existing device-only characters once; the server wins existing profile edits. */
 export function importDeviceProfile(device: Profile, remote: Profile): Profile {
     const existing = new Map(remote.characters.map(c => [c.id, c]));
-    const local = {...device, characters: device.characters.map(c => existing.has(c.id) ? {...existing.get(c.id)!, best: c.best, bests: c.bests} : c)};
+    const local = {...device, characters: device.characters.map(c => existing.has(c.id) ? {...existing.get(c.id)!, best: c.best, bests: c.bests, recordVersion: c.recordVersion} : c)};
     return mergeProfiles(remote, local, remote);
+}
+
+function mergeRecords(a: Companion, b: Companion): Pick<Companion, "recordVersion" | "best" | "bests"> {
+    const av = a.recordVersion ?? 1, bv = b.recordVersion ?? 1;
+    const chosen = av > bv ? a : b;
+    if (av !== bv) return {recordVersion: chosen.recordVersion, best: chosen.best, bests: chosen.bests};
+    return {recordVersion: chosen.recordVersion, best: Math.max(a.best, b.best), bests: {
+        stamp: Math.max(a.bests.stamp, b.bests.stamp), race: Math.max(a.bests.race, b.bests.race), shop: Math.max(a.bests.shop, b.bests.shop),
+    }};
 }

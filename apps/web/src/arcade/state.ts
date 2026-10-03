@@ -1,4 +1,4 @@
-import type {AgentGoal, AgentMode} from "@mapae/arcade";
+import {ARCADE_RULESET_VERSION, type AgentGoal, type AgentMode} from "@mapae/arcade";
 import {validGuardian, projectGuardian, type Guardian} from "./guardian";
 import {parseActivities, type Activity} from "./activity";
 import {validAllowance} from "./allowance";
@@ -13,11 +13,11 @@ export type Character = {name: string; color: Color; temperament: Temperament; a
 export type Companion = Character & {
     id: string; configured: boolean;
     agent: {mode: AgentMode; goal: AgentGoal; rounds: number};
-    best: number; bests: Record<"stamp" | "race" | "shop", number>;
+    recordVersion?: number; best: number; bests: Record<"stamp" | "race" | "shop", number>;
 };
 export type Run = {
     id: string; characterId: string; name: string; color: Color; appearance?: Guardian; at: number;
-    score: number; bestCombo: number; replaySeed?: number;
+    score: number; bestCombo: number; replaySeed?: number; ruleset?: number;
     hits: number; mistakes: number; missed: number; status: "unfinished" | "complete";
 };
 export type ArcadeState = {
@@ -26,7 +26,7 @@ export type ArcadeState = {
     sound: boolean; reducedMotion: boolean; activities: Activity[];
 };
 export function newCompanion(id: string, character: Character): Companion {
-    return {...character, id, configured: true, agent: {mode: "rules", goal: "explore", rounds: 1}, best: 0, bests: {stamp: 0, race: 0, shop: 0}};
+    return {...character, id, configured: true, agent: {mode: "rules", goal: "explore", rounds: 1}, recordVersion: ARCADE_RULESET_VERSION, best: 0, bests: {stamp: 0, race: 0, shop: 0}};
 }
 export function newArcadeState(reducedMotion = false): ArcadeState {
     return {characters: [], selectedCharacterId: null, runs: [], sound: false, reducedMotion, activities: []};
@@ -52,7 +52,7 @@ const color = (v: unknown): v is Color => COLORS.some(c => c === v);
 function validCompanion(v: unknown): v is Companion {
     return object(v) && typeof v.id === "string" && /^[a-zA-Z0-9-]{1,64}$/.test(v.id) &&
         typeof v.name === "string" && !!v.name.trim() && Array.from(v.name).length <= 12 && color(v.color) && TEMPERAMENTS.some(t => t === v.temperament) &&
-        (v.appearance === undefined || validGuardian(v.appearance)) && typeof v.configured === "boolean" && integer(v.best) && object(v.bests) && [v.bests.stamp, v.bests.race, v.bests.shop].every(integer) &&
+        (v.appearance === undefined || validGuardian(v.appearance)) && typeof v.configured === "boolean" && (v.recordVersion === undefined || integer(v.recordVersion) && v.recordVersion > 0) && integer(v.best) && object(v.bests) && [v.bests.stamp, v.bests.race, v.bests.shop].every(integer) &&
         object(v.agent) && (v.agent.mode === "rules" || v.agent.mode === "llm") && (v.agent.goal === "score" || v.agent.goal === "save" || v.agent.goal === "explore") &&
         validAllowance(v.agent.rounds);
 }
@@ -71,7 +71,7 @@ export function parseArcadeState(raw: string | null, reducedMotion = false): Arc
         for (const run of v.runs) {
             if (!object(run) || typeof run.id !== "string" || !run.id || typeof run.characterId !== "string" || !ids.has(run.characterId) || typeof run.name !== "string" ||
                 Array.from(run.name).length > 12 || (run.appearance !== undefined && !validGuardian(run.appearance)) || !color(run.color) || ![run.at, run.score, run.bestCombo, run.hits, run.mistakes, run.missed].every(integer) ||
-                (run.replaySeed !== undefined && !validReplaySeed(run.replaySeed)) || (run.status !== "unfinished" && run.status !== "complete")) return clean;
+                (run.ruleset !== undefined && (!integer(run.ruleset) || run.ruleset === 0)) || (run.replaySeed !== undefined && !validReplaySeed(run.replaySeed)) || (run.status !== "unfinished" && run.status !== "complete")) return clean;
         }
         return v as ArcadeState;
     } catch {return clean;}
@@ -84,12 +84,19 @@ export function admitPracticeRun(demo: ArcadeState, id: string, at: number, repl
     const character = selectedCharacter(demo);
     if (!character) return {ok: false, reason: "character"};
     const ticket: Run = {id, characterId: character.id, at, name: character.name, color: character.color, appearance: projectGuardian(character.appearance),
-        score: 0, bestCombo: 0, hits: 0, mistakes: 0, missed: 0, status: "unfinished", ...(replaySeed === undefined ? {} : {replaySeed})};
+        ruleset: ARCADE_RULESET_VERSION, score: 0, bestCombo: 0, hits: 0, mistakes: 0, missed: 0, status: "unfinished", ...(replaySeed === undefined ? {} : {replaySeed})};
     return {ok: true, ticket, demo: {...demo, runs: [ticket, ...demo.runs].slice(0, 40)}};
 }
 export function finishPracticeRun(demo: ArcadeState, id: string, result: Pick<Run, "score" | "bestCombo" | "hits" | "mistakes" | "missed">): ArcadeState {
     const ticket = demo.runs.find(run => run.id === id);
     if (!ticket || ticket.status === "complete") return demo;
-    return {...demo, characters: demo.characters.map(c => c.id === ticket.characterId ? {...c, best: Math.max(c.best, result.score)} : c),
-        runs: demo.runs.map(run => run.id === id ? {...run, ...result, status: "complete"} : run)};
+    const stats = {score: result.score, bestCombo: result.bestCombo, hits: result.hits, mistakes: result.mistakes, missed: result.missed};
+    if (!Object.values(stats).every(integer)) return demo;
+    return {...demo, characters: demo.characters.map(c => c.id === ticket.characterId && ticket.ruleset === ARCADE_RULESET_VERSION ? {...currentRecords(c), best: Math.max(currentRecords(c).best, result.score)} : c),
+        runs: demo.runs.map(run => run.id === id ? {...run, ...stats, status: "complete"} : run)};
+}
+
+/** A new score ruleset starts a new record book; historical runs stay untouched. */
+export function currentRecords(character: Companion): Companion {
+    return character.recordVersion === ARCADE_RULESET_VERSION ? character : {...character, recordVersion: ARCADE_RULESET_VERSION, best: 0, bests: {stamp: 0, race: 0, shop: 0}};
 }

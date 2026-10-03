@@ -13,7 +13,7 @@ export function StampAgent(props: AutonomousGameProps & {sound: ArcadeSound}) {
     const [attempt, setAttempt] = useState(0);
     useEffect(() => {
         const abort = new AbortController();
-        const request = {kind: "stamp" as const, profile, locale, observation: {budget: budget.allowance, rules: "Stamp goblins, avoid couriers. Choose careful or quick tempo. Quick triggers fever immediately; careful waits for a gold parade or a chief opening. The chief only takes one hit in each of three openings. A deterministic motor obeys the same rules as a person."}};
+        const request = {kind: "stamp" as const, profile, locale, observation: {budget: budget.allowance, rules: "Stamp goblins, avoid couriers. Choose careful or quick tempo. Quick hits the first chief opening and triggers fever immediately; careful aims for the visible precision band and saves fever for gold or a precise chief hit. The chief only takes one hit in each of three openings. A precise stamp adds 200 points; an early guarded tap spends that cycle's precision chance. A deterministic motor obeys the same rules as a person."}};
         setError("");
         void (mode === "rules" ? Promise.resolve(ruleDecision(request)) : decide(request, abort.signal)).then(result => {
             if (abort.signal.aborted) return;
@@ -26,7 +26,7 @@ export function StampAgent(props: AutonomousGameProps & {sound: ArcadeSound}) {
     return <><p className="agent-thought"><b>{decision.model ?? (locale === "ko" ? "규칙 기반 에이전트" : "Rule agent")}</b> {decision.explanation}<small>{locale === "ko" ? "전략 판단 후 규칙 기반 손동작으로 실행해요." : "Strategy is executed by a rule-based motor."}</small></p>
         <Arena seed={props.seed} suspended={props.suspended} locale={locale} character={{...profile, appearance: props.appearance}} reducedMotion={reducedMotion} sound={sound} autopilot={decision.action.tempo === "quick" ? "quick" : "careful"} onFinish={game => onComplete({
             game: "stamp", score: game.score, summary: {ko: `${game.hits}번 찍고 최대 ${game.bestCombo}콤보를 만들었어요.`, en: `${game.hits} stamps, best combo ${game.bestCombo}.`},
-            metrics: [{label: {ko: "최대 콤보", en: "Best combo"}, value: game.bestCombo}, {label: {ko: "퇴치", en: "Hits"}, value: game.hits}, {label: {ko: "실수", en: "Mistakes"}, value: game.mistakes}, {label: {ko: "갑옷 도깨비", en: "Armored goblins"}, value: game.armorHits}, {label: {ko: "대장 퇴치", en: "Chief defeated"}, value: game.bossDefeated}],
+            metrics: [{label: {ko: "최대 콤보", en: "Best combo"}, value: game.bestCombo}, {label: {ko: "퇴치", en: "Hits"}, value: game.hits}, {label: {ko: "실수", en: "Mistakes"}, value: game.mistakes}, {label: {ko: "갑옷 도깨비", en: "Armored goblins"}, value: game.armorHits}, {label: {ko: "대장 퇴치", en: "Chief defeated"}, value: game.bossDefeated}, {label: {ko: "대장 정통", en: "Precise chief stamps"}, value: game.perfectHits}],
             highlights: stampHighlights(game),
             transcript: [{speaker: profile.name, text: decision.explanation}], ranking: [],
         })} /></>;

@@ -16,4 +16,17 @@
 .stamp-parade-cue{margin:9px 0 0;padding:7px 10px;min-height:32px;border-radius:7px;background:#18141d;color:#cfbea0;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
 .stamp-parade-cue.is-soon{background:#514128;color:#ffde8f;box-shadow:inset 3px 0 #f4cf70}.stamp-parade-cue.is-active{background:#694723;color:#fff2bf;box-shadow:inset 3px 0 #ffdf7e}
 .stamp-fever-ready .stamp-fever-meter::-webkit-progress-value{background:#ffe190}.stamp-fever-ready .stamp-fever-meter::-moz-progress-bar{background:#ffe190}
+.stamp-drill-challenges{grid-template-columns:repeat(2,minmax(0,1fr))}
+.stamp-boss-timing{position:absolute;top:9px;left:8%;right:8%;padding:7px 10px;background:#282330ed;color:#fce5b3;border:1px solid #a0804e;border-radius:8px;z-index:2}
+.stamp-boss-timing-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:20px;font-size:11px;line-height:1.3}
+.stamp-boss-timing-heading span{flex:none;font-size:11px;font-variant-numeric:tabular-nums}
+.stamp-boss-timing p{font-size:10px;line-height:1.4;margin:4px 0 0;color:#e3cfac}
+.stamp-timing-track{display:block;width:calc(100% - 4px);height:18px;margin:4px 2px 0;background:#57452d;border:1px solid #bea168;border-radius:5px;overflow:hidden}
+.stamp-timing-guard{fill:#353947;stroke:#b8b3ac;stroke-width:1px}
+.stamp-timing-band{fill:#ffe9a6;stroke:#fff8de;stroke-width:2px}
+.stamp-timing-guard-label,.stamp-timing-band-label{font-size:10px;font-weight:800}
+.stamp-timing-guard-label{fill:#e0e5f4}.stamp-timing-band-label{fill:#342a19}
+.stamp-timing-hand{stroke:#fff;stroke-width:3px;filter:drop-shadow(1px 0 #352e3c)}
+.stamp-boss-timing.is-perfect{background:#514026}.stamp-boss-timing.is-perfect strong{color:#fff1ab}
+@media(max-width:480px){.stamp-boss-timing{top:4px;left:7%;right:7%;padding:4px 6px}.stamp-boss-timing-heading{font-size:9px;gap:6px;min-height:18px}.stamp-boss-timing-heading span{font-size:9px}.stamp-boss-timing p{font-size:9px;line-height:1.3;margin-top:3px}.stamp-timing-track{height:14px;margin-top:3px}.stamp-timing-guard-label,.stamp-timing-band-label{font-size:8px}}
 @media(max-width:480px){.stamp-fever-controls{grid-template-columns:minmax(0,1fr) 88px;gap:6px}.stamp-fever-mode button{padding-inline:4px;font-size:11px}.stamp-fever-trigger{font-size:11px}.stamp-fever-controls small{font-size:10px}.stamp-parade-cue{font-size:10px;padding:6px 8px}}

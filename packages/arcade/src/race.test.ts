@@ -1,6 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import {applyRaceRound, chooseRaceAction, createRaceSeason, makeRaceCourse, parseRaceAction, raceFrameAt, raceObservation,
-    raceMotorCall, raceHighlights, RACE_BURST_COST, RACE_BURST_SECONDS, raceEndTime, raceNextCheckpoint, raceLiveRank, RACE_CHECKPOINTS, RACE_ROUNDS, RACE_STRATEGIES, SEASON_TOKENS, seasonRanking, simulateRace, type RaceCourse, type Racer} from "./race";
+    raceMotorCall, raceTraffic, raceHighlights, RACE_DRAFT_DISTANCE, type RaceCommand, RACE_BURST_COST, RACE_BURST_SECONDS, raceEndTime, raceNextCheckpoint, raceLiveRank, RACE_CHECKPOINTS, RACE_ROUNDS, RACE_STRATEGIES, SEASON_TOKENS, seasonRanking, simulateRace, type RaceCourse, type Racer} from "./race";
 import type {AgentProfile} from "./contracts";
 
 const profile: AgentProfile = {name: "말랑", color: "jade", temperament: "curious", goal: "score"};
@@ -27,12 +27,12 @@ describe("Auto Race engine", () => {
 
     test("each strategy has conditions where it wins; none dominates every course", () => {
         expect(simulateRace(clearShort, entrants).finish[0]!.id).toBe("burst");
-        expect(simulateRace({...clearShort, course: "long", distance: 1_250}, entrants).finish[0]!.id).toBe("surge");
+        expect(simulateRace(makeRaceCourse(1, 1), entrants).finish[0]!.id).toBe("surge");
         expect(simulateRace({...clearShort, course: "long", distance: 1_250, weather: "rain"}, entrants).finish[0]!.id).toBe("conserve");
     });
 
     test("early bursts actually lead early and a late surge changes the order", () => {
-        const race = simulateRace({...clearShort, distance: 1_250, course: "long"}, entrants);
+        const race = simulateRace(makeRaceCourse(1, 1), entrants);
         const opening = raceFrameAt(race, .2).positions;
         expect(opening.find(item => item.id === "burst")!.distance).toBeGreaterThan(opening.find(item => item.id === "surge")!.distance);
         expect(race.finish[0]!.id).toBe("surge");
@@ -149,7 +149,7 @@ describe("Auto Race decisions and equal-capital season", () => {
         expect(chooseRaceAction(profile, clearShort, 3).action.strategy).toBe("burst");
         expect(chooseRaceAction(profile, {...clearShort, weather: "rain", course: "long"}, 3).action.strategy).toBe("conserve");
         expect(chooseRaceAction(profile, {...clearShort, course: "long"}, 3).action.strategy).toBe("surge");
-        expect(chooseRaceAction({...profile, goal: "save"}, {...clearShort, weather: "rain", course: "long"}, 3).action.enter).toBe(false);
+        expect(chooseRaceAction({...profile, goal: "save"}, {...clearShort, weather: "rain", course: "long"}, 3).action).toEqual({enter: true, strategy: "conserve"});
         expect(chooseRaceAction(profile, clearShort, 0).action.enter).toBe(false);
         expect(chooseRaceAction({...profile, goal: "explore"}, {...clearShort, round: 2}, 3).action.strategy).toBe("surge");
     });
@@ -177,12 +177,11 @@ describe("Human race checkpoint calls", () => {
         expect(time(rainy, "save")).toBeLessThan(time(rainy, "push"));
         expect(time(rainy, "save")).toBeLessThan(time(rainy, "steady"));
     });
-    test("a checkpoint changes only future owner frames, with no teleport or rival rewrite", () => {
+    test("a checkpoint preserves all prior frames while future traffic can change for every horse", () => {
         const original = simulateRace(clearShort, racers);
         const changed = simulateRace(clearShort, racers, [{at: 12, pace: "push", route: "wide"}]);
         expect(changed.frames.filter(f => f.time <= 12)).toEqual(original.frames.filter(f => f.time <= 12));
         expect(changed.frames.find(f => f.time === 14)!.positions[0]!.distance).toBeGreaterThan(original.frames.find(f => f.time === 14)!.positions[0]!.distance);
-        for (const rival of entrants) expect(changed.finish.find(f => f.id === rival.id)!.seconds).toBe(original.finish.find(f => f.id === rival.id)!.seconds);
         expect(changed.finish.find(f => f.id === "owner")!.stamina).toBeLessThan(original.finish.find(f => f.id === "owner")!.stamina);
     });
     test("a second call preserves the first section and all choices replay deterministically", () => {
@@ -212,7 +211,7 @@ describe("Human race checkpoint calls", () => {
 describe("Terrain and route trade-offs", () => {
     const racers: Racer[] = [{id: "owner", name: "Coach", strategy: "conserve"}, ...entrants];
     const at20 = (course: RaceCourse, route: "wide" | "shortcut", pace: "steady" | "push" = "steady") =>
-        simulateRace(course, racers, [{at: 12, pace, route}]).frames.find(f => f.time === 20)!.positions[0]!;
+        simulateRace(course, [racers[0]!], [{at: 12, pace, route}], null).frames.find(f => f.time === 20)!.positions[0]!;
     test("a meadow shortcut gains distance at the expense of stamina", () => {
         const meadow = {...clearShort, round: 1};
         const inner = at20(meadow, "shortcut"), outer = at20(meadow, "wide");
@@ -224,11 +223,10 @@ describe("Terrain and route trade-offs", () => {
         expect(at20(muddy, "shortcut").distance).toBeGreaterThan(at20(muddy, "wide").distance);
         expect(at20(muddy, "shortcut", "push").distance).toBeLessThan(at20(muddy, "wide", "push").distance);
     });
-    test("changing a route preserves the past and rival results", () => {
+    test("changing a route preserves the past and rejects unknown paths", () => {
         const wide = simulateRace(clearShort, racers, [{at: 12, pace: "steady", route: "wide"}]);
         const shortcut = simulateRace(clearShort, racers, [{at: 12, pace: "steady", route: "shortcut"}]);
         expect(shortcut.frames.filter(f => f.time <= 12)).toEqual(wide.frames.filter(f => f.time <= 12));
-        expect(shortcut.finish.filter(f => f.id !== "owner")).toEqual(wide.finish.filter(f => f.id !== "owner"));
         // @ts-expect-error Deliberately malformed external command.
         expect(() => simulateRace(clearShort, racers, [{at: 12, pace: "steady", route: "teleport"}])).toThrow("checkpoint");
     });
@@ -295,7 +293,6 @@ describe("One-use bursts, shared motors and season rivals", () => {
         expect(after.distance).toBeGreaterThan(before.distance);
         expect(changed.bursts.filter(burst => burst.id === "owner")).toHaveLength(1);
         expect(original.bursts.some(burst => burst.id === "owner")).toBe(false);
-        for (const rival of entrants) expect(changed.finish.find(f => f.id === rival.id)!.seconds).toBe(original.finish.find(f => f.id === rival.id)!.seconds);
         expect(simulateRace(clearShort, racers, [], 10.1)).toEqual(changed);
     });
     test("no actor can burst with insufficient stamina or alter legal timing bounds", () => {
@@ -331,14 +328,14 @@ describe("One-use bursts, shared motors and season rivals", () => {
         expect([...winners].sort()).toEqual([...RACE_STRATEGIES].sort());
     });
     test("highlights use observed burst positions and never invent an unused burst", () => {
-        expect(raceHighlights(simulateRace(clearShort, racers, [], null))).toEqual([]);
+        expect(raceHighlights(simulateRace(clearShort, racers, [], null)).some(item => item.en.includes("burst"))).toBe(false);
         const race = simulateRace(clearShort, racers, [], 30);
         const highlight = raceHighlights(race);
-        expect(highlight).toHaveLength(1);
+        expect(highlight.filter(item => item.en.includes("burst"))).toHaveLength(1);
         const burst = race.bursts.find(item => item.id === "owner")!;
         const after = raceFrameAt(race, Math.min(burst.at + RACE_BURST_SECONDS, raceEndTime(race)) / race.seconds);
         const gained = raceLiveRank(race, raceFrameAt(race, burst.at / race.seconds), "owner") - raceLiveRank(race, after, "owner");
-        expect(highlight[0]!.en).toContain(gained > 0 ? `gained ${gained} place` : `place ${raceLiveRank(race, after, "owner")}`);
+        expect(highlight.find(item => item.en.includes("burst"))!.en).toContain(gained > 0 ? `gained ${gained} place` : `place ${raceLiveRank(race, after, "owner")}`);
     });
     test("the seeded rival stays the same for all three races and is a real entrant", () => {
         let season = createRaceSeason(9, "Coach", "ko");
@@ -350,5 +347,99 @@ describe("One-use bursts, shared motors and season rivals", () => {
             expect(season.rivalId).toBe(rival);
             expect(season.rounds[round]!.simulation.entrants.some(runner => runner.id === rival)).toBe(true);
         }
+    });
+});
+
+describe("Drafting and outside passes", () => {
+    const long: RaceCourse = {...clearShort, distance: 1_250, course: "long"};
+    const pair = (opponent: Racer["strategy"]): Racer[] => [{id: "owner", name: "Coach", strategy: "conserve"}, {id: "rival", name: "Rival", strategy: opponent}];
+    const calls = (route: "shortcut" | "wide"): RaceCommand[] => [{at: 12, pace: "save", route: "shortcut"}, {at: 24, pace: "steady", route}];
+    const ownerTime = (race: ReturnType<typeof simulateRace>) => race.finish.find(finish => finish.id === "owner")!.seconds;
+
+    test("a nearby horse saves real stamina, while a distant horse and an empty track cannot give a draft", () => {
+        const alone = simulateRace(clearShort, [pair("surge")[0]!], [], null);
+        const nearby = simulateRace(clearShort, pair("surge"), [], null);
+        const distant = simulateRace(clearShort, pair("burst"), [], null);
+        const at = (race: typeof alone, time: number) => race.frames.find(frame => frame.time === time)!.positions[0]!;
+        expect(at(nearby, 10).distance).toBe(at(alone, 10).distance);
+        expect(at(nearby, 10).stamina).toBeGreaterThan(at(alone, 10).stamina + 1);
+        expect(at(nearby, 10).draftingId).toBe("rival");
+        expect(at(distant, 10).draftingId).toBeNull();
+        expect(at(distant, 9).stamina - at(distant, 10).stamina).toBeCloseTo(at(alone, 9).stamina - at(alone, 10).stamina, 8);
+        expect(alone.frames.every(frame => frame.positions[0]!.draftingId === null)).toBe(true);
+    });
+
+    test("outside passes a tiring leader that blocks the inside, with no rewrite before the fork", () => {
+        const inside = simulateRace(long, pair("burst"), calls("shortcut"), null);
+        const outside = simulateRace(long, pair("burst"), calls("wide"), null);
+        expect(outside.frames.filter(frame => frame.time <= 24)).toEqual(inside.frames.filter(frame => frame.time <= 24));
+        expect(inside.frames.some(frame => frame.positions[0]!.blockedBy === "rival")).toBe(true);
+        expect(inside.finish[0]!.id).toBe("rival");
+        expect(outside.finish[0]!.id).toBe("owner");
+        expect(ownerTime(outside)).toBeLessThan(ownerTime(inside) - 10);
+        expect(outside.frames.some(frame => frame.positions[0]!.overtakingId === "rival")).toBe(true);
+        expect(outside.frames.filter(frame => frame.time > 24).every(frame => frame.positions[0]!.draftingId === null)).toBe(true);
+        expect(raceHighlights(outside).some(highlight => highlight.en.includes("passed Rival outside"))).toBe(true);
+    });
+
+    test("changing only the opponent policy changes which route is faster", () => {
+        const time = (opponent: Racer["strategy"], route: "shortcut" | "wide") => ownerTime(simulateRace(long, pair(opponent), calls(route), null));
+        expect(time("burst", "wide")).toBeLessThan(time("burst", "shortcut"));
+        expect(time("conserve", "shortcut")).toBeLessThan(time("conserve", "wide"));
+    });
+
+    test("mixed fields resolve from the same tick regardless of entrant iteration order", () => {
+        for (let seed = 0; seed < 12; seed++) {
+            const course = makeRaceCourse(seed, seed % 3);
+            const racers: Racer[] = [{id: "owner", name: "Coach", strategy: "conserve"}, ...entrants];
+            const original = simulateRace(course, racers, calls("wide"), 30);
+            const reversed = simulateRace(course, racers.toReversed(), calls("wide"), 30);
+            expect(reversed.finish).toEqual(original.finish);
+            expect(reversed.frames.map(frame => ({...frame, positions: frame.positions.toSorted((a, b) => a.id.localeCompare(b.id))})))
+                .toEqual(original.frames.map(frame => ({...frame, positions: frame.positions.toSorted((a, b) => a.id.localeCompare(b.id))})));
+            expect(simulateRace(course, racers, calls("wide"), 30)).toEqual(original);
+        }
+    });
+
+    test("drafts require a live horse within range, and finish-line crossings never invent passes", () => {
+        const race = simulateRace(long, pair("conserve"), calls("wide"), null);
+        for (let index = 1; index < race.frames.length; index++) {
+            const frame = race.frames[index]!, previous = race.frames[index - 1]!;
+            for (const position of frame.positions) {
+                if (position.draftingId) {
+                    const before = previous.positions.find(item => item.id === position.id)!;
+                    const leader = previous.positions.find(item => item.id === position.draftingId)!;
+                    expect(position.path).toBe("shortcut");
+                    expect(leader.distance - before.distance).toBeGreaterThan(0);
+                    expect(leader.distance - before.distance).toBeLessThanOrEqual(RACE_DRAFT_DISTANCE);
+                    expect(leader.distance).toBeLessThan(race.course.distance);
+                }
+                if (position.overtakingId) expect(previous.positions.find(item => item.id === position.overtakingId)!.distance).toBeLessThan(race.course.distance);
+            }
+        }
+        expect(race.finish[0]!.id).toBe("rival");
+        expect(race.frames.some(frame => frame.positions[0]!.overtakingId === "rival")).toBe(false);
+    });
+
+    test("a nearby outside challenge changes the rival's legal next call, without rewriting its past", () => {
+        const racers = pair("surge");
+        const inside = simulateRace(clearShort, racers, [{at: 12, pace: "steady", route: "shortcut"}], null);
+        const outside = simulateRace(clearShort, racers, [{at: 12, pace: "steady", route: "wide"}], null);
+        expect(outside.frames.filter(frame => frame.time <= 12)).toEqual(inside.frames.filter(frame => frame.time <= 12));
+        expect(inside.calls.find(call => call.id === "rival" && call.at === 24)!.pace).toBe("steady");
+        expect(outside.calls.find(call => call.id === "rival" && call.at === 24)!.pace).toBe("push");
+        expect(outside.calls.filter(call => call.id === "rival").map(call => call.at)).toEqual([12, 24]);
+        expect(outside.bursts.filter(burst => burst.id === "rival").length).toBeLessThanOrEqual(1);
+    });
+
+    test("a human can duplicate the automatic public traffic policy without an owner advantage", () => {
+        const racers: Racer[] = [{id: "owner", name: "Coach", strategy: "surge"}, ...entrants];
+        const automatic = simulateRace(long, racers);
+        const commands = automatic.calls.filter(call => call.id === "owner").map(({at, pace, route}) => ({at, pace, route}));
+        const burst = automatic.bursts.find(item => item.id === "owner")?.at ?? null;
+        expect(simulateRace(long, racers, commands, burst)).toEqual(automatic);
+        const before = automatic.frames.find(frame => frame.time === 24)!;
+        const own = before.positions.find(position => position.id === "owner")!;
+        expect(raceMotorCall(long, "surge", 1, own.stamina, raceTraffic(before.positions, "owner"))).toEqual(commands[1]!);
     });
 });

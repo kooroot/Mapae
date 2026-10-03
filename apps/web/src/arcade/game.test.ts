@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {advance, newGame, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "./game";
+import {advance, newGame, newBossPractice, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, BOSS_PRACTICE_MS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "./game";
 import {cellForKey} from "./input";
 
 function withActor(game: Game, kind: "goblin" | "courier", index = 0): Game {
@@ -154,7 +154,7 @@ describe("Armored goblins and the chief", () => {
         const initial = state;
         state = stamp(advance(state, BOSS_GUARD_MS - 1), 0);
         expect(state.cells[0]!.actor!.hp).toBe(BOSS_OPENINGS);
-        expect(state).toMatchObject({score: 0, hits: 0, combo: 0, feverCharge: 0, guardedHits: 1});
+        expect(state).toMatchObject({score: 0, hits: 0, bossHits: 0, combo: 0, feverCharge: 0, guardedHits: 1});
         expect(state.cells[0]!.impact!.kind).toBe("guard");
         // Guard feedback cannot swallow a correctly timed opening input one millisecond later.
         state = stamp(advance(state, 1), 0);
@@ -166,7 +166,7 @@ describe("Armored goblins and the chief", () => {
             state = advance(state, BOSS_CYCLE_MS * opening + BOSS_GUARD_MS - state.elapsed);
             state = stamp(state, 0);
         }
-        expect(state).toMatchObject({bossDefeated: 1, hits: 1, combo: 1, score: 1000});
+        expect(state).toMatchObject({bossDefeated: 1, bossHits: 3, hits: 1, combo: 1, score: 1000});
         expect(stamp(state, 0)).toBe(state);
         expect(initial.cells[0]!.actor!.hp).toBe(BOSS_OPENINGS);
     });
@@ -325,5 +325,129 @@ describe("Repeatable stamp practice and legal agent motor", () => {
             expect(game.feverBonus).toBeLessThanOrEqual(game.score / 2);
             expect(advanceAgent(game, 3000, tempo)).toBe(game);
         }
+    });
+});
+
+describe("Precise chief stamps and the ten-second drill", () => {
+    function readyChief() {return advance(newBossPractice(19), 300);}
+    function preciseRun() {
+        let game = readyChief();
+        const bornAt = game.cells[4]!.actor!.bornAt;
+        for (let opening = 0; opening < BOSS_OPENINGS; opening++) {
+            const at = bornAt + opening * BOSS_CYCLE_MS + BOSS_PERFECT_START_MS + BOSS_PERFECT_MS / 2;
+            game = stamp(advance(game, at - game.elapsed), 4);
+        }
+        return advance(game, BOSS_PRACTICE_MS - game.elapsed);
+    }
+
+    test("the precise band has exact boundaries inside the unchanged broad success window", () => {
+        const initial = readyChief();
+        const bornAt = initial.cells[4]!.actor!.bornAt;
+        for (const age of [BOSS_GUARD_MS, BOSS_PERFECT_START_MS - 1, BOSS_PERFECT_START_MS, BOSS_PERFECT_START_MS + BOSS_PERFECT_MS - 1, BOSS_PERFECT_START_MS + BOSS_PERFECT_MS, BOSS_CYCLE_MS - 1]) {
+            const game = advance(initial, bornAt + age - initial.elapsed);
+            const precise = age >= BOSS_PERFECT_START_MS && age < BOSS_PERFECT_START_MS + BOSS_PERFECT_MS;
+            expect(bossWindow(game.cells[4]!.actor!, game.elapsed)).toMatchObject({phase: "open", perfect: precise, perfectBlocked: false});
+            const hit = stamp(game, 4);
+            expect(hit.cells[4]!.actor!.hp).toBe(2);
+            expect(hit.perfectHits).toBe(precise ? 1 : 0);
+            expect(hit.score).toBe(precise ? BOSS_PERFECT_POINTS : 0);
+            expect(hit.hits).toBe(0);
+        }
+        expect(initial.cells[4]!.actor!.hp).toBe(3);
+    });
+    test("a precise hit scores once without adding damage, combo, defeat or fever", () => {
+        const ready = advance(readyChief(), BOSS_PERFECT_START_MS);
+        const hit = stamp(ready, 4);
+        expect(hit).toMatchObject({score: BOSS_PERFECT_POINTS, perfectHits: 1, bossHits: 1, hits: 0, combo: 0, bossDefeated: 0, feverCharge: 0});
+        expect(hit.cells[4]!.impact).toMatchObject({kind: "crack", perfect: true, points: BOSS_PERFECT_POINTS});
+        expect(hit.cells[4]!.actor!.hp).toBe(2);
+        expect(stamp(hit, 4)).toBe(hit);
+        const repeated = advance(hit, 120);
+        expect(stamp(repeated, 4)).toBe(repeated);
+        expect(ready).toMatchObject({score: 0, perfectHits: 0});
+        expect(ready.cells[4]!.actor!.lastOpeningHit).toBeUndefined();
+    });
+    test("an ordinary opening hit cannot be upgraded by tapping again during the precise band", () => {
+        let game = stamp(advance(readyChief(), BOSS_GUARD_MS), 4);
+        game = advance(game, BOSS_PERFECT_START_MS - BOSS_GUARD_MS);
+        expect(stamp(game, 4)).toBe(game);
+        expect(game).toMatchObject({score: 0, perfectHits: 0, bossHits: 1});
+        expect(game.cells[4]!.actor!.hp).toBe(2);
+    });
+    test("a guarded tap spends only this cycle's precision chance and leaves ordinary damage legal", () => {
+        const initial = readyChief();
+        let game = stamp(advance(initial, BOSS_GUARD_MS - 1), 4);
+        game = advance(game, BOSS_PERFECT_START_MS - BOSS_GUARD_MS + 1);
+        expect(bossWindow(game.cells[4]!.actor!, game.elapsed)).toMatchObject({phase: "open", perfect: false, perfectBlocked: true});
+        game = stamp(game, 4);
+        expect(game).toMatchObject({score: 0, perfectHits: 0, guardedHits: 1});
+        expect(game.cells[4]!.actor!.hp).toBe(2);
+        game = stamp(advance(game, BOSS_CYCLE_MS), 4);
+        expect(game).toMatchObject({score: BOSS_PERFECT_POINTS, perfectHits: 1});
+        expect(game.cells[4]!.actor!.hp).toBe(1);
+        expect(initial.cells[4]!.actor!.lastGuardedOpening).toBeUndefined();
+    });
+    test("deliberate single taps outscore fast mashing, which cannot farm precise bonuses", () => {
+        const precise = preciseRun();
+        expect(precise).toMatchObject({bossDefeated: 1, bossHits: 3, perfectHits: 3, score: 1000 + 3 * BOSS_PERFECT_POINTS});
+        for (const interval of [10, 50, 110, 240]) {
+            let mash = readyChief();
+            while (!mash.finished) mash = stamp(advance(mash, interval), 4);
+            expect(mash).toMatchObject({bossDefeated: 1, bossHits: 3, perfectHits: 0, score: 1000, hits: 1});
+            expect(precise.score).toBeGreaterThan(mash.score);
+        }
+    });
+    test("the drill contains exactly one chief, no regular arrivals, and ends at exactly ten seconds", () => {
+        let game = newBossPractice(33);
+        expect(game).toMatchObject({practice: "boss", durationMs: BOSS_PRACTICE_MS, perfectHits: 0, bossHits: 0});
+        const births = new Set<number>();
+        for (let at = 0; at < BOSS_PRACTICE_MS; at += 50) {
+            game = advance(game, 50);
+            for (const cell of game.cells) if (cell.actor) {
+                expect(cell.actor.special).toBe("boss");
+                births.add(cell.actor.bornAt);
+            }
+        }
+        expect(births.size).toBe(1);
+        expect(game).toMatchObject({elapsed: BOSS_PRACTICE_MS, finished: true, spawnCount: 1, missed: 1, score: 0});
+        expect(game.cells.every(cell => !cell.actor)).toBe(true);
+        expect(game).toEqual(advance(newBossPractice(33), 100_000));
+        expect(stamp(game, 4)).toBe(game);
+        expect(advance(game, 1)).toBe(game);
+        expect(newGame(33)).toMatchObject({practice: "full", durationMs: ROUND_MS, bossSpawned: false});
+        expect(() => newBossPractice(NaN)).toThrow("Invalid stamp seed");
+    });
+    test("a drill cannot activate fever or grant full-round challenge credit", () => {
+        const charged = {...newBossPractice(1), feverCharge: FEVER_TARGET};
+        expect(activateFever(charged)).toBe(charged);
+        expect(setFeverMode(charged, "manual")).toBe(charged);
+        const done = preciseRun();
+        expect(done).toMatchObject({feverCharge: 0, feverActivations: 0, feverBonus: 0, goldHits: 0});
+        expect(stampChallenges(done).map(goal => goal.id)).toEqual(["boss", "precision"]);
+        expect(stampChallenges(done)[0]).toMatchObject({progress: 3, target: 3});
+        expect(stampChallenges(done).every(goal => goal.done)).toBe(true);
+        expect(stampHighlights(done)[0]!.en).toContain("600 timing bonus points");
+        expect(stampAdvice(done, false, "en")).toContain("Three precise stamps");
+    });
+    test("both motors share legal scoring with people and remain deterministic across frame sizes in the drill", () => {
+        const human = preciseRun();
+        for (const tempo of ["careful", "quick"] as const) {
+            const coarse = advanceAgent(newBossPractice(19), BOSS_PRACTICE_MS, tempo);
+            for (const frame of [16, 33, 50, 1400]) {
+                let fine = newBossPractice(19);
+                while (!fine.finished) fine = advanceAgent(fine, frame, tempo);
+                expect(fine).toEqual(coarse);
+            }
+            expect(coarse).toMatchObject({bossDefeated: 1, guardedHits: 0, feverActivations: 0, hits: 1});
+            if (tempo === "careful") expect(coarse).toEqual(human);
+            else expect(coarse).toMatchObject({perfectHits: 0, score: 1000});
+        }
+    });
+    test("a narrow timing bonus does not multiply with fever or reward an expired opening", () => {
+        const ready = {...advance(readyChief(), BOSS_PERFECT_START_MS), practice: "full" as const, feverUntil: 9000, combo: 14};
+        expect(stamp(ready, 4)).toMatchObject({score: BOSS_PERFECT_POINTS, perfectHits: 1, combo: 14, feverBonus: 0});
+        const expired = {...ready, elapsed: ready.cells[4]!.actor!.expiresAt};
+        expect(bossWindow(expired.cells[4]!.actor!, expired.elapsed)).toMatchObject({phase: "recover", perfect: false});
+        expect(stamp(expired, 4)).toBe(expired);
     });
 });

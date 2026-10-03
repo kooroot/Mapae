@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import type {ActivityOutcome, AgentDecisionRequest} from "@mapae/arcade";
+import {ARCADE_RULESET_VERSION, type ActivityOutcome, type AgentDecisionRequest} from "@mapae/arcade";
 import {admitActivity, admitHumanActivity, completeActivity, isOutcome, parseActivities, practiceBest} from "./activity";
 import {mergeProfiles, parseProfile, projectProfile, profileState} from "./profile/model";
 import {addCharacter, newCompanion, selectCharacter, selectedCharacter, updateCharacter, newArcadeState, parseArcadeState} from "./state";
@@ -8,7 +8,7 @@ import {parseOutingDecision, parseTicket, ruleDecision} from "./agents";
 
 const created = () => addCharacter(newArcadeState(), newCompanion("maru", {name: "마루", color: "red", temperament: "curious"}));
 const admission = (id: string) => ({id, characterId: "maru", game: "race" as const, mode: "rules" as const, source: "mapae-giwa" as const, ticketId: `0x${Buffer.from(id).toString("hex").padEnd(64, "0")}`, giwa: {balanceAfter: "2.99", allowanceAfter: "0.02"}, model: null, reason: "Race"});
-const result: ActivityOutcome = {game: "race", score: 15, summary: {ko: "완주", en: "Finished"}, metrics: [], transcript: [], ranking: []};
+const result: ActivityOutcome = {replay: {seed: 1, version: ARCADE_RULESET_VERSION}, game: "race", score: 15, summary: {ko: "완주", en: "Finished"}, metrics: [], transcript: [], ranking: []};
 const request: AgentDecisionRequest = {kind: "outing", profile: {...selectedCharacter(created())!, goal: "explore"}, locale: "ko", observation: {balance: 20, allowance: 2, free: false, requested: "auto", visited: []}};
 
 describe("Shared agent outings", () => {

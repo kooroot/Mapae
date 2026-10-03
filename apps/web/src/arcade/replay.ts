@@ -1,6 +1,6 @@
-import type {ActivityOutcome} from "@mapae/arcade";
+import {ARCADE_RULESET_VERSION, type ActivityOutcome} from "@mapae/arcade";
 
-export const ARCADE_REPLAY_VERSION = 1;
+export const ARCADE_REPLAY_VERSION = ARCADE_RULESET_VERSION;
 export const validReplaySeed = (value: unknown): value is number =>
     typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffff_ffff;
 

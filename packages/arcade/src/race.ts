@@ -15,6 +15,15 @@ export const RACE_ROUTE_SECONDS = 8;
 export const RACE_BURST_COST = 20;
 export const RACE_BURST_SECONDS = 4;
 export const RACE_BURST_SPEED = 1.7;
+export const RACE_DRAFT_DISTANCE = 22;
+export const RACE_DRAFT_DRAIN = .6;
+export const RACE_FOLLOW_GAP = 3;
+export const RACE_OUTSIDE_SPEED = .94;
+export const RACE_HABITS = {
+    burst: {ko: "앞말이 가까우면 첫 갈림길부터 바깥으로 나가요. 바깥 경쟁자가 붙으면 속도를 올려요.", en: "Takes the outside at either fork when close behind. Raises the pace when challenged outside."},
+    conserve: {ko: "앞말 뒤에서 힘을 아끼다가, 두 번째 갈림길 앞에 지친 말이 보이면 바깥으로 나가요.", en: "Follows to save energy, then goes outside at the second fork if a horse ahead is tired."},
+    surge: {ko: "첫 갈림길은 따라가고, 두 번째에 앞말이 있으면 바깥으로 나가요. 바깥 경쟁자가 붙으면 속도를 올려요.", en: "Follows at the first fork, then goes outside at the second if a horse is ahead. Raises the pace when challenged outside."},
+} as const;
 export type RaceBurst = {id: string; at: number; staminaBefore: number};
 export type RaceCall = RaceCommand & {id: string};
 
@@ -24,7 +33,7 @@ export function raceTerrain(course: RaceCourse, checkpoint: number): RaceTerrain
 
 /** Public terrain trade-offs, not a random penalty applied after the choice. */
 export function raceRouteEffect(terrain: RaceTerrain, route: RaceRoute, pace: RacePace, stamina: number) {
-    if (route === "wide") return {speed: .97, drain: .6};
+    if (route === "wide") return {speed: RACE_OUTSIDE_SPEED, drain: 1};
     if (terrain === "mud") return {speed: pace === "push" ? .72 : 1.12, drain: 1.3};
     if (terrain === "hill") return {speed: stamina < 25 ? .85 : 1.15, drain: 1.9};
     return {speed: 1.15, drain: 1.15};
@@ -36,7 +45,22 @@ export type RaceCourse = {
     course: "short" | "long"; distance: number; gust: number;
 };
 export type Racer = {id: string; name: string; strategy: RaceStrategy};
-export type RacePosition = {id: string; distance: number; stamina: number};
+export type RacePosition = {
+    id: string; distance: number; stamina: number; path: RaceRoute;
+    draftingId: string | null; blockedBy: string | null; overtakingId: string | null;
+};
+export type RaceTraffic = {aheadId: string | null; gap: number; outerThreatId: string | null; tiredAhead: boolean};
+
+/** Strictly-ahead positions preserve opening ties; every policy sees the same public snapshot. */
+export function raceTraffic(positions: readonly RacePosition[], id: string): RaceTraffic {
+    const own = positions.find(position => position.id === id);
+    if (!own) return {aheadId: null, gap: Infinity, outerThreatId: null, tiredAhead: false};
+    const ahead = positions.filter(position => position.id !== id && position.path === "shortcut" && position.distance > own.distance + 1e-7)
+        .sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id))[0];
+    const threat = positions.filter(position => position.id !== id && position.path === "wide" && Math.abs(position.distance - own.distance) <= RACE_DRAFT_DISTANCE)
+        .sort((a, b) => Math.abs(a.distance - own.distance) - Math.abs(b.distance - own.distance) || a.id.localeCompare(b.id))[0];
+    return {aheadId: ahead?.id ?? null, gap: ahead ? ahead.distance - own.distance : Infinity, outerThreatId: threat?.id ?? null, tiredAhead: positions.some(position => position.distance > own.distance && position.stamina < 35)};
+}
 export type RaceFrame = {time: number; positions: RacePosition[]};
 export type RaceFinish = {id: string; rank: number; seconds: number; stamina: number; points: number};
 export type RaceSimulation = {course: RaceCourse; entrants: Racer[]; frames: RaceFrame[]; finish: RaceFinish[]; seconds: number; calls: RaceCall[]; bursts: RaceBurst[]};
@@ -78,20 +102,22 @@ export function raceObservation(season: RaceSeason, profile: AgentProfile): Reco
         seasonPoints: owner.points, remainingRounds: RACE_ROUNDS - season.round,
         ownerGoal: profile.goal,
         rival: season.runners.find(runner => runner.id === season.rivalId)!.name,
+        rivalHabit: RACE_HABITS[season.runners.find(runner => runner.id === season.rivalId)!.strategy].en,
+        trafficRules: "Two paths. Following an inner-path horse within 22m reduces stamina drain by 40%, but cannot pass it. No nearby horse means no draft. Outer path is 6% slower for the longer route and no blocking or draft. Paths remain until the next fork or finish; terrain effects last 8 seconds. All decisions use the same tick's public positions.",
         checkpoints: [...RACE_CHECKPOINTS], burstStaminaCost: RACE_BURST_COST, burstSeconds: RACE_BURST_SECONDS,
         standings: season.runners.map(runner => ({name: runner.name, points: runner.points, entries: runner.entries})),
         previousFinishes: season.rounds.map(round => round.simulation.finish.find(finish => finish.id === "owner")?.rank ?? null),
-        rules: "Choose enter and strategy (burst, conserve, surge). 3 races; everyone starts with 3 game-only entry tokens. Entry costs 1; skipping costs 0 and scores 0. Places earn 5/3/2/1 season points; tied times earn equal points. All horses have identical base speed and stamina. Burst is fast early but tires; conserve saves stamina; surge attacks late. Rain drains stamina; long courses reward endurance. These tokens have no cash value and cannot change the owner's allowance. One decision before each race; the engine runs movement. Your chosen strategy also drives a deterministic motor at two forks (12 and 24 simulation seconds): it chooses legal pace/path using public terrain and current stamina. The same motor drives the opponents. Everyone may use one burst: 1.7x speed for 4 simulation seconds, costing 20 stamina immediately, only when at least 20 remains. Burst strategy triggers it at 22% distance; conserve at 78%; surge at 65%. No forced comeback or hidden stat advantage.",
+        rules: "Choose enter and strategy (burst, conserve, surge). 3 races; everyone starts with 3 game-only entry tokens. All 3 entries are already included. Enter each race for points; watching scores 0. Unused entries expire and have no reward. Places earn 5/3/2/1 season points; tied times earn equal points. All horses have identical base speed and stamina. Burst is fast early but tires; conserve saves stamina; surge attacks late. Rain drains stamina; long courses reward endurance. These tokens have no cash value and cannot change the owner's allowance. One decision before each race; the engine runs movement. Your chosen strategy also drives a deterministic motor at two forks (12 and 24 simulation seconds): it chooses legal pace/path using public terrain, current stamina and opponent positions. Habits: burst takes an outside pass when close behind; conserve follows then passes tired leaders at the second fork; surge waits until the second fork to pass. Burst and surge can raise pace when challenged outside. The same motor drives the opponents. Everyone may use one burst: 1.7x speed for 4 simulation seconds, costing 20 stamina immediately, only when at least 20 remains. Burst strategy triggers it at 22% distance; conserve at 78%; surge at 65%. Motors wait until clear of an inner horse before using a burst, rather than wasting it while blocked. No forced comeback or hidden stat advantage.",
     };
 }
 
 export function chooseRaceAction(profile: AgentProfile, course: RaceCourse, tokens: number): {
     action: RaceAction; explanation: {ko: string; en: string};
 } {
-    if (tokens < RACE_ENTRY_COST || (profile.goal === "save" && course.course === "long" && course.weather === "rain")) {
+    if (tokens < RACE_ENTRY_COST) {
         return {action: {enter: false, strategy: "conserve"}, explanation: {
-            ko: tokens < 1 ? "시즌 참가 토큰이 없어 이번 경기는 관전할게요." : "비 오는 장거리는 쉬고 참가 토큰을 아낄게요. 점수는 받지 못해요.",
-            en: tokens < 1 ? "No season entry tokens remain; I'll watch this race." : "I'll save an entry token on this rainy long course. Skipping earns no points.",
+            ko: "시즌 출전 기회가 없어 이번 경기는 관전할게요.",
+            en: "No season entries remain; I'll watch this race.",
         }};
     }
     const strategy: RaceStrategy = profile.goal === "explore" ? RACE_STRATEGIES[course.round]!
@@ -113,15 +139,18 @@ function effort(strategy: RaceStrategy, progress: number): number {
     return progress < .58 ? 1.02 : progress < .8 ? 1.14 : 1.35;
 }
 
-/** Each strategy plans with public terrain and its own energy, never a rival's future finish. */
-export function raceMotorCall(course: RaceCourse, strategy: RaceStrategy, checkpoint: number, stamina: number): RaceCommand {
+/** Strategies read public terrain, energy and traffic, never a future finish. */
+export function raceMotorCall(course: RaceCourse, strategy: RaceStrategy, checkpoint: number, stamina: number, traffic?: RaceTraffic): RaceCommand {
     const at = RACE_CHECKPOINTS[checkpoint];
     if (at === undefined) throw new Error("Invalid race checkpoint");
-    const pace: RacePace = stamina < 35 || (course.course === "long" && course.weather === "rain") ? "save"
+    let pace: RacePace = stamina < 35 || (course.course === "long" && course.weather === "rain") ? "save"
         : strategy === "burst" ? (checkpoint === 0 ? "steady" : "save")
         : strategy === "conserve" ? "save" : checkpoint === 0 ? "save" : "steady";
     const terrain = raceTerrain(course, checkpoint);
-    const route: RaceRoute = terrain === "hill" && stamina < 50 ? "wide" : "shortcut";
+    if (traffic?.outerThreatId && strategy !== "conserve" && stamina >= 55) pace = "push";
+    const attack = traffic && stamina >= 35 && (strategy === "burst" ? traffic.gap <= RACE_DRAFT_DISTANCE
+        : checkpoint === 1 && (strategy === "surge" ? traffic.aheadId !== null : traffic.tiredAhead));
+    const route: RaceRoute = attack || (terrain === "hill" && stamina < 50) ? "wide" : "shortcut";
     return {at, pace, route};
 }
 
@@ -138,7 +167,8 @@ export function simulateRace(course: RaceCourse, entrants: Racer[], commands: re
         || (commands.length > 0 && !entrants.some(runner => runner.id === "owner"))) throw new Error("Invalid race checkpoint command");
     if (burstAt !== undefined && burstAt !== null && (!Number.isFinite(burstAt) || burstAt < 0 || burstAt > 200
         || Math.abs(burstAt * 10 - Math.round(burstAt * 10)) > 1e-7 || !entrants.some(runner => runner.id === "owner"))) throw new Error("Invalid race burst time");
-    const positions: RacePosition[] = entrants.map(runner => ({id: runner.id, distance: 0, stamina: 100}));
+    let positions: RacePosition[] = entrants.map(runner => ({id: runner.id, distance: 0, stamina: 100,
+        path: "shortcut", draftingId: null, blockedBy: null, overtakingId: null}));
     const frames: RaceFrame[] = [{time: 0, positions: positions.map(position => ({...position}))}];
     const times = new Map<string, number>();
     const calls: RaceCall[] = [], bursts: RaceBurst[] = [];
@@ -147,41 +177,72 @@ export function simulateRace(course: RaceCourse, entrants: Racer[], commands: re
     for (let tick = 0; tick < 2_000 && times.size < entrants.length; tick++) {
         const now = tick / 10;
         time = (tick + 1) / 10;
-        for (let index = 0; index < entrants.length; index++) {
-            const runner = entrants[index]!;
-            const position = positions[index]!;
+        const checkpoint = RACE_CHECKPOINTS.findIndex(at => at === now);
+        // Plan first, then move together. Reading partially updated positions gives an
+        // earlier array entry an advantage and makes an identical field reorder differently.
+        if (checkpoint >= 0) for (const runner of entrants) {
             if (times.has(runner.id)) continue;
-            const checkpoint = RACE_CHECKPOINTS.findIndex(at => at === now);
-            if (checkpoint >= 0) {
-                const command = (runner.id === "owner" ? commands[checkpoint] : undefined)
-                    ?? raceMotorCall(course, runner.strategy, checkpoint, position.stamina);
-                calls.push({...command, id: runner.id});
-            }
+            const position = positions.find(item => item.id === runner.id)!;
+            const command = (runner.id === "owner" ? commands[checkpoint] : undefined)
+                ?? raceMotorCall(course, runner.strategy, checkpoint, position.stamina, raceTraffic(positions.filter(item => !times.has(item.id)), runner.id));
+            calls.push({...command, id: runner.id});
+        }
+        const snapshot = positions.map(position => {
+            const command = calls.findLast(change => change.id === position.id);
+            return {...position, path: command?.route ?? "shortcut" as const};
+        });
+        const next = snapshot.map(position => {
+            if (times.has(position.id)) return {...position, draftingId: null, blockedBy: null, overtakingId: null};
+            const runner = entrants.find(item => item.id === position.id)!;
+            const traffic = raceTraffic(snapshot.filter(item => !times.has(item.id)), runner.id);
+            const draftingId = position.path === "shortcut" && traffic.gap <= RACE_DRAFT_DISTANCE ? traffic.aheadId : null;
+            let stamina = position.stamina;
             let burst = bursts.find(item => item.id === runner.id);
             const requested = runner.id === "owner" && burstAt !== undefined
                 ? burstAt !== null && now === burstAt
-                : position.distance / course.distance >= {burst: .22, conserve: .78, surge: .65}[runner.strategy];
-            if (!burst && requested && position.stamina >= RACE_BURST_COST) {
-                burst = {id: runner.id, at: now, staminaBefore: position.stamina};
+                : !draftingId && position.distance / course.distance >= {burst: .22, conserve: .78, surge: .65}[runner.strategy];
+            if (!burst && requested && stamina >= RACE_BURST_COST) {
+                burst = {id: runner.id, at: now, staminaBefore: stamina};
                 bursts.push(burst);
-                position.stamina -= RACE_BURST_COST;
+                stamina -= RACE_BURST_COST;
             }
             const command = calls.findLast(change => change.id === runner.id);
-            // A fork affects its eight-second section; the chosen strategy resumes afterward.
             const activeCall = command && now < command.at + RACE_ROUTE_SECONDS ? command : undefined;
             const pace = activeCall ? {save: .88, steady: 1.12, push: 1.55}[activeCall.pace] : effort(runner.strategy, position.distance / course.distance);
             const weather = course.weather === "rain" ? .91 : course.weather === "wind" ? .96 + Math.sin(position.distance / 80 + course.gust) * .07 : 1;
-            const fatigue = .4 + .6 * Math.min(1, position.stamina / 25);
-            const route = activeCall ? raceRouteEffect(raceTerrain(course, RACE_CHECKPOINTS.indexOf(activeCall.at as typeof RACE_CHECKPOINTS[number])), activeCall.route, activeCall.pace, position.stamina) : {speed: 1, drain: 1};
+            const fatigue = .4 + .6 * Math.min(1, stamina / 25);
+            const route = activeCall ? raceRouteEffect(raceTerrain(course, RACE_CHECKPOINTS.indexOf(activeCall.at as typeof RACE_CHECKPOINTS[number])), activeCall.route, activeCall.pace, stamina) : {speed: position.path === "wide" ? RACE_OUTSIDE_SPEED : 1, drain: 1};
             const burstSpeed = burst && now < burst.at + RACE_BURST_SECONDS ? RACE_BURST_SPEED : 1;
             const speed = 19 * pace * weather * fatigue * route.speed * burstSpeed;
             const efficiency = activeCall ? 1 : runner.strategy === "conserve" ? .65 : runner.strategy === "burst" ? 1.1 : .92;
             const drain = ((pace ** 3 * 1.55 - .8) + (course.weather === "rain" ? .48 : course.weather === "wind" ? .22 : 0)) * efficiency;
-            const before = position.distance;
-            position.distance = Math.min(course.distance, before + speed * step);
-            position.stamina = Math.max(0, position.stamina - drain * route.drain * step);
-            if (position.distance === course.distance) times.set(runner.id, time - step + (course.distance - before) / speed);
+            return {...position, distance: position.distance + speed * step,
+                stamina: Math.max(0, stamina - drain * route.drain * (draftingId ? RACE_DRAFT_DRAIN : 1) * step),
+                draftingId, blockedBy: null as string | null, overtakingId: null as string | null};
+        });
+        // Resolve the front of each inner-file first. The ordering depends on distance,
+        // never entrant order. Horses starting tied remain tied and do not block each other.
+        for (const before of [...snapshot].sort((a, b) => b.distance - a.distance || a.id.localeCompare(b.id))) {
+            const position = next.find(item => item.id === before.id)!;
+            if (times.has(position.id)) continue;
+            if (position.draftingId) {
+                const leader = next.find(item => item.id === position.draftingId)!;
+                const gap = snapshot.find(item => item.id === leader.id)!.distance - before.distance;
+                const limit = Math.max(before.distance, leader.distance - Math.min(RACE_FOLLOW_GAP, gap));
+                if (position.distance > limit) {position.distance = limit; position.blockedBy = leader.id;}
+            }
+            if (position.path === "wide") {
+                const passed = snapshot.filter(other => !times.has(other.id) && other.id !== before.id && other.distance > before.distance + 1e-7
+                    && position.distance > next.find(item => item.id === other.id)!.distance + 1e-7)
+                    .sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id))[0];
+                position.overtakingId = passed?.id ?? null;
+            }
+            if (position.distance >= course.distance) {
+                times.set(position.id, now + step * (course.distance - before.distance) / (position.distance - before.distance));
+                position.distance = course.distance;
+            }
         }
+        positions = next;
         frames.push({time, positions: positions.map(position => ({...position}))});
     }
     if (times.size !== entrants.length) throw new Error("Race simulation exceeded its time bound");
@@ -193,16 +254,28 @@ export function simulateRace(course: RaceCourse, entrants: Racer[], commands: re
     return {course: {...course}, entrants: entrants.map(runner => ({...runner})), frames, finish, seconds: time, calls, bursts};
 }
 
-/** Highlights describe measured positions during a burst, not an invented causal story. */
+/** Highlights are measured on the visible race, including the third-arrival cutoff. */
 export function raceHighlights(race: RaceSimulation): {ko: string; en: string}[] {
-    const burst = race.bursts.find(item => item.id === "owner" && item.at < raceEndTime(race));
-    if (!burst) return [];
-    const before = raceFrameAt(race, burst.at / race.seconds);
-    const after = raceFrameAt(race, Math.min(burst.at + RACE_BURST_SECONDS, raceEndTime(race)) / race.seconds);
-    const gained = raceLiveRank(race, before, "owner") - raceLiveRank(race, after, "owner");
-    const round = race.course.round + 1;
-    return [gained > 0 ? {ko: `${round}경기 승부수 구간에서 ${gained}자리 추월했어요.`, en: `Race ${round}: gained ${gained} place${gained > 1 ? "s" : ""} during the burst.`}
-        : {ko: `${round}경기 체력 ${Math.round(burst.staminaBefore)}%에서 승부수. 구간 끝 ${raceLiveRank(race, after, "owner")}위였어요.`, en: `Race ${round}: burst at ${Math.round(burst.staminaBefore)}% energy; place ${raceLiveRank(race, after, "owner")} at its end.`}];
+    const highlights: {ko: string; en: string}[] = [];
+    const round = race.course.round + 1, end = raceEndTime(race);
+    const visible = race.frames.filter(frame => frame.time <= end);
+    const draftSeconds = visible.filter(frame => frame.positions.find(position => position.id === "owner")?.draftingId).length / 10;
+    if (draftSeconds >= 2) highlights.push({ko: `${round}경기 앞말 뒤에서 ${draftSeconds.toFixed(1)}초 동안 체력 소모를 줄였어요.`, en: `Race ${round}: drafted for ${draftSeconds.toFixed(1)}s with reduced energy drain.`});
+    const pass = visible.find(frame => frame.positions.find(position => position.id === "owner")?.overtakingId);
+    if (pass) {
+        const id = pass.positions.find(position => position.id === "owner")!.overtakingId;
+        const rival = race.entrants.find(runner => runner.id === id)!.name;
+        highlights.push({ko: `${round}경기 ${pass.time.toFixed(1)}초, 바깥길에서 ${rival} 추월.`, en: `Race ${round}: passed ${rival} outside at ${pass.time.toFixed(1)}s.`});
+    }
+    const burst = race.bursts.find(item => item.id === "owner" && item.at < end);
+    if (burst) {
+        const before = raceFrameAt(race, burst.at / race.seconds);
+        const after = raceFrameAt(race, Math.min(burst.at + RACE_BURST_SECONDS, end) / race.seconds);
+        const gained = raceLiveRank(race, before, "owner") - raceLiveRank(race, after, "owner");
+        highlights.push(gained > 0 ? {ko: `${round}경기 승부수 구간에서 ${gained}자리 추월했어요.`, en: `Race ${round}: gained ${gained} place${gained > 1 ? "s" : ""} during the burst.`}
+            : {ko: `${round}경기 체력 ${Math.round(burst.staminaBefore)}%에서 승부수. 구간 끝 ${raceLiveRank(race, after, "owner")}위였어요.`, en: `Race ${round}: burst at ${Math.round(burst.staminaBefore)}% energy; place ${raceLiveRank(race, after, "owner")} at its end.`});
+    }
+    return highlights;
 }
 
 /** Finished runners retain their actual finish order; equal distances share a rank. */
@@ -262,7 +335,7 @@ export function raceFrameAt(race: RaceSimulation, progress: number): RaceFrame {
     const upper = race.frames[upperIndex]!;
     const lower = race.frames[Math.max(0, upperIndex - 1)]!;
     const weight = upper.time === lower.time ? 1 : Math.max(0, Math.min(1, (time - lower.time) / (upper.time - lower.time)));
-    return {time, positions: lower.positions.map((position, index) => ({id: position.id,
+    return {time, positions: lower.positions.map((position, index) => ({...(weight >= 1 - 1e-7 ? upper.positions[index]! : position),
         distance: time >= race.finish.find(finish => finish.id === position.id)!.seconds - 1e-7 ? race.course.distance
             : position.distance + (upper.positions[index]!.distance - position.distance) * weight,
         stamina: position.stamina + (upper.positions[index]!.stamina - position.stamina) * weight,

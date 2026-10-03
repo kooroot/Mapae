@@ -4,13 +4,14 @@ import {RadioGroup} from "@base-ui/react/radio-group";
 import {Store, ShoppingBag} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 import {GameGuide} from "../GameGuide";
+import {ShopForecastNote} from "./ShopForecastNote";
 import {HumanShopControls} from "./HumanShopControls";
 import type {PlayableGameProps} from "../agent-contract";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
 import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer,
     ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOutcome, shopSellerObservation,
-    SHOP_BUYER_BALANCE, SHOP_GOALS, SHOP_INITIAL_CAPITAL, SHOP_PRODUCTS, SHOP_STORIES, SHOP_TEMPERAMENT_COPY, shopOffersRemaining, type ShopConfig, type ShopState} from "@mapae/arcade/shop";
+    SHOP_BUYER_BALANCE, SHOP_GOALS, SHOP_INITIAL_CAPITAL, SHOP_PRODUCTS, SHOP_STORIES, SHOP_TEMPERAMENT_COPY, shopOffersRemaining, shopForecast, shopCampaign, shopCustomerName, SHOP_AD_COST, type ShopMemory, type ShopConfig, type ShopState} from "@mapae/arcade/shop";
 import "./shop.css";
 import "./counter.css";
 import "./shop-scene.css";
@@ -18,39 +19,38 @@ import "./shop-scene.css";
 const COPY = {
     ko: {tag: "흥정상회 · 에이전트 장터", title: "흥정은 맡기고, 구경하세요.", sub: "에이전트가 필요한 것을 묻고, 제안하고, 가격을 비교해요.",
         seller: "가게 주인", buyer: "구매자", role: "나의 역할", name: "가게 이름", focus: "진열 상품", balanced: "골고루", everyday: "먹고 마시기", gifts: "응원 선물",
-        pricing: "표시 가격", bargain: "알뜰 80%", standard: "기본 100%", premium: "고급 125%", ad: "광고", none: "입소문 · 0냥", poster: "포스터 · 4냥", parade: "거리 홍보 · 8냥",
+        pricing: "표시 가격", bargain: "알뜰 80%", standard: "기본 100%", premium: "고급 125%", ad: "광고", none: "입소문", poster: "포스터", parade: "거리 홍보",
         style: "협상 목표", profit: "이익 우선", loyalty: "단골 만들기", goal: "주인이 정한 구매 목표", cap: "구매 허용 한도", begin: "에이전트에게 맡기기 →",
         initial: "동일 초기 자본", units: "냥", funds: "장터 안에서만 쓰는 놀이 돈이에요. 오락실 용돈이나 실제 자금과 별개예요.",
         buyerHelp: "하나의 지갑으로 시스템 가게 3곳을 방문해요. 가게가 바뀌어도 지출 한도는 그대로예요.", sellerHelp: "시스템이 배정한 손님 3명을 맞아요. 상대의 정확한 잔액·한도는 비공개예요.",
         rules: "규칙 기반 에이전트", llm: "실제 LLM 에이전트", opponent: "상대 · 시스템 규칙 봇", pause: "잠깐 멈춤", resume: "다시 맡기기", exit: "로비로", customer: "손님", store: "가게",
         rounds: "제안", stock: "남은 재고", cash: "가게 현금", net: "순이익", achieved: "목표 달성", remaining: "내 남은 한도", acquired: "구매 목록", waiting: "에이전트가 생각하는 중…",
         next: "다음 만남을 준비해요…", done: "장터 영업 끝!", chat: "흥정 구경하기", receipt: "거래 영수증", noReceipt: "아직 거래가 없어요. 필요와 가격이 맞아야 도장이 찍혀요.",
-        satisfaction: "만족도", thought: "내 에이전트의 판단", stopped: "관전을 멈췄어요. 새 결정과 거래도 멈춰 있어요.", error: "에이전트 결정을 받지 못했어요. 연결 또는 응답을 확인하고 다시 시도해 주세요.",
-        retry: "같은 차례 다시 시도", failureNote: "규칙 봇으로 바꾸지 않았고, 실패한 차례의 돈도 쓰지 않았어요.", offer: "현재 제안", paid: "결제", noGoods: "아직 없어요", newCustomer: "시스템이 배정한 만남", result: "결과 보기", capSeparate: "한도를 지키는 것과 잘 사는 것은 달라요. 구매 목표와 만족도도 평가해요.",
+        value: "구매 가치", thought: "내 에이전트의 판단", stopped: "관전을 멈췄어요. 새 결정과 거래도 멈춰 있어요.", error: "에이전트 결정을 받지 못했어요. 연결 또는 응답을 확인하고 다시 시도해 주세요.",
+        retry: "같은 차례 다시 시도", failureNote: "규칙 봇으로 바꾸지 않았고, 실패한 차례의 돈도 쓰지 않았어요.", offer: "현재 제안", paid: "결제", noGoods: "아직 없어요", newCustomer: "시스템이 배정한 만남", result: "결과 보기", capSeparate: "한도를 지키는 것과 잘 사는 것은 달라요. 주문 완수와 구매 가치도 평가해요.",
     },
     en: {tag: "TINY SHOP · AGENT MARKET", title: "They bargain. You watch.", sub: "Your agent asks, makes offers, and compares what is worth buying.",
         seller: "Shop owner", buyer: "Buyer", role: "Your role", name: "Shop name", focus: "Stock focus", balanced: "A little of everything", everyday: "Food & drink", gifts: "Good-luck gifts",
-        pricing: "Sticker price", bargain: "Value 80%", standard: "Standard 100%", premium: "Premium 125%", ad: "Advertising", none: "Word of mouth · 0", poster: "Posters · 4", parade: "Street campaign · 8",
+        pricing: "Sticker price", bargain: "Value 80%", standard: "Standard 100%", premium: "Premium 125%", ad: "Advertising", none: "Word of mouth", poster: "Posters", parade: "Street campaign",
         style: "Negotiation goal", profit: "Profit first", loyalty: "Win regulars", goal: "Owner's shopping goal", cap: "Authorized spending cap", begin: "Send my agent →",
         initial: "Equal starting capital", units: "coins", funds: "Play money for this market only. Separate from arcade allowance and real funds.",
         buyerHelp: "Visit 3 system shops with one wallet. The spending cap carries across every visit.", sellerHelp: "Meet 3 system-assigned customers. Their exact balances and spending limits stay private.",
         rules: "Rule-based agent", llm: "Real LLM agent", opponent: "Opponent · system rules", pause: "Pause", resume: "Resume agent", exit: "Lobby", customer: "Customer", store: "Shop",
         rounds: "Offer", stock: "In stock", cash: "Shop cash", net: "Net profit", achieved: "Goal achieved", remaining: "My remaining cap", acquired: "Shopping bag", waiting: "Your agent is thinking…",
         next: "Preparing the next meeting…", done: "Market closed!", chat: "Watch the bargaining", receipt: "Trade receipts", noReceipt: "No trade yet. Needs and price must both fit before the stamp lands.",
-        satisfaction: "Satisfaction", thought: "My agent's reasoning", stopped: "Paused. No new decisions or purchases will run.", error: "The agent could not make this decision. Check the connection or response, then retry.",
-        retry: "Retry this turn", failureNote: "No switch to a rule bot. No money spent for this failed turn.", offer: "Current offer", paid: "Paid", noGoods: "Nothing yet", newCustomer: "SYSTEM MATCH", result: "View result", capSeparate: "Respecting a cap and making a good purchase are different. Goals and satisfaction count too.",
+        value: "Purchase value", thought: "My agent's reasoning", stopped: "Paused. No new decisions or purchases will run.", error: "The agent could not make this decision. Check the connection or response, then retry.",
+        retry: "Retry this turn", failureNote: "No switch to a rule bot. No money spent for this failed turn.", offer: "Current offer", paid: "Paid", noGoods: "Nothing yet", newCustomer: "SYSTEM MATCH", result: "View result", capSeparate: "Respecting a cap and making a good purchase are different. Errand completion and purchase value count too.",
     },
 };
 
 function resultFor(state: ShopState, props: PlayableGameProps, model: string) {
     const outcome = shopOutcome(state, props.profile.name, props.locale);
-    outcome.replay = {version: 1, seed: state.seed, shop: {...state.config}};
     const c = COPY[props.locale];
     outcome.transcript.unshift({speaker: "MAPAE", text: `${props.profile.name} · ${state.config.role === "seller" ? c.seller : c.buyer} · ${props.mode === "human" ? props.locale === "ko" ? "직접 플레이" : "Human play" : props.mode === "llm" ? `${c.llm}${model ? ` (${model})` : ""}` : c.rules}. ${c.opponent}.`});
     return outcome;
 }
 
-export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig}) {
+export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig; memory?: ShopMemory}) {
     const {appearance, profile, locale, mode, seed, decide, reducedMotion, suspended = false, autoAdvance = false, onComplete, onExit} = props;
     const human = mode === "human", ko = locale === "ko";
     const c = {...COPY[locale], ...(human ? {
@@ -75,6 +75,8 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig}
     const chat = useRef<HTMLDivElement>(null);
     const counter = useRef<HTMLDivElement>(null);
     const sellerRole = config.role === "seller";
+    const forecast = shopForecast(seed, props.memory);
+    const campaign = shopCampaign(config);
 
     useEffect(() => {
         if (!human || state?.customer === undefined) return;
@@ -84,9 +86,9 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig}
 
     useEffect(() => {
         if (state || !autoAdvance || blocked) return;
-        const timer = window.setTimeout(() => setState(createShop(seed, config)), 5000);
+        const timer = window.setTimeout(() => setState(createShop(seed, config, props.memory)), 5000);
         return () => window.clearTimeout(timer);
-    }, [state, autoAdvance, blocked, seed, config]);
+    }, [state, autoAdvance, blocked, seed, config, props.memory]);
 
     useEffect(() => {
         const hide = () => { if (document.hidden) setPaused(true); };
@@ -145,19 +147,23 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig}
         <header className="shop-heading"><span>{c.tag}</span><button type="button" className="arc-text-button" onClick={onExit}>{c.exit}</button><h1 id="shop-title">{c.title}</h1><p>{c.sub}</p></header>
         {autoAdvance && <p role="status">{locale === "ko" ? "자동 진행 · 5초 뒤 시작해요. 위에서 자동 진행을 끄면 편하게 설정할 수 있어요." : "Automatic play · Starts in 5 seconds. Turn it off above to configure at your pace."}</p>}
         <form className="shop-setup"
-            onSubmit={event => { event.preventDefault(); setPaused(false); setState(createShop(seed, config)); }}>
+            onSubmit={event => { event.preventDefault(); setPaused(false); setState(createShop(seed, config, props.memory)); }}>
             <div className="shop-owner"><GameArt game="shop" className="shop-owner-art" /><GuardianAvatar appearance={appearance} color={profile.color} /><strong>{profile.name}</strong><span>{mode === "llm" ? c.llm : c.rules}</span><p>{sellerRole ? c.sellerHelp : c.buyerHelp}</p></div>
             <div className="shop-config">
                 {human && sellerRole && <GameGuide game="shop" locale={locale} />}
                 <fieldset className="shop-roles"><legend>{c.role}</legend><RadioGroup className="mapae-roles" value={config.role} onValueChange={(role: ShopConfig["role"]) => patch({role})} aria-label={c.role}>{(["seller", "buyer"] as const).map(role => <Radio.Root key={role} value={role} className="mapae-role" render={<button type="button" />} nativeButton>{role === "seller" ? <Store size={17} /> : <ShoppingBag size={17} />}{c[role]}</Radio.Root>)}</RadioGroup></fieldset>
                 {sellerRole ? <>
+                    <ShopForecastNote forecast={forecast} locale={locale} />
                     <label>{c.name}<input value={config.name} required maxLength={18} onChange={event => patch({name: event.target.value})} /></label>
                     <div className="shop-options"><label>{c.focus}<BrandSelect<ShopConfig["focus"]> tone="paper" value={config.focus} onValueChange={focus => patch({focus})} options={[{value: "balanced", label: c.balanced}, {value: "everyday", label: c.everyday}, {value: "gifts", label: c.gifts}]} /></label>
                         {!human && <label>{c.pricing}<BrandSelect<ShopConfig["pricing"]> tone="paper" value={config.pricing} onValueChange={pricing => patch({pricing})} options={[{value: 80, label: c.bargain}, {value: 100, label: c.standard}, {value: 125, label: c.premium}]} /></label>}
-                        <label>{c.ad}<BrandSelect<ShopConfig["advertising"]> tone="paper" value={config.advertising} onValueChange={advertising => patch({advertising})} options={[{value: "none", label: c.none}, {value: "poster", label: c.poster}, {value: "parade", label: c.parade}]} /></label>
-                        {!human && <label>{c.style}<BrandSelect<ShopConfig["negotiation"]> tone="paper" value={config.negotiation} onValueChange={negotiation => patch({negotiation})} options={[{value: "profit", label: c.profit}, {value: "loyalty", label: c.loyalty}]} /></label>}</div>
+                        <label>{c.ad}<BrandSelect<ShopConfig["advertising"]> tone="paper" value={config.advertising} onValueChange={advertising => patch({advertising})} options={(["none", "poster", "parade"] as const).map(value => ({value, label: `${c[value]} · ${SHOP_AD_COST[value]} ${locale === "en" && SHOP_AD_COST[value] === 1 ? "coin" : c.units}`}))} /></label>
+                        <label>{c.style}<BrandSelect<ShopConfig["negotiation"]> tone="paper" value={config.negotiation} onValueChange={negotiation => patch({negotiation})} options={[{value: "profit", label: c.profit}, {value: "loyalty", label: c.loyalty}]} /></label></div>
+                    <p className="shop-campaign-note">{campaign.matches ? ko ? `광고 ${campaign.cost}냥 · 앞의 ${campaign.matches}명은 ${SHOP_GOALS[campaign.goal].ko} 주문으로 바뀌어요. 손님은 총 3명 그대로예요.` : `${campaign.cost} coin${campaign.cost === 1 ? "" : "s"} · The first ${campaign.matches === 1 ? "guest" : `${campaign.matches} guests`} will request ${SHOP_GOALS[campaign.goal].en}. Still exactly 3 guests.` : ko ? "광고 없이 다양한 주문을 만나요. 광고를 고르면 바뀔 주문을 여기서 미리 볼 수 있어요." : "Meet varied errands without advertising. Choose a campaign to preview its demand here."}</p>
+                    <p className="shop-campaign-note">{config.negotiation === "loyalty" ? ko ? "오늘의 목표 · 좋은 가격에 주문 완수. 마지막 손님을 잘 챙기면 다음 장날 정가를 받아들여요." : "Today's goal · Complete useful orders at good prices. Serve the final guest well to earn retail-price trust next time." : ko ? "오늘의 목표 · 순이익. 지금 남길 이익과 마지막 손님에게 남길 재고를 비교해요." : "Today's goal · Net profit. Compare today's margin with the stock your final guest needs."}</p>
                 </> : <><label>{c.goal}<BrandSelect<ShopConfig["buyerGoal"]> tone="paper" value={config.buyerGoal} onValueChange={buyerGoal => patch({buyerGoal})} options={(Object.keys(SHOP_GOALS) as ShopConfig["buyerGoal"][]).map(value => ({value, label: SHOP_GOALS[value][locale]}))} /></label>
                     <label>{c.cap} · 6–30<input type="number" min={6} max={30} step={1} required value={config.buyerCap} onChange={event => patch({buyerCap: Number(event.target.value)})} /></label><p>{c.capSeparate}</p></>}
+                <details className="shop-metric-guide"><summary>{ko ? "가치 · 주문 · 관계는 어떻게 달라요?" : "Value, errands, and relationships"}</summary><p>{ko ? "구매 가치: 필요한 물건을 좋은 가격에 샀는지 평가해요. 모두 유용한 물건이면 정가 85, 15% 이상 할인은 100. 주문 완수: 요청한 수량을 얼마나 채웠는지예요. 단골 신뢰: 유용한 주문을 전부 채우고 가치 85 이상일 때 생겨요." : "Purchase value rates useful goods and price: 85 at retail, 100 with at least 15% off when every item is useful. Errand completion measures requested quantities filled. Return trust needs a fully useful, complete order with value of at least 85."}</p>{sellerRole && <small>{ko ? "장날 점수 = 순이익 ×10 + 평균 주문 완수율(최소 0점). 단골 신뢰는 보너스 점수 대신 다음 방문의 실제 제안 수락에 쓰여요." : "Market score = net profit ×10 + average errand completion, floored at zero. Trust changes real offers on the next visit."}</small>}</details>
                 <div className="shop-capital"><span>{c.initial}</span><strong>{sellerRole ? SHOP_INITIAL_CAPITAL : SHOP_BUYER_BALANCE} {c.units}</strong></div>
                 <p className="shop-funds">{c.funds}</p><button type="submit" className="arc-button" disabled={!config.name.trim()}>{c.begin}</button>
             </div>
@@ -166,11 +172,12 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig}
 
     const stats = shopMetrics(state);
     const buyer = state.buyers[state.customer]!;
+    const buyerName = shopCustomerName(state, state.customer, locale);
     const humanTurn = human && (state.phase === "seller" || state.phase === "buyer") && (state.phase === "seller") === sellerRole;
     const ownObservation = sellerRole ? shopSellerObservation(state) : shopBuyerObservation(state);
     const otherLine = state.conversation.filter(line => line.speaker === (sellerRole ? "buyer" : "seller")).at(-1);
     const settled = state.phase === "transition" || state.phase === "finished";
-    const traded = settled && state.conversation.at(-1)?.speaker === "system" && !state.rejected;
+    const traded = settled && state.receipts.some(receipt => receipt.customerIndex === state.customer);
     const declined = !!state.lastOffer && !!state.rejected;
     const receipt = traded ? state.receipts.at(-1) : null;
     const requestItems = sellerRole ? (ownObservation.requestedQuantities ?? {}) as Record<string, number> : null;
@@ -195,21 +202,22 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig}
                 <img src="/arcade/shop-market.webp" width={960} height={960} alt="" className="shop-stall-backdrop" draggable={false} />
                 <div className="shop-meeting-tag">{ko ? "흥정상회" : "TINY SHOP"}<span>{String(state.customer + 1).padStart(2, "0")} / 03</span></div>
                 <div className="shop-guest" key={state.customer}>
-                    {sellerRole ? <GuardianAvatar appearance={{version: 1, seed: "0000000000000001", zodiac: (["rabbit", "tiger", "pig"] as const)[(state.customer + Math.abs(seed % 3)) % 3]!, backdrop: "jade", charm: "none"}} color="jade" /> : <GuardianAvatar appearance={appearance} color={profile.color} />}
-                    <div><span>{sellerRole ? ko ? "오늘의 손님" : "YOUR CUSTOMER" : ko ? "나의 장보기" : "YOUR SHOPPING TRIP"}</span><strong>{sellerRole ? buyer.name : profile.name}</strong></div>
+                    {sellerRole ? <GuardianAvatar appearance={{version: 1, seed: "0000000000000001", zodiac: state.customer === 2 && state.forecast ? state.forecast.npc === "twins" ? "rabbit" : "tiger" : (["rabbit", "tiger", "pig"] as const)[(state.customer + Math.abs(seed % 3)) % 3]!, backdrop: "jade", charm: "none"}} color="jade" /> : <GuardianAvatar appearance={appearance} color={profile.color} />}
+                    <div><span>{sellerRole ? ko ? "오늘의 손님" : "YOUR CUSTOMER" : ko ? "나의 장보기" : "YOUR SHOPPING TRIP"}</span><strong>{sellerRole ? buyerName : profile.name}</strong></div>
                     {traded && <span className="shop-guest-reaction" aria-label={ko ? "기뻐하는 손님" : "A happy customer"}>♥</span>}
                     {declined && <span className="shop-guest-reaction" aria-label={ko ? "거절한 손님" : "Customer declined"}>…</span>}
                 </div>
                 <div className="shop-speech" role="status"><span>{blocked ? c.stopped : otherLine?.text[locale] || (sellerRole ? ko ? "안녕하세요! 필요한 물건을 살펴보고 있어요." : "Hello! Let me see what you have." : SHOP_GOALS[config.buyerGoal][locale])}</span></div>
                 <div className="shop-counter-edge"><span>{settled ? traded ? ko ? "거래 성사!" : "IT'S A DEAL!" : ko ? "다음 기회에 만나요" : "UNTIL NEXT TIME" : humanTurn ? ko ? "내 차례 · 제안해 주세요" : "YOUR TURN" : ko ? "상대의 답변을 기다려요" : "WAITING FOR A REPLY"}</span><b aria-hidden="true">馬牌</b></div>
             </section>
+            {sellerRole && state.forecast && <ShopForecastNote forecast={state.forecast} locale={locale} inventory={state.inventory} arrived={state.customer === 2} />}
             {sellerRole && <div className="shop-story-note"><span>{SHOP_STORIES[buyer.story].title[locale]}</span><p>{SHOP_STORIES[buyer.story].hint[locale]}</p><small>{SHOP_TEMPERAMENT_COPY[buyer.temperament][locale]} · {SHOP_TEMPERAMENT_COPY[buyer.temperament].hint[locale]}</small>
                 {state.referral && <strong className="shop-referral-note">{ko ? `${state.referral.from}의 소개로 왔어요 · 제안 기회 +1` : `Recommended by ${state.referral.from} · +1 offer`}</strong>}
             </div>}
             </div>
             <div className="shop-trading-table" aria-busy={busy && !blocked}>
                 {human && sellerRole && !settled && <div className="shop-order-note">
-                    <div><strong>{buyer.name} · {SHOP_TEMPERAMENT_COPY[buyer.temperament][locale]}</strong><span>{ko ? `남은 제안 ${shopOffersRemaining(state)}회` : `${shopOffersRemaining(state)} offers left`}</span></div>
+                    <div><strong>{buyerName} · {SHOP_TEMPERAMENT_COPY[buyer.temperament][locale]}</strong><span>{ko ? `남은 제안 ${shopOffersRemaining(state)}회` : `${shopOffersRemaining(state)} offers left`}</span></div>
                     <p>{SHOP_PRODUCTS.filter(p => (requestItems?.[p.id] ?? 0) > 0).map(p => `${p.name[locale]} ×${requestItems![p.id]}`).join(" · ") || (ko ? "주문을 듣고 있어요…" : "Listening to the order…")}</p>
                     <small>{state.counterOffer ? ko ? `역제안 도착 · ${state.counterOffer.price}냥` : `Counteroffer: ${state.counterOffer.price} coins` : SHOP_TEMPERAMENT_COPY[buyer.temperament].hint[locale]}</small>
                 </div>}
@@ -218,7 +226,8 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig}
                     {...(sellerRole ? {role: "seller" as const, observation: ownObservation, onAction: (action: Parameters<typeof applySellerAction>[1]) => setState(current => current === state ? applySellerAction(current, action) : current)} :
                         {role: "buyer" as const, observation: ownObservation, onAction: (action: Parameters<typeof applyBuyerAction>[1]) => setState(current => current === state ? applyBuyerAction(current, action) : current)})} /> : settled ? <div className="shop-meeting-result" role="status">
                     <span className="shop-deal-seal">{traded ? ko ? "성사" : "DEAL" : ko ? "마감" : "CLOSED"}</span><h2>{traded ? ko ? "좋은 거래였어요!" : "A deal to remember!" : ko ? "이번에는 거래 없이 마쳤어요" : "No deal this time"}</h2>
-                    {receipt ? <><p>{receipt.items.map(i => `${SHOP_PRODUCTS.find(p => p.id === i.id)!.name[locale]} ×${i.quantity}`).join(" + ")}</p><div className="shop-deal-totals"><span>{ko ? "거래 금액" : "Trade price"}<b>{receipt.price} {c.units}</b></span><span>{c.satisfaction}<b>{receipt.satisfaction}%</b></span><span>{sellerRole ? ko ? "거래 이익" : "Trade profit" : c.achieved}<b>{sellerRole ? `${receipt.price - receipt.cost} ${c.units}` : `${receipt.goalAchievement}%`}</b></span></div></> : <p>{ko ? "필요한 상품과 가격이 맞아야 거래가 성사돼요. 다음 만남에서 다시 도전해요." : "Needs and price both need to fit. Try a different offer next time."}</p>}
+                    {receipt ? <><p>{receipt.items.map(i => `${SHOP_PRODUCTS.find(p => p.id === i.id)!.name[locale]} ×${i.quantity}`).join(" + ")}</p><div className="shop-deal-totals"><span>{ko ? "거래 금액" : "Trade price"}<b>{receipt.price} {c.units}</b></span><span>{c.value}<b>{receipt.value}%</b></span><span>{ko ? "주문 완수" : "Errand filled"}<b>{receipt.goalAchievement}%</b></span><span>{sellerRole ? ko ? "거래 이익" : "Trade profit" : c.achieved}<b>{sellerRole ? `${receipt.price - receipt.cost} ${c.units}` : `${receipt.goalAchievement}%`}</b></span></div></> : <p>{ko ? "필요한 상품과 가격이 맞아야 거래가 성사돼요. 다음 만남에서 다시 도전해요." : "Needs and price both need to fit. Try a different offer next time."}</p>}
+                    <p className="shop-service-note">{receipt ? receipt.revisit ? ko ? "필요한 물건을 전부 좋은 가격에 준비했어요. 소개와 다음 만남의 신뢰로 이어져요." : "A useful complete order at a good price earns a referral and return trust." : ko ? "구매 가치는 산 물건만 평가해요. 주문 완수와 좋은 가격이 함께 있어야 다음 만남의 신뢰가 생겨요." : "Purchase value rates the goods bought. Return trust also needs a complete order and a good price." : ""}</p>
                     <aside className="game-coach"><strong>{ko ? "이번 흥정의 한 수" : "AT THIS COUNTER"}</strong><p>{lesson}</p></aside>
                     {human && state.phase === "transition" && <button className="arc-button" disabled={blocked} onClick={nextMeeting}>{state.customer === 2 ? c.result : sellerRole ? ko ? "다음 손님 맞이하기" : "Welcome the next customer" : ko ? "다음 가게로" : "Visit the next shop"} →</button>}
                     {state.phase === "finished" && <button className="arc-button" onClick={finish}>{c.result} →</button>}
@@ -233,7 +242,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig}
             </div>
         </div>
         <details className="shop-ledger"><summary>{c.chat} · {state.conversation.length}</summary><div className="shop-chat" ref={chat} role="log" aria-live="polite">{state.conversation.map((entry, index) => <div key={index} className={`shop-bubble shop-bubble-${entry.speaker}`}><b>{entry.speaker === "seller" ? c.seller : entry.speaker === "buyer" ? c.buyer : "MAPAE"}</b><p>{entry.text[locale]}</p></div>)}</div>{thought && <p className="shop-thought">{thought}</p>}</details>
-        <details className="shop-ledger"><summary>{c.receipt} · {state.receipts.length}</summary><div className="shop-receipt-list">{state.receipts.map((receipt, index) => <article key={index}><span className="shop-paid">{ko ? "놀이 거래" : "PLAY TRADE"} ✓</span><strong>{receipt.items.map(item => `${SHOP_PRODUCTS.find(p => p.id === item.id)!.name[locale]} ×${item.quantity}`).join(" + ")}</strong><b>{receipt.price} {c.units}</b><small>{c.satisfaction} {receipt.satisfaction}% · {c.achieved} {receipt.goalAchievement}%</small></article>)}</div></details>
+        <details className="shop-ledger"><summary>{c.receipt} · {state.receipts.length}</summary><div className="shop-receipt-list">{state.receipts.map((receipt, index) => <article key={index}><span className="shop-paid">{ko ? "놀이 거래" : "PLAY TRADE"} ✓</span><strong>{receipt.items.map(item => `${SHOP_PRODUCTS.find(p => p.id === item.id)!.name[locale]} ×${item.quantity}`).join(" + ")}</strong><b>{receipt.price} {c.units}</b><small>{c.value} {receipt.value}% · {c.achieved} {receipt.goalAchievement}%</small></article>)}</div></details>
         <p className="shop-funds">{c.funds}</p>
     </section>;
 }
