@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseBuyerAction, parseSellerAction, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOutcome, shopSellerObservation, simulateShop, type ShopState} from "./shop";
+import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseBuyerAction, parseSellerAction, parseShopConfig, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOffersRemaining, shopOfferChoices, shopOutcome, shopPatience, shopSellerObservation, simulateShop, SHOP_GOALS, SHOP_STORIES, type ShopGoal, type ShopState, type SellerAction} from "./shop";
 
 function ready(): ShopState {
     return applyBuyerAction(createShop(32), {type: "request", wants: ["water"], reason: "need"});
@@ -67,12 +67,15 @@ describe("shop economics and negotiation", () => {
     });
 
     test("buyer rejection changes the next offer rather than replaying a script", () => {
-        const state = applyBuyerAction(createShop(32), {type: "request", wants: ["water", "snack"], reason: "need"});
+        const initial = createShop(32); initial.buyers[0]!.goal = "picnic";
+        const state = applyBuyerAction(initial, {type: "request", wants: ["water", "snack"], reason: "need"});
         const first = ruleSellerAction(shopSellerObservation(state), "en");
         const rejected = applyBuyerAction(applySellerAction(state, first), {type: "decline", wants: ["water", "snack"], reason: "price"});
         const second = ruleSellerAction(shopSellerObservation(rejected), "en");
-        expect(first.type).toBe("offer"); expect(second.type).toBe("offer");
-        if (first.type === "offer" && second.type === "offer") { expect(second.price).toBeLessThan(first.price); expect(second.items.length).toBeLessThan(first.items.length); }
+        const firstOffer = applySellerAction(state, first).offer!;
+        const secondOffer = applySellerAction(rejected, second).offer!;
+        expect(secondOffer.price).toBeLessThan(firstOffer.price);
+        expect(secondOffer.items.length).toBeLessThan(firstOffer.items.length);
     });
 
     test("a within-cap purchase can still be a poor purchase", () => {
@@ -98,7 +101,7 @@ describe("shop economics and negotiation", () => {
         expect(() => applySellerAction(state, {type: "offer", items: [{id: "water", quantity: 1}], price: 4, message: "Water"})).toThrow("INSUFFICIENT_INVENTORY");
     });
 
-    test("three unsuccessful rounds finish a customer and 3 customers end a session", () => {
+    test("patience ends each meeting and three customers bound a session", () => {
         let state = createShop(3);
         let calls = 0;
         while (state.phase !== "finished" && calls++ < 50) {
@@ -106,7 +109,7 @@ describe("shop economics and negotiation", () => {
                 applyBuyerAction(state, {type: "request", wants: ["water"], reason: "need"}) :
                 applySellerAction(state, {type: "ask", message: "Tell me more"});
         }
-        expect(state.phase).toBe("finished"); expect(state.customer).toBe(2); expect(calls).toBe(24);
+        expect(state.phase).toBe("finished"); expect(state.customer).toBe(2); expect(calls).toBe(22);
     });
 
     test("owned buyer carries one cap and purchases between three system shops", () => {
@@ -146,5 +149,290 @@ describe("shop economics and negotiation", () => {
         expect(ruleBuyerAction(shopBuyerObservation(wrong)).reason).toBe("fit");
         const expensive = applySellerAction(state, {type: "offer", items: [{id: "water", quantity: 1}], price: 9, message: "Water"});
         expect(ruleBuyerAction(shopBuyerObservation(expensive)).reason).toBe("price");
+    });
+});
+
+describe("Market counter decisions", () => {
+    test("only spoken quantities are exposed, never a hidden goal or purchasing power", () => {
+        const initial = createShop(32);
+        expect(shopSellerObservation(initial).requestedQuantities).toEqual({});
+        initial.buyers[0]!.goal = "journey";
+        const asked = applyBuyerAction(initial, {type: "request", wants: ["water"], reason: "need"});
+        expect(shopSellerObservation(asked).requestedQuantities).toEqual({water: 2});
+        const publicView = shopSellerObservation(asked);
+        asked.buyers[0]!.goal = "study"; asked.buyers[0]!.cap = 123456;
+        expect(shopSellerObservation(asked)).toEqual(publicView);
+    });
+    test("a declined offer stays available for a concession without revealing the buyer cap", () => {
+        const offered = applySellerAction(ready(), {type: "offer", items: [{id: "water", quantity: 1}], price: 15, message: "Fresh water"});
+        const rejected = applyBuyerAction(offered, {type: "decline", reason: "price"});
+        expect(shopSellerObservation(rejected).lastOffer).toEqual({items: [{id: "water", quantity: 1}], price: 15});
+        expect(rejected.offer).toBeNull(); expect(rejected.rounds).toBe(1);
+        const closed = applySellerAction(rejected, {type: "close", message: "Goodbye"});
+        expect(nextShopCustomer(closed).lastOffer).toBeNull();
+    });
+    test("rule customers reject padded bundles even when cheap and within their cap", () => {
+        const state = createShop(32, {...DEFAULT_SHOP_CONFIG, role: "buyer", buyerGoal: "study", buyerCap: 30});
+        const asked = applyBuyerAction(state, {type: "request", reason: "need"});
+        const padded = applySellerAction(asked, {type: "offer", items: [{id: "water", quantity: 1}, {id: "snack", quantity: 3}], price: 1, message: "Great value"});
+        expect(ruleBuyerAction(shopBuyerObservation(padded))).toMatchObject({type: "decline", reason: "fit"});
+        const useful = applySellerAction(asked, {type: "offer", items: [{id: "water", quantity: 1}, {id: "charm", quantity: 1}], price: 12, message: "Exam gift"});
+        expect(ruleBuyerAction(shopBuyerObservation(useful))).toEqual({type: "buy", reason: "need"});
+    });
+});
+
+describe("Customers with different negotiating needs", () => {
+    function meeting(temperament: "thrifty" | "hurried" | "particular") {
+        const state = createShop(0);
+        state.buyers[0] = {...state.buyers[0]!, temperament, goal: "picnic", cap: 30, balance: 30};
+        return applyBuyerAction(state, ruleBuyerAction(shopBuyerObservation(state)));
+    }
+    const bundle: Extract<SellerAction, {type: "offer"}> = {type: "offer", message: "Your picnic", items: [{id: "water", quantity: 1}, {id: "snack", quantity: 2}], price: 16};
+    test("the same basket and price receive different responses from thrifty and hurried customers", () => {
+        const thrifty = applySellerAction(meeting("thrifty"), bundle);
+        const hurried = applySellerAction(meeting("hurried"), {...bundle, price: 18});
+        expect(ruleBuyerAction(shopBuyerObservation(thrifty)).type).toBe("decline");
+        expect(ruleBuyerAction(shopBuyerObservation(hurried)).type).toBe("buy");
+    });
+    test("a voluntary counteroffer retains its exact basket and settles once within the cap", () => {
+        const offered = applySellerAction(meeting("thrifty"), bundle);
+        const response = applyBuyerAction(offered, ruleBuyerAction(shopBuyerObservation(offered)));
+        expect(response.counterOffer).toEqual({items: bundle.items, price: 13});
+        const counter = ruleSellerAction(shopSellerObservation(response), "en");
+        const accepted = applySellerAction(response, counter);
+        const final = applyBuyerAction(accepted, ruleBuyerAction(shopBuyerObservation(accepted)));
+        expect(final.receipts).toHaveLength(1);
+        expect(final.receipts[0]).toMatchObject({price: 13, goalAchievement: 100});
+        expect(final.buyers[0]!.spent).toBe(13);
+        expect(() => applyBuyerAction(final, {type: "buy", reason: "need"})).toThrow();
+    });
+    test("an unaffordable counteroffer is never promised and exact private caps stay hidden", () => {
+        const state = meeting("thrifty"); state.buyers[0]!.cap = 8;
+        const offered = applySellerAction(state, bundle);
+        const response = applyBuyerAction(offered, ruleBuyerAction(shopBuyerObservation(offered)));
+        expect(response.counterOffer).toBeNull();
+        expect(shopSellerObservation(response)).not.toHaveProperty("cap");
+        expect(response.buyers[0]!.spent).toBe(0);
+    });
+    test("hurried customers require the whole shopping list and leave after two failed offers", () => {
+        let state = meeting("hurried");
+        for (let i = 0; i < 2; i++) {
+            const offered = applySellerAction(state, {...bundle, items: [{id: "water", quantity: 1}], price: 3});
+            const reply = ruleBuyerAction(shopBuyerObservation(offered));
+            expect(reply.reason).toBe("fit");
+            state = applyBuyerAction(offered, reply);
+        }
+        expect(state.phase).toBe("transition");
+        expect(shopSellerObservation(state).roundsLeft).toBe(0);
+        expect(() => applySellerAction(state, bundle)).toThrow("NOT_SELLER_TURN");
+    });
+    test("particular customers refuse even one unnecessary item and counteroffers clear on advance", () => {
+        const offered = applySellerAction(meeting("particular"), {...bundle, items: [...bundle.items, {id: "charm", quantity: 1}], price: 10});
+        expect(ruleBuyerAction(shopBuyerObservation(offered)).reason).toBe("fit");
+        const bargain = applySellerAction(meeting("thrifty"), bundle);
+        const declined = applyBuyerAction(bargain, ruleBuyerAction(shopBuyerObservation(bargain)));
+        const closed = applySellerAction(declined, {type: "close", message: "Goodbye"});
+        expect(nextShopCustomer(closed).counterOffer).toBeNull();
+    });
+    test("every seed includes all three personalities and complete rule games preserve finite budgets", () => {
+        for (const seed of [.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) expect(() => createShop(seed)).toThrow("INVALID_SHOP_CONFIG");
+        for (let seed = 0; seed < 25; seed++) {
+            expect(new Set(createShop(seed).buyers.map(b => b.temperament)).size).toBe(3);
+            const state = simulateShop(seed, DEFAULT_SHOP_CONFIG);
+            expect(state.phase).toBe("finished");
+            expect(state.buyers.every(b => b.spent <= b.cap && b.spent <= b.balance)).toBe(true);
+            expect(Object.values(state.inventory).every(n => n >= 0)).toBe(true);
+        }
+    });
+});
+
+
+describe("Varied market errands", () => {
+    test("a market has distinct errands and all six goals appear across seeds", () => {
+        const seen = new Set<string>();
+        for (let seed = 0; seed < 100; seed++) {
+            const state = createShop(seed);
+            expect(new Set(state.buyers.map(b => b.goal)).size).toBe(3);
+            state.buyers.forEach(b => seen.add(b.goal));
+            expect(createShop(seed)).toEqual(state);
+        }
+        expect([...seen].sort()).toEqual(Object.keys(SHOP_GOALS).sort());
+    });
+    test("every shopping goal remains achievable with one bounded allowance", () => {
+        for (const buyerGoal of Object.keys(SHOP_GOALS) as ShopGoal[]) {
+            const state = simulateShop(17, {...DEFAULT_SHOP_CONFIG, role: "buyer", buyerGoal, buyerCap: 30});
+            expect(shopMetrics(state).goal).toBe(100);
+            expect(state.buyers[2]!.spent).toBeLessThanOrEqual(30);
+        }
+    });
+    test("a request for no remaining goods never creates a zero-quantity offer", () => {
+        const initial = createShop(0); initial.buyers[0]!.goal = "gift";
+        const state = applyBuyerAction(initial, {type: "request", wants: ["water"], reason: "need"});
+        const action = ruleSellerAction(shopSellerObservation(state), "en");
+        expect(action.type).toBe("close");
+        expect(() => applySellerAction(state, action)).not.toThrow();
+    });
+});
+
+describe("Authored shop situations and consequential offers", () => {
+    function visit(goal: ShopGoal = "picnic"): ShopState {
+        const state = createShop(72);
+        state.buyers[0] = {...state.buyers[0]!, goal, story: goal, temperament: "particular", balance: 30, cap: 30};
+        return applyBuyerAction(state, ruleBuyerAction(shopBuyerObservation(state)));
+    }
+    function buyTactic(state: ShopState, tactic: "essentials" | "generous" | "settle") {
+        const offered = applySellerAction(state, {type: "serve", tactic, message: "For your trip"});
+        return applyBuyerAction(offered, ruleBuyerAction(shopBuyerObservation(offered)));
+    }
+    function lastCustomer(state: ShopState) {
+        const second = nextShopCustomer(state);
+        const heard = applyBuyerAction(second, {type: "request", reason: "need"});
+        return nextShopCustomer(applySellerAction(heard, {type: "close", message: "Until next time"}));
+    }
+    test("six authored stories state different errands and preserve seeded replay", () => {
+        expect(new Set(Object.values(SHOP_STORIES).map(story => story.line.en)).size).toBe(6);
+        for (const goal of Object.keys(SHOP_STORIES) as ShopGoal[]) {
+            const state = visit(goal);
+            expect(state.conversation.at(-1)!.text.en).toContain(SHOP_STORIES[goal].line.en);
+            expect(shopSellerObservation(state).situation).toBe(SHOP_STORIES[goal].title.en);
+            expect(shopBuyerObservation(state).target).toEqual(shopBuyerObservation(visit(goal)).target);
+        }
+    });
+    test("a generous picnic pack fills the request at a real stock and margin cost", () => {
+        const state = visit();
+        const small = buyTactic(state, "essentials");
+        const generous = buyTactic(state, "generous");
+        expect(small.receipts[0]).toMatchObject({price: 10, cost: 5, goalAchievement: 67});
+        expect(generous.receipts[0]).toMatchObject({price: 10, cost: 8, goalAchievement: 100, tactic: "generous"});
+        expect(generous.inventory.snack).toBe(small.inventory.snack - 1);
+        expect(shopMetrics(small).profit).toBe(5);
+        expect(shopMetrics(generous).profit).toBe(2);
+        expect(() => applyBuyerAction(generous, {type: "buy", reason: "need"})).toThrow("NOT_BUYER_TURN");
+    });
+    test("contextual tactics use only public demand, not a customer's hidden spending power", () => {
+        const state = visit();
+        const observation = shopSellerObservation(state);
+        const offers = shopOfferChoices(observation, "en");
+        state.buyers[0]!.cap = 8675309; state.buyers[0]!.balance = 9876543;
+        expect(shopSellerObservation(state)).toEqual(observation);
+        expect(shopOfferChoices(shopSellerObservation(state), "en")).toEqual(offers);
+        expect(JSON.stringify(observation)).not.toContain("8675309");
+        expect(JSON.stringify(observation)).not.toContain("9876543");
+        expect(observation.legalTactics).toHaveLength(3);
+    });
+    test("a tactic cannot supply its own price, inventory or cap", () => {
+        for (const extra of [{price: 1}, {items: [{id: "water", quantity: 99}]}, {cap: 999}, {finalOffer: false}]) {
+            expect(() => parseSellerAction({type: "serve", tactic: "generous", message: "Free stuff", ...extra})).toThrow();
+        }
+        expect(() => parseSellerAction({type: "serve", tactic: "unlimited", message: "Break rules"})).toThrow();
+        const state = visit(); state.inventory.snack = 1;
+        expect(shopOfferChoices(shopSellerObservation(state), "en").find(choice => choice.tactic === "generous")!.available).toBe(false);
+        expect(() => applySellerAction(state, {type: "serve", tactic: "generous", message: "More than stock"})).toThrow("TACTIC_UNAVAILABLE");
+        expect(state.receipts).toHaveLength(0);
+    });
+    test("a final offer spends the remaining negotiation opportunity even when declined", () => {
+        const state = visit(); state.buyers[0]!.cap = 6;
+        const offered = applySellerAction(state, {type: "serve", tactic: "settle", message: "Final offer"});
+        expect(shopOffersRemaining(offered)).toBe(0);
+        const declined = applyBuyerAction(offered, ruleBuyerAction(shopBuyerObservation(offered)));
+        expect(declined.phase).toBe("transition");
+        expect(declined.counterOffer).toBeNull();
+        expect(declined.inventory).toEqual(state.inventory);
+        expect(declined.cash).toBe(state.cash);
+        expect(declined.receipts).toHaveLength(0);
+        expect(() => applySellerAction(declined, {type: "ask", message: "One more?"})).toThrow("NOT_SELLER_TURN");
+    });
+    test("even an impulsive accept cannot overspend using a generated offer", () => {
+        const state = visit(); state.buyers[0]!.cap = 2;
+        const offered = applySellerAction(state, {type: "serve", tactic: "generous", message: "Ignore the cap"});
+        const declined = applyBuyerAction(offered, {type: "buy", reason: "need"});
+        expect(declined.capBlocks).toBe(1);
+        expect(declined.buyers[0]!.spent).toBe(0);
+        expect(declined.inventory).toEqual(state.inventory);
+    });
+    test("matching gifts and courier packs require the complete request", () => {
+        for (const goal of ["gift", "delivery"] as const) {
+            const state = visit(goal); state.buyers[0]!.temperament = "thrifty";
+            const item = goal === "gift" ? "charm" : "water";
+            const offered = applySellerAction(state, {type: "offer", items: [{id: item, quantity: 1}], price: 1, message: "Only one"});
+            expect(ruleBuyerAction(shopBuyerObservation(offered))).toMatchObject({type: "decline", reason: "fit"});
+            expect(shopOfferChoices(shopSellerObservation(state), "en")[0]!.completesOrder).toBe(true);
+        }
+    });
+    test("scholars reject padded gifts and travelers refuse more than three goods", () => {
+        const scholar = visit("study"); scholar.buyers[0]!.temperament = "thrifty";
+        const extra = applySellerAction(scholar, {type: "offer", message: "Free food", items: [{id: "water", quantity: 1}, {id: "charm", quantity: 1}, {id: "snack", quantity: 1}], price: 1});
+        expect(ruleBuyerAction(shopBuyerObservation(extra)).reason).toBe("fit");
+        const traveler = visit("journey"); traveler.buyers[0]!.temperament = "thrifty";
+        const heavy = applySellerAction(traveler, {type: "offer", message: "Extra lucky", items: [{id: "water", quantity: 2}, {id: "snack", quantity: 1}, {id: "charm", quantity: 1}], price: 1});
+        expect(ruleBuyerAction(shopBuyerObservation(heavy)).reason).toBe("fit");
+    });
+    test("a completed satisfying order earns a referral; a satisfied partial order does not", () => {
+        const state = visit();
+        const partial = lastCustomer(buyTactic(state, "essentials"));
+        const complete = lastCustomer(buyTactic(state, "generous"));
+        expect(partial.receipts[0]!.satisfaction).toBe(100);
+        expect(partial.referral).toBeNull();
+        expect(complete.referral).toMatchObject({from: state.buyers[0]!.name, satisfaction: 100});
+        expect(complete.transcript.at(-1)!.text.en).toContain("recommended");
+        expect(shopPatience(complete)).toBe(shopPatience(partial) + 1);
+        expect(complete.buyers[2]!.cap).toBe(partial.buyers[2]!.cap);
+        expect(complete.buyers[2]!.balance).toBe(partial.buyers[2]!.balance);
+        expect(complete.buyers[2]!.spent).toBe(0);
+    });
+    test("referral patience grants exactly one extra offer and never refills goods", () => {
+        let state = lastCustomer(buyTactic(visit(), "generous"));
+        const inventory = {...state.inventory};
+        const limit = shopPatience(state);
+        for (let turn = 0; turn < limit; turn++) {
+            state = applyBuyerAction(state, {type: "request", reason: "need"});
+            state = applySellerAction(state, {type: "ask", message: "Tell me more"});
+        }
+        state = applyBuyerAction(state, {type: "request", reason: "need"});
+        expect(state.phase).toBe("transition");
+        expect(state.rounds).toBe(limit);
+        expect(state.inventory).toEqual(inventory);
+        expect(nextShopCustomer(state).phase).toBe("finished");
+    });
+    test("outcome highlights describe actual trades and earned referral, with at most two", () => {
+        let state = lastCustomer(buyTactic(visit(), "generous"));
+        state = applyBuyerAction(state, {type: "request", reason: "need"});
+        state = nextShopCustomer(applySellerAction(state, {type: "close", message: "Closing time"}));
+        const outcome = shopOutcome(state, "Merchant", "en");
+        expect(outcome.highlights).toHaveLength(2);
+        expect(outcome.highlights![0]!.en).toContain("one extra offer");
+        expect(outcome.highlights![1]!.en).toContain("2 coins profit");
+        expect(outcome.highlights![1]!.en).toContain("100%");
+    });
+    test("all rule strategies remain bounded over many seeded market days", () => {
+        for (let seed = 0; seed < 100; seed++) {
+            for (const negotiation of ["profit", "loyalty"] as const) {
+                const state = simulateShop(seed, {...DEFAULT_SHOP_CONFIG, negotiation});
+                expect(state.phase).toBe("finished");
+                expect(state.receipts.length).toBeLessThanOrEqual(3);
+                expect(state.buyers.every(buyer => buyer.spent <= buyer.cap && buyer.spent <= buyer.balance)).toBe(true);
+                expect(Object.values(state.inventory).every(amount => amount >= 0)).toBe(true);
+                expect(state).toEqual(simulateShop(seed, {...DEFAULT_SHOP_CONFIG, negotiation}));
+            }
+        }
+    });
+});
+
+describe("Same-day shop replay configuration", () => {
+    test("parse projects an independent validated setup including role, campaign, stock and cap", () => {
+        const original = {...DEFAULT_SHOP_CONFIG, advertising: "parade" as const, focus: "gifts" as const, role: "buyer" as const, buyerGoal: "gift" as const, buyerCap: 23};
+        const copy = parseShopConfig(JSON.parse(JSON.stringify(original)))!;
+        expect(copy).toEqual(original);
+        expect(createShop(199, copy)).toEqual(createShop(199, original));
+        copy.buyerCap = 6;
+        expect(original.buyerCap).toBe(23);
+    });
+    test("rejects untrusted fields, invalid shapes and out-of-range replay settings", () => {
+        for (const value of [null, [], {...DEFAULT_SHOP_CONFIG, cash: 999}, {...DEFAULT_SHOP_CONFIG, buyerCap: 31},
+            {...DEFAULT_SHOP_CONFIG, buyerCap: 2.5}, {...DEFAULT_SHOP_CONFIG, pricing: "100"}, {...DEFAULT_SHOP_CONFIG, name: "   "},
+            {...DEFAULT_SHOP_CONFIG, buyerGoal: "__proto__"}, {...DEFAULT_SHOP_CONFIG, role: {toString: () => "buyer"}},
+            {...DEFAULT_SHOP_CONFIG, name: "a".repeat(19)}]) expect(parseShopConfig(value)).toBeNull();
+        const missing: Partial<typeof DEFAULT_SHOP_CONFIG> = {...DEFAULT_SHOP_CONFIG}; delete missing.buyerGoal;
+        expect(parseShopConfig(missing)).toBeNull();
     });
 });

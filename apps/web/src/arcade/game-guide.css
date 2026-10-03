@@ -1,0 +1,12 @@
+.game-quick-guide{display:flex;flex-wrap:wrap;gap:9px 18px;list-style:none;padding:14px 0;margin:0;color:#554730}
+.game-quick-guide li{display:flex;align-items:center;gap:8px;font-size:13px;line-height:1.6}
+.game-quick-guide li>span{display:grid;place-items:center;width:24px;height:24px;flex:none;background:#355441;color:#fff1d0;border-radius:50%;font:11px var(--mono)}
+.game-coach{margin:18px 0;padding:16px 18px;border-left:3px solid #5c7952;background:#e9eddd;border-radius:0 12px 12px 0;color:#354732}
+.game-coach strong{font-size:12px;letter-spacing:.05em}.game-coach p{font-size:14px;line-height:1.7;margin:7px 0 0}
+.race-live-callout{display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;padding:13px 16px;background:#f8edcc;color:#4a4429;border-block:1px solid #a1834940}
+.race-live-callout strong{font-size:14px;margin-right:auto}.race-live-callout span,.race-live-callout small{font:11px var(--mono)}
+.race-live-callout.race-gaining{background:#dfebc9;color:#2b5335}
+.stamp-wave-steps{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin:12px 0 8px}
+.stamp-wave-steps>span{border-bottom:3px solid #b7a58955;padding:5px 2px;font-size:11px;text-align:center;color:#817560}
+.stamp-wave-steps>.is-reached{border-color:#70824b;color:#405738}.stamp-wave-steps>[aria-current=step]{font-weight:800;border-color:#af6338;color:#7b452a}
+@media(max-width:600px){.game-quick-guide{gap:8px;flex-direction:column}.game-quick-guide li{font-size:12px}.race-live-callout{padding:10px 12px;gap:6px 12px}.race-live-callout strong{flex-basis:100%}.stamp-wave-steps>span{font-size:10px}}

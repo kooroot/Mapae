@@ -83,6 +83,12 @@ describe("actual model boundary", () => {
         expect(validAction("shop-seller", {type: "offer", message: "묶음", items: [{id: "water", quantity: 2}], price: 4})).toBe(true);
         expect(validAction("shop-seller", {type: "offer", message: "묶음", items: [{id: "water", quantity: 2}, {id: "water", quantity: 1}], price: 4})).toBe(false);
         expect(validAction("shop-seller", {type: "close", message: "끝", price: 1})).toBe(false);
+        for (const tactic of ["essentials", "generous", "settle"]) {
+            expect(validAction("shop-seller", {type: "serve", tactic, message: "이 구성으로 드릴게요."})).toBe(true);
+            expect(validAction("shop-seller", {type: "serve", tactic, message: "제안", price: 1})).toBe(false);
+            expect(validAction("shop-seller", {type: "serve", tactic, message: "제안", cap: 999})).toBe(false);
+        }
+        expect(validAction("shop-seller", {type: "serve", tactic: "steal", message: "제안"})).toBe(false);
     });
     test("bounded streaming does not trust Content-Length", async () => {
         await expect(limitedJson(new Response('"' + "x".repeat(40_000) + '"', {headers: {"content-length": "2"}}))).rejects.toMatchObject({code: "response_too_large"});

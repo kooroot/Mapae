@@ -3,7 +3,15 @@ import type {ActivityOutcome, JsonValue} from "./contracts";
 export type ProductId = "water" | "snack" | "charm";
 export type Basket = Record<ProductId, number>;
 export type ShopRole = "seller" | "buyer";
-export type ShopGoal = "picnic" | "study" | "journey";
+export const SHOP_TEMPERAMENTS = ["thrifty", "hurried", "particular"] as const;
+export type BuyerTemperament = typeof SHOP_TEMPERAMENTS[number];
+export const SHOP_TEMPERAMENT_COPY = {
+    thrifty: {ko: "알뜰한 손님", en: "Bargain hunter", hint: {ko: "제값보다 싸야 마음이 움직여요.", en: "Looks for a price below retail."}},
+    hurried: {ko: "바쁜 손님", en: "In a hurry", hint: {ko: "제안은 두 번만. 필요한 걸 한 번에 주세요.", en: "Only two offers. Wants everything in one trip."}},
+    particular: {ko: "꼼꼼한 손님", en: "Careful shopper", hint: {ko: "필요 없는 물건이 끼면 안 사요.", en: "Rejects bundles padded with unwanted goods."}},
+} as const;
+const priceTolerance = {thrifty: .85, hurried: 1.15, particular: 1} as const;
+export type ShopGoal = "picnic" | "study" | "journey" | "festival" | "gift" | "delivery";
 export type ShopConfig = {
     role: ShopRole; name: string; focus: "balanced" | "everyday" | "gifts";
     pricing: 80 | 100 | 125; advertising: "none" | "poster" | "parade";
@@ -24,30 +32,61 @@ const emptyBasket = (): Basket => ({water: 0, snack: 0, charm: 0});
 const objectives: Record<ShopGoal, Basket> = {
     picnic: {water: 1, snack: 2, charm: 0}, study: {water: 1, snack: 0, charm: 1},
     journey: {water: 2, snack: 1, charm: 0},
+    festival: {water: 0, snack: 2, charm: 1}, gift: {water: 0, snack: 0, charm: 2}, delivery: {water: 1, snack: 1, charm: 1},
 };
 export const SHOP_GOALS: Record<ShopGoal, {ko: string; en: string}> = {
     picnic: {ko: "소풍 준비 · 물병 1 + 주먹밥 2", en: "Picnic · 1 water + 2 rice balls"},
     study: {ko: "시험 응원 · 물병 1 + 부적 1", en: "Exam support · 1 water + 1 charm"},
     journey: {ko: "긴 여행 · 물병 2 + 주먹밥 1", en: "Long journey · 2 water + 1 rice ball"},
+    festival: {ko: "달맞이 잔치 · 주먹밥 2 + 부적 1", en: "Moon festival · 2 rice balls + 1 charm"},
+    gift: {ko: "쌍둥이 선물 · 부적 2", en: "Gifts for twins · 2 charms"},
+    delivery: {ko: "배달부 보따리 · 물병 1 + 주먹밥 1 + 부적 1", en: "Courier pack · 1 water + 1 rice ball + 1 charm"},
 };
+export const SHOP_STORIES = {
+    picnic: {title: {ko: "소풍 모임의 총무", en: "The picnic organizer"},
+        line: {ko: "친구와 주먹밥 하나씩 나눠 먹으려 해요. 물도 함께 챙겨 주세요.", en: "One rice ball each for my friend and me, and some water to share."},
+        hint: {ko: "적게 팔면 이익은 남아도 친구 한 명은 배고파요.", en: "A small pack may leave one friend hungry."}, wholeOrder: false},
+    study: {title: {ko: "과거를 앞둔 선비", en: "The exam scholar"},
+        line: {ko: "시험장에 물과 응원 부적을 가져가려 해요. 다른 물건은 짐이에요.", en: "Water and a lucky charm for the exam. Anything else is extra baggage."},
+        hint: {ko: "필요한 두 가지를 깔끔하게. 덤이어도 엉뚱한 물건은 싫어요.", en: "The two requested goods only, even if an extra is free."}, wholeOrder: false},
+    journey: {title: {ko: "고개 넘는 나그네", en: "The mountain traveler"},
+        line: {ko: "고개 두 개를 넘어야 해요. 물 두 병과 주먹밥 하나, 세 개까지만 들게요.", en: "Two mountain passes ahead. Two waters and a rice ball; I can carry only three things."},
+        hint: {ko: "물 한 병을 아끼면 손님의 여행 준비가 덜 끝나요.", en: "Saving one bottle leaves part of the journey unprepared."}, wholeOrder: false},
+    festival: {title: {ko: "달맞이 재주꾼", en: "The moon-festival performer"},
+        line: {ko: "공연 전후로 먹을 주먹밥 두 개와 행운 부적을 찾소!", en: "Two rice balls, before and after my show, and a lucky charm!"},
+        hint: {ko: "주먹밥 하나를 더 챙길지, 다음 손님을 위해 남길지 골라요.", en: "Include the second meal, or save that stock for the next guest."}, wholeOrder: false},
+    gift: {title: {ko: "쌍둥이 선물 고르는 부모", en: "The twins' gift shopper"},
+        line: {ko: "쌍둥이가 다투면 안 되니 같은 부적 두 개로 주세요. 하나만은 안 돼요.", en: "Two matching charms for my twins, please. One would start an argument."},
+        hint: {ko: "선물은 반드시 한 쌍. 부적 재고가 두 개 필요해요.", en: "Gifts must come as a pair. Keep two charms in stock."}, wholeOrder: true},
+    delivery: {title: {ko: "출발 앞둔 파발꾼", en: "The departing courier"},
+        line: {ko: "출발 종이 곧 울려요. 물, 주먹밥, 부적을 한 번에 챙겨야 해요.", en: "The departure bell is about to ring. Water, a rice ball, and a charm in one stop."},
+        hint: {ko: "빠진 물건이 있으면 떠나요. 한 번에 주문을 채워요.", en: "Missing goods mean no deal. Fill the whole order at once."}, wholeOrder: true},
+} as const;
+export const SHOP_TACTICS = ["essentials", "generous", "settle"] as const;
+export type ShopTactic = typeof SHOP_TACTICS[number];
 export type SellerAction = {type: "ask" | "close"; message: string} |
+    {type: "serve"; tactic: ShopTactic; message: string} |
     {type: "offer"; message: string; items: {id: ProductId; quantity: number}[]; price: number};
 export type BuyerAction = {type: "request" | "buy" | "decline"; wants?: ProductId[]; reason: "need" | "price" | "fit" | "done"};
 type Buyer = {
-    id: string; name: string; goal: ShopGoal; balance: number; cap: number;
-    spent: number; acquired: Basket; disclosed: ProductId[];
+    id: string; name: string; goal: ShopGoal; story: ShopGoal; temperament: BuyerTemperament; balance: number; cap: number;
+    spent: number; acquired: Basket; disclosed: ProductId[]; requested: Partial<Basket>;
 };
 export type ShopLine = {speaker: "seller" | "buyer" | "system"; text: {ko: string; en: string}};
 export type ShopReceipt = {
     customer: string; items: {id: ProductId; quantity: number}[]; price: number;
     cost: number; saving: number; satisfaction: number; goalAchievement: number; revisit: boolean;
+    tactic: ShopTactic | null; customerIndex: number;
 };
 export type ShopState = {
     seed: number; config: ShopConfig; buyers: Buyer[]; customer: number;
     phase: "buyer" | "seller" | "transition" | "finished"; rounds: number;
     inventory: Basket; cash: number; advertisingCost: number; revenue: number; costOfSales: number;
     offer: Extract<SellerAction, {type: "offer"}> | null; receipts: ShopReceipt[];
+    lastOffer: Extract<SellerAction, {type: "offer"}> | null;
+    counterOffer: {items: {id: ProductId; quantity: number}[]; price: number} | null;
     conversation: ShopLine[]; transcript: ShopLine[]; rejected: string | null; capBlocks: number;
+    tactic: ShopTactic | null; finalOffer: boolean; referral: {from: string; satisfaction: number} | null;
 };
 
 function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
@@ -55,9 +94,23 @@ function product(value: unknown): value is ProductId { return value === "water" 
 function integer(value: unknown, min: number, max: number): value is number { return Number.isInteger(value) && typeof value === "number" && value >= min && value <= max; }
 function onlyKeys(value: Record<string, unknown>, keys: string[]): boolean { return Object.keys(value).every(key => keys.includes(key)); }
 
+export function parseShopConfig(value: unknown): ShopConfig | null {
+    const keys = ["role", "name", "focus", "pricing", "advertising", "negotiation", "buyerGoal", "buyerCap"];
+    if (!record(value) || !onlyKeys(value, keys) || !keys.every(key => Object.hasOwn(value, key))
+        || typeof value.role !== "string" || !["seller", "buyer"].includes(value.role) || typeof value.focus !== "string" || !["balanced", "everyday", "gifts"].includes(value.focus)
+        || typeof value.pricing !== "number" || ![80, 100, 125].includes(value.pricing)
+        || typeof value.advertising !== "string" || !["none", "poster", "parade"].includes(value.advertising) || typeof value.negotiation !== "string" || !["profit", "loyalty"].includes(value.negotiation)
+        || typeof value.buyerGoal !== "string" || !Object.hasOwn(SHOP_GOALS, value.buyerGoal)
+        || !integer(value.buyerCap, 6, SHOP_BUYER_BALANCE) || typeof value.name !== "string" || !value.name.trim() || [...value.name.trim()].length > 18) return null;
+    return {role: value.role as ShopRole, name: value.name.trim(), focus: value.focus as ShopConfig["focus"],
+        pricing: value.pricing as ShopConfig["pricing"], advertising: value.advertising as ShopConfig["advertising"],
+        negotiation: value.negotiation as ShopConfig["negotiation"], buyerGoal: value.buyerGoal as ShopGoal, buyerCap: value.buyerCap};
+}
+
 export function parseSellerAction(value: unknown): SellerAction {
     if (!record(value) || typeof value.message !== "string" || value.message.length > 180 || !value.message.trim()) throw new Error("INVALID_SELLER_ACTION");
     if ((value.type === "ask" || value.type === "close") && onlyKeys(value, ["type", "message"])) return {type: value.type, message: value.message.trim()};
+    if (value.type === "serve" && onlyKeys(value, ["type", "tactic", "message"]) && SHOP_TACTICS.some(tactic => tactic === value.tactic)) return {type: "serve", tactic: value.tactic as ShopTactic, message: value.message.trim()};
     if (value.type !== "offer" || !onlyKeys(value, ["type", "message", "items", "price"]) || !integer(value.price, 1, 99) || !Array.isArray(value.items) || value.items.length < 1 || value.items.length > 3) throw new Error("INVALID_SELLER_OFFER");
     const seen = new Set<ProductId>();
     const items = value.items.map(item => {
@@ -82,25 +135,38 @@ function stock(config: ShopConfig): Basket {
 }
 function cost(basket: Basket): number { return SHOP_PRODUCTS.reduce((sum, item) => sum + item.cost * basket[item.id], 0); }
 export function createShop(seed: number, config: ShopConfig = DEFAULT_SHOP_CONFIG): ShopState {
-    if (!Number.isFinite(seed) || !["seller", "buyer"].includes(config.role) || !["balanced", "everyday", "gifts"].includes(config.focus) || ![80, 100, 125].includes(config.pricing) || !["none", "poster", "parade"].includes(config.advertising) || !["profit", "loyalty"].includes(config.negotiation) || !["picnic", "study", "journey"].includes(config.buyerGoal) || !integer(config.buyerCap, 6, SHOP_BUYER_BALANCE) || !config.name.trim() || [...config.name].length > 18) throw new Error("INVALID_SHOP_CONFIG");
+    const parsed = parseShopConfig(config);
+    if (!Number.isSafeInteger(seed) || !parsed) throw new Error("INVALID_SHOP_CONFIG");
+    config = parsed;
     const rng = random(seed);
-    const goals: ShopGoal[] = ["picnic", "study", "journey"];
+    const goals = Object.keys(SHOP_GOALS) as ShopGoal[];
+    // Sample without replacement: one market visit always has three distinct errands.
+    const errands = [...goals];
     const buyers = Array.from({length: 3}, (_, index): Buyer => {
-        const goal = config.role === "buyer" ? config.buyerGoal : goals[Math.floor(rng() * 3)]!;
+        const goal = config.role === "buyer" ? config.buyerGoal : errands.splice(Math.floor(rng() * errands.length), 1)[0]!;
         const cap = config.role === "buyer" ? config.buyerCap : 10 + Math.floor(rng() * 13);
-        return {id: `system-${index}`, name: ["두리", "솔이", "밤이"][index]!, goal,
-            cap, balance: config.role === "buyer" ? SHOP_BUYER_BALANCE : cap + 3 + Math.floor(rng() * 8), spent: 0, acquired: emptyBasket(), disclosed: []};
+        return {id: `system-${index}`, temperament: config.role === "buyer" ? "particular" : SHOP_TEMPERAMENTS[(Math.abs(seed % 3) + index) % 3]!, name: ["두리", "솔이", "밤이"][index]!, goal, story: goal,
+            cap, balance: config.role === "buyer" ? SHOP_BUYER_BALANCE : cap + 3 + Math.floor(rng() * 8), spent: 0, acquired: emptyBasket(), disclosed: [], requested: {}};
     });
     const inventory = stock(config);
     const advertisingCost = config.role === "buyer" || config.advertising === "none" ? 0 : config.advertising === "poster" ? 4 : 8;
     // A targeted campaign changes demand, not a buyer's private purchasing power.
     if (config.role === "seller" && config.advertising !== "none") {
         const matches = config.advertising === "parade" ? 2 : 1;
-        for (let i = 0; i < matches; i++) buyers[i]!.goal = config.focus === "gifts" ? "study" : "picnic";
+        for (let i = 0; i < matches; i++) buyers[i]!.goal = buyers[i]!.story = config.focus === "gifts" ? "study" : "picnic";
     }
     return {seed, config: {...config}, buyers, customer: 0, phase: "buyer", rounds: 0, inventory,
         cash: SHOP_INITIAL_CAPITAL - cost(inventory) - advertisingCost, advertisingCost,
-        revenue: 0, costOfSales: 0, offer: null, receipts: [], conversation: [], transcript: [], rejected: null, capBlocks: 0};
+        revenue: 0, costOfSales: 0, offer: null, lastOffer: null, counterOffer: null, receipts: [], conversation: [], transcript: [], rejected: null, capBlocks: 0,
+        tactic: null, finalOffer: false, referral: null};
+}
+
+export function shopPatience(state: ShopState): number {
+    const base = state.config.role === "seller" && state.buyers[state.customer]!.temperament === "hurried" ? 2 : 3;
+    return base + (state.config.role === "seller" && state.customer === 2 && state.referral ? 1 : 0);
+}
+export function shopOffersRemaining(state: ShopState): number {
+    return state.finalOffer || state.phase === "transition" || state.phase === "finished" ? 0 : Math.max(0, shopPatience(state) - state.rounds);
 }
 
 function line(state: ShopState, entry: ShopLine): ShopState {
@@ -115,31 +181,87 @@ function achievement(buyer: Buyer): number {
     return Math.round(SHOP_PRODUCTS.reduce((sum, p) => sum + Math.min(target[p.id], buyer.acquired[p.id]), 0) / Object.values(target).reduce((a, b) => a + b, 0) * 100);
 }
 
+export type ShopOfferChoice = {
+    tactic: ShopTactic; items: {id: ProductId; quantity: number}[]; price: number; cost: number;
+    label: string; hint: string; available: boolean; completesOrder: boolean;
+};
+
+/** Contextual offers are calculated from the same disclosed facts for people and agents. */
+export function shopOfferChoices(observation: Record<string, JsonValue>, locale: "ko" | "en"): ShopOfferChoice[] {
+    const inventory = observation.inventory as Basket;
+    const requested = observation.requestedQuantities as Partial<Basket>;
+    const wanted = Array.isArray(observation.requestedItems) ? observation.requestedItems.filter(product).filter(id => (requested[id] ?? 0) > 0) : [];
+    if (!wanted.length) return [];
+    const wholeOrder = observation.wholeOrder === true || observation.temperament === "hurried";
+    const full = wanted.map(id => ({id, quantity: Math.min(3, requested[id]!)}));
+    const small = full.map(item => ({...item, quantity: wholeOrder ? item.quantity : 1}));
+    const counter = observation.counterOffer as {items: {id: ProductId; quantity: number}[]; price: number} | null;
+    const settled = counter?.items ?? full;
+    const stockCost = (items: typeof full) => items.reduce((sum, item) => sum + SHOP_PRODUCTS.find(p => p.id === item.id)!.cost * item.quantity, 0);
+    const priceFactor = Number(observation.pricing) / 100;
+    const recipes = [
+        {tactic: "essentials" as const, items: small, price: Math.max(1, Math.round(retail(small) * priceFactor)),
+            label: locale === "ko" ? wholeOrder ? "주문대로 챙기기" : "가볍게 추천" : wholeOrder ? "Fill the order" : "A small pack",
+            hint: locale === "ko" ? wholeOrder ? "표시가 기준 · 재흥정 가능" : "종류별 하나씩 · 재고를 아껴요" : wholeOrder ? "Sticker price · room to bargain" : "One of each kind · save your stock"},
+        {tactic: "generous" as const, items: full, price: Math.max(stockCost(full), Math.min(Math.floor(retail(full) * .85), retail(small))),
+            label: locale === "ko" ? full.some((item, i) => item.quantity > small[i]!.quantity) ? "넉넉하게 챙기기" : "정 나누기" : "A generous pack",
+            hint: locale === "ko" ? "필요한 수량 전부 · 이익을 양보해요" : "Every requested unit · give up some margin"},
+        {tactic: "settle" as const, items: settled.map(item => ({...item})), price: counter?.price ?? Math.max(stockCost(full), Math.floor(retail(full) * .95 * priceFactor)),
+            label: locale === "ko" ? counter ? "그 가격에 성사" : "마지막 제안" : counter ? "Take their bid" : "One final offer",
+            hint: locale === "ko" ? "수락하면 거래, 거절하면 만남 종료" : "A deal if accepted; otherwise the meeting ends"},
+    ];
+    return recipes.map(recipe => ({...recipe, cost: stockCost(recipe.items),
+        available: recipe.items.every(item => item.quantity <= inventory[item.id]),
+        completesOrder: full.every(item => (recipe.items.find(i => i.id === item.id)?.quantity ?? 0) >= item.quantity)}));
+}
+
 /** Only this projection may cross the seller decision boundary. Buyer messages are engine-rendered to prevent accidental budget disclosure. */
 export function shopSellerObservation(state: ShopState): Record<string, JsonValue> {
     const buyer = state.buyers[state.customer]!;
-    return {shop: state.config.name, focus: state.config.focus, pricing: state.config.pricing, negotiation: state.config.negotiation,
+    const observation: Record<string, JsonValue> = {shop: state.config.name, focus: state.config.focus, pricing: state.config.pricing, negotiation: state.config.negotiation,
         initialCapital: SHOP_INITIAL_CAPITAL, cash: state.cash, inventory: {...state.inventory}, customer: buyer.name,
-        requestedItems: [...buyer.disclosed], roundsLeft: 3 - state.rounds, previousResponse: state.rejected,
+        requestedItems: [...buyer.disclosed], roundsLeft: shopOffersRemaining(state), previousResponse: state.rejected,
+        temperament: buyer.temperament, counterOffer: state.counterOffer ? {price: state.counterOffer.price, items: state.counterOffer.items.map(i => ({...i}))} : null,
+        requestedQuantities: {...buyer.requested},
+        situation: buyer.disclosed.length ? SHOP_STORIES[buyer.story].title.en : null,
+        needHint: buyer.disclosed.length ? SHOP_STORIES[buyer.story].hint.en : null,
+        wholeOrder: buyer.disclosed.length > 0 && SHOP_STORIES[buyer.story].wholeOrder,
+        referral: state.referral ? {from: state.referral.from, extraPatience: 1} : null,
+        lastOffer: state.lastOffer ? {items: state.lastOffer.items.map(i => ({...i})), price: state.lastOffer.price} : null,
         products: SHOP_PRODUCTS.map(p => ({id: p.id, cost: p.cost, retail: p.retail})),
         conversation: state.conversation.map(e => ({speaker: e.speaker, text: e.text.en}))};
+    observation.legalTactics = shopOfferChoices(observation, "en").filter(option => option.available).map(option => ({
+        tactic: option.tactic, items: option.items, price: option.price, margin: option.price - option.cost,
+        completesOrder: option.completesOrder, endsMeetingIfRejected: option.tactic === "settle", description: option.hint,
+    }));
+    return observation;
 }
 export function shopBuyerObservation(state: ShopState): Record<string, JsonValue> {
     const buyer = state.buyers[state.customer]!;
-    return {objective: SHOP_GOALS[buyer.goal].en, target: {...objectives[buyer.goal]}, acquired: {...buyer.acquired},
+    return {temperament: buyer.temperament, objective: SHOP_GOALS[buyer.goal].en, target: {...objectives[buyer.goal]}, acquired: {...buyer.acquired},
+        wholeOrder: state.config.role === "seller" && SHOP_STORIES[buyer.story].wholeOrder,
+        rejectsExtras: state.config.role === "seller" && buyer.story === "study",
+        maxGoods: state.config.role === "seller" && buyer.story === "journey" ? 3 : null,
         remainingBalance: buyer.balance - buyer.spent, spendingRemaining: buyer.cap - buyer.spent,
-        roundsLeft: 3 - state.rounds, products: SHOP_PRODUCTS.map(p => ({id: p.id, retail: p.retail})),
+        roundsLeft: shopOffersRemaining(state), products: SHOP_PRODUCTS.map(p => ({id: p.id, retail: p.retail})),
         offer: state.offer ? {items: state.offer.items.map(i => ({...i})), price: state.offer.price, message: state.offer.message} : null,
         previousResponse: state.rejected, conversation: state.conversation.map(e => ({speaker: e.speaker, text: e.text.en}))};
 }
 
 export function applySellerAction(state: ShopState, raw: unknown): ShopState {
     if (state.phase !== "seller") throw new Error("NOT_SELLER_TURN");
-    const action = parseSellerAction(raw);
+    const requestedAction = parseSellerAction(raw);
+    let action: Exclude<SellerAction, {type: "serve"}>;
+    if (requestedAction.type === "serve") {
+        const choice = shopOfferChoices(shopSellerObservation(state), "en").find(option => option.tactic === requestedAction.tactic && option.available);
+        if (!choice) throw new Error("TACTIC_UNAVAILABLE");
+        action = {type: "offer", items: choice.items, price: choice.price, message: requestedAction.message};
+    } else action = requestedAction;
     if (action.type === "offer" && action.items.some(i => i.quantity > state.inventory[i.id])) throw new Error("INSUFFICIENT_INVENTORY");
     const rounds = state.rounds + 1;
-    const next = {...state, rounds, offer: action.type === "offer" ? action : null, rejected: null,
-        phase: action.type === "close" ? "transition" as const : "buyer" as const};
+    const next = {...state, rounds, offer: action.type === "offer" ? action : null, lastOffer: action.type === "offer" ? action : state.lastOffer, counterOffer: null, rejected: null,
+        phase: action.type === "close" ? "transition" as const : "buyer" as const,
+        tactic: requestedAction.type === "serve" ? requestedAction.tactic : null, finalOffer: requestedAction.type === "serve" && requestedAction.tactic === "settle"};
     return line(next, {speaker: "seller", text: {ko: action.message, en: action.message}});
 }
 
@@ -148,15 +270,16 @@ export function applyBuyerAction(state: ShopState, raw: unknown): ShopState {
     const action = parseBuyerAction(raw);
     const buyer = state.buyers[state.customer]!;
     const wants = action.wants ?? needs(buyer);
-    const buyers = state.buyers.map((b, i) => i === state.customer ? {...b, disclosed: [...wants]} : b);
-    let next: ShopState = {...state, buyers, rejected: null};
+    const buyers = state.buyers.map((b, i) => i === state.customer ? {...b, disclosed: [...wants], requested:
+        Object.fromEntries(wants.map(id => [id, Math.max(0, objectives[buyer.goal][id] - buyer.acquired[id])]))} : b);
+    let next: ShopState = {...state, buyers, rejected: null, counterOffer: null};
     if (action.type === "buy") {
         if (!state.offer) throw new Error("NO_ACTIVE_OFFER");
         const offer = state.offer;
         // No model response can change the owner-authorized cap, balance, quantity, or price.
         if (offer.price > buyer.cap - buyer.spent || offer.price > buyer.balance - buyer.spent) {
             next = {...next, capBlocks: state.capBlocks + 1, rejected: "CAP_BLOCKED", offer: null,
-                phase: state.rounds >= 3 ? "transition" : "seller"};
+                phase: state.finalOffer || state.rounds >= shopPatience(state) ? "transition" : "seller"};
             return line(next, {speaker: "system", text: {ko: "구매가 허용 범위를 넘어서 차단됐어요. 정확한 한도는 상대에게 보이지 않아요.", en: "Purchase blocked by the owner's spending limit. The exact limit stays private."}});
         }
         if (offer.items.some(i => state.inventory[i.id] < i.quantity)) throw new Error("INSUFFICIENT_INVENTORY");
@@ -173,7 +296,8 @@ export function applyBuyerAction(state: ShopState, raw: unknown): ShopState {
         const fair = retail(offer.items);
         const satisfaction = Math.round(Math.max(0, Math.min(100, 75 * useful / count + 25 * Math.min(1, fair / offer.price))));
         const receipt: ShopReceipt = {customer: buyer.name, items: offer.items.map(i => ({...i})), price: offer.price, cost: itemCost,
-            saving: fair - offer.price, satisfaction, goalAchievement: achievement(updatedBuyer), revisit: satisfaction >= 80};
+            saving: fair - offer.price, satisfaction, goalAchievement: achievement(updatedBuyer), revisit: satisfaction >= 80,
+            tactic: state.tactic, customerIndex: state.customer};
         next = {...next, inventory, cash: state.cash + offer.price, revenue: state.revenue + offer.price,
             costOfSales: state.costOfSales + itemCost, receipts: [...state.receipts, receipt], offer: null, phase: "transition"};
         const bought = line(next, {speaker: "buyer", text: {ko: `좋아요! ${offer.price}냥에 살게요.`, en: `Deal! I'll take it for ${offer.price} coins.`}});
@@ -182,36 +306,63 @@ export function applyBuyerAction(state: ShopState, raw: unknown): ShopState {
             en: `Receipt · ${offer.items.map(item => `${SHOP_PRODUCTS.find(p => p.id === item.id)!.name.en} ×${item.quantity}`).join(" + ")} · ${offer.price} coins · satisfaction ${satisfaction}%`,
         }});
     }
+    // A public bid expresses willingness to pay, not the hidden balance or cap.
+    const bid = state.offer ? Math.max(1, Math.floor(retail(state.offer.items) * priceTolerance[buyer.temperament])) : 0;
+    if (state.config.role === "seller" && action.reason === "price" && state.offer && bid < state.offer.price
+        && bid <= buyer.cap - buyer.spent && bid <= buyer.balance - buyer.spent && !state.finalOffer && state.rounds < shopPatience(state)) {
+        next.counterOffer = {items: state.offer.items.map(i => ({...i})), price: bid};
+    }
     const labels = wants.map(id => SHOP_PRODUCTS.find(p => p.id === id)!.name);
-    const response = action.reason === "price" ? {ko: "가격이 부담돼요. 더 작거나 저렴한 묶음은 없나요?", en: "That's too expensive. Can you offer a smaller or cheaper bundle?"} :
+    const response = next.counterOffer ? {ko: `그 구성 그대로 ${bid}냥이면 살게요. 어떠세요?`, en: `I can offer ${bid} coins for that exact bundle. Deal?`} : action.reason === "price" ? {ko: "가격이 부담돼요. 더 작거나 저렴한 묶음은 없나요?", en: "That's too expensive. Can you offer a smaller or cheaper bundle?"} :
         action.reason === "fit" ? {ko: "필요한 물건과 조금 달라요. 다른 조합을 보여 주세요.", en: "That doesn't fit my needs. Please show another combination."} :
         action.reason === "done" ? {ko: "오늘 필요한 건 다 샀어요. 다음에 올게요!", en: "I have what I need. See you next time!"} :
-        {ko: `${labels.map(l => l.ko).join(", ") || "필요한 물건"}을 찾고 있어요. 어떤 구성이 좋을까요?`, en: `I'm looking for ${labels.map(l => l.en).join(", ") || "useful supplies"}. What would you suggest?`};
+        {ko: `${SHOP_STORIES[buyer.story].line.ko} ${wants.map(id => `${SHOP_PRODUCTS.find(p => p.id === id)!.name.ko} ${Math.max(0, objectives[buyer.goal][id] - buyer.acquired[id])}개`).join(", ") || "필요한 물건"}, 이렇게 찾고 있어요.`, en: `${SHOP_STORIES[buyer.story].line.en} I need ${wants.map((id, i) => `${Math.max(0, objectives[buyer.goal][id] - buyer.acquired[id])} ${labels[i]!.en}`).join(", ") || "useful supplies"}.`};
     next = {...next, offer: null, rejected: action.reason,
-        phase: action.reason === "done" || state.rounds >= 3 ? "transition" : "seller"};
-    return line(next, {speaker: "buyer", text: response});
+        phase: action.reason === "done" || state.finalOffer || state.rounds >= shopPatience(state) ? "transition" : "seller"};
+    const farewell = state.finalOffer ? {ko: "마지막 제안도 맞지 않네요. 오늘은 여기까지 할게요.", en: "That final offer still doesn't fit. I'll leave it for today."}
+        : state.rounds >= shopPatience(state) ? {ko: `${response.ko} ${buyer.temperament === "hurried" ? "서둘러 가 봐야겠어요!" : "이번엔 다음에 올게요."}`, en: `${response.en} ${buyer.temperament === "hurried" ? "I have to run!" : "I'll try again another day."}`} : response;
+    return line(next, {speaker: "buyer", text: farewell});
 }
 
 export function nextShopCustomer(state: ShopState): ShopState {
     if (state.phase !== "transition") throw new Error("CUSTOMER_NOT_FINISHED");
     if (state.customer === 2) return {...state, phase: "finished"};
     const customer = state.customer + 1;
-    const buyers = state.buyers.map(b => ({...b, acquired: {...b.acquired}, disclosed: [...b.disclosed]}));
+    const buyers = state.buyers.map(b => ({...b, acquired: {...b.acquired}, disclosed: [...b.disclosed], requested: {...b.requested}}));
     if (state.config.role === "buyer") {
         // One owner, one immutable allowance across all three shops; advancing cannot refill it.
-        buyers[customer] = {...buyers[customer]!, ...buyers[state.customer]!, id: buyers[customer]!.id, name: buyers[customer]!.name, disclosed: []};
+        buyers[customer] = {...buyers[customer]!, ...buyers[state.customer]!, id: buyers[customer]!.id, name: buyers[customer]!.name, disclosed: [], requested: {}};
     }
-    return {...state, buyers, customer, phase: "buyer", rounds: 0, offer: null, conversation: [], rejected: null,
+    // Referrals buy attention, never purchasing power. No cap or balance is changed.
+    const recommendation = customer === 2 && state.config.role === "seller" ? state.receipts
+        .filter(receipt => receipt.customerIndex < 2 && receipt.satisfaction >= 80 && receipt.goalAchievement === 100)
+        .sort((a, b) => b.satisfaction - a.satisfaction)[0] : undefined;
+    const referral = recommendation ? {from: recommendation.customer, satisfaction: recommendation.satisfaction} : null;
+    const next: ShopState = {...state, buyers, customer, phase: "buyer", rounds: 0, offer: null, lastOffer: null, counterOffer: null, conversation: [], rejected: null,
+        tactic: null, finalOffer: false, referral,
         ...(state.config.role === "buyer" ? {inventory: stock(state.config)} : {})};
+    return referral ? line(next, {speaker: "buyer", text: {ko: `${referral.from}에게 소개받고 왔어요. 주문을 잘 챙겨 준다면서요? 제안도 한 번 더 들어볼게요!`, en: `${referral.from} recommended your shop. They said you filled their whole order! I'll hear one extra offer.`}}) : next;
 }
 
 export function ruleSellerAction(observation: Record<string, JsonValue>, locale: "ko" | "en"): SellerAction {
     const inventory = observation.inventory as Basket;
     const wanted = Array.isArray(observation.requestedItems) ? observation.requestedItems.filter(product) : [];
     if (wanted.length === 0) return {type: "ask", message: locale === "ko" ? "어떤 물건이 필요한가요? 필요한 것부터 골라 드릴게요." : "What do you need? Let's start with what is useful to you."};
+    const counter = observation.counterOffer as {items: {id: ProductId; quantity: number}[]; price: number} | null;
+    if (counter && counter.items.every(i => inventory[i.id] >= i.quantity)
+        && counter.price >= counter.items.reduce((sum, i) => sum + SHOP_PRODUCTS.find(p => p.id === i.id)!.cost * i.quantity, 0)) {
+        return {type: "serve", tactic: "settle", message: locale === "ko" ? `좋아요. 말씀하신 ${counter.price}냥에 드릴게요!` : `Agreed. ${counter.price} coins for that bundle!`};
+    }
     const previous = observation.previousResponse;
     const loyalty = observation.negotiation === "loyalty";
-    const items = wanted.filter(id => inventory[id] > 0).map(id => ({id, quantity: 1}));
+    const choices = shopOfferChoices(observation, locale).filter(option => option.available);
+    const tactic = loyalty || previous === "price" || previous === "CAP_BLOCKED" || previous === "fit" ? "generous" : "essentials";
+    const chosen = choices.find(option => option.tactic === tactic);
+    if (chosen && previous !== "price" && previous !== "CAP_BLOCKED") return {type: "serve", tactic: chosen.tactic, message: locale === "ko"
+        ? `${chosen.items.map(item => `${SHOP_PRODUCTS.find(p => p.id === item.id)!.name.ko} ×${item.quantity}`).join(" + ")}, ${chosen.price}냥에 챙겨 드릴게요.`
+        : `${chosen.items.map(item => `${SHOP_PRODUCTS.find(p => p.id === item.id)!.name.en} ×${item.quantity}`).join(" + ")} for ${chosen.price} coins.`};
+    const requested = observation.requestedQuantities as Partial<Basket>;
+    const items = wanted.filter(id => inventory[id] > 0 && (requested[id] ?? 1) > 0).map(id => ({id, quantity: Math.min(3, inventory[id], requested[id] ?? 1)}));
     if (items.length === 0) return {type: "close", message: locale === "ko" ? "필요한 상품이 모두 품절이에요. 다음에 만나요!" : "Your items are sold out. See you next time!"};
     if ((previous === "price" || previous === "CAP_BLOCKED") && items.length > 1) items.pop();
     const markdown = previous === "price" || previous === "CAP_BLOCKED" ? 0.7 : loyalty && items.length > 1 ? 0.85 : 1;
@@ -226,8 +377,14 @@ export function ruleBuyerAction(observation: Record<string, JsonValue>): BuyerAc
     if (wants.length === 0) return {type: "decline", reason: "done", wants};
     const offer = observation.offer as {items: {id: ProductId; quantity: number}[]; price: number} | null;
     if (!offer) return {type: "request", wants, reason: "need"};
-    if (offer.price > Number(observation.spendingRemaining) || offer.price > Number(observation.remainingBalance) || offer.price > retail(offer.items) * 1.1) return {type: "decline", wants, reason: "price"};
-    if (!offer.items.some(i => wants.includes(i.id))) return {type: "decline", wants, reason: "fit"};
+    const useful = offer.items.reduce((sum, item) => sum + Math.min(item.quantity, Math.max(0, target[item.id] - acquired[item.id])), 0);
+    const count = offer.items.reduce((sum, item) => sum + item.quantity, 0);
+    const temperament = observation.temperament as BuyerTemperament;
+    if (typeof observation.maxGoods === "number" && count > observation.maxGoods) return {type: "decline", wants, reason: "fit"};
+    if (useful / count < (temperament === "particular" || observation.rejectsExtras === true ? 1 : .75)) return {type: "decline", wants, reason: "fit"};
+    if ((temperament === "hurried" || observation.wholeOrder === true) && wants.some(id => (offer.items.find(i => i.id === id)?.quantity ?? 0) < target[id] - acquired[id])) return {type: "decline", wants, reason: "fit"};
+    if (offer.price > Number(observation.spendingRemaining) || offer.price > Number(observation.remainingBalance)
+        || offer.price > Math.floor(retail(offer.items) * priceTolerance[temperament])) return {type: "decline", wants, reason: "price"};
     return {type: "buy", reason: "need"};
 }
 
@@ -258,7 +415,18 @@ export function shopOutcome(state: ShopState, name: string, locale: "ko" | "en")
     const seller = state.config.role === "seller";
     const baseline = simulateShop(state.seed, seller ? {...state.config, pricing: 100, advertising: "none", negotiation: "loyalty"} : state.config);
     const comparison = seller ? simulateShop(state.seed, {...state.config, pricing: 125, advertising: "parade", negotiation: "profit"}) : simulateShop(state.seed, state.config, "impulsive");
-    return {game: "shop", score: stats.score,
+    const highlights: {ko: string; en: string}[] = [];
+    if (state.referral) highlights.push({ko: `${state.referral.from}의 소개로 마지막 손님에게 제안할 기회를 한 번 더 얻었어요.`, en: `${state.referral.from}'s recommendation earned one extra offer with the final customer.`});
+    const generous = state.receipts.find(receipt => receipt.tactic === "generous" && receipt.goalAchievement === 100);
+    const counterDeal = state.receipts.find(receipt => receipt.tactic === "settle");
+    const bestReceipt = generous ?? counterDeal ?? state.receipts.at(-1);
+    if (bestReceipt) highlights.push({ko: seller
+        ? `${bestReceipt.customer}에게 ${bestReceipt.items.reduce((sum, item) => sum + item.quantity, 0)}개를 팔아 ${bestReceipt.price - bestReceipt.cost}냥 이익 · 주문 ${bestReceipt.goalAchievement}%를 채웠어요.`
+        : `마지막 구매까지 목표 ${stats.goal}% 달성 · 한도 안에서 ${stats.spent}냥을 썼어요.`,
+        en: seller ? `Sold ${bestReceipt.items.reduce((sum, item) => sum + item.quantity, 0)} goods to ${bestReceipt.customer}: ${bestReceipt.price - bestReceipt.cost} coins profit, ${bestReceipt.goalAchievement}% of their errand filled.`
+            : `Reached ${stats.goal}% of your goal, spending ${stats.spent} coins within your cap.`});
+    if (!highlights.length) highlights.push({ko: "세 번의 만남에서 거래가 성사되지 않았어요. 같은 장날에 다른 제안을 해 보세요.", en: "No deal across three meetings. Try a different offer on the same market day."});
+    return {game: "shop", score: stats.score, highlights,
         summary: {ko: seller ? `손님 3명 · 순이익 ${stats.profit}냥 · 만족도 ${stats.satisfaction}%` : `가게 3곳 · 구매 목표 ${stats.goal}% · ${stats.savings}냥 절약`,
             en: seller ? `3 customers · ${stats.profit} coins profit · ${stats.satisfaction}% satisfaction` : `3 shops · ${stats.goal}% of goal · ${stats.savings} coins saved`},
         metrics: [

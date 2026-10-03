@@ -60,6 +60,7 @@ export function validAction(kind: DecisionKind, a: unknown): a is Record<string,
     if (kind === "race") return keys(a, ["enter", "strategy"]) && typeof a.enter === "boolean" && oneOf(a.strategy, ["burst", "conserve", "surge"]);
     if (kind === "shop-buyer") return keys(a, ["type", "wants", "reason"]) && oneOf(a.type, ["request", "buy", "decline"]) && oneOf(a.reason, ["need", "price", "fit", "done"]) &&
         (a.wants === undefined || (Array.isArray(a.wants) && a.wants.length <= 3 && new Set(a.wants).size === a.wants.length && a.wants.every((x) => oneOf(x, ["water", "snack", "charm"]))));
+    if (a.type === "serve") return keys(a, ["type", "tactic", "message"]) && oneOf(a.tactic, ["essentials", "generous", "settle"]) && text(a.message, 180);
     if (!keys(a, ["type", "message", "items", "price"]) || !oneOf(a.type, ["ask", "offer", "close"]) || !text(a.message, 180)) return false;
     if (a.type !== "offer") return a.items === undefined && a.price === undefined;
     return integer(a.price, 1, 99) && Array.isArray(a.items) && a.items.length > 0 && a.items.length <= 3 &&
@@ -69,8 +70,8 @@ export function validAction(kind: DecisionKind, a: unknown): a is Record<string,
 const ACTIONS: Record<DecisionKind, string> = {
     outing: '{"enter":boolean,"game":"stamp"|"race"|"shop","rounds":integer 1..3}',
     stamp: '{"tempo":"careful"|"quick"}',
-    race: '{"enter":boolean,"strategy":"burst"|"conserve"|"surge"}',
-    "shop-seller": '{"type":"ask"|"offer"|"close","message":string 1..180 characters,"items":[{"id":"water"|"snack"|"charm","quantity":integer 1..3}],"price":integer 1..99}. Include items and price only for offer; offer requires unique items.',
+    race: '{"enter":boolean,"strategy":"burst"|"conserve"|"surge"}. Your strategy instructs a deterministic motor at two route/pace windows and chooses one burst costing 20 stamina. The same bounded commands are available to human players. You do not control movement frame by frame.',
+    "shop-seller": '{"type":"serve","tactic":"essentials"|"generous"|"settle","message":string 1..180 characters} chooses an engine-priced contextual basket using the public customer story, needs and stock. Read legalTactics for the exact public basket, price, margin and whole-order rules. Settle accepts the customer counter when present; otherwise it is a final offer and rejection ends the meeting. Or {"type":"ask"|"offer"|"close","message":string 1..180 characters,"items":[{"id":"water"|"snack"|"charm","quantity":integer 1..3}],"price":integer 1..99}. Include items and price only for offer; offer requires unique items. No private buyer balance or cap may be inferred as an exact known amount.',
     "shop-buyer": '{"type":"request"|"buy"|"decline","wants":optional unique array of "water"|"snack"|"charm","reason":"need"|"price"|"fit"|"done"}. No message field. Private balance is never public speech.',
 };
 const enumString = (...values: string[]) => ({type: "string", enum: values});
@@ -81,7 +82,7 @@ const actionSchemas: Record<DecisionKind, Record<string, unknown>> = {
     outing: shape({enter: {type: "boolean"}, game: enumString("stamp", "race", "shop"), rounds: {type: "integer", minimum: 1, maximum: 3}}),
     stamp: shape({tempo: enumString("careful", "quick")}),
     race: shape({enter: {type: "boolean"}, strategy: enumString("burst", "conserve", "surge")}),
-    "shop-seller": {anyOf: [shape({type: enumString("ask", "close"), message: speech}), shape({type: enumString("offer"), message: speech, items, price: {type: "integer", minimum: 1, maximum: 99}})]},
+    "shop-seller": {anyOf: [shape({type: enumString("ask", "close"), message: speech}), shape({type: enumString("serve"), tactic: enumString("essentials", "generous", "settle"), message: speech}), shape({type: enumString("offer"), message: speech, items, price: {type: "integer", minimum: 1, maximum: 99}})]},
     "shop-buyer": {anyOf: [shape({type: enumString("request", "buy", "decline"), reason: enumString("need", "price", "fit", "done")}), shape({type: enumString("request", "buy", "decline"), wants: {type: "array", maxItems: 3, items: enumString("water", "snack", "charm")}, reason: enumString("need", "price", "fit", "done")})]},
 };
 export const decisionSchema = (kind: DecisionKind) => shape({action: actionSchemas[kind], explanation: {type: "string", minLength: 1, maxLength: 240}});

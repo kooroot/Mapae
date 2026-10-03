@@ -1,3 +1,5 @@
+import type {ShopConfig} from "./shop";
+
 export type GameId = "stamp" | "race" | "shop";
 export type AgentMode = "rules" | "llm";
 export type AgentGoal = "score" | "save" | "explore";
@@ -11,6 +13,10 @@ export type Decide = (request: AgentDecisionRequest, signal?: AbortSignal) => Pr
 export type ActivityMetric = {label: {ko: string; en: string}; value: number; unit?: string};
 export type ActivityOutcome = {
     game: GameId; score: number; summary: {ko: string; en: string};
+    /** Engine-observed turning points, never model-generated claims about the result. */
+    highlights?: {ko: string; en: string}[];
+    /** A versioned starting scenario for free practice, not a payment or replay authorization. */
+    replay?: {seed: number; version: number; shop?: ShopConfig};
     metrics: ActivityMetric[]; transcript: {speaker: string; text: string}[];
     /** Engine-computed comparison under equal initial conditions, never a global leaderboard. */
     ranking: {name: string; score: number}[];

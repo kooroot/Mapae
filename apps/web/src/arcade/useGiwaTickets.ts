@@ -7,7 +7,7 @@ import {generatePrivateKey, privateKeyToAccount} from "viem/accounts";
 import {formatUnits, getAddress, type Address, type Hex} from "viem";
 import {prepareRootPermissionSigningRequest, assembleRootPermission} from "@mapae/delegation/signing";
 import {createMapaeDelegationProvider} from "@mapae/delegation/x402";
-import {ARCADE_REDEEMER, ARCADE_TICKET_COST} from "@mapae/arcade/tickets";
+import {ARCADE_REDEEMER, ARCADE_TICKET_AMOUNT, ARCADE_TICKET_COST} from "@mapae/arcade/tickets";
 import type {GameId} from "@mapae/arcade";
 import {bootstrapAvailability, chain, deployment, publicClient} from "../lib/config";
 import {derivePayerAccount, readPayerBalance, requestSponsoredBootstrap, verifyPermissionArtifact} from "../lib/grant";
@@ -17,8 +17,11 @@ import {clearGiwaPending, readGiwaPending, type GiwaPending} from "./giwa-store"
 import {giwaWalletError, requestGiwaSignature, waitForWallet} from "./giwa-wallet";
 import {loadGrants, writeGrants} from "../lib/grant-store";
 import type {SessionGrant} from "../lib/grant";
+import {CharacterAllowances} from "./giwa-allowance-session";
+import {validAllowance, type Allowances} from "./allowance";
 
-type Session = {owner: Address; payer: Address; context: Hex; expires: number; remaining: number; provider: ReturnType<typeof createMapaeDelegationProvider>};
+export type AllowanceRequest = {characterId: string; name: string; admissions: number};
+const isArcadeGrant = (grant: SessionGrant) => grant.name === "Mapae Arcade" || grant.name.startsWith("Mapae Arcade · ");
 export type ApprovalPhase = "idle" | "catalogue" | "wallet" | "switching" | "preparing" | "signing" | "authorizing" | "bootstrap" | "verifying";
 export function useGiwaTickets(locale: Locale, profileReady: boolean) {
     const {address, chainId, connector} = useAccount();
@@ -30,18 +33,27 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
     const [phase, setPhase] = useState<ApprovalPhase>("idle");
     const locked = useRef(false), acknowledged = useRef<string | null>(null);
     const [error, setError] = useState("");
-    const [remaining, setRemaining] = useState(0);
+    const [allowances, setAllowances] = useState<Allowances>({});
+    const [approvalTarget, setApprovalTarget] = useState<{name: string; admissions: number; index: number; total: number} | null>(null);
     const [balance, setBalance] = useState<string | null>(null);
     const [payer, setPayer] = useState<Address | null>(null);
     const [pending, setPending] = useState<GiwaPending | null>(null);
     const [grants, setGrants] = useState<SessionGrant[]>([]);
-    const session = useRef<Session | null>(null);
+    const [sessions] = useState(() => new CharacterAllowances());
+    const publishAllowances = () => setAllowances(sessions.view());
+    const remaining = Object.values(allowances).reduce((total, item) => total + item.remaining, 0);
+    useEffect(() => {
+        const expires = Math.min(...Object.values(allowances).map(item => item.expires));
+        if (!Number.isFinite(expires)) return;
+        const timer = setTimeout(publishAllowances, Math.max(0, expires * 1000 - Date.now() + 50));
+        return () => clearTimeout(timer);
+    }, [allowances]);
     const activeOwner = useRef(address); activeOwner.current = address;
     const activeConnector = useRef(connector?.uid); activeConnector.current = connector?.uid;
-    useEffect(() => () => {activeOwner.current = undefined; session.current = null;}, []);
-    useEffect(() => {setGrants(address ? loadGrants().filter(grant => grant.name === "Mapae Arcade") : []);}, [address]);
+    useEffect(() => () => {activeOwner.current = undefined; sessions.stop();}, []);
+    useEffect(() => {setGrants(address ? loadGrants().filter(isArcadeGrant) : []);}, [address]);
     useEffect(() => {
-        session.current = null; setRemaining(0); setBalance(null); setPayer(null); setError("");
+        sessions.stop(); setAllowances({}); setBalance(null); setPayer(null); setError("");
         try {setPending(readGiwaPending());} catch {setError("진행 중인 입장권을 읽을 수 없어요. 새 결제를 멈췄어요. / Pending ticket unavailable.");}
         if (!address) return;
         let cancelled = false;
@@ -82,12 +94,15 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
         window.addEventListener("focus", reload); window.addEventListener("online", reload);
         return () => {cancelled = true; clearInterval(poll); window.removeEventListener("focus", reload); window.removeEventListener("online", reload);};
     }, [address, profileReady]);
-    async function approve(admissions: number) {
+    async function approve(requests: AllowanceRequest[]) {
         if (!address || !connector || locked.current || !recoveryReady) return;
         locked.current = true; setBusy(true); setError("");
         try {
             if (readGiwaPending()) throw new GiwaTicketError("먼저 진행 중인 입장권을 복구해 주세요. / Recover the pending ticket first.");
-            const policy = arcadePolicy(admissions);
+            if (!requests.length || requests.length > 12 || new Set(requests.map(item => item.characterId)).size !== requests.length ||
+                requests.some(item => !validAllowance(item.admissions) || !/^[a-zA-Z0-9-]{1,64}$/.test(item.characterId) || !item.name.trim())) throw new GiwaTicketError("친구별 용돈을 확인해 주세요. / Check each friend's allowance.");
+            const targets = requests.filter(item => sessions.remaining(item.characterId) === 0);
+            if (!targets.length) return;
             setPhase("catalogue");
             await checkGiwaCatalogue();
             setPhase("wallet");
@@ -99,41 +114,52 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
             setPhase("preparing");
             const owner = getAddress(address);
             const account = await derivePayerAccount(owner);
-            const agent = privateKeyToAccount(generatePrivateKey());
-            const head = await publicClient.getBlock();
-            const startDate = Number(head.timestamp) - 1;
-            const signing = prepareRootPermissionSigningRequest({environment: deployment.environment,
-                accountOwnerSmartAccount: account, delegate: agent.address, policy, startDate});
-            if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
-            const signature = await requestGiwaSignature({config, connector, owner, typedData: signing.typedData,
-                signal: AbortSignal.timeout(90_000), onRequest: () => setPhase("signing")});
-            if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
-            setPhase("authorizing");
-            const artifact = assembleRootPermission({role: policy.role, unsignedDelegation: signing.unsignedDelegation, signature, createdAt: startDate});
-            await verifyPermissionArtifact(artifact, locale);
-            if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
-            // Keep the public permission context so its owner can still revoke after a
-            // reload. The spend-capable agent key is deliberately absent from this store.
-            const grant: SessionGrant = {id: `${artifact.createdAt}:${artifact.delegate}:${artifact.permissionContext.slice(-18)}`,
-                name: "Mapae Arcade", source: "signed", artifact};
-            const savedGrants = writeGrants({add: [grant]});
-            setGrants(previous => savedGrants ? savedGrants.filter(item => item.name === "Mapae Arcade") : [grant, ...previous]);
-            if (!savedGrants) throw new GiwaTicketError("회수할 권한 기록을 저장하지 못했어요. 이 탭을 닫지 말고 저장 공간을 확인해 주세요. / Could not save the revocation record. Keep this tab open.");
-            const sponsor = bootstrapAvailability();
-            setPhase("bootstrap");
-            if (sponsor.kind === "configured") await requestSponsoredBootstrap(sponsor.url, artifact, locale);
-            setPhase("verifying");
-            const code = await publicClient.getCode({address: account});
-            if (!code || code === "0x") throw new GiwaTicketError("Studio에서 스마트 계정을 준비해 주세요. / Set up your smart account in Studio.");
-            await verifyPermissionArtifact(artifact, locale);
-            const available = await readPayerBalance(account);
-            setPayer(account); setBalance(available === undefined ? null : formatUnits(available, 6));
-            if (available === undefined || available < policy.periodAmount) throw new GiwaTicketError("테스트 토큰 잔액이 부족해요. Studio에서 충전해 주세요. / Top up test tokens in Studio.");
-            if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
-            session.current = {owner, payer: account, context: artifact.permissionContext, remaining: admissions, expires: startDate + policy.expiresAfterSeconds,
-                provider: createMapaeDelegationProvider({account: agent, environment: deployment.environment,
-                    parentPermissionContext: artifact.permissionContext, facilitatorAddresses: [ARCADE_REDEEMER]})};
-            setRemaining(admissions);
+            for (const [index, target] of targets.entries()) {
+                const {admissions, characterId, name} = target;
+                setApprovalTarget({name, admissions, index: index + 1, total: targets.length});
+                const policy = arcadePolicy(admissions);
+                setPhase("preparing");
+                const agent = privateKeyToAccount(generatePrivateKey());
+                const head = await publicClient.getBlock();
+                const startDate = Number(head.timestamp) - 1;
+                const signing = prepareRootPermissionSigningRequest({environment: deployment.environment,
+                    accountOwnerSmartAccount: account, delegate: agent.address, policy, startDate});
+                if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
+                const signature = await requestGiwaSignature({config, connector, owner, typedData: signing.typedData,
+                    signal: AbortSignal.timeout(90_000), onRequest: () => setPhase("signing")});
+                if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
+                setPhase("authorizing");
+                const artifact = assembleRootPermission({role: policy.role, unsignedDelegation: signing.unsignedDelegation, signature, createdAt: startDate});
+                await verifyPermissionArtifact(artifact, locale);
+                if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
+                // Keep the public permission context so its owner can still revoke after a
+                // reload. The spend-capable agent key is deliberately absent from this store.
+                const grant: SessionGrant = {id: `${artifact.createdAt}:${artifact.delegate}:${artifact.permissionContext.slice(-18)}`,
+                    name: `Mapae Arcade · ${name}`, source: "signed", artifact};
+                const savedGrants = writeGrants({add: [grant]});
+                setGrants(previous => savedGrants ? savedGrants.filter(isArcadeGrant) : [grant, ...previous]);
+                if (!savedGrants) throw new GiwaTicketError("회수할 권한 기록을 저장하지 못했어요. 이 탭을 닫지 말고 저장 공간을 확인해 주세요. / Could not save the revocation record. Keep this tab open.");
+                const sponsor = bootstrapAvailability();
+                // All friends share the owner account; bootstrap only once per batch.
+                if (index === 0 && sponsor.kind === "configured") {
+                    setPhase("bootstrap");
+                    await requestSponsoredBootstrap(sponsor.url, artifact, locale);
+                }
+                setPhase("verifying");
+                const code = await publicClient.getCode({address: account});
+                if (!code || code === "0x") throw new GiwaTicketError("Studio에서 스마트 계정을 준비해 주세요. / Set up your smart account in Studio.");
+                await verifyPermissionArtifact(artifact, locale);
+                const available = await readPayerBalance(account);
+                setPayer(account); setBalance(available === undefined ? null : formatUnits(available, 6));
+                const reserved = Object.values(sessions.view()).reduce((sum, item) => sum + item.remaining, 0);
+                const needed = targets.slice(index).reduce((sum, item) => sum + item.admissions, reserved);
+                if (available === undefined || available < BigInt(needed) * ARCADE_TICKET_AMOUNT) throw new GiwaTicketError("테스트 토큰 잔액이 부족해요. Studio에서 충전해 주세요. / Top up test tokens in Studio.");
+                if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
+                sessions.add({characterId, name, owner, payer: account, context: artifact.permissionContext, limit: admissions, expires: startDate + policy.expiresAfterSeconds,
+                    provider: createMapaeDelegationProvider({account: agent, environment: deployment.environment,
+                        parentPermissionContext: artifact.permissionContext, facilitatorAddresses: [ARCADE_REDEEMER]})});
+                publishAllowances();
+            }
         } catch (e) {
             // Wallet/provider exceptions can embed signed request data. Only errors
             // created by this UI or the reviewed grant helpers are displayed elsewhere.
@@ -146,15 +172,15 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
                 rejected: ko ? "지갑에서 요청을 거절했어요. 이번 요청으로 결제하지 않았어요." : "You declined the wallet request. This request made no payment.",
             };
             setError(walletError ? messages[walletError.code] : e instanceof GiwaTicketError ? e.message : ko ? "용돈 승인이 완료되지 않았어요. 연결한 지갑과 GIWA 네트워크를 확인해 주세요." : "Allowance not approved. Check your selected wallet and GIWA network.");
-        } finally {locked.current = false; setBusy(false); setPhase("idle");}
+        } finally {locked.current = false; setBusy(false); setPhase("idle"); setApprovalTarget(null);}
     }
     async function buy(game: GameId, requestId: string, characterId: string) {
         if (locked.current) throw new GiwaTicketError("A GIWA request is already in progress.");
         locked.current = true;
         try {
-            const old = readGiwaPending(), current = session.current;
+            const old = readGiwaPending(), current = sessions.get(characterId);
             if (!address || (old && getAddress(old.owner) !== getAddress(address))) throw new GiwaTicketError("입장권 주인의 지갑을 연결해 주세요. / Connect the ticket owner's wallet.");
-            if (!old && (!current || current.owner !== getAddress(address) || current.remaining < 1 || current.expires <= Date.now() / 1000)) throw new GiwaTicketError("GIWA 용돈을 먼저 승인해 주세요. / Approve the GIWA allowance first.");
+            if (!old && (!current || current.owner !== getAddress(address) || sessions.remaining(characterId) < 1 || current.expires <= Date.now() / 1000)) throw new GiwaTicketError("GIWA 용돈을 먼저 승인해 주세요. / Approve the GIWA allowance first.");
             if (activeOwner.current !== address) throw new GiwaTicketError("Wallet changed.");
             const account = old?.payer ?? current!.payer;
             const receipt = await buyGiwaTicket({game, requestId, characterId, owner: address, payer: account,
@@ -163,11 +189,14 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
             if (!mined || mined.status !== "success" || !hasGiwaTicketTransfer(mined.logs, account)) {
                 throw new GiwaTicketError("GIWA 정산 확인 중이에요. 같은 입장권을 복구해 주세요. / Waiting for the matching on-chain transfer.");
             }
+            if (activeOwner.current !== address || activeConnector.current !== connector?.uid) throw new GiwaTicketError("Wallet changed; recover the ticket with its owner.");
+            // Debit a confirmed transfer once, even if profile save/ack later fails or another device claims it.
+            sessions.settled(characterId, old?.requestId ?? requestId); publishAllowances();
             const value = await readPayerBalance(account);
             if (activeOwner.current !== address) throw new GiwaTicketError("지갑이 변경됐어요. 입장권 주인의 지갑으로 복구해 주세요. / Wallet changed; reconnect the ticket owner.");
             setBalance(value === undefined ? null : formatUnits(value, 6));
             return {...receipt, balanceAfter: value === undefined ? null : formatUnits(value, 6),
-                allowanceAfter: current ? (Math.max(0, current.remaining - 1) * ARCADE_TICKET_COST).toFixed(2) : null};
+                allowanceAfter: current ? (sessions.remaining(characterId) * ARCADE_TICKET_COST).toFixed(2) : null};
         } finally {
             locked.current = false;
             setPending(readGiwaPending());
@@ -181,12 +210,11 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
         const admitted = !!result && typeof result === "object" && "admitted" in result && result.admitted === true;
         acknowledged.current = ticket.requestId;
         clearGiwaPending(); setPending(null);
-        if (session.current && admitted) {session.current.remaining = Math.max(0, session.current.remaining - 1); setRemaining(session.current.remaining);}
         return admitted;
     }
-    function finish() {session.current = null; setRemaining(0);}
-    function revoked(context: Hex) {if (session.current?.context === context) finish();}
+    function finish(characterId?: string) {if (locked.current) return; sessions.stop(characterId); publishAllowances();}
+    function revoked(context: Hex) {sessions.revoke(context); publishAllowances();}
     function disconnect() {finish(); disconnectWallet();}
     const ownPending = pending && address && getAddress(pending.owner) === getAddress(address) ? pending : null;
-    return {address, payer, balance, remaining, recoveryReady, busy, phase, chainId, walletName: connector?.name ?? "", error, pending: ownPending, otherWalletPending: !!pending && !ownPending, grants, revoked, disconnect, approve, buy, acknowledge, finish};
+    return {address, payer, balance, remaining, allowances, approvalTarget, remainingFor: (id: string) => sessions.remaining(id), recoveryReady, busy, phase, chainId, walletName: connector?.name ?? "", error, pending: ownPending, otherWalletPending: !!pending && !ownPending, grants, revoked, disconnect, approve, buy, acknowledge, finish};
 }

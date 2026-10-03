@@ -1,6 +1,7 @@
 import {describe, expect, test} from "bun:test";
 import type {ActivityOutcome, AgentDecisionRequest} from "@mapae/arcade";
-import {admitActivity, completeActivity, isOutcome} from "./activity";
+import {admitActivity, admitHumanActivity, completeActivity, isOutcome, parseActivities, practiceBest} from "./activity";
+import {mergeProfiles, parseProfile, projectProfile, profileState} from "./profile/model";
 import {addCharacter, newCompanion, selectCharacter, selectedCharacter, updateCharacter, newArcadeState, parseArcadeState} from "./state";
 import {serializeArcadeState} from "./state-store";
 import {parseOutingDecision, parseTicket, ruleDecision} from "./agents";
@@ -98,5 +99,35 @@ describe("Multiple character admissions", () => {
         const entered = admitActivity(created(), admission("one"), 1); if (!entered.ok) throw Error();
         const invalid = {...entered.demo, activities: entered.demo.activities.map(a => ({...a, characterId: "absent"}))};
         expect(parseArcadeState(JSON.stringify(invalid))).toEqual(newArcadeState());
+    });
+});
+
+describe("Human practice records", () => {
+    test("free race and shop records sync without tickets and never change agent best scores", () => {
+        const base = created(); let state = base;
+        for (const game of ["race", "shop"] as const) {
+            const admitted = admitHumanActivity(state, game, "maru", game, 10);
+            if (!admitted.ok) throw Error("admission failed");
+            state = completeActivity(admitted.demo, game, {...result, game, score: game === "shop" ? -2 : 15});
+        }
+        expect(state.characters[0]?.bests).toEqual({stamp: 0, race: 0, shop: 0});
+        const profile = parseProfile(projectProfile(state)); expect(profile).not.toBeNull();
+        const synced = profileState(mergeProfiles(projectProfile(base), profile!, projectProfile(base)));
+        expect(practiceBest(synced, "maru", "race")).toBe(15);
+        expect(practiceBest(synced, "maru", "shop")).toBe(-2);
+        expect(synced.activities.every(a => a.source === "practice" && a.mode === "human" && a.ticketId === null && a.giwa === null)).toBe(true);
+        expect(parseArcadeState(serializeArcadeState(state)).activities).toEqual(state.activities);
+    });
+    test("practice cannot be relabelled as a paid or automated record", () => {
+        const admitted = admitHumanActivity(created(), "human", "maru", "shop", 10);
+        if (!admitted.ok) throw Error("admission failed");
+        for (const patch of [{source: "mapae-giwa"}, {mode: "rules"}, {ticketId: "0x" + "a".repeat(64)}, {giwa: {balanceAfter: "1", allowanceAfter: "1"}}]) {
+            expect(parseActivities([{...admitted.activity, ...patch}])).toBeNull();
+        }
+        expect(admitHumanActivity(admitted.demo, "human", "maru", "race", 11).ok).toBe(false);
+        expect(admitHumanActivity(created(), "bad", "absent", "race", 11).ok).toBe(false);
+        const stopped = completeActivity(admitted.demo, "human", null);
+        expect(completeActivity(stopped, "human", {...result, game: "shop"})).toBe(stopped);
+        expect(practiceBest(stopped, "maru", "shop")).toBe(0);
     });
 });

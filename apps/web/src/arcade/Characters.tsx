@@ -9,8 +9,9 @@ export function Horse({color = "red", className = ""}: {color?: Color; className
     return <img src={messengerArt(color)} width={1024} height={1024} className={`arc-sprite arc-horse arc-color-${color} ${className}`} alt="" draggable={false} />;
 }
 
-export function Goblin({className = ""}: {className?: string}) {
-    return <img src="/arcade/goblin-512.webp" width={1024} height={1024} className={`arc-sprite arc-goblin ${className}`} alt="" draggable={false} />;
+export function Goblin({className = "", variant}: {className?: string; variant?: "armored" | "boss"}) {
+    const asset = variant === "boss" ? "goblin-chief" : variant === "armored" ? "goblin-armored" : "goblin";
+    return <img src={`/arcade/${asset}-512.webp`} width={512} height={512} className={`arc-sprite arc-goblin ${className}`} alt="" draggable={false} />;
 }
 
 export function GameArt({game, className = "", sizes = "(max-width: 720px) 100vw, 900px"}: {game: GameId; className?: string; sizes?: string}) {

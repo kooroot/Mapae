@@ -8,3 +8,8 @@ export type AutonomousGameProps = {
     suspended?: boolean; autoAdvance?: boolean;
     onComplete: (result: ActivityOutcome) => void; onExit: () => void;
 };
+
+/** Human turns are supplied by UI controls, never an agent callback or a payment budget. */
+export type PlayableGameProps = AutonomousGameProps | (Omit<AutonomousGameProps, "mode" | "decide" | "budget" | "autoAdvance"> & {
+    mode: "human"; decide?: never; budget?: never; autoAdvance?: false;
+});

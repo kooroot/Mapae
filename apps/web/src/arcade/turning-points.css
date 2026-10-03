@@ -1,0 +1,10 @@
+.arc-turning-points{margin:24px 0;padding:20px;border:1px solid #bd925855;border-radius:20px;background:linear-gradient(135deg,#a5792620,transparent)}
+.arc-turning-points ol{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:16px}
+.arc-turning-points li{display:flex;gap:14px;align-items:flex-start}
+.arc-turning-points li>span{font:600 12px/30px "IBM Plex Mono",monospace;background:#b9852826;border:1px solid #ba995866;border-radius:50%;width:32px;flex-shrink:0;text-align:center;color:#b98528}
+.arc-turning-points li p{margin:0;line-height:1.65;overflow-wrap:anywhere}
+.arc-replay-invite{display:grid;gap:12px;margin:20px 0;padding:20px;border:1px solid #bd925855;border-radius:20px;background:#b9852814}
+.arc-replay-invite p{margin:0;line-height:1.6;overflow-wrap:anywhere}
+.arc-replay-invite .arc-button{min-height:48px;white-space:normal;text-align:center}
+.arc-replay-invite small{line-height:1.5;opacity:.75}
+@media(max-width:420px){.arc-turning-points,.arc-replay-invite{padding:16px}.arc-turning-points li{gap:10px}}

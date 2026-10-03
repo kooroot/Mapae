@@ -1,21 +1,24 @@
 import {MOCK_USDC} from "@mapae/shared";
 import {useEffect, useRef, useState} from "react";
 import type {ActivityOutcome, AgentDecision} from "@mapae/arcade";
-import {applyRaceRound, createRaceSeason, makeRaceCourse, raceFrameAt,
-    RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceSeason} from "@mapae/arcade/race";
-import type {AutonomousGameProps} from "../agent-contract";
+import {applyRaceRound, createRaceSeason, makeRaceCourse, raceEndTime, raceNextCheckpoint, raceFrameAt,
+    RACE_BURST_COST, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceSeason, type RaceAction} from "@mapae/arcade/race";
+import type {PlayableGameProps} from "../agent-contract";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
 import {requestRaceDecision} from "./decision";
 import {GAME_NAMES} from "../game-names";
+import {GameGuide} from "../GameGuide";
+import {RaceTrack} from "./RaceTrack";
 import "./race.css";
+import "./race-play.css";
 
 const COPY = {
     ko: {
         title: "달려라 마패", subtitle: "감독님은 편하게 관전하세요. 에이전트가 출전과 작전을 정해요.",
         rules: "규칙 기반 봇", llm: "실제 LLM 에이전트", season: "3경기 시즌", ticket: "시즌 입장권에 3경기 포함 · 베팅·현금 상금 없음",
         fairness: "모두 같은 말 능력치와 참가 토큰 3개로 시작해요. 참가 1개, 건너뛰기 0개. 토큰은 게임 안에서만 사용돼요.",
-        points: "순위별 5 / 3 / 2 / 1점 · 같은 기록은 공동 순위", start: "지금 바로 출발", starting: "에이전트가 곧 첫 경기를 준비해요.", back: "로비로 돌아가기",
+        points: "순위별 5 / 3 / 2 / 1점 · 세 마리가 도착하면 경기 종료 · 같은 기록은 공동 순위", start: "지금 바로 출발", starting: "에이전트가 곧 첫 경기를 준비해요.", back: "로비로 돌아가기",
         round: "경기", thinking: "코스와 예산을 살펴보고 있어요…", deciding: "출전과 전략을 결정하는 중", enter: "출전", skip: "이번엔 관전",
         entry: "참가 토큰", left: "남은 토큰", strategy: "작전", pause: "관전 잠깐 멈추기", resume: "계속 관전하기", fast: "경기 결과 바로 보기",
         held: "관전을 멈췄어요. 다음 경기 결정도 기다려요.", auto: "잠시 후 에이전트가 다음 경기를 준비해요.", next: "다음 경기로", result: "시즌 결과 보기",
@@ -30,7 +33,7 @@ const COPY = {
         title: "Small horses. Big race.", subtitle: "You're the coach. Your agent picks the races and the strategy.",
         rules: "Rules-based bot", llm: "Real LLM agent", season: "3-race season", ticket: "Season ticket includes 3 races · No betting or cash prizes",
         fairness: "Everyone starts with identical horses and 3 entry tokens. Entering costs 1; skipping costs 0. Tokens exist only inside this game.",
-        points: "Places earn 5 / 3 / 2 / 1 points · Equal times share a place", start: "Start right now", starting: "Your agent will prepare the first race shortly.", back: "Back to the lobby",
+        points: "Places earn 5 / 3 / 2 / 1 points · Race ends at the third arrival · Equal times share a place", start: "Start right now", starting: "Your agent will prepare the first race shortly.", back: "Back to the lobby",
         round: "RACE", thinking: "Studying the course and entry budget…", deciding: "Choosing entry and strategy", enter: "Enter", skip: "Watch this one",
         entry: "Entry tokens", left: "Tokens left", strategy: "Strategy", pause: "Pause watching", resume: "Keep watching", fast: "See race result now",
         held: "Watching is paused. The next decision waits too.", auto: "Your agent will prepare the next race shortly.", next: "Next race", result: "See season results",
@@ -43,42 +46,66 @@ const COPY = {
     },
 } as const;
 
-type Phase = "brief" | "thinking" | "race" | "recap" | "error";
-type Note = {round: number; decision: AgentDecision; enter: boolean; strategy: RaceStrategy};
+type Phase = "choose" | "brief" | "thinking" | "race" | "checkpoint" | "recap" | "error";
+type Note = {round: number; decision: Omit<AgentDecision, "source"> & {source: "human" | AgentDecision["source"]}; enter: boolean; strategy: RaceStrategy};
 
 export function raceOutcome(season: RaceSeason, notes: Note[], locale: "ko" | "en"): ActivityOutcome {
     const owner = season.runners.find(runner => runner.id === "owner")!;
     const rank = seasonRanking(season).find(runner => runner.id === "owner")!.rank;
     const t = COPY[locale];
+    const human = notes.length > 0 && notes.every(note => note.decision.source === "human");
+    const rival = season.runners.find(runner => runner.id === season.rivalId)!;
+    const highlights = season.rounds.flatMap(round => raceHighlights(round.simulation)).slice(-1);
+    if (owner.entries > 0) highlights.push({ko: `시즌 라이벌 ${rival.name}와 ${owner.points} 대 ${rival.points}점.`, en: `Season rival ${rival.name}: ${owner.points} to ${rival.points} points.`});
     return {
-        game: "race", score: owner.points,
+        game: "race", score: owner.points, highlights,
         summary: {ko: `${RACE_ROUNDS}경기 시즌 ${rank}위 · ${owner.entries}회 출전 · ${owner.points}점`, en: `Place ${rank} over ${RACE_ROUNDS} races · ${owner.entries} entries · ${owner.points} points`},
         metrics: [
             {label: {ko: "출전 수", en: "Races entered"}, value: owner.entries},
             {label: {ko: "우승", en: "Wins"}, value: owner.wins},
-            {label: {ko: "사용한 참가 토큰", en: "Entry tokens spent"}, value: SEASON_TOKENS - owner.tokens},
-            {label: {ko: "아낀 참가 토큰", en: "Entry tokens saved"}, value: owner.tokens},
+            ...human ? [] : [
+                {label: {ko: "사용한 경기 토큰", en: "Game entry tokens spent"}, value: SEASON_TOKENS - owner.tokens},
+                {label: {ko: "아낀 경기 토큰", en: "Game entry tokens saved"}, value: owner.tokens},
+            ],
         ],
         transcript: notes.flatMap(note => {
-            const result = season.rounds[note.round]?.simulation.finish.find(finish => finish.id === "owner");
+            const race = season.rounds[note.round]!.simulation;
+            const result = race.finish.find(finish => finish.id === "owner");
+            const timeLabel = result && result.seconds <= raceEndTime(race) ? `${result.seconds.toFixed(2)}${locale === "ko" ? "초" : "s"}` : locale === "ko" ? "순위 확정" : "Place confirmed";
             return [
-                {speaker: `${owner.name} · ${note.decision.source === "llm" ? "LLM" : t.local}`, text: note.decision.explanation},
-                {speaker: `${note.round + 1} / ${t.source}`, text: `${note.decision.model || t.local} · ${note.enter ? t.enter : t.skip} / ${t[note.strategy]}`},
-                {speaker: GAME_NAMES[locale].race, text: locale === "ko" ? result ? `${result.rank}위 · ${result.seconds.toFixed(2)}초 · ${result.points}점 · 참가 토큰 1개 사용`
-                    : "관전 · 0점 · 참가 토큰 0개 사용" : result ? `Place ${result.rank} · ${result.seconds.toFixed(2)}s · ${result.points} points · 1 entry token used`
-                    : "Watched · 0 points · 0 entry tokens used"},
+                {speaker: `${owner.name} · ${note.decision.source === "human" ? locale === "ko" ? "직접 선택" : "Human choice" : note.decision.source === "llm" ? "LLM" : t.local}`, text: note.decision.explanation},
+                {speaker: `${note.round + 1} / ${t.source}`, text: `${note.decision.source === "human" ? (locale === "ko" ? "직접 선택" : "Human choice") : note.decision.model || t.local} · ${note.enter ? t.enter : t.skip} / ${t[note.strategy]}`},
+                ...race.calls.filter(call => call.id === "owner").map((command, index) => ({speaker: locale === "ko" ? `구간 작전 ${index + 1}` : `Checkpoint ${index + 1}`, text: `${ROUTE_LABELS[locale][command.route]} · ${PACE_LABELS[locale][command.pace]}`})),
+                {speaker: GAME_NAMES[locale].race, text: locale === "ko" ? result ? `${result.rank}위 · ${timeLabel} · ${result.points}점${human ? "" : " · 경기 토큰 1개 사용"}`
+                    : "관전 · 0점 · 경기 토큰 0개 사용" : result ? `Place ${result.rank} · ${timeLabel} · ${result.points} points${human ? "" : " · 1 game entry token used"}`
+                    : "Watched · 0 points · 0 game entry tokens used"},
             ];
         }),
         ranking: seasonRanking(season).map(runner => ({name: runner.name, score: runner.points})),
     };
 }
 
-export function RaceGame({appearance, profile, locale, mode, seed, budget, decide, reducedMotion, suspended = false, autoAdvance = false, onComplete, onExit}: AutonomousGameProps) {
-    const t = COPY[locale];
+export function RaceGame({appearance, profile, locale, mode, seed, budget, decide, reducedMotion, suspended = false, autoAdvance = false, onComplete, onExit}: PlayableGameProps) {
+    const human = mode === "human", ko = locale === "ko";
+    const t = {...COPY[locale], ...(human ? {
+        subtitle: ko ? "힘을 아낄까, 지금 치고 나갈까? 내가 부르는 작전, 말이 만드는 역전." : "Save your strength or make a move? Call the pace. Chase the finish.",
+        fairness: ko ? "같은 능력치의 말로 세 경기를 달려요. 경기마다 두 갈림길에서 작전을 바꾸고, 한 번뿐인 승부수로 추월을 노려요." : "Three races with equally matched horses. Two forks, one burst: pick your moment to pass.",
+        ticket: ko ? "직접 연습 · 무료 · 토큰 결제 없음" : "Human practice · Free · No token payments",
+        noEntry: ko ? "이번 경기는 쉬기로 했어요. 다른 말들의 경기를 관전해요." : "You chose to sit out. Watch the other horses race.",
+        exitNote: ko ? "지금 나가면 이번 시즌 점수는 저장되지 않아요." : "Leaving now discards this season's score.",
+        watching: ko ? "달리는 중" : "RACING", local: ko ? "직접 선택" : "Human choice", pause: ko ? "잠깐 멈추기" : "Pause", resume: ko ? "계속 달리기" : "Keep racing", spent: ko ? "출전 수" : "Entries",
+    } : {})};
+    const [route, setRoute] = useState<RaceRoute>("wide");
+    const [strategy, setStrategy] = useState<RaceStrategy>("burst");
     const [season, setSeason] = useState(() => createRaceSeason(seed, profile.name || t.sample, locale));
     const [phase, setPhase] = useState<Phase>("brief");
     const [notes, setNotes] = useState<Note[]>([]);
-    const [progress, setProgress] = useState(0);
+    const [raceTime, setRaceTime] = useState(0);
+    const [commands, setCommands] = useState<RaceCommand[]>([]);
+    const [burstAt, setBurstAt] = useState<number | null>(null);
+    const [relaxed, setRelaxed] = useState(false);
+    const roundStart = useRef(season);
+    const checkpointButton = useRef<HTMLButtonElement>(null);
     const [paused, setPaused] = useState(false);
     const [speed, setSpeed] = useState(1);
     const blocked = paused || suspended;
@@ -89,7 +116,14 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const request = useRef<AbortController | null>(null);
     const recapButton = useRef<HTMLButtonElement>(null);
     const current = season.rounds.at(-1);
-    const displayedRound = phase === "race" || phase === "recap" ? season.round - 1 : season.round;
+    const endTime = current ? raceEndTime(current.simulation) : 0;
+    const progress = current ? Math.min(1, raceTime / current.simulation.seconds) : 0;
+    const nextCall = current ? raceNextCheckpoint(current.simulation, commands.length) : undefined;
+    const plannedCall = current?.simulation.calls.find(call => call.id === "owner" && call.at === nextCall);
+    const windowOpen = human && nextCall !== undefined && (phase === "checkpoint" || (phase === "race" && nextCall - raceTime <= 9));
+    const ownerFrame = current ? raceFrameAt(current.simulation, progress).positions.find(p => p.id === "owner") : undefined;
+    const canBurst = human && phase === "race" && !blocked && burstAt === null && (ownerFrame?.stamina ?? 0) >= RACE_BURST_COST && (ownerFrame?.distance ?? 0) < (current?.simulation.course.distance ?? 0);
+    const displayedRound = phase === "race" || phase === "checkpoint" || phase === "recap" ? season.round - 1 : season.round;
     const course = makeRaceCourse(seed, Math.min(RACE_ROUNDS - 1, displayedRound));
 
     useEffect(() => {
@@ -113,7 +147,21 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         };
     }, []);
 
+    function playRound(action: RaceAction, decision: Note["decision"]) {
+        roundStart.current = season;
+        setCommands([]); setBurstAt(null);
+        const next = applyRaceRound(season, action, [], human ? null : undefined);
+        setRoute(next.rounds.at(-1)!.simulation.calls.find(call => call.id === "owner")?.route ?? "wide");
+        setNotes(previous => [...previous, {round: season.round, decision, ...action}]);
+        setSeason(next); setRaceTime(0); setPaused(false); setPhase("race");
+    }
+    function choose(enter: boolean) {
+        if (phase !== "choose" || busy.current || suspended) return;
+        busy.current = true;
+        playRound({enter, strategy}, {source: "human", action: {enter, strategy}, explanation: enter ? `${t.strategy}: ${t[strategy]}` : t.skip});
+    }
     const beginRound = async () => {
+        if (mode === "human") {busy.current = false; setPaused(false); setPhase("choose"); return;}
         if (busy.current || season.round >= RACE_ROUNDS || finished.current) return;
         busy.current = true;
         setPhase("thinking");
@@ -124,11 +172,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         try {
             const {decision, action} = await requestRaceDecision({profile, locale, mode, season, decide, signal: controller.signal});
             if (!alive.current || controller.signal.aborted) return;
-            const next = applyRaceRound(season, action);
-            setNotes(previous => [...previous, {round: season.round, decision, ...action}]);
-            setSeason(next);
-            setProgress(0);
-            setPhase("race");
+            playRound(action, decision);
         } catch {
             if (alive.current && !controller.signal.aborted) {setError(t.errorDetail); setPhase("error");}
         } finally {
@@ -137,29 +181,64 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     };
 
     useEffect(() => {
-        if (phase !== "brief" || !autoAdvance || blocked) return;
+        if (human || phase !== "brief" || !autoAdvance || blocked) return;
         const timer = window.setTimeout(() => void beginRound(), 5000);
         return () => window.clearTimeout(timer);
     }, [phase, autoAdvance, blocked]);
 
     useEffect(() => {
-        if (phase !== "race" || blocked) return;
+        if (phase !== "race" || blocked || !current) return;
         let frame = 0;
         let last: number | null = null;
         let painted = 0;
-        let elapsed = progress * 14_000;
+        let elapsed = raceTime;
+        const checkpoint = human ? raceNextCheckpoint(current.simulation, commands.length) : undefined;
         const tick = (time: number) => {
-            if (last !== null) elapsed += Math.min(200, time - last) * speed;
+            if (last !== null) elapsed += Math.min(200, time - last) / 1000 * 3 * speed;
             last = time;
-            if (time - painted >= 40 || elapsed >= 14_000) {setProgress(Math.min(1, elapsed / 14_000)); painted = time;}
-            if (elapsed >= 14_000) setPhase("recap");
+            if (checkpoint !== undefined && elapsed >= checkpoint) {
+                setRaceTime(checkpoint);
+                if (relaxed) setPhase("checkpoint");
+                else {
+                    const call = current.simulation.calls.find(call => call.id === "owner" && call.at === checkpoint)!;
+                    setCommands(previous => [...previous, {at: call.at, pace: call.pace, route: call.route}]);
+                    setRoute(current.simulation.calls.find(call => call.id === "owner" && call.at > checkpoint)?.route ?? "wide");
+                }
+                return;
+            }
+            if (time - painted >= 40 || elapsed >= endTime) {
+                setRaceTime(Math.min(endTime, elapsed)); painted = time;
+            }
+            if (elapsed >= endTime) setPhase("recap");
             else frame = requestAnimationFrame(tick);
         };
         frame = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(frame);
-        // The current progress is captured only when starting or resuming this animation.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [phase, blocked, speed]);
+        // Absolute simulation time keeps previously seen positions stable after a new call.
+    }, [phase, blocked, speed, current, commands.length, human, endTime, relaxed]);
+
+    function callPace(pace: RacePace) {
+        const at = RACE_CHECKPOINTS[commands.length];
+        if (!windowOpen || blocked || at === undefined || !current) return;
+        const next = [...commands, {at, pace, route}];
+        const nextSeason = applyRaceRound(roundStart.current, current.action, next, burstAt);
+        setSeason(nextSeason);
+        setRoute(nextSeason.rounds.at(-1)!.simulation.calls.find(call => call.id === "owner" && call.at > at)?.route ?? "wide");
+        setCommands(next); setPhase("race");
+    }
+    function triggerBurst() {
+        if (!canBurst || !current) return;
+        // The next simulation tick preserves every position already shown.
+        const at = Math.ceil(raceTime * 10) / 10;
+        const next = applyRaceRound(roundStart.current, current.action, commands, at);
+        if (!next.rounds.at(-1)!.simulation.bursts.some(burst => burst.id === "owner" && burst.at === at)) return;
+        setBurstAt(at); setSeason(next);
+    }
+    useEffect(() => {
+        if (phase !== "checkpoint") return;
+        checkpointButton.current?.focus({preventScroll: true});
+        checkpointButton.current?.closest(".race-command-dock")?.scrollIntoView({block: "center", behavior: reducedMotion ? "instant" : "smooth"});
+    }, [phase, reducedMotion]);
 
     const advance = () => {
         if (phase !== "recap") return;
@@ -168,30 +247,37 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     };
 
     useEffect(() => {
-        if (phase !== "recap" || blocked || !autoAdvance) return;
+        if (human || phase !== "recap" || blocked || !autoAdvance) return;
         const timer = window.setTimeout(advance, 5_000);
         return () => window.clearTimeout(timer);
         // Only a settled round starts its next-stage clock; a paused clock restarts on resume.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [phase, blocked, autoAdvance, season.round]);
 
-    useEffect(() => {if (phase === "recap") recapButton.current?.focus({preventScroll: true});}, [phase]);
+    useEffect(() => {
+        if (phase !== "recap") return;
+        recapButton.current?.focus({preventScroll: true});
+        recapButton.current?.scrollIntoView({block: "center", behavior: reducedMotion ? "instant" : "smooth"});
+    }, [phase, reducedMotion]);
 
     const exit = () => onExit();
     const latest = notes.at(-1);
     const owner = season.runners.find(runner => runner.id === "owner")!;
+    const rival = season.runners.find(runner => runner.id === season.rivalId)!;
 
     return <section className={`arc-race ${reducedMotion ? "arc-race-still" : ""}`} aria-label={GAME_NAMES[locale].race}>
         <header className="arc-race-title">
             <div><p className="arc-overline">{GAME_NAMES[locale].race} / {t.season}</p><h1>{t.title}</h1><p>{t.subtitle}</p></div>
             <GuardianAvatar appearance={appearance} color={profile.color} />
         </header>
-        <div className="arc-race-mode"><strong>{mode === "llm" ? t.llm : t.rules}</strong><span>{t.ticket}</span></div>
+        <div className="arc-race-mode"><strong>{human ? ko ? "내가 직접 감독" : "You are the coach" : mode === "llm" ? t.llm : t.rules}</strong><span>{t.ticket}</span></div>
         {phase === "brief" ? <div className="arc-race-brief">
-            <p>{t.fairness}</p><p>{t.points}</p>
+            <p>{t.fairness}</p>
+            <p className="race-rival-banner"><strong>{ko ? "이번 시즌 라이벌" : "YOUR SEASON RIVAL"} · {rival.name}</strong><span>{t[rival.strategy]} · {ko ? "세 경기 동안 같은 상대와 겨뤄요" : "The same opponent across three races"}</span></p>
+            {human && <GameGuide game="race" locale={locale} />}<p>{t.points}</p>
             <GameArt game="race" className="arc-race-cover" /><div className="arc-race-strategies">{(["burst", "conserve", "surge"] as const).map((strategy, index) =>
                 <div key={strategy}><span aria-hidden="true">{["⚡", "◒", "↗"][index]}</span><strong>{t[strategy]}</strong></div>)}</div>
-            <p className="arc-race-budget">{t.budget}: <strong>{budget.allowance} {MOCK_USDC.symbol}</strong> <small>{t.budgetNote}</small></p>
+            {budget && <p className="arc-race-budget">{t.budget}: <strong>{budget.allowance} {MOCK_USDC.symbol}</strong> <small>{t.budgetNote}</small></p>}
 
             {autoAdvance && <p role="status">{locale === "ko" ? "자동 진행 · 5초 뒤 출발해요. 위에서 자동 진행을 끌 수 있어요." : "Automatic play · Starts in 5 seconds. Turn it off above to wait."}</p>}
             <button type="button" className="arc-button" onClick={() => {setPaused(false); void beginRound();}}>{t.start} →</button>
@@ -199,32 +285,57 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
             <div className="arc-race-scoreboard">
                 <span>{t.round} <strong>{Math.min(RACE_ROUNDS, displayedRound + 1)} / {RACE_ROUNDS}</strong></span>
                 <span>{t[course.weather]} · {t[course.course]} <strong>{course.distance} m</strong></span>
-                <span>{t.left} <strong>{owner.tokens} / {SEASON_TOKENS}</strong></span>
+                <span>{human ? ko ? "시즌 점수" : "Season points" : t.left} <strong>{human ? (phase === "race" || phase === "checkpoint" ? roundStart.current.runners.find(r => r.id === "owner")!.points : owner.points) : `${owner.tokens} / ${SEASON_TOKENS}`}</strong></span>
             </div>
+            {phase === "choose" && <div className="practice-race-choice">
+                <h2>{ko ? "이번 경기, 어떤 작전으로 갈까요?" : "What's your plan for this race?"}</h2>
+                <p className="race-course-scout">{ko ? "갈림길 미리 보기" : "Scout the route"}: {RACE_CHECKPOINTS.map((_, i) => TERRAIN_COPY[raceTerrain(course, i)][locale].name).join(" → ")}</p>
+                <div className="practice-strategies" role="group" aria-label={t.strategy}>{(["burst", "conserve", "surge"] as const).map(value => <button key={value} type="button" aria-pressed={strategy === value} onClick={() => setStrategy(value)}>
+                    <strong>{t[value]}</strong><span>{value === "burst" ? ko ? "처음부터 빠르게 · 짧은 코스" : "Fast from the start · Short courses" : value === "conserve" ? ko ? "체력을 아껴요 · 긴 코스와 비" : "Save energy · Long or rainy courses" : ko ? "마지막에 승부 · 후반 가속" : "A late push · Finish strong"}</span>
+                </button>)}</div>
+                <label className="race-relaxed-toggle"><input type="checkbox" checked={relaxed} onChange={event => setRelaxed(event.target.checked)} /><span><strong>{ko ? "천천히 작전 고르기" : "Take your time"}</strong><small>{ko ? "켜면 갈림길에서 기다려요. 기본은 선택하지 않아도 작전대로 달려요." : "Wait at forks when enabled. Otherwise, your plan continues without input."}</small></span></label>
+                <p className="race-course-scout">{ko ? `승부수는 경기당 한 번 · 체력 ${RACE_BURST_COST}% 소비 · 추가 결제 없음` : `One burst per race · Costs ${RACE_BURST_COST}% energy · No extra payment`}</p>
+                <div className="practice-turn-actions"><button className="arc-button" disabled={suspended || owner.tokens < 1} onClick={() => choose(true)}>{ko ? "이 작전으로 출전" : "Race with this strategy"} →</button></div>
+            </div>}
             {phase === "thinking" && <div className="arc-race-thinking" role="status"><GuardianAvatar appearance={appearance} color={profile.color} /><strong>{t.thinking}</strong><p>{t.deciding}</p></div>}
             {phase === "error" && <div className="arc-race-error" role="alert"><h2>{t.error}</h2><p>{error}</p><button type="button" className="arc-button" onClick={() => void beginRound()}>{t.retry}</button></div>}
-            {(phase === "race" || phase === "recap") && current && latest && <>
+            {(phase === "race" || phase === "checkpoint" || phase === "recap") && current && latest && <>
                 <div className="arc-race-decision" aria-live="polite">
                     <strong>{profile.name} → {latest.enter ? `${t.enter} · ${t[latest.strategy]}` : t.skip}</strong>
                     <p>{latest.decision.explanation}</p>
-                    <small>{t.source}: {latest.decision.source === "llm" ? latest.decision.model || "LLM" : t.local} · {t.entry}: {latest.enter ? "−1" : "0"}</small>
+                    <small>{t.source}: {latest.decision.source === "llm" ? latest.decision.model || "LLM" : t.local}{!human && <> · {t.entry}: {latest.enter ? "−1" : "0"}</>}</small>
                 </div>
                 {!latest.enter && <p className="arc-race-sitout">{t.noEntry}</p>}
-                <RaceTrack race={current.simulation} progress={phase === "recap" ? 1 : progress} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} />
+                <RaceTrack rivalId={season.rivalId} commands={current.simulation.calls.filter(call => call.id === "owner")} race={current.simulation} progress={progress} ended={phase === "recap"} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} />
+                {human && phase !== "recap" && <div className={`race-command-dock ${windowOpen ? "race-awaiting" : ""}`}>
+                    <div><span className="arc-overline">{windowOpen ? ko ? `${commands.length + 1}번째 갈림길` : `FORK ${commands.length + 1}` : ko ? `작전 ${commands.length} / 2` : `CALLS ${commands.length} / 2`}</span>
+                        <h2>{windowOpen ? phase === "checkpoint" ? ko ? "멈춘 사이, 작전을 골라요" : "Paused — pick your call" : ko ? `${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}초 뒤 갈림길 · 바꿀까요?` : `Fork in ${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}s · Change your plan?` : nextCall === undefined ? ko ? "남은 승부는 결승선에서!" : "All the way to the finish!" : ko ? "말이 작전대로 달리고 있어요" : "Your horse is following the plan"}</h2>
+                        {windowOpen && <p>{phase === "checkpoint" ? ko ? "선택하면 출발 · " : "Choose to resume · " : plannedCall ? `${ko ? "기본" : "Default"}: ${ROUTE_LABELS[locale][plannedCall.route]} · ${PACE_LABELS[locale][plannedCall.pace]} · ` : ""}{t.stamina} <strong>{Math.round(ownerFrame?.stamina ?? 0)}%</strong></p>}</div>
+                    {windowOpen && <RaceRoutePicker terrain={raceTerrain(course, commands.length)} route={route} onChange={setRoute} locale={locale} disabled={blocked} />}
+                    {windowOpen && <div className="race-pace-options">{RACE_PACES.map((pace, i) => <button ref={i === 0 ? checkpointButton : undefined} key={pace} disabled={blocked} onClick={() => callPace(pace)}>
+                        <span aria-hidden="true">{["◒", "→", "↗"][i]}</span><strong>{PACE_LABELS[locale][pace]}</strong><small>{PACE_HINTS[locale][pace]}</small>
+                    </button>)}</div>}
+                    {commands.length > 0 && <p className="race-calls">{commands.map((command, index) => `${index + 1}. ${ROUTE_LABELS[locale][command.route]} · ${PACE_LABELS[locale][command.pace]}`).join(" → ")}</p>}
+                </div>}
+                {human && phase !== "recap" && <div className="race-burst-control">
+                    <div><strong>{burstAt !== null ? ko ? "승부수를 썼어요" : "Burst used" : ko ? "한 번뿐인 추월 기회" : "One chance to make your move"}</strong><small>{ko ? `체력 ${RACE_BURST_COST}% · 짧고 강한 가속` : `${RACE_BURST_COST}% energy · A short, strong dash`}</small></div>
+                    <button type="button" disabled={!canBurst} onClick={triggerBurst}>{burstAt !== null ? ko ? "사용 완료" : "Used" : (ownerFrame?.stamina ?? 0) < RACE_BURST_COST ? ko ? "체력 부족" : "Low energy" : ko ? "승부수!" : "BURST!"}</button>
+                </div>}
+                {phase === "recap" && <RaceRecap race={current.simulation} commands={current.simulation.calls.filter(call => call.id === "owner")} locale={locale} />}
                 <div className="arc-race-playback">
-                    <button type="button" className="arc-button arc-button-plain" onClick={() => setPaused(value => !value)}>{paused ? t.resume : t.pause}</button>
-                    <div className="mapae-speed" role="group" aria-label={locale === "ko" ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>
-                    {phase === "race" ? <button type="button" className="arc-race-text-button" onClick={() => {setProgress(1); setPhase("recap");}}>{t.fast} →</button>
-                        : <button type="button" ref={recapButton} className="arc-button" onClick={advance}>{season.round < RACE_ROUNDS ? t.next : t.result} →</button>}
+                    {phase !== "recap" && <button type="button" className="arc-button arc-button-plain" onClick={() => setPaused(value => !value)}>{paused ? t.resume : t.pause}</button>}
+                    {phase !== "recap" && <div className="mapae-speed" role="group" aria-label={locale === "ko" ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>}
+                    {phase === "race" && !human ? <button type="button" className="arc-race-text-button" onClick={() => {setRaceTime(endTime); setPhase("recap");}}>{t.fast} →</button>
+                        : phase === "recap" ? <button type="button" ref={recapButton} className="arc-button" onClick={advance}>{season.round < RACE_ROUNDS ? t.next : t.result} →</button> : null}
                 </div>
-                <p className="arc-race-status" role="status">{blocked ? t.held : phase === "recap" ? autoAdvance && season.round < RACE_ROUNDS ? t.auto : t.settled : t.watching}</p>
+                <p className="arc-race-status" role="status">{blocked ? t.held : phase === "checkpoint" ? ko ? "작전을 골라야 다시 달려요." : "Choose a pace to continue." : phase === "recap" ? autoAdvance && season.round < RACE_ROUNDS ? t.auto : t.settled : t.watching}</p>
                 {reducedMotion && <p className="arc-race-status">{t.reduce}</p>}
             </>}
             {phase === "recap" && <div className="arc-race-standings">
                 <h2>{t.rankings}</h2>
                 <table><thead><tr><th>{t.competitor}</th><th>{t.score}</th><th>{t.spent}</th></tr></thead>
                     <tbody>{seasonRanking(season).map(runner => <tr key={runner.id} className={runner.id === "owner" ? "arc-race-owner" : ""}>
-                        <th scope="row"><span>{runner.rank}</span> {runner.name} {runner.id === "owner" && <small>{t.your}</small>}</th><td>{runner.points}</td><td>{SEASON_TOKENS - runner.tokens} / {SEASON_TOKENS}</td>
+                        <th scope="row"><span>{runner.rank}</span> {runner.name} {runner.id === "owner" ? <small>{t.your}</small> : runner.id === season.rivalId ? <small>{ko ? "라이벌" : "RIVAL"}</small> : null}</th><td>{runner.points}</td><td>{human ? runner.entries : SEASON_TOKENS - runner.tokens} / {RACE_ROUNDS}</td>
                     </tr>)}</tbody></table><p>{t.standingsNote}</p>
             </div>}
             {notes.length > 0 && <details className="arc-race-notebook"><summary>{t.history} ({notes.length})</summary>
@@ -235,43 +346,36 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     </section>;
 }
 
-function RaceTrack({race, progress, locale, color, reducedMotion, running}: {
-    race: RaceSimulation; progress: number; locale: "ko" | "en"; color: AutonomousGameProps["profile"]["color"]; reducedMotion: boolean; running: boolean;
-}) {
-    const t = COPY[locale];
-    const track = useRef<HTMLDivElement>(null);
-    const lane = useRef<SVGSVGElement>(null);
-    const [size, setSize] = useState({width: 800, height: 68});
-    useEffect(() => {track.current?.scrollIntoView({block: "center", behavior: "instant"});}, [race]);
-    useEffect(() => {
-        const observer = new ResizeObserver(entries => {
-            const box = entries[0]?.contentRect;
-            if (box && box.width > 0 && box.height > 0) setSize({width: box.width, height: box.height});
-        });
-        if (lane.current) observer.observe(lane.current);
-        return () => observer.disconnect();
-    }, []);
-    const frame = raceFrameAt(race, reducedMotion ? Math.floor(progress * 4) / 4 : progress);
-    return <div ref={track} className={`arc-race-track arc-race-weather-${race.course.weather} ${running ? "arc-race-running" : ""}`}>
-        <GameArt game="race" className="arc-race-panorama" /><div className="arc-race-track-label"><span>{locale === "ko" ? "출발" : "START"}</span><strong>{Math.min(100, Math.round(progress * 100))}%</strong><span>{locale === "ko" ? "도착" : "FINISH"}</span></div>
-        {race.entrants.map((runner, index) => {
-            const position = frame.positions.find(item => item.id === runner.id)!;
-            const finish = race.finish.find(item => item.id === runner.id)!;
-            const arrived = position.distance >= race.course.distance;
-            const runnerColor = runner.id === "owner" ? color : (["jade", "ink", "red"] as const)[index % 3]!;
-            return <div className={`arc-race-lane ${runner.id === "owner" ? "arc-race-owner" : ""}`} key={runner.id}>
-                <div className="arc-race-runner-name"><strong>{runner.name} {runner.id === "owner" && <small>{t.your}</small>}</strong><span>{t[runner.strategy]}</span>
-                    <label>{t.stamina} <meter min={0} max={100} value={position.stamina}>{Math.round(position.stamina)}%</meter></label></div>
-                <svg ref={index === 0 ? lane : undefined} viewBox={`0 0 ${size.width} ${size.height}`} className="arc-race-lane-svg" aria-label={`${runner.name}: ${Math.round(position.distance)} / ${race.course.distance} m, ${t.stamina} ${Math.round(position.stamina)}%`} role="img">
-                    <path d={`M5 ${size.height - 5}H${size.width - 5}`} stroke="#697c61" strokeWidth="2" strokeDasharray="8 6" />
-                    <path d={`M${size.width - 27} 4v${size.height - 10}m-7-${size.height - 16}h14m-14 9h14m-14 9h14m-14 9h14m-14 9h14`} stroke="#59604f" strokeWidth="2" />
-                    <g transform={`translate(${position.distance / race.course.distance * Math.max(0, size.width - size.height)} 0)`}>
-                        <g className={`arc-race-gallop arc-rider-${runnerColor}`}><image href={`/arcade/race-pony-${runnerColor}-512.webp`} x="0" y="0" width={size.height} height={size.height - 4} preserveAspectRatio="xMidYMax meet" /></g>
-                    </g>
-                    {arrived && <text x={size.width - size.height - 10} y="34" textAnchor="end" fill="#282b25" fontSize="25" fontWeight="800">#{finish.rank}</text>}
-                </svg>
-                {progress === 1 && <p className="arc-race-finish-time">{t.finish} {finish.seconds.toFixed(2)}s · +{finish.points}</p>}
-            </div>;
-        })}
+const PACE_LABELS = {ko: {save: "힘 아끼기", steady: "속도 유지", push: "치고 나가기"}, en: {save: "Save energy", steady: "Hold pace", push: "Make a move"}};
+const PACE_HINTS = {ko: {save: "느리게 · 절약", steady: "균형 잡힌 속도", push: "빠르게 · 소모 큼"}, en: {save: "Slow · Save energy", steady: "Balanced effort", push: "Fast · High energy"}};
+function RaceRecap({race, commands, locale}: {race: RaceSimulation; commands: RaceCommand[]; locale: "ko" | "en"}) {
+    const ko = locale === "ko", owner = race.finish.find(r => r.id === "owner");
+    if (!owner) return null;
+    const arrived = owner.seconds <= raceEndTime(race);
+    const stamina = raceFrameAt(race, raceEndTime(race) / race.seconds).positions.find(p => p.id === "owner")!.stamina;
+    const behind = Math.max(0, owner.seconds - race.finish[0]!.seconds);
+    return <div className="race-photo-finish" role="status">
+        <span className="race-place">{owner.rank}<small>{ko ? "위" : "PLACE"}</small></span>
+        <div><span className="arc-overline">RACE RESULT / +{owner.points} {ko ? "점" : "PTS"}</span><h2>{!arrived ? ko ? `${owner.rank}위로 경기 종료` : `Place ${owner.rank} confirmed` : owner.rank === 1 ? ko ? "결승선의 주인공!" : "First across the line!" : ko ? `선두와 ${behind.toFixed(2)}초 차이` : `${behind.toFixed(2)}s behind the leader`}</h2>
+            <p>{arrived ? ko ? `도착 ${owner.seconds.toFixed(2)}초 · 남긴 체력 ${Math.round(stamina)}%` : `${owner.seconds.toFixed(2)}s · ${Math.round(stamina)}% stamina left` : ko ? "세 마리가 도착해 남은 순위가 확정됐어요." : "Three horses finished, so the remaining place is settled."}</p>
+            <p>{stamina < 1 ? ko ? "막판에는 체력이 바닥났어요. 다음엔 앞 구간에서 힘을 아껴봐요." : "You ran out of stamina. Try saving more in the early section." : owner.rank !== 1 && stamina > 30 ? ko ? "여력이 남았어요. 다음엔 더 일찍 치고 나가 볼까요?" : "You had energy left. Try making your move earlier." : ko ? "코스와 작전을 기억해 두고, 다음 경기에 도전해요." : "Keep this course and your choices in mind for the next race."}</p>
+            {raceHighlights(race).map((highlight, i) => <p className="race-result-highlight" key={i}>{highlight[locale]}</p>)}
+            {commands.length > 0 && <small>{commands.map(c => `${ROUTE_LABELS[locale][c.route]} · ${PACE_LABELS[locale][c.pace]}`).join(" → ")}</small>}</div>
+    </div>;
+}
+
+const ROUTE_LABELS = {ko: {shortcut: "지름길", wide: "바깥길"}, en: {shortcut: "Shortcut", wide: "Outer path"}};
+const TERRAIN_COPY: Record<RaceTerrain, Record<"ko" | "en", {name: string; hint: string}>> = {
+    mud: {ko: {name: "진흙 갈림길", hint: "지름길은 천천히! 질주하면 미끄러져요."}, en: {name: "Muddy fork", hint: "Take the shortcut slowly. Sprinting loses traction."}},
+    hill: {ko: {name: "가파른 고개", hint: "지름길: 속도 +15%, 체력 소모 ×1.9. 체력 25% 미만이면 감속!"}, en: {name: "Steep hill", hint: "Shortcut: +15% speed, ×1.9 drain. Slows below 25% energy."}},
+    meadow: {ko: {name: "탁 트인 들판", hint: "지름길은 15% 빠르게! 대신 체력을 더 써요."}, en: {name: "Open meadow", hint: "The shortcut is 15% faster, but uses more stamina."}},
+};
+function RaceRoutePicker({terrain, route, onChange, locale, disabled}: {terrain: RaceTerrain; route: RaceRoute; onChange: (route: RaceRoute) => void; locale: "ko" | "en"; disabled: boolean}) {
+    const ko = locale === "ko", info = TERRAIN_COPY[terrain][locale];
+    return <div className="race-route-picker">
+        <div><strong>{info.name}</strong></div><p>{info.hint}</p>
+        <div role="group" aria-label={ko ? "달릴 길" : "Choose a path"}>{RACE_ROUTES.map(value => <button key={value} aria-pressed={route === value} disabled={disabled} onClick={() => onChange(value)}>
+            <strong>{ROUTE_LABELS[locale][value]}</strong><small>{value === "wide" ? ko ? "속도 −3% · 소모 −40%" : "Speed −3% · Drain −40%" : ko ? "지형 효과 적용" : "Use the terrain"}</small>
+        </button>)}</div>
     </div>;
 }

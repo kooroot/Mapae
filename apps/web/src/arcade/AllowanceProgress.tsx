@@ -1,3 +1,5 @@
+import {ARCADE_TICKET_COST} from "@mapae/arcade/tickets";
+import {MOCK_USDC} from "@mapae/shared";
 import {Dialog} from "@base-ui/react/dialog";
 import {useEffect, useState} from "react";
 import {Check, ChevronDown, LoaderCircle, ShieldCheck, Wallet} from "lucide-react";
@@ -6,8 +8,9 @@ import type {ApprovalPhase} from "./useGiwaTickets";
 const STEP: Record<ApprovalPhase, number> = {idle: 0, catalogue: 0, wallet: 0, switching: 0, preparing: 1, signing: 1, authorizing: 1, bootstrap: 2, verifying: 3};
 
 /** Stages follow the real approval request. Elapsed time is not a completion estimate. */
-export function AllowanceProgress({phase, walletName, ko, reducedMotion}: {
+export function AllowanceProgress({phase, walletName, ko, reducedMotion, target}: {
     phase: ApprovalPhase; walletName: string; ko: boolean; reducedMotion: boolean;
+    target?: {name: string; admissions: number; index: number; total: number} | null;
 }) {
     const [open, setOpen] = useState(true);
     const [started] = useState(Date.now);
@@ -39,7 +42,7 @@ export function AllowanceProgress({phase, walletName, ko, reducedMotion}: {
             <Dialog.Popup className={`arc-approval-dialog ${reducedMotion ? "arc-progress-still" : ""}`}>
                 <div className="arc-progress-top"><span>MAPAE · GIWA SEPOLIA</span><Dialog.Close aria-label={ko ? "진행 창 접기 · 요청은 계속돼요" : "Minimize progress · request continues"}><ChevronDown size={20} /></Dialog.Close></div>
                 <div className="arc-progress-art" aria-hidden="true"><span /><img src="/arcade/guardians/horse-256.webp" width={256} height={256} alt="" /><i>{walletAction ? <Wallet size={22} /> : <LoaderCircle size={22} className="arc-loading-icon" />}</i></div>
-                <div role="status" aria-live="polite" aria-atomic="true"><Dialog.Title>{title}</Dialog.Title><Dialog.Description>{description}</Dialog.Description></div>
+                <div role="status" aria-live="polite" aria-atomic="true">{target && <p className="arc-progress-friend">{target.index} / {target.total} · {target.name} · {target.admissions * ARCADE_TICKET_COST} {MOCK_USDC.symbol}</p>}<Dialog.Title>{title}</Dialog.Title><Dialog.Description>{description}</Dialog.Description></div>
                 <ol className="arc-progress-steps" aria-label={ko ? "용돈 준비 단계" : "Allowance setup steps"}>{labels.map((label, index) => <li key={label} data-state={index < step ? "done" : index === step ? "current" : "next"} aria-current={index === step ? "step" : undefined}><span aria-hidden="true">{index < step ? <Check size={15} /> : index + 1}</span><b>{label}</b><small>{index < step ? ko ? "완료" : "Done" : index === step ? ko ? "진행 중" : "In progress" : ko ? "대기" : "Waiting"}</small></li>)}</ol>
                 <div className="arc-progress-time"><span><LoaderCircle size={14} className="arc-loading-icon" />{ko ? "요청 진행 중" : "Request in progress"}</span><time aria-label={ko ? `경과 시간 ${elapsed}초` : `${elapsed} seconds elapsed`}>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</time></div>
                 {elapsed >= 30 && <p className="arc-progress-slow">{walletAction ? ko ? "요청이 안 보이면 지갑 앱을 직접 열어 주세요. 같은 요청을 다시 보내지 않고 기다리고 있어요." : "If no prompt appears, open your wallet directly. We are waiting without sending a duplicate request." : ko ? "평소보다 응답이 늦어지고 있어요. 이 탭을 유지해 주세요. 완료 또는 오류가 확인되면 바로 알려드릴게요." : "The response is taking longer. Keep this tab open; we will show the confirmed result or error."}</p>}

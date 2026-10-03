@@ -11,12 +11,12 @@ import "./wallet-gate.css";
 import {WalletPicker} from "../components/WalletPicker";
 
 /** Wallet connection identifies the owner; profile login and spending are separate signatures. */
-export function WalletGate({children}: {children: (owner: Address, selected: GameId) => ReactNode}) {
+export function WalletGate({children}: {children: (owner: Address, selected: GameId | "auto") => ReactNode}) {
     const {address, status, connector} = useAccount();
     const {connectors} = useConnect();
     const {locale} = useLocale();
     const ko = locale === "ko";
-    const [selected, setSelected] = useState<GameId>("race");
+    const [selected, setSelected] = useState<GameId | "auto">("auto");
     const namedWallets = connectors.filter(c => c.id !== "injected");
     const waiting = status === "connecting" || status === "reconnecting";
     if (status === "connected" && address && (connector?.id !== "injected" || namedWallets.length === 0)) return children(address, selected);

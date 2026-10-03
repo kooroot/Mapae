@@ -14,6 +14,7 @@ export function serializeArcadeState(demo: ArcadeState): string {
             id: run.id, characterId: run.characterId, name: run.name, color: run.color, appearance: projectGuardian(run.appearance), at: run.at,
             score: run.score, bestCombo: run.bestCombo, hits: run.hits,
             mistakes: run.mistakes, missed: run.missed, status: run.status,
+            ...(run.replaySeed === undefined ? {} : {replaySeed: run.replaySeed}),
         })),
     });
 }

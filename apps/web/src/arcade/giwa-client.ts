@@ -6,6 +6,7 @@ import type {PeriodPolicy} from "@mapae/delegation/policy";
 import {GIWA_SEPOLIA_CAIP2, MOCK_USDC, toTokenAmount} from "@mapae/shared";
 import {decodeEventLog, erc20Abi, getAddress, isAddress, isHash, type Address, type Log} from "viem";
 import {readGiwaPending, writeGiwaPending, type GiwaPending, type GiwaReceipt} from "./giwa-store";
+import {validAllowance, MAX_ALLOWANCE_ADMISSIONS} from "./allowance";
 
 export class GiwaTicketError extends Error {}
 
@@ -21,7 +22,7 @@ export function hasGiwaTicketTransfer(logs: Pick<Log, "address" | "topics" | "da
 
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 export function arcadePolicy(admissions: number): PeriodPolicy {
-    if (!Number.isSafeInteger(admissions) || admissions < 1 || admissions > 36) throw new GiwaTicketError("Select 1–36 admissions.");
+    if (!validAllowance(admissions)) throw new GiwaTicketError(`Select 1–${MAX_ALLOWANCE_ADMISSIONS} admissions per character.`);
     return {role: "vendor-agent", token: MOCK_USDC.address, periodAmount: BigInt(admissions) * ARCADE_TICKET_AMOUNT,
         lifetimeTotalAmount: BigInt(admissions) * ARCADE_TICKET_AMOUNT, periodDurationSeconds: 60, expiresAfterSeconds: 1800, recipient: ARCADE_PAY_TO};
 }

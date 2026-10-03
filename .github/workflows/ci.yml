@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: kooroot/Mapae-arcade-asset
-          ref: 8d67c2c709d692ef711dab3ae9762a0853f8f17d
+          ref: e1b436bd0c6cc76c5aaf8a6158d0b20d4f22f56e
           path: tmp/arcade-assets
           persist-credentials: false
 

@@ -28,7 +28,7 @@ function ArcadeRevocation({grant, delegation, ko, onRevoked}: {
         publicClient, delegationManager: deployment.environment.DelegationManager, delegation,
     }), staleTime: 15_000});
     return <div className="arcade-revocation">
-        <p>{ko ? "승인" : "Approved"} · {new Date(grant.artifact.createdAt * 1000).toLocaleString(ko ? "ko-KR" : "en-US")} · {context.slice(0, 12)}…</p>
+        <p>{grant.name} · {new Date(grant.artifact.createdAt * 1000).toLocaleString(ko ? "ko-KR" : "en-US")} · {context.slice(0, 12)}…</p>
         {status.isSuccess ? <RevokeButton delegation={delegation} permissionContext={context} revoked={confirmedHere || status.data}
             onRevoked={() => {setConfirmedHere(true); onRevoked(context);}} /> :
             <small role="status">{status.isError ? ko ? "온체인 상태를 읽지 못했어요. 새로고침해 주세요." : "Could not read on-chain status. Reload to retry." :

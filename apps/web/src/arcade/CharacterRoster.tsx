@@ -2,11 +2,13 @@ import {Dialog} from "@base-ui/react/dialog";
 import {BrandSelect} from "../components/BrandSelect";
 import {useEffect, useId, useRef, useState} from "react";
 import {Check, Plus, X, Bot, Sparkles} from "lucide-react";
-import type {AgentMode} from "@mapae/arcade";
+import type {AgentMode, AgentGoal} from "@mapae/arcade";
 import {addCharacter, MAX_CHARACTERS, newCompanion, updateCharacter, type Companion, type ArcadeState} from "./state";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {GuardianCustomizer} from "./GuardianCustomizer";
 import {guardianSeed, rollGuardian, GUARDIAN_NAMES} from "./guardian";
+import {ARCADE_TICKET_COST} from "@mapae/arcade/tickets";
+import {MOCK_USDC} from "@mapae/shared";
 import {GAME_NAMES} from "./game-names";
 import "./roster.css";
 
@@ -26,7 +28,7 @@ export function CharacterRoster({demo, ready, update, selected, onSelect, ko}: {
         {demo.characters.length === 0 && <div className="arc-roster-empty"><div className="arc-crew-illustration" aria-hidden="true"><img src="/arcade/guardians/rabbit-256.webp" width={256} height={256} alt="" loading="lazy" /><img src="/arcade/guardians/dragon-256.webp" width={256} height={256} alt="" loading="lazy" /></div><div><strong>{ko ? "어떤 친구와 함께할까요?" : "Who will be your first friend?"}</strong><p>{ko ? "열두 동물, 저마다의 차림새. 주사위를 굴려 만나고 이름을 지어 주세요." : "Twelve animals, countless little looks. Roll the dice and give your guardian a name."}</p></div></div>}
         <div className="arc-roster-strip">{demo.characters.map(c => <article key={c.id} className={`arc-companion ${selected.includes(c.id) ? "is-selected" : ""}`}>
             <button className="arc-companion-pick" aria-label={ko ? `${c.name} 보내기 선택` : `Select ${c.name} for an outing`} aria-pressed={selected.includes(c.id)} disabled={!ready} onClick={() => onSelect(selected.includes(c.id) ? selected.filter(id => id !== c.id) : [...selected, c.id])}>
-                <span className="arc-companion-check" aria-hidden="true">{selected.includes(c.id) && <Check size={14} />}</span><GuardianAvatar appearance={c.appearance} color={c.color} portrait /><strong>{c.name}</strong><span>{personalities[c.temperament]} · {c.agent.mode === "llm" ? "LLM" : ko ? "규칙 봇" : "Rule bot"}</span><small>{c.appearance ? GUARDIAN_NAMES[ko ? "ko" : "en"][c.appearance.zodiac] : ko ? "모습을 골라 주세요" : "Choose a guardian"} · {ko ? `${c.agent.rounds}회 외출` : `${c.agent.rounds} visit(s)`}</small>
+                <span className="arc-companion-check" aria-hidden="true">{selected.includes(c.id) && <Check size={14} />}</span><GuardianAvatar appearance={c.appearance} color={c.color} portrait /><strong>{c.name}</strong><span>{personalities[c.temperament]} · {c.agent.mode === "llm" ? "LLM" : ko ? "규칙 봇" : "Rule bot"}</span><small>{c.appearance ? GUARDIAN_NAMES[ko ? "ko" : "en"][c.appearance.zodiac] : ko ? "모습을 골라 주세요" : "Choose a guardian"} · {c.agent.rounds * ARCADE_TICKET_COST} {MOCK_USDC.symbol}</small>
             </button><button className="arc-companion-edit" aria-label={ko ? `${c.name} 설정` : `Edit ${c.name}`} disabled={!ready} onClick={() => {setCreating(false); setEditing(c);}}>{ko ? "설정 · 기록" : "Edit & records"} ↗</button>
         </article>)}{demo.characters.length > 0 && demo.characters.length < MAX_CHARACTERS && <button className="arc-roster-new" disabled={!ready} onClick={createCharacter}><span><Plus size={25} /></span><strong>{ko ? "다음 친구 만나기" : "Meet another friend"}</strong><small>{ko ? "생김새도 성격도, 저마다 다르게" : "A new look. A new personality."}</small><span className="arc-roster-new-art" aria-hidden="true"><img src="/arcade/guardians/rabbit-256.webp" width={256} height={256} alt="" loading="lazy" /><img src="/arcade/guardians/dragon-256.webp" width={256} height={256} alt="" loading="lazy" /></span></button>}</div>
         {demo.characters.length > 0 && <div className="arc-roster-selection"><p>{selected.length ? ko ? `${selected.length}명 선택 · 한 명씩 차례로 출발해요.` : `${selected.length} selected · Heading out one at a time.` : ko ? "놀러 보낼 캐릭터를 골라 주세요." : "Choose who is heading out."}</p><button className="arc-text-button" disabled={!ready} onClick={() => onSelect(selected.length === demo.characters.length ? [] : demo.characters.map(c => c.id))}>{selected.length === demo.characters.length ? ko ? "선택 해제" : "Clear selection" : ko ? "모두 선택" : "Select all"}</button></div>}
@@ -73,7 +75,7 @@ export function CharacterEditor({member, creating, ko, onClose, onSave}: {member
                     {value: "rules", label: ko ? "규칙 기반 봇" : "Rule bot", description: ko ? "모델 호출 없이 바로 출발" : "Ready to play, no model calls", icon: <Bot />},
                     {value: "llm", label: ko ? "실제 LLM" : "Actual LLM", description: ko ? "별도 모델 서버 연결 필요" : "Requires a connected model service", icon: <Sparkles />},
                 ]} /></label>
-                <label>{ko ? "최대 입장 횟수" : "Maximum visits"}<BrandSelect value={draft.agent.rounds} onValueChange={rounds => setDraft({...draft, agent: {...draft.agent, rounds}})} options={[1, 2, 3].map(value => ({value, label: `${value}${ko ? "회" : " visit(s)"}`}))} /></label>
+                <label>{ko ? "놀이 목표" : "Play goal"}<BrandSelect value={draft.agent.goal} onValueChange={(goal: AgentGoal) => setDraft({...draft, agent: {...draft.agent, goal}})} options={[{value: "explore", label: ko ? "다양하게 놀기" : "Explore games"}, {value: "score", label: ko ? "높은 점수 도전" : "Chase a high score"}, {value: "save", label: ko ? "알뜰하게 놀기" : "Play carefully"}]} /></label>
             </div>
             <p className="arc-editor-note">{draft.agent.mode === "rules" ? ko ? "정해진 규칙대로 플레이하며 LLM을 호출하지 않아요." : "Plays by preset rules without calling an LLM." : ko ? "LLM 서버 연결이 필요해요. 연결 실패 시 봇으로 바꾸지 않아요." : "Requires an LLM service. Failed calls never switch to a bot."}</p>
             </details>

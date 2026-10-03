@@ -1,6 +1,8 @@
 import type {AgentGoal, AgentMode} from "@mapae/arcade";
 import {validGuardian, projectGuardian, type Guardian} from "./guardian";
 import {parseActivities, type Activity} from "./activity";
+import {validAllowance} from "./allowance";
+import {validReplaySeed} from "./replay";
 
 export const COLORS = ["red", "jade", "ink"] as const;
 export const TEMPERAMENTS = ["curious", "bold", "calm"] as const;
@@ -15,7 +17,7 @@ export type Companion = Character & {
 };
 export type Run = {
     id: string; characterId: string; name: string; color: Color; appearance?: Guardian; at: number;
-    score: number; bestCombo: number;
+    score: number; bestCombo: number; replaySeed?: number;
     hits: number; mistakes: number; missed: number; status: "unfinished" | "complete";
 };
 export type ArcadeState = {
@@ -52,7 +54,7 @@ function validCompanion(v: unknown): v is Companion {
         typeof v.name === "string" && !!v.name.trim() && Array.from(v.name).length <= 12 && color(v.color) && TEMPERAMENTS.some(t => t === v.temperament) &&
         (v.appearance === undefined || validGuardian(v.appearance)) && typeof v.configured === "boolean" && integer(v.best) && object(v.bests) && [v.bests.stamp, v.bests.race, v.bests.shop].every(integer) &&
         object(v.agent) && (v.agent.mode === "rules" || v.agent.mode === "llm") && (v.agent.goal === "score" || v.agent.goal === "save" || v.agent.goal === "explore") &&
-        integer(v.agent.rounds) && v.agent.rounds >= 1 && v.agent.rounds <= 3;
+        validAllowance(v.agent.rounds);
 }
 /** Local game records only. Balances and spending authority come from GIWA. */
 export function parseArcadeState(raw: string | null, reducedMotion = false): ArcadeState {
@@ -69,19 +71,20 @@ export function parseArcadeState(raw: string | null, reducedMotion = false): Arc
         for (const run of v.runs) {
             if (!object(run) || typeof run.id !== "string" || !run.id || typeof run.characterId !== "string" || !ids.has(run.characterId) || typeof run.name !== "string" ||
                 Array.from(run.name).length > 12 || (run.appearance !== undefined && !validGuardian(run.appearance)) || !color(run.color) || ![run.at, run.score, run.bestCombo, run.hits, run.mistakes, run.missed].every(integer) ||
-                (run.status !== "unfinished" && run.status !== "complete")) return clean;
+                (run.replaySeed !== undefined && !validReplaySeed(run.replaySeed)) || (run.status !== "unfinished" && run.status !== "complete")) return clean;
         }
         return v as ArcadeState;
     } catch {return clean;}
 }
 export type Admission = {ok: true; demo: ArcadeState; ticket: Run} | {ok: false; reason: "character" | "duplicate"};
 /** Human practice never spends or creates tokens. Paid agent outings use GIWA tickets. */
-export function admitPracticeRun(demo: ArcadeState, id: string, at: number): Admission {
+export function admitPracticeRun(demo: ArcadeState, id: string, at: number, replaySeed?: number): Admission {
+    if (replaySeed !== undefined && !validReplaySeed(replaySeed)) throw new Error("Invalid practice scenario");
     if (demo.runs.some(run => run.id === id)) return {ok: false, reason: "duplicate"};
     const character = selectedCharacter(demo);
     if (!character) return {ok: false, reason: "character"};
     const ticket: Run = {id, characterId: character.id, at, name: character.name, color: character.color, appearance: projectGuardian(character.appearance),
-        score: 0, bestCombo: 0, hits: 0, mistakes: 0, missed: 0, status: "unfinished"};
+        score: 0, bestCombo: 0, hits: 0, mistakes: 0, missed: 0, status: "unfinished", ...(replaySeed === undefined ? {} : {replaySeed})};
     return {ok: true, ticket, demo: {...demo, runs: [ticket, ...demo.runs].slice(0, 40)}};
 }
 export function finishPracticeRun(demo: ArcadeState, id: string, result: Pick<Run, "score" | "bestCombo" | "hits" | "mistakes" | "missed">): ArcadeState {

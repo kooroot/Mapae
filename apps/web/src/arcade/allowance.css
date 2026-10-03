@@ -1,0 +1,38 @@
+.arc-friend-allowances { display:grid; gap:14px; margin:24px 0 14px; }
+.arc-friend-allowance { min-width:0; padding:16px; border:1px solid #b8945838; border-radius:16px; background:linear-gradient(135deg,#3a2c205c,#17130f80); }
+.arc-friend-allowance.is-ready { border-color:#a9b98a70; }
+.arc-friend-identity { display:flex; gap:12px; align-items:center; margin-bottom:16px; }
+.arc-friend-identity>.arc-sprite { width:54px; height:54px; flex:0 0 54px; border-radius:12px; }
+.arc-friend-identity>div { min-width:0; flex:1; }
+.arc-friend-identity strong { display:block; font-size:16px; overflow-wrap:anywhere; }
+.arc-friend-identity small { display:block; margin-top:4px; color:#c6b393; font-size:11px; }
+.arc-friend-identity>span { display:flex; align-items:center; gap:4px; font-size:11px; color:#cbdcb5; }
+.arc-allowance-amount>label { display:block; margin-bottom:8px; font-size:12px; color:#dbc4a1; }
+.arc-money-stepper { display:grid; grid-template-columns:44px minmax(32px,1fr) auto 44px; align-items:center; border:1px solid #a7896070; border-radius:12px; background:#120f0c; overflow:hidden; }
+.arc-money-stepper:focus-within { outline:2px solid #f0c982; outline-offset:3px; }
+.arc-money-stepper button { display:grid; place-items:center; min-width:44px; min-height:48px; border:0; background:#cda46512; color:#ebc68d; touch-action:manipulation; cursor:pointer; }
+.arc-money-stepper button:disabled { opacity:.35; cursor:default; }
+.arc-money-stepper button:not(:disabled):hover { background:#cda46535; }
+.arcade .arc-money-stepper input { width:100%; min-width:0; height:48px; padding:0 8px; border:0; outline:0; border-radius:0; color:#ffedca; background:transparent; font-family:inherit; font-size:24px; font-weight:600; text-align:center; font-variant-numeric:tabular-nums; }
+.arc-money-stepper input:disabled { color:#e4d4b7; -webkit-text-fill-color:#e4d4b7; opacity:1; }
+.arc-money-stepper input[aria-invalid="true"] { color:#ffb09c; }
+.arc-money-stepper>span { padding-right:12px; font-size:12px; color:#c6b393; }
+.arc-money-presets { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:10px; }
+.arc-money-presets button { min-height:44px; border:1px solid #b8945840; border-radius:9px; background:#35291f; color:#e9d5b7; font:inherit; font-size:14px; cursor:pointer; touch-action:manipulation; }
+.arc-money-presets button[aria-pressed="true"] { border-color:#ebbe77; background:#bd8c3f30; color:#ffe2a8; }
+.arc-money-presets button:focus-visible,.arc-friend-remaining button:focus-visible { outline:2px solid #f0c982; outline-offset:3px; }
+.arc-allowance-amount>small { display:block; margin-top:9px; font-size:11px; line-height:1.6; color:#c6b393; }
+.arc-allowance-amount>.arc-money-error { color:#ffb09c; }
+.arc-friend-remaining { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; margin-top:12px; }
+.arc-friend-remaining strong { color:#d5e4bd; font-size:12px; }
+.arc-friend-remaining button { min-height:44px; padding:0; border:0; background:none; color:#cabfae; font:inherit; font-size:11px; text-decoration:underline; text-underline-offset:4px; cursor:pointer; }
+.arc-allowance-auto { align-items:flex-start; margin:20px 0; font-size:13px; }
+.arc-allowance-auto small { display:block; margin-top:6px; color:#c6b393; font-size:11px; line-height:1.6; }
+.arc-progress-friend { margin:0 0 12px; color:#f1cf91; font-size:14px; font-weight:600; }
+@media (max-width:400px) {
+    .arc-friend-allowance { padding:12px; }
+    .arc-friend-identity { gap:8px; }
+    .arc-friend-identity>span { font-size:10px; }
+    .arc-friend-identity>.arc-sprite { width:44px; height:44px; flex-basis:44px; }
+    .arc-money-stepper>span { padding-right:6px; font-size:11px; }
+}
