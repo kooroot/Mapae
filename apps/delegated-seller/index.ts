@@ -3,6 +3,10 @@ import {isLoopbackHost} from "@mapae/shared";
 import {openStore} from "@mapae/store";
 import {createShopApp} from "./app.js";
 import {readStorePath} from "./env.js";
+import {OutingStore} from "./outings/store";
+import {OutingRunner} from "./outings/runner";
+import {createOutingPayment, readOutingConfig} from "./outings/runtime";
+import {createOutingApp, OUTING_BODY_LIMIT} from "./outings/routes";
 
 /**
  * Timeout budgets, and why the idle timeout is set explicitly.
@@ -24,13 +28,8 @@ import {readStorePath} from "./env.js";
  */
 const SETTLE_TIMEOUT_SECONDS = 35;
 const MIN_METRICS_TOKEN_LENGTH = 16;
-/**
- * No route reads a body — every one is a GET — so Bun's default 128 MiB body budget was
- * memory any client could ask this process to hold for nothing. 16 KiB is more than the
- * largest header the shop ever reads, and the server refuses anything past it before a
- * handler runs.
- */
-const MAX_REQUEST_BODY_BYTES = 16_384;
+/** Outing starts carry one bounded permission; all other routes remain body-free. */
+const MAX_REQUEST_BODY_BYTES = OUTING_BODY_LIMIT;
 
 function readInteger(name: string, fallback: number, min: number, max: number): number {
     const raw = process.env[name]?.trim();
@@ -133,6 +132,13 @@ const app = createShopApp({
     metricsToken: METRICS_TOKEN,
     arcadeReceiptToken: ARCADE_RECEIPT_TOKEN,
 });
+
+const outingsConfig = readOutingConfig();
+const outingStore = outingsConfig ? new OutingStore(STORE_PATH) : undefined;
+const outingRunner = outingsConfig && outingStore
+    ? new OutingRunner(outingStore, outingsConfig.account.address, createOutingPayment(outingsConfig, request => app.fetch(request))) : undefined;
+app.route("/arcade/outing", createOutingApp({token: ARCADE_RECEIPT_TOKEN, store: outingStore, runner: outingRunner}));
+outingRunner?.start();
 
 const shops = store.sellers.list().filter((seller) => seller.kind === "hosted");
 console.log(`delegated seller listening on ${HOST}:${PORT}`);

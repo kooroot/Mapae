@@ -1,13 +1,13 @@
-import {profileRequest} from "./profile/client";
+import {ProfileError, profileRequest} from "./profile/client";
 import {PROFILE_GENERATION} from "./profile/model";
 import {parseGiwaPending, writeGiwaPending} from "./giwa-store";
 import {useEffect, useRef, useState} from "react";
 import {useAccount, useConfig, useDisconnect, useSwitchChain} from "wagmi";
-import {generatePrivateKey, privateKeyToAccount} from "viem/accounts";
+
 import {formatUnits, getAddress, type Address, type Hex} from "viem";
 import {prepareRootPermissionSigningRequest, assembleRootPermission} from "@mapae/delegation/signing";
-import {createMapaeDelegationProvider} from "@mapae/delegation/x402";
-import {ARCADE_REDEEMER, ARCADE_TICKET_AMOUNT, ARCADE_TICKET_COST} from "@mapae/arcade/tickets";
+
+import {ARCADE_TICKET_AMOUNT} from "@mapae/arcade/tickets";
 import type {GameId} from "@mapae/arcade";
 import {bootstrapAvailability, chain, deployment, publicClient} from "../lib/config";
 import {derivePayerAccount, readPayerBalance, requestSponsoredBootstrap, verifyPermissionArtifact} from "../lib/grant";
@@ -17,12 +17,14 @@ import {clearGiwaPending, readGiwaPending, type GiwaPending} from "./giwa-store"
 import {giwaWalletError, requestGiwaSignature, waitForWallet} from "./giwa-wallet";
 import {loadGrants, writeGrants} from "../lib/grant-store";
 import type {SessionGrant} from "../lib/grant";
-import {CharacterAllowances} from "./giwa-allowance-session";
-import {validAllowance, type Allowances} from "./allowance";
+
+import {validAllowance} from "./allowance";
+import {type OutingStatus, type OutingView} from "@mapae/arcade/outings";
+import {clearSubmission, readSubmission, saveSubmission, type OutingSubmission} from "./outing-submission";
 
 export type AllowanceRequest = {characterId: string; name: string; admissions: number};
 const isArcadeGrant = (grant: SessionGrant) => grant.name === "Mapae Arcade" || grant.name.startsWith("Mapae Arcade · ");
-export type ApprovalPhase = "idle" | "catalogue" | "wallet" | "switching" | "preparing" | "signing" | "authorizing" | "bootstrap" | "verifying";
+export type ApprovalPhase = "idle" | "catalogue" | "wallet" | "switching" | "preparing" | "signing" | "authorizing" | "bootstrap" | "verifying" | "submitting";
 export function useGiwaTickets(locale: Locale, profileReady: boolean) {
     const {address, chainId, connector} = useAccount();
     const config = useConfig();
@@ -33,29 +35,24 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
     const [phase, setPhase] = useState<ApprovalPhase>("idle");
     const locked = useRef(false), acknowledged = useRef<string | null>(null);
     const [error, setError] = useState("");
-    const [allowances, setAllowances] = useState<Allowances>({});
+    const [jobs, setJobs] = useState<OutingView[]>([]);
+    const [available, setAvailable] = useState(false);
+    const [submission, setSubmission] = useState<OutingSubmission | null>(null);
+    const serverAgent = useRef<Address | null>(null);
     const [approvalTarget, setApprovalTarget] = useState<{name: string; admissions: number; index: number; total: number} | null>(null);
     const [balance, setBalance] = useState<string | null>(null);
     const [payer, setPayer] = useState<Address | null>(null);
     const [pending, setPending] = useState<GiwaPending | null>(null);
     const [grants, setGrants] = useState<SessionGrant[]>([]);
-    const [sessions] = useState(() => new CharacterAllowances());
-    const publishAllowances = () => setAllowances(sessions.view());
-    const remaining = Object.values(allowances).reduce((total, item) => total + item.remaining, 0);
-    useEffect(() => {
-        const expires = Math.min(...Object.values(allowances).map(item => item.expires));
-        if (!Number.isFinite(expires)) return;
-        const timer = setTimeout(publishAllowances, Math.max(0, expires * 1000 - Date.now() + 50));
-        return () => clearTimeout(timer);
-    }, [allowances]);
     const activeOwner = useRef(address); activeOwner.current = address;
     const activeConnector = useRef(connector?.uid); activeConnector.current = connector?.uid;
-    useEffect(() => () => {activeOwner.current = undefined; sessions.stop();}, []);
+    useEffect(() => () => {activeOwner.current = undefined;}, []);
     useEffect(() => {setGrants(address ? loadGrants().filter(isArcadeGrant) : []);}, [address]);
     useEffect(() => {
-        sessions.stop(); setAllowances({}); setBalance(null); setPayer(null); setError("");
+        setJobs([]); setAvailable(false); serverAgent.current = null; setBalance(null); setPayer(null); setError("");
         try {setPending(readGiwaPending());} catch {setError("진행 중인 입장권을 읽을 수 없어요. 새 결제를 멈췄어요. / Pending ticket unavailable.");}
         if (!address) return;
+        try {setSubmission(readSubmission(address));} catch {setError("외출 요청 기록을 읽지 못했어요. / Outing request unavailable.");}
         let cancelled = false;
         void derivePayerAccount(address).then(async account => {
             // A balance RPC failure must not hide a previously signed grant's revoke
@@ -82,7 +79,7 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
             const raw = value && typeof value === "object" && "pending" in value ? value.pending : null;
             if (raw && typeof raw === "object") {
                 const cloud = parseGiwaPending(JSON.stringify({...raw, header: null}));
-                if (cloud.requestId === acknowledged.current) return;
+                if (cloud.requestId === acknowledged.current) {setRecoveryReady(true); return;}
                 const local = readGiwaPending();
                 const recovered = local?.requestId === cloud.requestId ? {...cloud, header: local.header} : cloud;
                 writeGiwaPending(recovered); setPending(recovered);
@@ -94,14 +91,78 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
         window.addEventListener("focus", reload); window.addEventListener("online", reload);
         return () => {cancelled = true; clearInterval(poll); window.removeEventListener("focus", reload); window.removeEventListener("online", reload);};
     }, [address, profileReady]);
-    async function approve(requests: AllowanceRequest[]) {
+    const refreshing = useRef(false);
+    const lastPoll = useRef(0), hasActiveJobs = useRef(false), lastSpent = useRef("");
+    const [statusError, setStatusError] = useState("");
+    async function refreshOutings() {
+        if (!address || !profileReady || refreshing.current) return;
+        refreshing.current = true;
+        try {
+            const value = await profileRequest(address, "/outings") as OutingStatus;
+            if (activeOwner.current !== address) return;
+            if (typeof value?.enabled !== "boolean" || !Array.isArray(value.jobs)) throw new Error("Invalid runner response");
+            setStatusError(""); lastPoll.current = Date.now();
+            hasActiveJobs.current = value.jobs.some(job => ["queued", "running"].includes(job.status));
+            const spent = value.jobs.map(job => `${job.id}:${job.spent}`).join("|");
+            if (spent !== lastSpent.current && payer) {
+                lastSpent.current = spent;
+                void readPayerBalance(payer).then(amount => {if (activeOwner.current === address) setBalance(amount === undefined ? null : formatUnits(amount, 6));}).catch(() => {if (activeOwner.current === address) setBalance(null);});
+            }
+            setAvailable(value.enabled); serverAgent.current = value.agent;
+            setJobs(value.jobs);
+            const stored = readSubmission(address);
+            if (stored && value.jobs.some(job => job.id === stored.id)) {clearSubmission(address); setSubmission(null);}
+        } catch {if (activeOwner.current === address) {lastPoll.current = Date.now(); hasActiveJobs.current = false; setAvailable(false); setStatusError(locale === "ko" ? "외출 상태를 불러오지 못했어요. 연결을 확인하고 새로고침해 주세요." : "Could not check outings. Check your connection and refresh.");}}
+        finally {refreshing.current = false;}
+    }
+    useEffect(() => {
+        if (!address || !profileReady) return;
+        const reload = () => {if (!document.hidden && !locked.current) void refreshOutings();};
+        reload(); const poll = setInterval(() => {if (hasActiveJobs.current || Date.now() - lastPoll.current > 60_000) reload();}, 8000);
+        window.addEventListener("focus", reload); window.addEventListener("online", reload); document.addEventListener("visibilitychange", reload);
+        return () => {clearInterval(poll); window.removeEventListener("focus", reload); window.removeEventListener("online", reload); document.removeEventListener("visibilitychange", reload);};
+    }, [address, profileReady, payer]);
+    async function submitOuting(value: OutingSubmission) {
+        if (!address) throw new GiwaTicketError("Wallet unavailable");
+        // Persist before dispatch: a lost response must retry this id, never sign a new grant.
+        saveSubmission(address, value); setSubmission(value);
+        try {await profileRequest(address, "/outings", "POST", value);}
+        catch (e) {
+            // These rejections occur before insertion. Ambiguous/network failures keep the exact outbox.
+            if (e instanceof ProfileError && ["invalid_request", "invalid_permission"].includes(e.code)) {clearSubmission(address); setSubmission(null);}
+            throw e;
+        }
+        clearSubmission(address); setSubmission(null);
+    }
+    async function recoverSubmission() {
+        if (!address || locked.current) return;
+        let stored: OutingSubmission | null;
+        try {stored = readSubmission(address);} catch {setError(locale === "ko" ? "외출 요청 기록을 읽지 못했어요. 저장 공간을 확인해 주세요." : "Cannot read the outing request. Check browser storage."); return;}
+        if (!stored) return;
+        locked.current = true; setBusy(true); setError("");
+        try {await submitOuting(stored);}
+        catch {setError(locale === "ko" ? "같은 외출 요청을 확인 중이에요. 새 서명이나 중복 출발은 하지 않아요." : "Checking the same outing. No new signature or duplicate departure.");}
+        finally {locked.current = false; setBusy(false); await refreshOutings();}
+    }
+    async function controlJob(id: string, action: "stop" | "resume") {
+        if (!address || locked.current) return;
+        locked.current = true; setBusy(true); setError("");
+        try {await profileRequest(address, `/outings/${encodeURIComponent(id)}/${action}`, "POST", {generation: PROFILE_GENERATION});}
+        catch {setError(locale === "ko" ? "변경을 확인하지 못했어요. 현재 상태를 새로고침해 주세요." : "Could not confirm the change. Refresh outing status.");}
+        finally {locked.current = false; setBusy(false); await refreshOutings();}
+    }
+    async function approve(requests: AllowanceRequest[], choice: GameId | "auto") {
         if (!address || !connector || locked.current || !recoveryReady) return;
         locked.current = true; setBusy(true); setError("");
         try {
+            if (readSubmission(address)) throw new GiwaTicketError("먼저 외출 요청을 확인해 주세요. / Recover the existing outing request first.");
+            if (!available || !serverAgent.current) throw new GiwaTicketError("자동 외출 서버가 준비되지 않았어요. 무료 연습을 이용해 주세요. / Outing server unavailable. Try free practice.");
             if (readGiwaPending()) throw new GiwaTicketError("먼저 진행 중인 입장권을 복구해 주세요. / Recover the pending ticket first.");
             if (!requests.length || requests.length > 12 || new Set(requests.map(item => item.characterId)).size !== requests.length ||
                 requests.some(item => !validAllowance(item.admissions) || !/^[a-zA-Z0-9-]{1,64}$/.test(item.characterId) || !item.name.trim())) throw new GiwaTicketError("친구별 용돈을 확인해 주세요. / Check each friend's allowance.");
-            const targets = requests.filter(item => sessions.remaining(item.characterId) === 0);
+            const active = jobs.filter(job => ["queued", "running", "paused"].includes(job.status));
+            const targets = requests.filter(item => !active.some(job => job.characterId === item.characterId));
+            const agent = serverAgent.current;
             if (!targets.length) return;
             setPhase("catalogue");
             await checkGiwaCatalogue();
@@ -119,11 +180,10 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
                 setApprovalTarget({name, admissions, index: index + 1, total: targets.length});
                 const policy = arcadePolicy(admissions);
                 setPhase("preparing");
-                const agent = privateKeyToAccount(generatePrivateKey());
                 const head = await publicClient.getBlock();
                 const startDate = Number(head.timestamp) - 1;
                 const signing = prepareRootPermissionSigningRequest({environment: deployment.environment,
-                    accountOwnerSmartAccount: account, delegate: agent.address, policy, startDate});
+                    accountOwnerSmartAccount: account, delegate: agent, policy, startDate});
                 if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
                 const signature = await requestGiwaSignature({config, connector, owner, typedData: signing.typedData,
                     signal: AbortSignal.timeout(90_000), onRequest: () => setPhase("signing")});
@@ -151,14 +211,14 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
                 await verifyPermissionArtifact(artifact, locale);
                 const available = await readPayerBalance(account);
                 setPayer(account); setBalance(available === undefined ? null : formatUnits(available, 6));
-                const reserved = Object.values(sessions.view()).reduce((sum, item) => sum + item.remaining, 0);
+                const reserved = active.reduce((sum, item) => sum + item.admissions - item.spent, 0);
                 const needed = targets.slice(index).reduce((sum, item) => sum + item.admissions, reserved);
                 if (available === undefined || available < BigInt(needed) * ARCADE_TICKET_AMOUNT) throw new GiwaTicketError("테스트 토큰 잔액이 부족해요. Studio에서 충전해 주세요. / Top up test tokens in Studio.");
                 if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
-                sessions.add({characterId, name, owner, payer: account, context: artifact.permissionContext, limit: admissions, expires: startDate + policy.expiresAfterSeconds,
-                    provider: createMapaeDelegationProvider({account: agent, environment: deployment.environment,
-                        parentPermissionContext: artifact.permissionContext, facilitatorAddresses: [ARCADE_REDEEMER]})});
-                publishAllowances();
+                setPhase("submitting");
+                await submitOuting({generation: PROFILE_GENERATION, id: crypto.randomUUID(), characterId, choice, admissions,
+                    permissionContext: artifact.permissionContext, locale});
+
             }
         } catch (e) {
             // Wallet/provider exceptions can embed signed request data. Only errors
@@ -169,34 +229,33 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
                 timeout: ko ? "지갑 응답을 받지 못해 이번 요청을 중단했어요. 지갑의 이전 요청을 거절한 뒤 다시 연결해 주세요. 늦게 온 서명으로 계정을 만들거나 결제하지 않아요." : "Wallet did not respond. Dismiss its previous request and reconnect. A late signature will not deploy an account or pay.",
                 pending: ko ? "지갑에 이전 요청이 남아 있어요. 해당 지갑에서 요청을 거절한 뒤 다시 시도해 주세요." : "Your wallet has an earlier request pending. Dismiss it in that wallet before trying again.",
                 chain: ko ? "연결한 지갑의 네트워크가 GIWA Sepolia가 아니에요. GIWA로 전환한 뒤 다시 시도해 주세요." : "Your selected wallet is not on GIWA Sepolia. Switch to GIWA and try again.",
-                rejected: ko ? "지갑에서 요청을 거절했어요. 이번 요청으로 결제하지 않았어요." : "You declined the wallet request. This request made no payment.",
+                rejected: ko ? "이 친구의 서명을 취소했어요. 이미 출발한 친구는 계속 놀아요." : "This friend’s signature was cancelled. Friends already sent out keep playing.",
             };
             setError(walletError ? messages[walletError.code] : e instanceof GiwaTicketError ? e.message : ko ? "용돈 승인이 완료되지 않았어요. 연결한 지갑과 GIWA 네트워크를 확인해 주세요." : "Allowance not approved. Check your selected wallet and GIWA network.");
-        } finally {locked.current = false; setBusy(false); setPhase("idle"); setApprovalTarget(null);}
+        } finally {locked.current = false; setBusy(false); setPhase("idle"); setApprovalTarget(null); await refreshOutings();}
     }
     async function buy(game: GameId, requestId: string, characterId: string) {
         if (locked.current) throw new GiwaTicketError("A GIWA request is already in progress.");
         locked.current = true;
         try {
-            const old = readGiwaPending(), current = sessions.get(characterId);
+            const old = readGiwaPending();
             if (!address || (old && getAddress(old.owner) !== getAddress(address))) throw new GiwaTicketError("입장권 주인의 지갑을 연결해 주세요. / Connect the ticket owner's wallet.");
-            if (!old && (!current || current.owner !== getAddress(address) || sessions.remaining(characterId) < 1 || current.expires <= Date.now() / 1000)) throw new GiwaTicketError("GIWA 용돈을 먼저 승인해 주세요. / Approve the GIWA allowance first.");
+            if (!old) throw new GiwaTicketError("No pending ticket to recover.");
             if (activeOwner.current !== address) throw new GiwaTicketError("Wallet changed.");
-            const account = old?.payer ?? current!.payer;
+            const account = old.payer;
             const receipt = await buyGiwaTicket({game, requestId, characterId, owner: address, payer: account,
-                delegationManager: getAddress(deployment.environment.DelegationManager), provider: current?.provider});
+                delegationManager: getAddress(deployment.environment.DelegationManager)});
             const mined = await publicClient.waitForTransactionReceipt({hash: receipt.transaction, timeout: 30_000}).catch(() => null);
             if (!mined || mined.status !== "success" || !hasGiwaTicketTransfer(mined.logs, account)) {
                 throw new GiwaTicketError("GIWA 정산 확인 중이에요. 같은 입장권을 복구해 주세요. / Waiting for the matching on-chain transfer.");
             }
             if (activeOwner.current !== address || activeConnector.current !== connector?.uid) throw new GiwaTicketError("Wallet changed; recover the ticket with its owner.");
             // Debit a confirmed transfer once, even if profile save/ack later fails or another device claims it.
-            sessions.settled(characterId, old?.requestId ?? requestId); publishAllowances();
             const value = await readPayerBalance(account);
             if (activeOwner.current !== address) throw new GiwaTicketError("지갑이 변경됐어요. 입장권 주인의 지갑으로 복구해 주세요. / Wallet changed; reconnect the ticket owner.");
             setBalance(value === undefined ? null : formatUnits(value, 6));
             return {...receipt, balanceAfter: value === undefined ? null : formatUnits(value, 6),
-                allowanceAfter: current ? (sessions.remaining(characterId) * ARCADE_TICKET_COST).toFixed(2) : null};
+                allowanceAfter: null};
         } finally {
             locked.current = false;
             setPending(readGiwaPending());
@@ -212,9 +271,10 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
         clearGiwaPending(); setPending(null);
         return admitted;
     }
-    function finish(characterId?: string) {if (locked.current) return; sessions.stop(characterId); publishAllowances();}
-    function revoked(context: Hex) {sessions.revoke(context); publishAllowances();}
-    function disconnect() {finish(); disconnectWallet();}
+    function revoked(_context: Hex) {void refreshOutings();}
+    function disconnect() {disconnectWallet();}
     const ownPending = pending && address && getAddress(pending.owner) === getAddress(address) ? pending : null;
-    return {address, payer, balance, remaining, allowances, approvalTarget, remainingFor: (id: string) => sessions.remaining(id), recoveryReady, busy, phase, chainId, walletName: connector?.name ?? "", error, pending: ownPending, otherWalletPending: !!pending && !ownPending, grants, revoked, disconnect, approve, buy, acknowledge, finish};
+    return {address, payer, balance, jobs, available, submission, refreshOutings, recoverSubmission, controlJob,
+        approvalTarget, recoveryReady, busy, phase, chainId, walletName: connector?.name ?? "", error: error || statusError,
+        pending: ownPending, otherWalletPending: !!pending && !ownPending, grants, revoked, disconnect, approve, buy, acknowledge};
 }

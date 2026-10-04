@@ -3,7 +3,7 @@ import {applyRaceRound, createRaceSeason, raceHighlights, RACE_ROUNDS, RACE_STRA
 import {admitActivity, admitHumanActivity, completeActivity, isOutcome, parseActivities} from "../activity";
 import {addCharacter, newArcadeState, newCompanion} from "../state";
 import {withReplay} from "../replay";
-import {raceOutcome} from "./RaceGame";
+import {raceOutcome} from "@mapae/arcade/simulation";
 
 function finishedSeason(enter: boolean, source: "human" | "rules") {
     let season = createRaceSeason(0, "Coach", "en");

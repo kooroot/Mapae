@@ -49,6 +49,7 @@ export const STORE_MODULES = [
     "apps/web/src/lib/grant-store.ts",
     "apps/web/src/arcade/state-store.ts",
     "apps/web/src/arcade/profile/device-store.ts",
+    "apps/web/src/arcade/outing-submission.ts",
 ];
 // The landing greeter writes only one catalog zodiac name, tested against hostile inputs.
 export const SESSION_STORE_MODULES = ["apps/web/src/arcade/giwa-store.ts", "apps/web/src/landing/arcade-greeter-store.ts"];

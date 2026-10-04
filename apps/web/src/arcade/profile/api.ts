@@ -32,7 +32,7 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 export type ProfileVerifier = (input: {address: Address; message: string; signature: Hex}) => Promise<boolean>;
 
 /** The stored challenge supplies the identity and message; no client-selected profile owner. */
-export async function profileApi(request: Request, repo: ProfileRepository, options: {verify?: ProfileVerifier; now?: number; development?: boolean; checkout?: (request: Request, owner: Address, input: unknown) => Promise<Response>} = {}): Promise<Response> {
+export async function profileApi(request: Request, repo: ProfileRepository, options: {verify?: ProfileVerifier; now?: number; development?: boolean; checkout?: (request: Request, owner: Address, input: unknown) => Promise<Response>; outings?: (request: Request, owner: Address, input: unknown) => Promise<Response>} = {}): Promise<Response> {
     const url = new URL(request.url), now = options.now ?? Date.now();
     const local = options.development && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
     if ((!ORIGINS.has(url.origin) && !local) || url.search) return error("origin_denied", 403);
@@ -40,7 +40,8 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
     const write = request.method !== "GET";
     if (write && (request.headers.get("Origin") !== url.origin || request.headers.get("Content-Type")?.split(";")[0] !== "application/json")) return error("origin_denied", 403);
     const path = url.pathname;
-    if (!["/api/arcade/profile", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout", "/api/arcade/profile/checkout", "/api/arcade/profile/checkout/ack"].includes(path)) return error("not_found", 404);
+    const outingPath = /^\/api\/arcade\/profile\/outings(?:\/[A-Za-z0-9_-]{8,80}\/(?:stop|resume))?$/.test(path);
+    if (!outingPath && !["/api/arcade/profile", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout", "/api/arcade/profile/checkout", "/api/arcade/profile/checkout/ack"].includes(path)) return error("not_found", 404);
     try {
         if (path.endsWith("/challenge") && request.method === "POST") {
             const input = await body(request, 1024);
@@ -79,6 +80,14 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
         if (path.endsWith("/logout") && request.method === "POST") {await repo.logout(await tokenHash(session!)); return json({ok: true}, 200, cookie(SESSION, "", 0));}
         const ip = request.headers.get("CF-Connecting-IP"), requestWindow = Math.floor(now / 60_000);
         if (ip && !await repo.rateLimit(`authenticated-ip:${await tokenHash(ip)}:${requestWindow}`, (requestWindow + 1) * 60_000, 600)) return limited((requestWindow + 1) * 60_000, now);
+        if (outingPath) {
+            if (request.method !== "POST" && !(path === "/api/arcade/profile/outings" && request.method === "GET")) return error("method_not_allowed", 405);
+            const window = Math.floor(now / 60_000), until = (window + 1) * 60_000;
+            if (!await repo.rateLimit(`outings:${identity.owner}:${request.method}:${window}`, until, request.method === "GET" ? 30 : 12)) return limited(until, now);
+            if (await repo.rateLimit(`cleanup:${window}`, until, 1)) await repo.cleanup(now);
+            if (!options.outings) return error("outings_unavailable", 503);
+            return await options.outings(request, getAddress(identity.owner).toLowerCase() as Address, request.method === "GET" ? null : await body(request, 65_536));
+        }
         if (path.startsWith("/api/arcade/profile/checkout")) {
             const window = Math.floor(now / 60_000), until = (window + 1) * 60_000;
             if (!await repo.rateLimit(`checkout:${identity.owner}:${window}`, until, 30)) return limited(until, now);

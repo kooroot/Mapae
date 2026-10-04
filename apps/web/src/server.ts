@@ -1,4 +1,5 @@
 import {env} from "cloudflare:workers";
+import {outingsApi} from "./arcade/profile/outings";
 import {checkoutApi, checkoutRepository} from "./arcade/profile/checkout";
 import {derivePayerAccount} from "./lib/grant";
 import {deployment} from "./lib/config";
@@ -34,10 +35,18 @@ const streamWithSecurityHeaders = defineHandlerCallback((context) => {
 
 const start = createStartHandler(streamWithSecurityHeaders);
 
-export default createServerEntry({fetch: (request, options) =>
-    new URL(request.url).pathname.startsWith("/api/arcade/profile")
-        ? profileApi(request, profileRepository(env.ARCADE_DB), {development: import.meta.env.DEV, checkout: (r, owner, input) => checkoutApi(r, owner, input, {repo: checkoutRepository(env.ARCADE_DB), profiles: profileRepository(env.ARCADE_DB), payer: derivePayerAccount, manager: deployment.environment.DelegationManager, receiptToken: env.ARCADE_RECEIPT_TOKEN})})
-        : new URL(request.url).pathname.startsWith("/api/arcade/")
-        ? arcadeProductionApi(request)
-        : start(request, options),
-});
+export default createServerEntry({fetch: (request, options) => {
+    const path = new URL(request.url).pathname;
+    if (path.startsWith("/api/arcade/profile")) {
+        const profiles = profileRepository(env.ARCADE_DB);
+        return profileApi(request, profiles, {
+            development: import.meta.env.DEV,
+            outings: (r, owner, input) => outingsApi(r, owner, input, {profiles, receiptToken: env.ARCADE_RECEIPT_TOKEN}),
+            checkout: (r, owner, input) => checkoutApi(r, owner, input, {
+                repo: checkoutRepository(env.ARCADE_DB), profiles, payer: derivePayerAccount,
+                manager: deployment.environment.DelegationManager, receiptToken: env.ARCADE_RECEIPT_TOKEN,
+            }),
+        });
+    }
+    return path.startsWith("/api/arcade/") ? arcadeProductionApi(request) : start(request, options);
+}});

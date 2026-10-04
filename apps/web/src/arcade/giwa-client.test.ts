@@ -23,7 +23,7 @@ describe("GIWA ticket client", () => {
     test("owner permission has a lifetime budget, fixed payee, token and expiry", async () => {
         const p = arcadePolicy(36);
         expect(p.periodAmount).toBe(36_000_000n); expect(p.lifetimeTotalAmount).toBe(36_000_000n);
-        expect(p.recipient).toBe(ARCADE_PAY_TO); expect(p.expiresAfterSeconds).toBe(1800);
+        expect(p.recipient).toBe(ARCADE_PAY_TO); expect(p.expiresAfterSeconds).toBe(7200);
         for (const count of [0, -1, 37, 0.5, NaN]) expect(() => arcadePolicy(count)).toThrow();
         const catalogue = {slug: "mapae-arcade", network: GIWA_SEPOLIA_CAIP2, payTo: ARCADE_PAY_TO, asset: MOCK_USDC.address,
             items: ["race", "shop", "stamp"].map(key => ({key, price: "1.00", url: `${ARCADE_SELLER}/${key}`}))};

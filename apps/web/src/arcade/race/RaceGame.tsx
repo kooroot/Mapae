@@ -1,8 +1,9 @@
+import {raceOutcome} from "@mapae/arcade/simulation";
 import {MOCK_USDC} from "@mapae/shared";
 import {useEffect, useRef, useState} from "react";
-import type {ActivityOutcome, AgentDecision} from "@mapae/arcade";
+import type {AgentDecision} from "@mapae/arcade";
 import {applyRaceRound, createRaceSeason, makeRaceCourse, raceEndTime, raceNextCheckpoint, raceFrameAt,
-    RACE_BURST_COST, RACE_HABITS, RACE_DRAFT_DISTANCE, raceTraffic, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceSeason, type RaceAction} from "@mapae/arcade/race";
+    RACE_BURST_COST, RACE_HABITS, RACE_DRAFT_DISTANCE, raceTraffic, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceAction} from "@mapae/arcade/race";
 import type {PlayableGameProps} from "../agent-contract";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
@@ -48,42 +49,6 @@ const COPY = {
 
 type Phase = "choose" | "brief" | "thinking" | "race" | "checkpoint" | "recap" | "error";
 type Note = {round: number; decision: Omit<AgentDecision, "source"> & {source: "human" | AgentDecision["source"]}; enter: boolean; strategy: RaceStrategy};
-
-export function raceOutcome(season: RaceSeason, notes: Note[], locale: "ko" | "en"): ActivityOutcome {
-    const owner = season.runners.find(runner => runner.id === "owner")!;
-    const rank = seasonRanking(season).find(runner => runner.id === "owner")!.rank;
-    const t = COPY[locale];
-    const human = notes.length > 0 && notes.every(note => note.decision.source === "human");
-    const rival = season.runners.find(runner => runner.id === season.rivalId)!;
-    // Saved outcomes allow two highlights: one observed event and the season rivalry.
-    const highlights = season.rounds.flatMap(round => raceHighlights(round.simulation)).slice(-1);
-    if (owner.entries > 0) highlights.push({ko: `시즌 라이벌 ${rival.name}와 ${owner.points} 대 ${rival.points}점.`, en: `Season rival ${rival.name}: ${owner.points} to ${rival.points} points.`});
-    return {
-        game: "race", score: owner.points, highlights,
-        summary: {ko: `${RACE_ROUNDS}경기 시즌 ${rank}위 · ${owner.entries}회 출전 · ${owner.points}점`, en: `Place ${rank} over ${RACE_ROUNDS} races · ${owner.entries} entries · ${owner.points} points`},
-        metrics: [
-            {label: {ko: "출전 수", en: "Races entered"}, value: owner.entries},
-            {label: {ko: "우승", en: "Wins"}, value: owner.wins},
-            ...human ? [] : [
-                {label: {ko: "관전한 경기", en: "Races watched"}, value: RACE_ROUNDS - owner.entries},
-            ],
-        ],
-        transcript: notes.flatMap(note => {
-            const race = season.rounds[note.round]!.simulation;
-            const result = race.finish.find(finish => finish.id === "owner");
-            const timeLabel = result && result.seconds <= raceEndTime(race) ? `${result.seconds.toFixed(2)}${locale === "ko" ? "초" : "s"}` : locale === "ko" ? "순위 확정" : "Place confirmed";
-            return [
-                {speaker: `${owner.name} · ${note.decision.source === "human" ? locale === "ko" ? "직접 선택" : "Human choice" : note.decision.source === "llm" ? "LLM" : t.local}`, text: note.decision.explanation},
-                {speaker: `${note.round + 1} / ${t.source}`, text: `${note.decision.source === "human" ? (locale === "ko" ? "직접 선택" : "Human choice") : note.decision.model || t.local} · ${note.enter ? t.enter : t.skip} / ${t[note.strategy]}`},
-                ...race.calls.filter(call => call.id === "owner").map((command, index) => ({speaker: locale === "ko" ? `구간 작전 ${index + 1}` : `Checkpoint ${index + 1}`, text: `${ROUTE_LABELS[locale][command.route]} · ${PACE_LABELS[locale][command.pace]}`})),
-                {speaker: GAME_NAMES[locale].race, text: locale === "ko" ? result ? `${result.rank}위 · ${timeLabel} · ${result.points}점${human ? "" : " · 출전권 1회 사용"}`
-                    : "관전 · 0점 · 보상 없음" : result ? `Place ${result.rank} · ${timeLabel} · ${result.points} points${human ? "" : " · 1 included entry used"}`
-                    : "Watched · 0 points · no reward"},
-            ];
-        }),
-        ranking: seasonRanking(season).map(runner => ({name: runner.name, score: runner.points})),
-    };
-}
 
 export function RaceGame({appearance, profile, locale, mode, seed, budget, decide, reducedMotion, suspended = false, autoAdvance = false, onComplete, onExit}: PlayableGameProps) {
     const human = mode === "human", ko = locale === "ko";

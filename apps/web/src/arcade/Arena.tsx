@@ -1,10 +1,10 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useId, useRef, useState} from "react";
 import {preload} from "react-dom";
 import type {Locale} from "../lib/i18n";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {guardianLayers} from "./guardian-layers";
 import {Goblin} from "./Characters";
-import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldParade, stampWave, multiplier, newGame, newBossPractice, FEVER_TARGET, FEVER_MS, BOSS_OPENINGS, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, stamp, type Game, type FeverMode, type Actor} from "./game";
+import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldParade, stampWave, multiplier, newGame, newBossPractice, FEVER_TARGET, FEVER_MS, BOSS_OPENINGS, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, stamp, type Game, type FeverMode, type Actor} from "@mapae/arcade/stamp";
 import {cellForKey, isControlTarget} from "./input";
 import type {Character} from "./state";
 import type {ArcadeSound} from "./sound";
@@ -39,6 +39,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     autopilot?: "careful" | "quick";
 }) {
     const t = COPY[locale];
+    const bossHintId = useId();
     if (character.appearance) for (const layer of guardianLayers(character.appearance)) preload(layer.src, {as: "image"});
     for (const asset of ["goblin", "goblin-armored", "goblin-chief", "stamp-impact", "stamp-window"]) preload(`/arcade/${asset}-512.webp`, {as: "image"});
     const [view, setView] = useState<Game>(() => {
@@ -210,7 +211,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                 <p className={`stamp-parade-cue ${parade ? `is-${parade.phase}` : ""}`} role="status">{parade ? parade.phase === "soon" ? ko ? `★ 금도깨비 행렬 ${Math.ceil(parade.remaining / 1000)}초 전 · 출두를 준비해요` : `★ Gold parade in ${Math.ceil(parade.remaining / 1000)}s · ready your fever` : ko ? "★ 금도깨비 행렬! 출두로 두 배를 노려요" : "★ GOLD PARADE! Catch gold during fever" : charged && !fever ? ko ? "출두 준비 완료 · 지금 쓰거나 행렬을 기다려요" : "Fever ready · use it now or wait for gold" : ko ? "금도깨비 행렬은 2초 먼저 알려드려요" : "Watch for the two-second gold parade warning"}</p>
             </div>}
             <div className={`arc-playfield ${parade ? `stamp-parade-${parade.phase}` : ""}`} ref={field} tabIndex={-1}>
-                {chief || drill ? <BossTimingCue actor={chief ?? null} game={view} locale={locale} /> : <div className="arc-field-caption"><span>{rules}</span><span>馬牌</span></div>}
+                {chief || drill ? <BossTimingCue actor={chief ?? null} game={view} locale={locale} hintId={bossHintId} /> : <div className="arc-field-caption"><span>{rules}</span><span>馬牌</span></div>}
                 <div className="arc-windows" inert={suspended || paused || countdown > 0}>
                     {view.cells.map((cell, i) => {
                         const boss = cell.actor?.special === "boss" ? bossWindow(cell.actor, view.elapsed) : null;
@@ -218,6 +219,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                         const targetCue = boss ? bossCue : cell.actor?.special ? `${ko ? "갑옷" : "ARMOR"} · ${cell.actor.hp}` : cell.actor?.kind === "goblin" ? cell.actor.golden ? ko ? "★ 금도깨비" : "★ GOLD" : t.target : t.friendly;
                         return (
                         <button key={i} className={`arc-window ${cell.actor ? `arc-has-${cell.actor.kind}` : ""} ${cell.impact ? `arc-impact-${cell.impact.kind}` : ""} ${cell.impact?.perfect ? "stamp-perfect-hit" : ""} ${cell.actor?.golden ? "stamp-golden" : ""} ${cell.actor?.special ? `stamp-${cell.actor.special}` : ""} ${boss ? `stamp-boss-${boss.phase}` : ""} ${boss?.perfect ? "stamp-boss-perfect" : ""}`}
+                            aria-describedby={boss ? bossHintId : undefined}
                             data-testid={`cell-${i}`} data-actor={cell.actor?.kind ?? "empty"} data-special={cell.actor?.special ?? "normal"} data-boss-phase={boss?.phase} data-perfect={boss?.perfect} aria-disabled={!!autopilot}
                             aria-label={`${i + 1}: ${cell.actor ? cell.actor.special ? `${ko ? cell.actor.special === "boss" ? "대장 도깨비" : "갑옷 도깨비" : cell.actor.special === "boss" ? "Chief goblin" : "Armored goblin"} ${boss ? bossCue : ""} · ${cell.actor.hp} ${ko ? "번 남음" : "hits left"}` : cell.actor.golden ? ko ? "금도깨비 · 보너스" : "Golden goblin · bonus" : t[cell.actor.kind] : t.empty}`}
                             onPointerDown={event => {if (event.button === 0) {event.preventDefault(); hit(i);}}}
@@ -257,7 +259,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     );
 }
 
-function BossTimingCue({actor, game, locale}: {actor: Actor | null; game: Game; locale: Locale}) {
+function BossTimingCue({actor, game, locale, hintId}: {actor: Actor | null; game: Game; locale: Locale; hintId: string}) {
     const ko = locale === "ko";
     const window = actor ? bossWindow(actor, game.elapsed) : null;
     let cue = ko ? "가운데 창문을 보세요" : "WATCH THE CENTER WINDOW";
@@ -267,7 +269,7 @@ function BossTimingCue({actor, game, locale}: {actor: Actor | null; game: Game; 
     else if (window?.phase === "open") cue = window.perfectBlocked || window.perfectPassed ? ko ? "빈틈! 일반 타격 가능" : "OPEN! NORMAL HIT AVAILABLE" : ko ? "빈틈! ◆ 띠를 노려요" : "OPEN! AIM FOR THE ◆ BAND";
     else if (game.bossSpawned) cue = game.bossDefeated ? ko ? "대장 퇴치!" : "CHIEF DEFEATED!" : ko ? "대장이 달아났어요" : "THE CHIEF ESCAPED";
     return <div className={`stamp-boss-timing ${window?.perfect ? "is-perfect" : ""}`} data-testid="boss-timing">
-        <div className="stamp-boss-timing-heading"><strong role="status">{cue}</strong><span>{ko ? "정통" : "PERFECT"} {game.perfectHits}/{BOSS_OPENINGS}</span></div>
+        <div className="stamp-boss-timing-heading"><strong role="status" aria-atomic="true">{cue}</strong><span>{ko ? "정통" : "PERFECT"} {game.perfectHits}/{BOSS_OPENINGS}</span></div>
         <svg className="stamp-timing-track" aria-hidden="true">
             <rect className="stamp-timing-guard" width={`${BOSS_GUARD_MS / BOSS_CYCLE_MS * 100}%`} height="100%" />
             <text className="stamp-timing-guard-label" x={`${BOSS_GUARD_MS / BOSS_CYCLE_MS * 50}%`} y="50%" dominantBaseline="central" textAnchor="middle">{ko ? "방어" : "GUARD"}</text>
@@ -275,6 +277,6 @@ function BossTimingCue({actor, game, locale}: {actor: Actor | null; game: Game; 
             <text className="stamp-timing-band-label" x={`${(BOSS_PERFECT_START_MS + BOSS_PERFECT_MS / 2) / BOSS_CYCLE_MS * 100}%`} y="50%" dominantBaseline="central" textAnchor="middle">◆</text>
             {window && <line className="stamp-timing-hand" x1={`${window.progress * 100}%`} x2={`${window.progress * 100}%`} y1="0" y2="100%" />}
         </svg>
-        <p>{window?.perfectBlocked ? ko ? "먼저 눌러 이번 정통 보너스는 사라졌어요. 빈틈 타격은 가능해요." : "An early tap spent this opening's bonus. You can still hit while OPEN." : ko ? `빈틈은 1.4초 · 밝은 띠에 선이 오면 한 번, 정통 +${BOSS_PERFECT_POINTS}점` : `OPEN lasts 1.4s · stamp once when the line enters the bright band: PERFECT +${BOSS_PERFECT_POINTS}`}</p>
+        <p id={hintId}>{actor && <b>{ko ? `${game.cells.findIndex(cell => cell.actor === actor) + 1}번 창문 · ` : `Window ${game.cells.findIndex(cell => cell.actor === actor) + 1} · `}</b>}{window?.perfectBlocked ? ko ? "먼저 눌러 이번 정통 보너스는 사라졌어요. 빈틈 타격은 가능해요." : "An early tap spent this opening's bonus. You can still hit while OPEN." : ko ? `빈틈은 1.4초 · 밝은 띠에 선이 오면 한 번, 정통 +${BOSS_PERFECT_POINTS}점` : `OPEN lasts 1.4s · stamp once when the line enters the bright band: PERFECT +${BOSS_PERFECT_POINTS}`}</p>
     </div>;
 }

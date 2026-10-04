@@ -1,4 +1,4 @@
-import {stampChallenges, stampAdvice, type Game} from "./game";
+import {stampChallenges, stampAdvice, type Game} from "@mapae/arcade/stamp";
 
 export function StampChallenges({game, locale, early = false, result = false}: {game: Game; locale: "ko" | "en"; early?: boolean; result?: boolean}) {
     const ko = locale === "ko";

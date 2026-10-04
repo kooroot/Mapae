@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {advance, newGame, newBossPractice, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, BOSS_PRACTICE_MS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "./game";
+import {advance, newGame, newBossPractice, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, BOSS_PRACTICE_MS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "@mapae/arcade/stamp";
 import {cellForKey} from "./input";
 
 function withActor(game: Game, kind: "goblin" | "courier", index = 0): Game {

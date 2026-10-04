@@ -46,6 +46,7 @@ describe("findStorageWrites", () => {
             "apps/web/src/lib/grant-store.ts",
             "apps/web/src/arcade/state-store.ts",
             "apps/web/src/arcade/profile/device-store.ts",
+    "apps/web/src/arcade/outing-submission.ts",
         ]);
         expect(SESSION_STORE_MODULES).toEqual(["apps/web/src/arcade/giwa-store.ts", "apps/web/src/landing/arcade-greeter-store.ts"]);
     });

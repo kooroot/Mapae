@@ -1,1 +1,21 @@
-{"name":"@mapae/arcade","version":"0.0.0","private":true,"type":"module","main":"./src/contracts.ts","types":"./src/contracts.ts","exports":{".":"./src/contracts.ts","./race":"./src/race.ts","./shop":"./src/shop.ts","./tickets":"./src/tickets.ts"},"dependencies":{"@mapae/shared":"workspace:*"}}
+{
+  "name": "@mapae/arcade",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/contracts.ts",
+  "types": "./src/contracts.ts",
+  "exports": {
+    ".": "./src/contracts.ts",
+    "./race": "./src/race.ts",
+    "./shop": "./src/shop.ts",
+    "./tickets": "./src/tickets.ts",
+    "./outings": "./src/outings.ts",
+    "./stamp": "./src/stamp.ts",
+    "./simulation": "./src/simulation.ts",
+    "./challenge": "./src/challenge.ts"
+  },
+  "dependencies": {
+    "@mapae/shared": "workspace:*"
+  }
+}

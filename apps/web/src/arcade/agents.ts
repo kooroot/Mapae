@@ -1,3 +1,4 @@
+import {chooseOutingGame, stampStrategy} from "@mapae/arcade/simulation";
 import type {AgentDecision, AgentDecisionRequest, Decide, GameId} from "@mapae/arcade";
 import {ARCADE_TICKET_PRICE} from "@mapae/arcade/tickets";
 import {MOCK_USDC} from "@mapae/shared";
@@ -5,15 +6,16 @@ import {MOCK_USDC} from "@mapae/shared";
 /** These are transparent finite policies. Never label them as a language model. */
 export function ruleDecision(request: AgentDecisionRequest): AgentDecision {
     const ko = request.locale === "ko";
-    if (request.kind === "stamp") return {source: "rules", action: {tempo: request.profile.temperament === "bold" ? "quick" : "careful"},
-        explanation: ko ? "도깨비만 확인하고 찍어요. 성향에 따라 반응 속도를 정했어요." : "I check for goblins before stamping; temperament sets my reaction speed."};
+    if (request.kind === "stamp") {
+        const strategy = stampStrategy(request.profile, request.locale);
+        return {source: "rules", action: {tempo: strategy.tempo}, explanation: strategy.explanation};
+    }
     if (request.kind !== "outing") throw new Error("This rule belongs to its game engine.");
     const {allowance, balance, free, requested, visited} = request.observation;
     const canEnter = free === true || (typeof allowance === "number" && allowance > 0 && typeof balance === "number" && balance > 0);
     const games: GameId[] = ["race", "shop", "stamp"];
-    const game = games.includes(requested as GameId) ? requested as GameId :
-        request.profile.goal === "score" ? "race" : request.profile.goal === "save" ? "shop" :
-            games.find(g => !Array.isArray(visited) || !visited.includes(g)) ?? "race";
+    const game = chooseOutingGame(request.profile, games.includes(requested as GameId) ? requested as GameId : "auto",
+        Array.isArray(visited) ? visited.filter((g): g is GameId => games.includes(g as GameId)) : []);
     return {source: "rules", action: {enter: canEnter, game, rounds: 1}, explanation: !canEnter
         ? ko ? "허용된 용돈이 없어 외출을 멈췄어요." : "I stopped because my allowance is exhausted."
         : ko ? `${request.profile.goal === "explore" ? "아직 안 해 본 놀이를 골랐어요" : request.profile.goal === "save" ? "가격과 구매 목표를 따지는 가게로 갈게요" : "시즌 점수를 겨루러 경주에 나가요"}. 한 번 입장한 뒤 남은 한도를 다시 확인할게요.`

@@ -1,3 +1,4 @@
+import {OUTING_PERMISSION_SECONDS} from "@mapae/arcade/outings";
 import {PROFILE_GENERATION} from "./profile/model";
 import type {GameId} from "@mapae/arcade";
 import {ARCADE_PAY_TO, ARCADE_REDEEMER, ARCADE_SELLER, ARCADE_TICKETS, ARCADE_TICKET_PRICE, ARCADE_TICKET_AMOUNT} from "@mapae/arcade/tickets";
@@ -24,7 +25,7 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 export function arcadePolicy(admissions: number): PeriodPolicy {
     if (!validAllowance(admissions)) throw new GiwaTicketError(`Select 1–${MAX_ALLOWANCE_ADMISSIONS} admissions per character.`);
     return {role: "vendor-agent", token: MOCK_USDC.address, periodAmount: BigInt(admissions) * ARCADE_TICKET_AMOUNT,
-        lifetimeTotalAmount: BigInt(admissions) * ARCADE_TICKET_AMOUNT, periodDurationSeconds: 60, expiresAfterSeconds: 1800, recipient: ARCADE_PAY_TO};
+        lifetimeTotalAmount: BigInt(admissions) * ARCADE_TICKET_AMOUNT, periodDurationSeconds: 60, expiresAfterSeconds: OUTING_PERMISSION_SECONDS, recipient: ARCADE_PAY_TO};
 }
 export async function checkGiwaCatalogue(fetcher: typeof fetch = fetch): Promise<void> {
     const response = await fetcher("/api/arcade/giwa", {redirect: "error", signal: AbortSignal.timeout(15_000)});

@@ -21,7 +21,7 @@ import {CharacterEditor} from "./CharacterRoster";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {Goblin, GameArt} from "./Characters";
 import {admitPracticeRun, selectCharacter, updateCharacter, finishPracticeRun, type Companion, type ArcadeState, type Run} from "./state";
-import {stampHighlights, type Game} from "./game";
+import {stampHighlights, type Game} from "@mapae/arcade/stamp";
 import {TurningPoints} from "./TurningPoints";
 import {gameSeed, withReplay} from "./replay";
 import type {useArcadeState} from "./useArcadeState";
@@ -81,7 +81,7 @@ const COPY = {
 } satisfies Record<Locale, Record<string, string>>;
 type Screen = "lobby" | "setup" | "play" | "result";
 
-export function PracticeArcade({onBack, store, character, initialGame, initialReplay}: {initialGame: GameId; initialReplay?: {seed: number; name: string; score: number} & Pick<NonNullable<ActivityOutcome["replay"]>, "shop" | "shopMemory">; onBack: () => void; store: ReturnType<typeof useArcadeState>; character: Companion}) {
+export function PracticeArcade({onBack, store, character, initialGame, initialReplay}: {initialGame: GameId; initialReplay?: {seed: number; name: string; score: number; daily?: boolean} & Pick<NonNullable<ActivityOutcome["replay"]>, "shop" | "shopMemory">; onBack: () => void; store: ReturnType<typeof useArcadeState>; character: Companion}) {
     const {locale} = useLocale();
     const t = COPY[locale];
     const {demo, ready, update} = store;
@@ -240,7 +240,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                     const next = update(v => updateCharacter(v, character.id, {name: draft.name, color: draft.color, appearance: draft.appearance, temperament: draft.temperament, agent: draft.agent, configured: true}));
                     if (editing) lobby(); else begin(next);
                 }} />}
-                {screen === "play" && initialReplay && initialGame === selectedGame && (manual?.source === "practice" ? manual.replaySeed : ticket?.replaySeed) === initialReplay.seed && <p className="arc-replay-invite">{ko ? `${initialReplay.name}의 ${initialReplay.score.toLocaleString()}점에 도전 · 같은 출발 조건 · 무료` : `Challenge ${initialReplay.name}'s ${initialReplay.score.toLocaleString()} points · Same starting scenario · Free`}</p>}
+                {screen === "play" && initialReplay && initialGame === selectedGame && (manual?.source === "practice" ? manual.replaySeed : ticket?.replaySeed) === initialReplay.seed && <p className="arc-replay-invite">{initialReplay.daily ? ko ? "오늘의 도전 · 모두 같은 출발 조건 · 무료" : "Daily challenge · Same scenario for everyone · Free" : ko ? `${initialReplay.name}의 ${initialReplay.score.toLocaleString()}점에 도전 · 같은 출발 조건 · 무료` : `Challenge ${initialReplay.name}'s ${initialReplay.score.toLocaleString()} points · Same starting scenario · Free`}</p>}
                 {screen === "play" && drillSeed !== null && <Arena key={`drill-${drillSeed}`} practice="boss" seed={drillSeed} suspended={settingsOpen || exitOpen} locale={locale} character={character} reducedMotion={demo.reducedMotion} sound={sound} onFinish={finish} />}
                 {screen === "play" && ticket && <Arena seed={gameSeed(ticket)} suspended={settingsOpen || exitOpen} key={ticket.id} locale={locale} character={{...character, name: ticket.name, color: ticket.color, appearance: ticket.appearance}} reducedMotion={demo.reducedMotion} sound={sound} onFinish={finish} />}
                 {screen === "play" && manual && (() => {

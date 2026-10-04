@@ -223,10 +223,10 @@ describe("the booted shop", () => {
         expect(body.orders.allTime).toEqual({total: 3, bySeller: {"demo-cafe": 2, "demo-studio": 1}});
     });
 
-    test("a body past 16 KiB is refused by the server, before any route sees it", async () => {
+    test("a body past 64 KiB is refused by the server, before any route sees it", async () => {
         const small = await fetch(`${baseUrl}/health`, {method: "POST", body: "x".repeat(1_024)});
         expect(small.status).toBe(404);
-        const large = await fetch(`${baseUrl}/health`, {method: "POST", body: "x".repeat(16_385)});
+        const large = await fetch(`${baseUrl}/health`, {method: "POST", body: "x".repeat(65_537)});
         expect(large.status).toBe(413);
     });
 });

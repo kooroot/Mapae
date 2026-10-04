@@ -1,0 +1,18 @@
+import type {ActivityOutcome, AgentProfile, GameId} from './contracts';
+import type {ShopMemory} from './shop';
+
+export const MAX_OUTING_ADMISSIONS = 36;
+export const OUTING_PERMISSION_SECONDS = 7200;
+export type OutingStart = {
+    id: string; characterId: string; profile: AgentProfile; locale: 'ko' | 'en';
+    choice: GameId | 'auto'; admissions: number; permissionContext: `0x${string}`;
+    shopMemory?: ShopMemory;
+};
+export type OutingResult = {id: string; game: GameId; seed: number; at: number; transaction: `0x${string}`; outcome: ActivityOutcome};
+export type OutingView = {
+    id: string; characterId: string; profile: AgentProfile; locale: 'ko' | 'en'; choice: GameId | 'auto';
+    status: 'queued' | 'running' | 'paused' | 'stopped' | 'complete'; admissions: number;
+    spent: number; createdAt: number; updatedAt: number; expiresAt: number;
+    error: string | null; results: OutingResult[];
+};
+export type OutingStatus = {enabled: boolean; agent: `0x${string}` | null; jobs: OutingView[]};
