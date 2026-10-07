@@ -95,6 +95,12 @@ describe('restricted ownership and permission', () => {
         expect(() => readOutingConfig({ARCADE_OUTINGS_ENABLED:'true',ARCADE_RECEIPT_TOKEN:token,ARCADE_AGENT_PRIVATE_KEY:`0x${'22'.repeat(32)}`, FACILITATOR_SIGNER_PRIVATE_KEY:`0x${'22'.repeat(32)}`})).toThrow('same account');
         expect(readOutingConfig({ARCADE_OUTINGS_ENABLED:'true',ARCADE_RECEIPT_TOKEN:token,ARCADE_AGENT_PRIVATE_KEY:`0x${'22'.repeat(32)}`})?.account.address).toBe(agent.address);
     });
+    test('receipt reads follow GIWA_SEPOLIA_RPC_URL like the other services', () => {
+        const base = {ARCADE_OUTINGS_ENABLED:'true',ARCADE_RECEIPT_TOKEN:token,ARCADE_AGENT_PRIVATE_KEY:`0x${'22'.repeat(32)}`};
+        expect(readOutingConfig(base)?.rpcUrl).toBe('https://sepolia-rpc.giwa.io/');
+        expect(readOutingConfig({...base, GIWA_SEPOLIA_RPC_URL:'https://rpc.provider.example/v1/key'})?.rpcUrl).toBe('https://rpc.provider.example/v1/key');
+        expect(() => readOutingConfig({...base, GIWA_SEPOLIA_RPC_URL:'http://rpc.provider.example'})).toThrow('HTTPS');
+    });
 });
 
 describe('durable jobs and uncertain payment', () => {

@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {isRateLimitError} from "./rpc.js";
+import {defaultPaceMs, isRateLimitError} from "./rpc.js";
 
 /**
  * This predicate decides whether a failure is retried or surfaced. A false positive
@@ -57,5 +57,18 @@ describe("isRateLimitError", () => {
     test("survives a non-Error", () => {
         expect(isRateLimitError("over rate limit")).toBe(false); // only Errors are walked
         expect(isRateLimitError(undefined)).toBe(false);
+    });
+});
+
+describe("defaultPaceMs", () => {
+    test("paces the public GIWA endpoint and loopback forks of it", () => {
+        expect(defaultPaceMs("https://sepolia-rpc.giwa.io")).toBe(400);
+        expect(defaultPaceMs("https://sepolia-rpc.giwa.io/")).toBe(400);
+        expect(defaultPaceMs("http://127.0.0.1:8545")).toBe(400);
+        expect(defaultPaceMs("http://localhost:8545")).toBe(400);
+    });
+
+    test("a dedicated provider endpoint runs unpaced", () => {
+        expect(defaultPaceMs("https://giwa-sepolia.provider.example/v1/abc123")).toBe(0);
     });
 });

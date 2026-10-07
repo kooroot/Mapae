@@ -1,11 +1,11 @@
 import {privateKeyToAccount} from 'viem/accounts';
-import {createPublicClient, getAddress, http, isAddress, isHash, type Hex, type TransactionReceipt} from 'viem';
+import {createPublicClient, getAddress, isAddress, isHash, type Hex, type TransactionReceipt} from 'viem';
 import {assertFundedKeySeparation} from '@mapae/delegation/account-bootstrap';
 import {createMapaeDelegationProvider} from '@mapae/delegation/x402';
 import {payForDelegatedResource} from '@mapae/delegation/payment-client';
-import {reconcileSettlementReceipt} from '@mapae/delegation';
+import {reconcileSettlementReceipt, throttledHttp} from '@mapae/delegation';
 import {ARCADE_PAY_TO, ARCADE_REDEEMER, ARCADE_SELLER, ARCADE_TICKET_AMOUNT} from '@mapae/arcade/tickets';
-import {GIWA_SEPOLIA_CAIP2, MOCK_USDC, giwaSepolia, toTokenAmount} from '@mapae/shared';
+import {GIWA_SEPOLIA_CAIP2, MOCK_USDC, giwaSepolia, parseNodeRpcUrl, toTokenAmount} from '@mapae/shared';
 import {deployment, object} from './validation';
 import type {OutingPayment} from './runner';
 import type {Job, Pending} from './store';
@@ -33,7 +33,8 @@ export function readOutingConfig(env: Record<string, string | undefined> = proce
     // Compare only the new role to siblings: existing same-role key/address aliases are legal.
     for (const [name, address] of Object.entries(roles)) {if (name !== 'ARCADE_AGENT') assertFundedKeySeparation({ARCADE_AGENT: account.address, [name]: address});}
     if (account.address === ARCADE_REDEEMER || account.address === ARCADE_PAY_TO) throw new Error('ARCADE_AGENT_PRIVATE_KEY must be separate from settlement roles');
-    return {account, token: env.ARCADE_RECEIPT_TOKEN.trim()};
+    const rpcUrl = parseNodeRpcUrl(env.GIWA_SEPOLIA_RPC_URL?.trim() || giwaSepolia.rpcUrls.default.http[0]);
+    return {account, token: env.ARCADE_RECEIPT_TOKEN.trim(), rpcUrl};
 }
 
 export function receiptTransaction(value: unknown, job: Job, pending: Pending): Hex {
@@ -48,7 +49,7 @@ export function receiptTransaction(value: unknown, job: Job, pending: Pending): 
 }
 
 export function createOutingPayment(config: NonNullable<ReturnType<typeof readOutingConfig>>, localFetch: (request: Request) => Promise<Response> | Response,
-    client: {getTransactionReceipt: (request: {hash: Hex}) => Promise<Pick<TransactionReceipt, 'status' | 'logs'>>} = createPublicClient({chain: giwaSepolia, transport: http(giwaSepolia.rpcUrls.default.http[0], {timeout: 15_000, retryCount: 1})})): OutingPayment {
+    client: {getTransactionReceipt: (request: {hash: Hex}) => Promise<Pick<TransactionReceipt, 'status' | 'logs'>>} = createPublicClient({chain: giwaSepolia, transport: throttledHttp(config.rpcUrl, {}, {timeout: 15_000, retryCount: 1})})): OutingPayment {
     return {async pay(job, pending, persist) {
         const target = `${ARCADE_SELLER}/${pending.game}`;
         const submit = (header: string) => localFetch(new Request(target, {headers: {'Payment-Signature': header, Accept: 'application/json'}, redirect: 'error', signal: AbortSignal.timeout(60_000)}));

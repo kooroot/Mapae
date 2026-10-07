@@ -1,3 +1,4 @@
+import {giwaSepolia, isLoopbackHost} from "@mapae/shared";
 import {http, type HttpTransportConfig, type Transport} from "viem";
 
 /**
@@ -12,7 +13,7 @@ import {http, type HttpTransportConfig, type Transport} from "viem";
  * one.
  */
 export interface ThrottledHttpOptions {
-    /** Delay inserted after each successful request. */
+    /** Delay inserted after each successful request. Defaults to {@link defaultPaceMs}. */
     paceMs?: number;
     /** Attempts per request before giving up. */
     maxAttempts?: number;
@@ -20,9 +21,23 @@ export interface ThrottledHttpOptions {
     maxBackoffMs?: number;
 }
 
-const DEFAULT_PACE_MS = 400;
+const PUBLIC_PACE_MS = 400;
 const DEFAULT_MAX_ATTEMPTS = 8;
 const DEFAULT_MAX_BACKOFF_MS = 15_000;
+const PUBLIC_GIWA_HOST = new URL(giwaSepolia.rpcUrls.default.http[0]).hostname;
+
+/**
+ * The pace exists for the public endpoint's burst ceiling, so it follows the endpoint.
+ *
+ * Loopback keeps it too: a local Anvil is usually a fork, and every cache miss it takes is
+ * forwarded to the public RPC upstream. A dedicated endpoint (a provider URL set in
+ * `GIWA_SEPOLIA_RPC_URL`) runs unpaced — requests stay serialized, and an occasional
+ * rate-limit response still goes through the retry ladder below.
+ */
+export function defaultPaceMs(url: string): number {
+    const {hostname} = new URL(url);
+    return hostname === PUBLIC_GIWA_HOST || isLoopbackHost(hostname) ? PUBLIC_PACE_MS : 0;
+}
 
 function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -59,7 +74,7 @@ export function throttledHttp(
     options: ThrottledHttpOptions = {},
     httpConfig?: HttpTransportConfig,
 ): Transport {
-    const paceMs = options.paceMs ?? DEFAULT_PACE_MS;
+    const paceMs = options.paceMs ?? defaultPaceMs(url);
     const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     const maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
     const inner = http(url, httpConfig);
