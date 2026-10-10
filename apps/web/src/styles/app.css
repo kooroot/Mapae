@@ -2500,5 +2500,5 @@ a.studio-metric:hover {
 .studio-shell :is(button,a,summary):focus-visible{outline:2px solid var(--ui-focus);outline-offset:3px}
 /* Hangul is already square: tracking built for Latin caps lands as gaps between syllables, and mid-word breaks split them. */
 .studio-shell:lang(ko){word-break:keep-all;overflow-wrap:break-word}
-:is(.studio-entry-loading,.studio-kicker,.studio-card-label,.studio-sidebar-foot p,.studio-status-pill,.studio-manual-import>summary small,.studio-security-check>span,.studio-security-detail>header>span,.studio-receipt-card>header>span,.studio-agent-card header>i):lang(ko){letter-spacing:.02em}
+:is(.studio-entry-loading,.studio-kicker,.studio-card-label,.studio-sidebar-foot p,.studio-status-pill,.studio-manual-import>summary small,.studio-security-check>span,.studio-security-detail>header>span,.studio-receipt-card>header>span,.studio-agent-card header>i):lang(ko){font-family:var(--sans);letter-spacing:.02em}
 @media(max-width:720px){.studio-segmented button{min-height:var(--ui-touch)}}

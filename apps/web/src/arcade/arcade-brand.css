@@ -14,6 +14,7 @@
 .arc-race,.shop-game{border-radius:14px;padding:18px 12px 28px}.arc-arena{padding:10px 10px 16px;margin-top:12px}.arc-arena-heading{font-size:10px;gap:8px}.arc-windows{height:clamp(225px,calc(100svh - 360px),405px);gap:9px}.arc-playfield{padding:10px 8px 13px;box-shadow:none}.arc-play-footer{font-size:10px;margin-top:14px}.arc-keyboard-help{line-height:1.5}.arc-game-overlay h2{font-size:23px}.arc-footer{gap:16px}.arc-race-title h1{font-size:28px}.arc-race-track{margin-top:16px;box-shadow:none}.arc-race-panorama{height:84px}.arc-race-lane-svg{height:65px}.arc-race-mode{margin:12px 0 16px}.arc-race-playback{flex-wrap:wrap}.arc-race-playback .arc-button{min-height:44px}
 .shop-game input{font-size:16px;min-height:46px}.shop-game button:not(.arc-button):not(.arc-text-button){min-height:44px}.shop-chat{height:280px}.shop-scoreboard>span{font-size:10px}.shop-scoreboard b{font-size:20px}.shop-bubble{font-size:13px}
 }
+@media(max-width:480px){.arc-header:has(.arc-account) .arc-demo-label{display:none}}
 @media(max-width:360px){.arc-main{padding-inline:12px}.arc-header-actions{gap:3px}.arc-brand-type>img{width:74px}.arc-brand-emblem{width:28px}.arc-sound,.arc-back{padding:9px}.arc-practice .arc-brand-type>img{width:62px}.arc-race-scoreboard{gap:7px;font-size:10px}.arc-race-scoreboard strong{font-size:14px}}
 @media(max-height:520px) and (orientation:landscape){.agent-quickstart{position:static;border:1px solid var(--arc-hair);border-radius:14px}.agent-in-lobby{padding-bottom:0}.arc-windows{height:240px}}
 html.arc-still{scroll-behavior:auto}
