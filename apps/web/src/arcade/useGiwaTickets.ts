@@ -8,7 +8,8 @@ import {formatUnits, getAddress, type Address, type Hex} from "viem";
 import {prepareRootPermissionSigningRequest, assembleRootPermission} from "@mapae/delegation/signing";
 
 import {ARCADE_TICKET_AMOUNT} from "@mapae/arcade/tickets";
-import type {GameId} from "@mapae/arcade";
+import type {AgentGoal, GameId} from "@mapae/arcade";
+import {guardianTokenId} from "@mapae/arcade/guardians";
 import {bootstrapAvailability, chain, deployment, publicClient} from "../lib/config";
 import {derivePayerAccount, readPayerBalance, requestSponsoredBootstrap, verifyPermissionArtifact} from "../lib/grant";
 import type {Locale} from "../lib/i18n";
@@ -21,8 +22,10 @@ import type {SessionGrant} from "../lib/grant";
 import {validAllowance} from "./allowance";
 import {type OutingStatus, type OutingView} from "@mapae/arcade/outings";
 import {clearSubmission, readSubmission, saveSubmission, type OutingSubmission} from "./outing-submission";
+import {trackEngagement} from './engagement/client';
+import {activeGuardianOuting,type GuardianIdentity} from './nft/outing-model';
 
-export type AllowanceRequest = {characterId: string; name: string; admissions: number};
+export type AllowanceRequest = GuardianIdentity & {goal: AgentGoal; name: string; admissions: number};
 const isArcadeGrant = (grant: SessionGrant) => grant.name === "Mapae Arcade" || grant.name.startsWith("Mapae Arcade · ");
 export type ApprovalPhase = "idle" | "catalogue" | "wallet" | "switching" | "preparing" | "signing" | "authorizing" | "bootstrap" | "verifying" | "submitting";
 export function useGiwaTickets(locale: Locale, profileReady: boolean) {
@@ -146,6 +149,7 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
     }
     async function controlJob(id: string, action: "stop" | "resume") {
         if (!address || locked.current) return;
+        trackEngagement({event:'operator_action',locale});
         locked.current = true; setBusy(true); setError("");
         try {await profileRequest(address, `/outings/${encodeURIComponent(id)}/${action}`, "POST", {generation: PROFILE_GENERATION});}
         catch {setError(locale === "ko" ? "변경을 확인하지 못했어요. 현재 상태를 새로고침해 주세요." : "Could not confirm the change. Refresh outing status.");}
@@ -153,15 +157,16 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
     }
     async function approve(requests: AllowanceRequest[], choice: GameId | "auto") {
         if (!address || !connector || locked.current || !recoveryReady) return;
+        trackEngagement({event:'operator_action',locale});
         locked.current = true; setBusy(true); setError("");
         try {
             if (readSubmission(address)) throw new GiwaTicketError("먼저 외출 요청을 확인해 주세요. / Recover the existing outing request first.");
             if (!available || !serverAgent.current) throw new GiwaTicketError("자동 외출 서버가 준비되지 않았어요. 무료 연습을 이용해 주세요. / Outing server unavailable. Try free practice.");
             if (readGiwaPending()) throw new GiwaTicketError("먼저 진행 중인 입장권을 복구해 주세요. / Recover the pending ticket first.");
-            if (!requests.length || requests.length > 12 || new Set(requests.map(item => item.characterId)).size !== requests.length ||
-                requests.some(item => !validAllowance(item.admissions) || !/^[a-zA-Z0-9-]{1,64}$/.test(item.characterId) || !item.name.trim())) throw new GiwaTicketError("친구별 용돈을 확인해 주세요. / Check each friend's allowance.");
+            if (!requests.length || requests.length > 3 || new Set(requests.map(item => item.tokenId)).size !== requests.length ||
+                requests.some(item => !validAllowance(item.admissions) || !guardianTokenId(item.tokenId) || !['explore','score','save'].includes(item.goal) || !item.name.trim())) throw new GiwaTicketError("친구별 용돈을 확인해 주세요. / Check each friend's allowance.");
             const active = jobs.filter(job => ["queued", "running", "paused"].includes(job.status));
-            const targets = requests.filter(item => !active.some(job => job.characterId === item.characterId));
+            const targets = requests.filter(item => !active.some(job => activeGuardianOuting(job,item)));
             const agent = serverAgent.current;
             if (!targets.length) return;
             setPhase("catalogue");
@@ -176,7 +181,7 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
             const owner = getAddress(address);
             const account = await derivePayerAccount(owner);
             for (const [index, target] of targets.entries()) {
-                const {admissions, characterId, name} = target;
+                const {admissions, tokenId, goal, name} = target;
                 setApprovalTarget({name, admissions, index: index + 1, total: targets.length});
                 const policy = arcadePolicy(admissions);
                 setPhase("preparing");
@@ -211,12 +216,12 @@ export function useGiwaTickets(locale: Locale, profileReady: boolean) {
                 await verifyPermissionArtifact(artifact, locale);
                 const available = await readPayerBalance(account);
                 setPayer(account); setBalance(available === undefined ? null : formatUnits(available, 6));
-                const reserved = active.reduce((sum, item) => sum + item.admissions - item.spent, 0);
+                const reserved = active.reduce((sum, item) => sum + item.reservedAdmissions, 0);
                 const needed = targets.slice(index).reduce((sum, item) => sum + item.admissions, reserved);
                 if (available === undefined || available < BigInt(needed) * ARCADE_TICKET_AMOUNT) throw new GiwaTicketError("테스트 토큰 잔액이 부족해요. Studio에서 충전해 주세요. / Top up test tokens in Studio.");
                 if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
                 setPhase("submitting");
-                await submitOuting({generation: PROFILE_GENERATION, id: crypto.randomUUID(), characterId, choice, admissions,
+                await submitOuting({generation: PROFILE_GENERATION, id: crypto.randomUUID(), tokenId, goal, choice, admissions,
                     permissionContext: artifact.permissionContext, locale});
 
             }
