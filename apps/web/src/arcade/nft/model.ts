@@ -12,6 +12,8 @@ export function nftCompanion(token:GuardianToken,goal:AgentGoal='explore',rounds
         agent:{mode:'rules',goal,rounds},best:Math.max(...token.progress.games.map(g=>g.bestScore)),
         bests:{stamp:token.progress.games[0]!.bestScore,race:token.progress.games[1]!.bestScore,shop:token.progress.games[2]!.bestScore}};
 }
+/** Guardian temperament as players read it on the talents card and allowance row. */
+export const TEMPERAMENT_NAMES={ko:{curious:'호기심 많은 탐험가',bold:'대담한 도전자',calm:'차분한 전략가'},en:{curious:'Curious explorer',bold:'Bold adventurer',calm:'Calm strategist'}} as const;
 export const sameAddress=(a:string,b:string)=>a.toLowerCase()===b.toLowerCase();
 export function verifyReplacement(owner:Address,nonce:number,replacement:{from:Address;nonce:number}){
     if(!Number.isSafeInteger(nonce)||nonce<0||!sameAddress(owner,replacement.from)||nonce!==replacement.nonce)throw Error('replacement_mismatch');
