@@ -59,6 +59,8 @@ bool victory
 
 Historical valid results remain claimable after transfer: actor/epoch document the original departure and the server attests it. Claim does not require current owner==actor. Growth attaches to the token, while payment history remains with its actor. Server checks owner and epoch before every new payment; already submitted work reconciles once. This check is not atomic with an independent payment transaction, so a transfer during dispatch may allow that already bounded payment to finish.
 
+An unresolved earlier epoch must not block the new owner indefinitely. One operation per current token epoch is allowed; earlier operations are stopped for new admissions while their exact submitted payment remains privately recoverable. A delayed older chain snapshot cannot replace a newer operation. Stopping recovery reserves at most its one outstanding admission, separately from the three current operation slots; the overall 256 active/recovery job bound still applies.
+
 Progress stores total plays, victories, experience (10 per completed admission, plus 5 for a victory), and per-game plays, victories and best score. Level is `1 + experience / 100`. Stamp victory means chief defeated; race victory means first in the completed three-race season; shop victory means a profitable completed shop session. These are game achievements, not financial returns. Results contain typed achievement fields, never interpreted translated labels.
 
 ## Server and client boundary
@@ -76,5 +78,7 @@ First-party bounded D1 events measure deliberate guest interaction and authentic
 The post-launch pilot is 30 recruited users over two weeks. Implementation provides the funnel and report; fixtures and canary wallets are not adoption evidence. No outreach is sent without instruction.
 
 Release requires contract adversarial tests, shared trait vectors, recovery/transfer/idempotency integration tests, all three deterministic engines, real guest and authenticated browsers, repository checks, reviewed staged commits and separate deployment receipts for collection, seller and both Workers. Drain old mutable-character outings before switching rulesets; never backfill untrusted profile scores. Unknown credentials, provider failures or unavailable funding remain explicit incomplete live gates. Back up the seller ledger before runtime changes and preserve the unrelated dirty delegation-framework submodule.
+
+The user explicitly owns Mac mini deployment and the real GIWA request/reveal check after pulling this implementation. Local delivery finishes with verified commits, a pushed revision and the [release runbook](arcade-guardians-release.md); it must report actual deployment and canary as not executed by the implementation session.
 
 Sources checked 2026-10-10: [Pyth registry](https://github.com/pyth-network/pyth-crosschain/blob/709e742bfbc6025b1c7b36aa78ecd912cf372c2b/contract_manager/src/store/contracts/EvmEntropyContracts.json), [Entropy protocol](https://docs.pyth.network/entropy/protocol-design), [GIWA GASOK](https://giwa.io/gasok). The supplied GASOK slide specifies category-dependent KPIs; it does not guarantee selection based on transaction count.
