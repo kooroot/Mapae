@@ -95,3 +95,13 @@
 .arc-arena .stamp-beat{animation:arc-heartbeat var(--arc-dur-base) var(--arc-ease-back)}.arc-arena .stamp-beat.is-final::after{content:"";position:absolute;inset:-6px -12px;border:2px solid #ea6555;border-radius:50%;opacity:0;animation:stamp-final-ring var(--arc-dur-slow) var(--arc-ease-out)}
 @keyframes stamp-final-ring{from{opacity:.9;scale:.8}to{opacity:0;scale:1.3}}
 @media(max-width:480px){.arc-arena .stamp-herald{top:44px;left:6%;right:6%;gap:7px;padding:5px 8px}.arc-arena .stamp-herald>i{width:32px;height:32px;font-size:11px}.arc-arena .stamp-herald>b{font-size:13px}.arc-arena .stamp-herald.is-chief{margin-top:-21px}.arc-arena .stamp-count>i{width:120px}.arc-arena .stamp-go b,.arc-arena .stamp-end b{font-size:32px;padding:8px 16px}.arc-arena .stamp-combo-chip{font-size:10px;padding:1px 5px}}
+.arc-arena .stamp-lantern{position:absolute;left:5.8%;top:13%;width:15%;aspect-ratio:1;translate:-50% -50%;border-radius:50%;background:radial-gradient(closest-side,#ffd27a80,#ffb84a26 55%,#ffb84a00);pointer-events:none;opacity:.75;animation:stamp-flicker 2.3s ease-in-out infinite}.arc-arena .stamp-lantern.is-right{left:94.2%;animation-duration:3.1s;animation-delay:-1.2s}
+@keyframes stamp-flicker{0%,100%{opacity:.7}17%{opacity:.88}31%{opacity:.62}52%{opacity:.95}68%{opacity:.74}84%{opacity:.86}}
+.arc-arena .arc-has-goblin:not(.stamp-boss) .arc-window-actor{animation:stamp-arrive var(--arc-dur-base) var(--arc-ease-out) both,stamp-sway .7s ease-in-out calc(var(--i,0) * -110ms) infinite alternate}
+@keyframes stamp-sway{from{rotate:-1.5deg}to{rotate:1.5deg}}
+.arc-arena .stamp-herald.is-parade{background:#ffe3a0f2;border-color:#e2a83e;color:#4a2c12}.arc-arena .stamp-herald.is-parade>i{background:#c98a2a;border-color:#8a5a1c}
+.arc-arena .stamp-sweep{position:absolute;inset:0;z-index:6;border-radius:inherit;overflow:hidden;pointer-events:none}.arc-arena .stamp-sweep>i{position:absolute;inset:0;background:linear-gradient(100deg,#ffe08a00 25%,#ffe9a873 50%,#ffe08a00 75%);opacity:0}
+.arc-arena .stamp-wave-steps>[aria-current=step]:not(:first-child){--seal-rest:0deg;animation:arc-seal-slam .3s var(--arc-ease-stamp) both}
+.arc-arena .stamp-warn{animation:stamp-warn 1s ease-in-out 3}@keyframes stamp-warn{50%{opacity:.45}}
+.arc-arena .stamp-star{display:inline-block;margin-right:.35em}.arc-arena .stamp-parade-cue.is-soon .stamp-star{animation:stamp-wiggle .5s var(--arc-ease-shake) 2}.arc-arena.stamp-light .stamp-parade-cue.is-soon .stamp-star{animation:none}
+@keyframes stamp-wiggle{20%{rotate:-18deg;scale:1.2}45%{rotate:14deg;scale:1.2}70%{rotate:-8deg;scale:1.1}100%{rotate:0deg;scale:1}}

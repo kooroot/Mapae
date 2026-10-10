@@ -29,8 +29,9 @@ type WindowProps = {
  * Its `stamp-fx` layer is never re-rendered: stamp-fx animates those spans when an event lands, so a score float or a crack
  * keeps playing after the engine's short-lived impact is gone, and the chief's arrival can dim every other window. Afterimages of what just left (a squashed, sinking or flinching
  * face) belong to the impact instead and play as CSS on mount, resting in their end state so reduced motion shows the outcome.
- * `--life` paces the actor's telegraph (a look back, then sinking) over its stay: decoration only, never the judgement. It is
- * written through the CSSOM because the nonce-only CSP forbids style attributes.
+ * `--life` paces the actor's telegraph (a look back, then sinking) over its stay: decoration only, never the judgement. `--i`
+ * staggers the goblins' idle sway across the windows. Both are written through the CSSOM because the nonce-only CSP forbids
+ * style attributes.
  */
 export const StampWindow = memo(function StampWindow({index, actor, impact, phase, perfect, locale, hintId, agent, appearance, color, onHit}: WindowProps) {
     const t = COPY[locale];
@@ -46,7 +47,7 @@ export const StampWindow = memo(function StampWindow({index, actor, impact, phas
             onClick={event => {if (event.detail === 0) onHit(index);}}>
             <span className="arc-window-number" aria-hidden="true">{index + 1}</span>
             <span className="arc-window-floor" />
-            {actor && <span className="arc-window-actor" key={actor.bornAt} ref={el => {el?.style.setProperty("--life", `${actor.expiresAt - actor.bornAt}ms`);}}>
+            {actor && <span className="arc-window-actor" key={actor.bornAt} ref={el => {el?.style.setProperty("--life", `${actor.expiresAt - actor.bornAt}ms`); el?.style.setProperty("--i", String(index));}}>
                 {actor.kind === "goblin" ? <Goblin variant={actor.special} className={actor.golden ? "stamp-gold-art" : ""} /> : <GuardianAvatar appearance={appearance} color={color} />}
                 <span className="arc-target-label">{targetCue}</span>
             </span>}

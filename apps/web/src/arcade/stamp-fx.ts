@@ -19,11 +19,14 @@ export type StampMotion =
     | {kind: "seal"; index: number; boost: number}
     | {kind: "float"; index: number; text: string}
     | {kind: "ripple"; index: number; point?: StampTap["point"]}
-    | {kind: "fieldShake" | "fieldBounce" | "charge" | "glowOut"}
-    | {kind: "banner"; name: "fever" | "chief"}
+    | {kind: "fieldShake" | "fieldBounce" | "charge" | "glowOut" | "sweep"}
+    | {kind: "banner"; name: HeraldName}
     | {kind: "score"; scale: number}
     | {kind: "comboUp"; text: string; ms: number}
     | {kind: "comboBreak"; shake: boolean};
+
+/** The chief's herald stands mid-yard; the others share the top of the playfield, where only the newest is shown. */
+export type HeraldName = "fever" | "chief" | "wave" | "parade";
 
 /** The peak scale of the shared `arc-seal-slam`; a combo multiplier adds a tenth to it, applied as a factor on top. */
 export const SEAL_PEAK = 1.9;
@@ -65,7 +68,9 @@ const COMBO_CHIP_MS = {full: 600, light: 300} as const;
  * What a step looks like at a tier. Full: everything. Light (a watched agent): the hit itself (seal, ink, score float, perfect
  * rings) without hit-stop, shake or shards. Still: the impact already stays on screen with its points, so the planned beats
  * are the short fades the motion gate turns them into, and nothing that only moves (press, float, shards, field shake, combo chip).
- * Heralds (fever, the chief felled) show at every tier. While the chief is open nothing jolts the playfield.
+ * Heralds (fever, the chief felled, the gold parade, a new wave) show at every tier, one at the top of the yard per step:
+ * fever outranks the parade, which outranks the wave. The parade's gold sweep is short enough for a watched agent too.
+ * While the chief is open nothing jolts the playfield.
  * Scoreboard beats come after the windows' and once per step, however many stamps it held.
  */
 export function stampMotions(events: readonly StampEvent[], game: Game, tier: MotionTier, tap?: StampTap): StampMotion[] {
@@ -107,10 +112,16 @@ export function stampMotions(events: readonly StampEvent[], game: Game, tier: Mo
         else if (event.type === "dud") motions.push({kind: "ripple", index: event.index, point: tap?.index === event.index ? tap.point : undefined});
     }
     // Fever arrives as a herald for everyone, with a bump of the playfield for a player; it leaves by fading its lantern glow.
+    const parade = events.some(event => event.type === "parade" && event.phase === "active");
     if (events.some(event => event.type === "feverStart")) {
         motions.push({kind: "banner", name: "fever"});
         if (steady) motions.push({kind: "fieldBounce"});
-    } else if (events.some(event => event.type === "feverEnd")) motions.push({kind: "glowOut"});
+    } else {
+        if (parade) motions.push({kind: "banner", name: "parade"});
+        else if (events.some(event => event.type === "wave")) motions.push({kind: "banner", name: "wave"});
+        if (events.some(event => event.type === "feverEnd")) motions.push({kind: "glowOut"});
+    }
+    if (parade) motions.push({kind: "sweep"});
     if (!still && events.some(event => event.type === "feverCharge")) motions.push({kind: "charge"});
     const scored = events.some(event => event.type === "hit" || event.type === "crack" && (game.cells[event.index]?.impact?.points ?? 0) > 0);
     if (scored) motions.push({kind: "score", scale: events.some(event => event.type === "perfect") ? PERFECT_POP : SCORE_POP});
@@ -152,6 +163,9 @@ const HERALD_SEAL: Keyframe[] = [{opacity: 0, transform: "scale(2.2) rotate(-20d
 /** The playfield's bump as fever arrives, and its lantern glow letting go as fever leaves. */
 const FEVER_BOUNCE = 1.012;
 const GLOW_OUT: Keyframe[] = [{opacity: .9}, {opacity: 0}];
+/** Gold light crosses the yard once as the parade begins. */
+const SWEEP: Keyframe[] = [{opacity: 1, transform: "translateX(-100%)"}, {opacity: 1, transform: "translateX(100%)"}];
+const SWEEP_MS = 260;
 /** Each charge thumps the gauge once. */
 const CHARGE: Keyframe[] = [{transform: "scaleY(1)"}, {transform: "scaleY(1.6)", offset: .4}, {transform: "scaleY(1)"}];
 /** A blocked seal glances up and away off the guarding chief. */
@@ -179,9 +193,12 @@ function render(motion: StampMotion, {field, windows, board, gauge}: StampFx, ga
     case "fieldBounce": if (field) pop(field, gate, {scale: FEVER_BOUNCE, ms: 120}); return;
     case "glowOut": if (field) play(field, GLOW_OUT, {id: "stamp-glow-out", duration: "base", easing: "out", pseudoElement: "::before"}, gate); return;
     case "charge": if (gauge) play(gauge, CHARGE, {id: "stamp-charge", duration: 200, easing: "out"}, gate); return;
+    case "sweep": {const band = field?.querySelector(".stamp-sweep > i"); if (band) play(band, SWEEP, {id: "stamp-sweep", duration: SWEEP_MS, easing: "ink"}, gate); return;}
     case "banner": {
         const herald = field?.querySelector<HTMLElement>(`[data-banner=${motion.name}]`);
         if (!herald) return;
+        // The top of the yard holds one herald: the newest news takes it over from one still unfurled there.
+        if (motion.name !== "chief") for (const other of field!.querySelectorAll(".stamp-herald:not([data-banner=chief])")) if (other !== herald) for (const animation of other.getAnimations({subtree: true})) animation.cancel();
         banner(herald, gate);
         const seal = herald.querySelector("i");
         if (seal) play(seal, HERALD_SEAL, {id: "stamp-herald-seal", duration: "base", easing: "stamp", fill: "both"}, gate);

@@ -33,6 +33,8 @@ const COPY = {
         human: "직접 플레이 중", stopped: "지금까지의 점수로 결과를 확인해요", end: "끝!",
     },
 } satisfies Record<Locale, Record<string, string>>;
+/** Each wave's number as the seal on its herald. */
+const WAVE_SEALS = ["一", "二", "三", "四", "五"];
 const SPRITES = ["goblin", "goblin-armored", "goblin-chief", "stamp-impact", "stamp-window"].map(asset => `/arcade/${asset}-512.webp`);
 
 export function Arena({locale, character, reducedMotion, sound, onFinish, autopilot, suspended = false, seed, practice, aptitudes}: {
@@ -236,7 +238,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                 {[ko ? "몸풀기" : "Warm up", ko ? "순찰" : "Patrol", ko ? "잔치" : "Parade", ko ? "대장" : "Chief", ko ? "소동" : "Rush"].map((label, i) => <span key={i} aria-current={wave.index === i ? "step" : undefined} className={i <= wave.index ? "is-reached" : ""}>{label}</span>)}
             </div>}
             {!drill && <div className={`stamp-fever-strip ${charged ? "stamp-fever-ready" : ""}`}>
-                <div><strong role="status">{fever ? ko ? "암행어사 출두! 점수 ×2" : "ROYAL INSPECTOR! SCORE ×2" : stage}</strong><span>{gaugeText}</span></div>
+                <div><strong role="status" className={warning && !fever ? "stamp-warn" : undefined}>{fever ? ko ? "암행어사 출두! 점수 ×2" : "ROYAL INSPECTOR! SCORE ×2" : stage}</strong><span>{gaugeText}</span></div>
                 <div ref={gauge} className="stamp-fever-meter" role="progressbar" aria-label={ko ? "출두 게이지" : "Fever charge"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(meter.ratio * 100)} aria-valuetext={gaugeText}><i ref={drain} /></div>
                 <div className="stamp-fever-controls">
                     {autopilot ? <span className="stamp-fever-strategy">{autopilot === "careful" ? ko ? "신중하게 · 대장 정통과 금도깨비 출두를 노려요" : "Careful · precise chief stamps and fever for gold" : ko ? "빠르게 · 첫 빈틈에 타격하고 바로 출두" : "Quick · hit the first opening and use fever immediately"}</span> : <>
@@ -248,9 +250,10 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                         {view.feverMode === "auto" && <small>{ko ? "8연속 퇴치하면 점수 두 배" : "8 in a row → double points"}</small>}
                     </>}
                 </div>
-                <p className={`stamp-parade-cue ${parade ? `is-${parade.phase}` : ""}`} role="status">{parade ? parade.phase === "soon" ? ko ? `★ 금도깨비 행렬 ${Math.ceil(parade.remaining / 1000)}초 전 · 출두를 준비해요` : `★ Gold parade in ${Math.ceil(parade.remaining / 1000)}s · ready your fever` : ko ? "★ 금도깨비 행렬! 출두로 두 배를 노려요" : "★ GOLD PARADE! Catch gold during fever" : charged && !fever ? ko ? "출두 준비 완료 · 지금 쓰거나 행렬을 기다려요" : "Fever ready · use it now or wait for gold" : ko ? "금도깨비 행렬은 2초 먼저 알려드려요" : "Watch for the two-second gold parade warning"}</p>
+                <p className={`stamp-parade-cue ${parade ? `is-${parade.phase}` : ""}`} role="status">{parade && <i className="stamp-star" aria-hidden="true">★</i>}{parade ? parade.phase === "soon" ? ko ? `금도깨비 행렬 ${Math.ceil(parade.remaining / 1000)}초 전 · 출두를 준비해요` : `Gold parade in ${Math.ceil(parade.remaining / 1000)}s · ready your fever` : ko ? "금도깨비 행렬! 출두로 두 배를 노려요" : "GOLD PARADE! Catch gold during fever" : charged && !fever ? ko ? "출두 준비 완료 · 지금 쓰거나 행렬을 기다려요" : "Fever ready · use it now or wait for gold" : ko ? "금도깨비 행렬은 2초 먼저 알려드려요" : "Watch for the two-second gold parade warning"}</p>
             </div>}
             <div className={`arc-playfield ${parade ? `stamp-parade-${parade.phase}` : ""}`} ref={field} tabIndex={-1}>
+                <i className="stamp-lantern" aria-hidden="true" /><i className="stamp-lantern is-right" aria-hidden="true" />
                 {chief || drill ? <BossTimingCue actor={chief ?? null} game={view} locale={locale} hintId={bossHintId} tier={tier} halted={halted} /> : <div className="arc-field-caption"><span>{rules}</span><span>馬牌</span></div>}
                 <div className="arc-windows" ref={windows} inert={halted || ending}>
                     {view.cells.map((cell, i) => {
@@ -272,6 +275,11 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                 {ending && <div className="stamp-end" aria-hidden="true"><b>{t.end}</b></div>}
                 <div className="stamp-herald" data-banner="fever" aria-hidden="true"><i>馬牌</i><b>{ko ? "암행어사 출두요!" : "Make way, royal inspector!"}</b></div>
                 <div className="stamp-herald is-chief" data-banner="chief" aria-hidden="true"><i>退治</i><b>{ko ? "대장 퇴치!" : "Chief defeated!"}</b></div>
+                {!drill && <>
+                    <div className="stamp-herald" data-banner="wave" aria-hidden="true"><i>{WAVE_SEALS[wave.index]}</i><b>{wave.current[locale]}</b></div>
+                    <div className="stamp-herald is-parade" data-banner="parade" aria-hidden="true"><i>金</i><b>{ko ? "금도깨비 행렬!" : "Gold parade!"}</b></div>
+                    <span className="stamp-sweep" aria-hidden="true"><i /></span>
+                </>}
             </div>
             <div className="arc-play-footer"><span><i className="arc-live-dot" /> {character.name} · {autopilot ? locale === "ko" ? "에이전트 관전 중" : "WATCHING AGENT" : t.human}</span><span>{autopilot ? "AUTO" : t.touch}</span></div>
             <StampChallenges game={view} locale={locale} />

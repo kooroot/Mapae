@@ -639,3 +639,46 @@ describe("Dokkaebi Stamp chief motion", () => {
     });
 });
 
+
+describe("Dokkaebi Stamp heralds", () => {
+    const quiet = (elapsed: number): Game => ({...newGame(), elapsed, nextSpawn: ROUND_MS});
+    test("a new wave unfurls its herald at every tier, from the engine's own clock", () => {
+        const before = quiet(STAMP_WAVES[1].at - 100), after = advance(before, 200);
+        const events = stampEvents(before, after);
+        expect(events).toContainEqual({type: "wave", index: 1});
+        for (const tier of ["full", "light", "still"] as const) expect(stampMotions(events, after, tier)).toEqual([{kind: "banner", name: "wave"}]);
+    });
+    test("the gold parade heralds itself and sweeps the yard when it begins, never while it is only announced", () => {
+        const soon = quiet(GOLD_PARADES[0] - GOLD_WARNING_MS - 100), announced = advance(soon, 200);
+        expect(stampEvents(soon, announced)).toContainEqual({type: "parade", phase: "soon"});
+        expect(stampMotions(stampEvents(soon, announced), announced, "full")).toEqual([]);
+        const before = quiet(GOLD_PARADES[0] - 100), after = advance(before, 200);
+        const events = stampEvents(before, after);
+        expect(events).toContainEqual({type: "parade", phase: "active"});
+        for (const tier of ["full", "light", "still"] as const) expect(stampMotions(events, after, tier)).toEqual([{kind: "banner", name: "parade"}, {kind: "sweep"}]);
+    });
+    test("one herald takes the top of the yard per step: fever, then the parade, then the wave; the chief keeps its own", () => {
+        const wave = {type: "wave", index: 4} as const, parade = {type: "parade", phase: "active"} as const;
+        const banners = (events: Parameters<typeof stampMotions>[0]) => stampMotions(events, newGame(), "light").filter(motion => motion.kind === "banner");
+        expect(banners([wave, parade, {type: "feverStart"}])).toEqual([{kind: "banner", name: "fever"}]);
+        expect(banners([wave, parade])).toEqual([{kind: "banner", name: "parade"}]);
+        expect(stampMotions([wave, {type: "feverEnd"}], newGame(), "full")).toEqual([{kind: "banner", name: "wave"}, {kind: "glowOut"}]);
+        const felled = [{type: "hit", index: 4, actor: {kind: "goblin", special: "boss"}, points: 500}, wave] as const;
+        expect(banners(felled)).toEqual([{kind: "banner", name: "chief"}, {kind: "banner", name: "wave"}]);
+    });
+    test("a full round heralds every wave and parade, one top herald per step, and sweeps once per parade", () => {
+        let game = newGame(7, "auto"), news = 0, sweeps = 0;
+        while (!game.finished) {
+            const next = advanceAgent(game, 50, "quick");
+            const events = stampEvents(game, next), motions = stampMotions(events, next, "full");
+            const top = motions.filter(motion => motion.kind === "banner" && motion.name !== "chief");
+            const newsy = events.some(event => event.type === "wave" || event.type === "feverStart" || event.type === "parade" && event.phase === "active");
+            expect(top).toHaveLength(newsy ? 1 : 0);
+            news += events.filter(event => event.type === "wave" || event.type === "parade" && event.phase === "active").length;
+            sweeps += motions.filter(motion => motion.kind === "sweep").length;
+            game = next;
+        }
+        expect(news).toBe(STAMP_WAVES.length - 1 + GOLD_PARADES.length);
+        expect(sweeps).toBe(GOLD_PARADES.length);
+    });
+});
