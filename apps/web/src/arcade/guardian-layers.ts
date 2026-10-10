@@ -1,6 +1,11 @@
 import {guardianAsset, charmAsset, type Guardian, type Zodiac} from "./guardian";
 import {wardrobeAsset, type Hat} from "./wardrobe";
-import fitting from "../../public/arcade/wardrobe/fit.json";
+import fittingJson from "../../public/arcade/wardrobe/fit.json?raw";
+import type Fitting from "../../public/arcade/wardrobe/fit.json";
+
+// Bundle the published metadata in both Vite dev and production; public JSON
+// URLs themselves are static responses and cannot be JavaScript module imports.
+const fitting: typeof Fitting = JSON.parse(fittingJson);
 
 type ArtBox = {x: number; y: number; width: number; height: number};
 type Point = {x: number; y: number};
