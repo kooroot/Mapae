@@ -3,6 +3,7 @@ import type {Locale} from "../lib/i18n";
 import {bossWindow, BOSS_OPENINGS, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, type Game, type Actor} from "@mapae/arcade/stamp";
 import type {MotionTier} from "./motion";
 import {play} from "./juice";
+import {stopTrack, syncTrack} from "./stamp-fx";
 
 const SWEEP: Keyframe[] = [{transform: "translateX(0)"}, {transform: "translateX(100%)"}];
 
@@ -32,26 +33,19 @@ export function BossTimingCue({actor, game, locale, hintId, tier, halted}: {acto
 }
 
 /**
- * The needle sweeps one boss cycle on the compositor, and every commit snaps it to the engine clock, so it glides at frame rate
- * through the 300ms perfect band without drifting from the judgement. It tells the player when to stamp, so it is essential
- * motion that keeps moving under reduced motion; it stops with the engine while the game is paused, suspended or counting down.
+ * The needle sweeps one boss cycle as a looping engine-synced track, so it glides at frame rate through the 300ms perfect band
+ * without drifting from the judgement, keeps moving under reduced motion (it tells the player when to stamp), and stops with
+ * the engine while the game is paused, suspended or counting down.
  */
 function Needle({progress, tier, halted}: {progress: number; tier: MotionTier; halted: boolean}) {
     const rail = useRef<HTMLSpanElement>(null);
-    const sweep = useRef<Animation | null>(null);
     useLayoutEffect(() => {
         const el = rail.current!;
-        if (!sweep.current || sweep.current.playState === "idle") sweep.current = play(el, SWEEP, {id: "stamp-needle", duration: BOSS_CYCLE_MS, iterations: Infinity}, {tier, essential: true});
-        const animation = sweep.current;
-        // A hidden tab starts no animation: hold the needle where the engine is until a later commit can start one.
-        if (!animation) {
-            el.style.transform = `translateX(${progress * 100}%)`;
-            return;
-        }
-        animation.currentTime = progress * BOSS_CYCLE_MS;
-        if (halted) animation.pause();
-        else if (animation.playState !== "running") animation.play();
+        syncTrack(el, () => play(el, SWEEP, {id: "stamp-needle", duration: BOSS_CYCLE_MS, iterations: Infinity}, {tier, essential: true}), {at: progress * BOSS_CYCLE_MS, rest: `translateX(${progress * 100}%)`, halted});
     }, [progress, tier, halted]);
-    useEffect(() => () => sweep.current?.cancel(), []);
+    useEffect(() => {
+        const el = rail.current!;
+        return () => stopTrack(el);
+    }, []);
     return <span className="stamp-timing-rail" ref={rail}><i /></span>;
 }

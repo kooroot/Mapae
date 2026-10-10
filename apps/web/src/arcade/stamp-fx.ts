@@ -279,16 +279,17 @@ export function stampFx(events: readonly StampEvent[], game: Game, fx: StampFx, 
 
 const tracks = new WeakMap<Element, Animation>();
 /**
- * A gauge the engine clock drives (the chief's timing needle, the fever drain): one compositor animation, snapped to the engine
- * on every commit so it glides at frame rate without drifting from the judgement, and held while the round is halted. Both
- * carry information, so they keep moving under reduced motion. `rest` is the same pose as a plain transform: what a hidden tab
- * shows (it starts no animation) until a later commit can start one, and what remains when the track stops.
+ * A gauge the engine clock drives (the chief's timing needle, the fever drain): one compositor animation that `start` creates
+ * (essential, since both carry information and keep moving under reduced motion), snapped to the engine at `at` on every commit
+ * so it glides at frame rate without drifting from the judgement, and held while the round is halted. `rest` is the same pose
+ * as a plain transform: what a hidden tab shows (it starts no animation) until a later commit can start one, and what remains
+ * when the track stops.
  */
-export function syncTrack(el: HTMLElement, frames: Keyframe[], {duration, at, rest, loop = false, tier, halted}: {duration: number; at: number; rest: string; loop?: boolean; tier: MotionTier; halted: boolean}) {
+export function syncTrack(el: HTMLElement, start: () => Animation | null, {at, rest, halted}: {at: number; rest: string; halted: boolean}) {
     el.style.transform = rest;
     let track = tracks.get(el);
     if (!track || track.playState === "idle") {
-        const started = play(el, frames, {id: "stamp-track", duration, iterations: loop ? Infinity : 1}, {tier, essential: true});
+        const started = start();
         if (!started) return;
         tracks.set(el, track = started);
     }
@@ -311,7 +312,7 @@ export function syncFeverGauge(fill: HTMLElement, game: Game, tier: MotionTier, 
         fill.style.transform = `scaleX(${ratio})`;
         return;
     }
-    syncTrack(fill, DRAIN, {duration: FEVER_MS, at: FEVER_MS - left, rest: `scaleX(${ratio})`, tier, halted});
+    syncTrack(fill, () => play(fill, DRAIN, {id: "stamp-drain", duration: FEVER_MS}, {tier, essential: true}), {at: FEVER_MS - left, rest: `scaleX(${ratio})`, halted});
 }
 
 /** "시작!" stays this long after the countdown; input is already open beneath it. */
