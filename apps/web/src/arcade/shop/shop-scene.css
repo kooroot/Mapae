@@ -91,3 +91,10 @@
 .shop-deal-totals{flex-wrap:wrap}.shop-deal-totals>span{flex:1 1 100px}
 @media(max-width:760px){.shop-forecast{padding:12px;margin:12px 0}.shop-forecast-goods{gap:8px}.shop-forecast-goods>span{font-size:11px}.shop-forecast-goods img{width:30px;height:30px}.shop-forecast p{font-size:12px}}
 .shop-metric-guide{font-size:12px;line-height:1.7;border-top:1px solid #bca77b;padding-top:7px}.shop-metric-guide>summary{min-height:44px;align-content:center;cursor:pointer;font-weight:700}.shop-metric-guide>summary:focus-visible{outline:3px solid #b76c31;outline-offset:3px}.shop-metric-guide p{margin:0 0 8px}.shop-metric-guide small{display:block;margin-bottom:12px}
+/* Tallies roll to each new value (a gain rises in from below, a loss drops in from above); the forecast follows the stock it warns about: its counts roll, a shortfall warms in, the promised guest's arrival rises in. */
+.shop-roll{display:inline-block}.shop-roll[data-roll-dir=up]{animation:shop-roll-up var(--arc-dur-base) var(--arc-ease-out) both}.shop-roll[data-roll-dir=down]{animation:shop-roll-down var(--arc-dur-base) var(--arc-ease-out) both}
+@keyframes shop-roll-up{from{opacity:0;translate:0 60%}}
+@keyframes shop-roll-down{from{opacity:0;translate:0 -60%}}
+.shop-forecast{transition:border-left-color var(--arc-dur-slow) var(--arc-ease-out)}.shop-forecast[data-arrived]{border-left-color:#a94b30}.shop-forecast-goods small{transition:color var(--arc-dur-base) var(--arc-ease-out)}
+.shop-forecast[data-arrived] .shop-forecast-title>span{animation:arc-rise-in var(--arc-dur-base) var(--arc-ease-out) both}.shop-forecast[data-arrived] .shop-forecast-title>b{animation:arc-heartbeat var(--arc-dur-base) var(--arc-ease-back) var(--arc-dur-base) 2}
+.shop-game[data-motion=light] .shop-forecast[data-arrived] .shop-forecast-title>b{animation:none}
