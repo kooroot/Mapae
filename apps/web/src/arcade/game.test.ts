@@ -1,6 +1,7 @@
 import {describe, expect, test} from "bun:test";
-import {advance, newGame, newBossPractice, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, BOSS_PRACTICE_MS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "@mapae/arcade/stamp";
+import {advance, newGame, stampEvents, newBossPractice, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, BOSS_PRACTICE_MS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "@mapae/arcade/stamp";
 import {cellForKey} from "./input";
+import {SEAL_PEAK, SHARDS, sealBoost, stampMotions} from "./stamp-fx";
 
 function withActor(game: Game, kind: "goblin" | "courier", index = 0): Game {
     return {...game, cells: game.cells.map((cell, i) => i === index ? {
@@ -449,5 +450,49 @@ describe("Precise chief stamps and the ten-second drill", () => {
         const expired = {...ready, elapsed: ready.cells[4]!.actor!.expiresAt};
         expect(bossWindow(expired.cells[4]!.actor!, expired.elapsed)).toMatchObject({phase: "recover", perfect: false});
         expect(stamp(expired, 4)).toBe(expired);
+    });
+});
+
+describe("Dokkaebi Stamp motion plan", () => {
+    const golden = (game: Game): Game => ({...game, cells: game.cells.map((cell, i) => i === 0 ? {...cell, actor: {...cell.actor!, golden: true}} : cell)});
+    const kinds = (motions: ReturnType<typeof stampMotions>) => motions.map(motion => motion.kind);
+    test("a player's golden hit gets every layer, from the engine's own events", () => {
+        const before = golden(withActor(newGame(), "goblin"));
+        const after = stamp(before, 0);
+        const motions = stampMotions(stampEvents(before, after, 0), after, "full", {index: 0, point: {x: 10, y: 20}});
+        expect(kinds(motions)).toEqual(["press", "seal", "ink", "float", "shards"]);
+        expect(motions).toContainEqual({kind: "float", index: 0, text: "+250"});
+    });
+    test("a watched agent keeps the seal, ink and score float but drops shards, shake and hit-stop", () => {
+        const hit = [{type: "hit", index: 2, actor: {kind: "goblin", golden: true}, points: 250}, {type: "perfect", index: 2}, {type: "wrong", index: 5, points: -100}] as const;
+        expect(kinds(stampMotions(hit, newGame(), "light"))).toEqual(["seal", "ink", "float", "rings", "strike"]);
+        expect(kinds(stampMotions(hit, newGame(), "full"))).toEqual(["seal", "ink", "float", "shards", "rings", "hitStop", "strike", "shake", "fieldShake"]);
+    });
+    test("reduced motion leaves the points on the impact and only acknowledges, with no press, float, shards or field shake", () => {
+        const events = [{type: "hit", index: 1, actor: {kind: "goblin", golden: true}, points: 250}, {type: "wrong", index: 3, points: -100}, {type: "pass", index: 4}] as const;
+        expect(kinds(stampMotions(events, newGame(), "still", {index: 1}))).toEqual(["seal", "ink", "strike", "shake", "pass"]);
+    });
+    test("a dud ripples where the pointer landed, and from the centre for a key", () => {
+        const dud = [{type: "dud", index: 7}] as const;
+        expect(stampMotions(dud, newGame(), "full", {index: 7, point: {x: 3, y: 4}})).toEqual([{kind: "press", index: 7}, {kind: "ripple", index: 7, point: {x: 3, y: 4}}]);
+        expect(stampMotions(dud, newGame(), "light")).toEqual([{kind: "ripple", index: 7, point: undefined}]);
+    });
+    test("a crack sparks, and a perfect crack wears the seal and floats its bonus instead", () => {
+        const crack = [{type: "crack", index: 4, actor: {kind: "goblin", special: "boss"}}] as const;
+        const game = newGame();
+        expect(kinds(stampMotions(crack, game, "full"))).toEqual(["spark"]);
+        const perfect = {...game, cells: game.cells.map((cell, i) => i === 4 ? {...cell, impact: {kind: "crack" as const, until: 650, points: BOSS_PERFECT_POINTS, actor: {kind: "goblin" as const, special: "boss" as const}, perfect: true}} : cell)};
+        expect(stampMotions(crack, perfect, "full")).toContainEqual({kind: "float", index: 4, text: `+${BOSS_PERFECT_POINTS}`});
+        expect(kinds(stampMotions(crack, perfect, "full"))).not.toContain("spark");
+    });
+    test("the seal peaks a tenth higher per combo multiplier, and shards stay within 24–40px", () => {
+        expect(sealBoost(0)).toBe(1);
+        expect(SEAL_PEAK * sealBoost(15)).toBeCloseTo(2.2);
+        expect(SEAL_PEAK * sealBoost(99)).toBeCloseTo(2.2);
+        expect(SHARDS).toHaveLength(6);
+        for (const {x, y} of SHARDS) {
+            expect(Math.hypot(x, y)).toBeGreaterThanOrEqual(23.9);
+            expect(Math.hypot(x, y)).toBeLessThanOrEqual(40.1);
+        }
     });
 });
