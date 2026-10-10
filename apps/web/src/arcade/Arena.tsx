@@ -8,6 +8,7 @@ import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldPara
 import {cellForKey, isControlTarget} from "./input";
 import type {Character} from "./state";
 import type {ArcadeSound} from "./sound";
+import type {GuardianAptitudes} from "@mapae/arcade/guardians";
 import {StampChallenges} from "./StampChallenges";
 import "./stamp.css";
 import "./game-guide.css";
@@ -32,11 +33,12 @@ const COPY = {
     },
 } satisfies Record<Locale, Record<string, string>>;
 
-export function Arena({locale, character, reducedMotion, sound, onFinish, autopilot, suspended = false, seed, practice}: {
+export function Arena({locale, character, reducedMotion, sound, onFinish, autopilot, suspended = false, seed, practice, aptitudes}: {
     locale: Locale; character: Character; reducedMotion: boolean; sound: ArcadeSound;
     onFinish: (game: Game, early: boolean) => void;
     suspended?: boolean; seed?: number; practice?: "boss";
     autopilot?: "careful" | "quick";
+    aptitudes?: GuardianAptitudes;
 }) {
     const t = COPY[locale];
     const bossHintId = useId();
@@ -44,7 +46,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     for (const asset of ["goblin", "goblin-armored", "goblin-chief", "stamp-impact", "stamp-window"]) preload(`/arcade/${asset}-512.webp`, {as: "image"});
     const [view, setView] = useState<Game>(() => {
         const chosenSeed = seed ?? Math.floor(Math.random() * 2 ** 32);
-        return practice === "boss" ? newBossPractice(chosenSeed) : newGame(chosenSeed, autopilot === "careful" ? "manual" : "auto");
+        return practice === "boss" ? newBossPractice(chosenSeed) : newGame(chosenSeed, autopilot === "careful" ? "manual" : "auto", aptitudes);
     });
     const state = useRef(view);
     const [countdown, setCountdown] = useState(3);

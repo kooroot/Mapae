@@ -1,4 +1,5 @@
 import {ARCADE_RULESET_VERSION, type ActivityOutcome, type JsonValue} from "./contracts";
+import {validGuardianAptitudes, type GuardianAptitudes} from "./guardians";
 
 export type ProductId = "water" | "snack" | "charm";
 export type Basket = Record<ProductId, number>;
@@ -87,6 +88,7 @@ export type ShopReceipt = {
 };
 export type ShopState = {
     seed: number; config: ShopConfig; buyers: Buyer[]; customer: number;
+    aptitudes?: GuardianAptitudes;
     startingMemory: ShopMemory | null; forecast: ShopForecast | null;
     phase: "buyer" | "seller" | "transition" | "finished"; rounds: number;
     inventory: Basket; cash: number; advertisingCost: number; revenue: number; costOfSales: number;
@@ -178,10 +180,11 @@ function stock(config: ShopConfig): Basket {
     return config.focus === "everyday" ? {water: 6, snack: 5, charm: 1} : config.focus === "gifts" ? {water: 3, snack: 2, charm: 6} : {water: 4, snack: 4, charm: 4};
 }
 function cost(basket: Basket): number { return SHOP_PRODUCTS.reduce((sum, item) => sum + item.cost * basket[item.id], 0); }
-export function createShop(seed: number, config: ShopConfig = DEFAULT_SHOP_CONFIG, memory?: ShopMemory): ShopState {
+export function createShop(seed: number, config: ShopConfig = DEFAULT_SHOP_CONFIG, memory?: ShopMemory, aptitudes?: GuardianAptitudes): ShopState {
     const parsed = parseShopConfig(config);
     if (!Number.isSafeInteger(seed) || !parsed) throw new Error("INVALID_SHOP_CONFIG");
     if (memory !== undefined && !parseShopMemory(memory)) throw new Error("INVALID_SHOP_MEMORY");
+    if (aptitudes !== undefined && !validGuardianAptitudes(aptitudes)) throw new Error("Invalid guardian aptitudes");
     config = parsed;
     const rng = random(seed);
     const goals = Object.keys(SHOP_GOALS) as ShopGoal[];
@@ -211,7 +214,7 @@ export function createShop(seed: number, config: ShopConfig = DEFAULT_SHOP_CONFI
         const matches = campaign.matches;
         for (let i = 0; i < matches; i++) buyers[i]!.goal = buyers[i]!.story = campaign.goal;
     }
-    return {seed, config: {...config}, startingMemory, forecast, buyers, customer: 0, phase: "buyer", rounds: 0, inventory,
+    return {seed, ...(aptitudes ? {aptitudes: {...aptitudes}} : {}), config: {...config}, startingMemory, forecast, buyers, customer: 0, phase: "buyer", rounds: 0, inventory,
         cash: SHOP_INITIAL_CAPITAL - cost(inventory) - advertisingCost, advertisingCost,
         revenue: 0, costOfSales: 0, offer: null, lastOffer: null, counterOffer: null, receipts: [], conversation: [], transcript: [], rejected: null, capBlocks: 0,
         tactic: null, finalOffer: false, referral: null};
@@ -224,7 +227,7 @@ export function shopCustomerName(state: ShopState, index: number, locale: "ko" |
 
 export function shopPatience(state: ShopState): number {
     const base = state.config.role === "seller" && state.buyers[state.customer]!.temperament === "hurried" ? 2 : 3;
-    return base + (state.config.role === "seller" && state.customer === 2 ? (state.referral ? 1 : 0) + (state.forecast?.trusted ? 1 : 0) : 0);
+    return base + (state.aptitudes?.shop ?? 5) - 5 + (state.config.role === "seller" && state.customer === 2 ? (state.referral ? 1 : 0) + (state.forecast?.trusted ? 1 : 0) : 0);
 }
 export function shopOffersRemaining(state: ShopState): number {
     return state.finalOffer || state.phase === "transition" || state.phase === "finished" ? 0 : Math.max(0, shopPatience(state) - state.rounds);
@@ -457,8 +460,8 @@ export function ruleBuyerAction(observation: Record<string, JsonValue>): BuyerAc
     return {type: "buy", reason: "need"};
 }
 
-export function simulateShop(seed: number, config: ShopConfig, buyerStyle: "careful" | "impulsive" = "careful", memory?: ShopMemory): ShopState {
-    let state = createShop(seed, config, memory);
+export function simulateShop(seed: number, config: ShopConfig, buyerStyle: "careful" | "impulsive" = "careful", memory?: ShopMemory, aptitudes?: GuardianAptitudes): ShopState {
+    let state = createShop(seed, config, memory, aptitudes);
     for (let step = 0; step < 40 && state.phase !== "finished"; step++) {
         state = state.phase === "transition" ? nextShopCustomer(state) : state.phase === "seller" ?
             applySellerAction(state, ruleSellerAction(shopSellerObservation(state), "en")) :
@@ -482,8 +485,8 @@ export function shopOutcome(state: ShopState, name: string, locale: "ko" | "en")
     if (state.phase !== "finished") throw new Error("SHOP_NOT_FINISHED");
     const stats = shopMetrics(state);
     const seller = state.config.role === "seller";
-    const baseline = simulateShop(state.seed, seller ? {...state.config, pricing: 100, advertising: "none", negotiation: "loyalty"} : state.config, "careful", state.startingMemory ?? undefined);
-    const comparison = seller ? simulateShop(state.seed, {...state.config, pricing: 125, advertising: "parade", negotiation: "profit"}, "careful", state.startingMemory ?? undefined) : simulateShop(state.seed, state.config, "impulsive");
+    const baseline = simulateShop(state.seed, seller ? {...state.config, pricing: 100, advertising: "none", negotiation: "loyalty"} : state.config, "careful", state.startingMemory ?? undefined, state.aptitudes);
+    const comparison = seller ? simulateShop(state.seed, {...state.config, pricing: 125, advertising: "parade", negotiation: "profit"}, "careful", state.startingMemory ?? undefined, state.aptitudes) : simulateShop(state.seed, state.config, "impulsive", state.startingMemory ?? undefined, state.aptitudes);
     const highlights: {ko: string; en: string}[] = [];
     if (state.referral) highlights.push({ko: `${state.referral.from}의 소개로 마지막 손님에게 제안할 기회를 한 번 더 얻었어요.`, en: `${state.referral.from}'s recommendation earned one extra offer with the final customer.`});
     const generous = state.receipts.find(receipt => receipt.tactic === "generous" && receipt.goalAchievement === 100);
@@ -499,8 +502,8 @@ export function shopOutcome(state: ShopState, name: string, locale: "ko" | "en")
     const shopMemory: ShopMemory | undefined = seller && state.forecast ? {npc: state.forecast.npc, visits: state.forecast.visit,
         service: finalReceipt?.revisit ? "complete" : finalReceipt ? "partial" : "missed", value: finalReceipt?.value ?? 0} : undefined;
     if (seller && state.forecast?.visit === 2) highlights.splice(0, 1, {ko: `${SHOP_REGULARS[state.forecast.npc].name.ko}의 두 번째 방문 · ${state.forecast.trusted ? "지난 완수의 신뢰로 정가 제안 가능" : "지난 서비스 뒤 다시 도전"} · 오늘 ${finalReceipt ? `${finalReceipt.price - finalReceipt.cost}냥 이익` : "거래 없음"}.`, en: `${SHOP_REGULARS[state.forecast.npc].name.en}'s second visit: ${state.forecast.trusted ? "past service earned trust at retail" : "a second chance after last time"}; ${finalReceipt ? `${finalReceipt.price - finalReceipt.cost} coins profit today` : "no deal today"}.`});
-    return {game: "shop", ...(shopMemory ? {shopMemory} : {}),
-        replay: {version: ARCADE_RULESET_VERSION, seed: state.seed, shop: {...state.config}, ...(state.startingMemory ? {shopMemory: {...state.startingMemory}} : {})}, score: stats.score, highlights,
+    return {game: "shop", achievement: {victory: seller ? stats.profit > 0 : stats.goal === 100}, ...(shopMemory ? {shopMemory} : {}),
+        replay: {version: ARCADE_RULESET_VERSION, seed: state.seed, ...(state.aptitudes ? {aptitudes: {...state.aptitudes}} : {}), shop: {...state.config}, ...(state.startingMemory ? {shopMemory: {...state.startingMemory}} : {})}, score: stats.score, highlights,
         summary: {ko: seller ? `손님 3명 · 순이익 ${stats.profit}냥 · 주문 완수 ${stats.goal}%` : `가게 3곳 · 구매 목표 ${stats.goal}% · ${stats.savings}냥 절약`,
             en: seller ? `3 customers · ${stats.profit} coins profit · ${stats.goal}% of errands filled` : `3 shops · ${stats.goal}% of goal · ${stats.savings} coins saved`},
         metrics: [

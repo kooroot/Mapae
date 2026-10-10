@@ -3,6 +3,7 @@ import {validGuardian, projectGuardian, type Guardian} from "./guardian";
 import {currentRecords, type Color, type ArcadeState} from "./state";
 import {validReplaySeed} from "./replay";
 import {parseShopConfig, parseShopMemory, type ShopMemory} from "@mapae/arcade/shop";
+import {validGuardianAptitudes} from "@mapae/arcade/guardians";
 
 export type TicketSource = "mapae-giwa";
 type ActivityRecord = {
@@ -25,9 +26,11 @@ const bilingual = (v: unknown): boolean => object(v) && text(v.ko) && text(v.en)
 
 export function isOutcome(v: unknown): v is ActivityOutcome {
     return object(v) && GAME_IDS.includes(v.game as GameId) && finite(v.score) && bilingual(v.summary) &&
+        (v.achievement === undefined || object(v.achievement) && typeof v.achievement.victory === "boolean") &&
         (v.highlights === undefined || Array.isArray(v.highlights) && v.highlights.length <= 2 && v.highlights.every(bilingual)) &&
         (v.replay === undefined || object(v.replay) && validReplaySeed(v.replay.seed) && natural(v.replay.version) && v.replay.version > 0 &&
             (v.replay.shop === undefined || v.game === "shop" && parseShopConfig(v.replay.shop) !== null) &&
+            (v.replay.aptitudes === undefined || validGuardianAptitudes(v.replay.aptitudes)) &&
             (v.replay.shopMemory === undefined || v.game === "shop" && parseShopMemory(v.replay.shopMemory) !== null)) &&
         (v.shopMemory === undefined || v.game === "shop" && parseShopMemory(v.shopMemory) !== null) &&
         Array.isArray(v.metrics) && v.metrics.length <= 24 && v.metrics.every(m => object(m) && bilingual(m.label) && finite(m.value) && (m.unit === undefined || text(m.unit, 20))) &&
@@ -57,9 +60,10 @@ export function projectActivity(a: Activity): Activity {
         ...(a.source === "practice" ? {source: "practice" as const, mode: "human" as const, ticketId: null, model: null, giwa: null, ...(a.replaySeed === undefined ? {} : {replaySeed: a.replaySeed})} :
             {source: a.source, mode: a.mode, ticketId: a.ticketId, model: a.model, giwa: {balanceAfter: a.giwa.balanceAfter, allowanceAfter: a.giwa.allowanceAfter}}),
         outcome: a.outcome && {game: a.outcome.game, score: a.outcome.score,
+            ...(a.outcome.achievement ? {achievement: {victory: a.outcome.achievement.victory}} : {}),
             summary: {ko: a.outcome.summary.ko, en: a.outcome.summary.en},
             ...(a.outcome.highlights === undefined ? {} : {highlights: a.outcome.highlights.map(h => ({ko: h.ko, en: h.en}))}),
-            ...(a.outcome.replay === undefined ? {} : {replay: {seed: a.outcome.replay.seed, version: a.outcome.replay.version, ...(a.outcome.replay.shop ? {shop: parseShopConfig(a.outcome.replay.shop)!} : {}), ...(a.outcome.replay.shopMemory ? {shopMemory: parseShopMemory(a.outcome.replay.shopMemory)!} : {})}}),
+            ...(a.outcome.replay === undefined ? {} : {replay: {seed: a.outcome.replay.seed, version: a.outcome.replay.version, ...(a.outcome.replay.aptitudes ? {aptitudes: {stamp: a.outcome.replay.aptitudes.stamp, race: a.outcome.replay.aptitudes.race, shop: a.outcome.replay.aptitudes.shop}} : {}), ...(a.outcome.replay.shop ? {shop: parseShopConfig(a.outcome.replay.shop)!} : {}), ...(a.outcome.replay.shopMemory ? {shopMemory: parseShopMemory(a.outcome.replay.shopMemory)!} : {})}}),
             ...(a.outcome.shopMemory ? {shopMemory: parseShopMemory(a.outcome.shopMemory)!} : {}),
             metrics: a.outcome.metrics.map(m => ({label: {ko: m.label.ko, en: m.label.en}, value: m.value, ...(m.unit === undefined ? {} : {unit: m.unit})})),
             transcript: a.outcome.transcript.map(m => ({speaker: m.speaker, text: m.text})),

@@ -1,4 +1,5 @@
 import type {AgentProfile, JsonValue} from "./contracts";
+import {validGuardianAptitudes, type GuardianAptitudes} from "./guardians";
 
 export const RACE_ROUNDS = 3;
 export const SEASON_TOKENS = 3;
@@ -44,7 +45,7 @@ export type RaceCourse = {
     round: number; seed: number; weather: "clear" | "rain" | "wind";
     course: "short" | "long"; distance: number; gust: number;
 };
-export type Racer = {id: string; name: string; strategy: RaceStrategy};
+export type Racer = {id: string; name: string; strategy: RaceStrategy; aptitude?: number};
 export type RacePosition = {
     id: string; distance: number; stamina: number; path: RaceRoute;
     draftingId: string | null; blockedBy: string | null; overtakingId: string | null;
@@ -64,9 +65,9 @@ export function raceTraffic(positions: readonly RacePosition[], id: string): Rac
 export type RaceFrame = {time: number; positions: RacePosition[]};
 export type RaceFinish = {id: string; rank: number; seconds: number; stamina: number; points: number};
 export type RaceSimulation = {course: RaceCourse; entrants: Racer[]; frames: RaceFrame[]; finish: RaceFinish[]; seconds: number; calls: RaceCall[]; bursts: RaceBurst[]};
-export type SeasonRunner = {id: string; name: string; strategy: RaceStrategy; tokens: number; points: number; entries: number; wins: number};
+export type SeasonRunner = Racer & {tokens: number; points: number; entries: number; wins: number};
 export type RaceRound = {action: RaceAction; commands: RaceCommand[]; burstAt: number | null | undefined; simulation: RaceSimulation};
-export type RaceSeason = {seed: number; round: number; runners: SeasonRunner[]; rounds: RaceRound[]; rivalId: string};
+export type RaceSeason = {seed: number; round: number; runners: SeasonRunner[]; rounds: RaceRound[]; rivalId: string; aptitudes?: GuardianAptitudes};
 
 function hash(seed: number): number {
     let value = seed >>> 0;
@@ -101,13 +102,14 @@ export function raceObservation(season: RaceSeason, profile: AgentProfile): Reco
         distance: course.distance, seasonTokens: owner.tokens, entryCost: RACE_ENTRY_COST,
         seasonPoints: owner.points, remainingRounds: RACE_ROUNDS - season.round,
         ownerGoal: profile.goal,
+        aptitude: owner.aptitude ?? 5,
         rival: season.runners.find(runner => runner.id === season.rivalId)!.name,
         rivalHabit: RACE_HABITS[season.runners.find(runner => runner.id === season.rivalId)!.strategy].en,
         trafficRules: "Two paths. Following an inner-path horse within 22m reduces stamina drain by 40%, but cannot pass it. No nearby horse means no draft. Outer path is 6% slower for the longer route and no blocking or draft. Paths remain until the next fork or finish; terrain effects last 8 seconds. All decisions use the same tick's public positions.",
         checkpoints: [...RACE_CHECKPOINTS], burstStaminaCost: RACE_BURST_COST, burstSeconds: RACE_BURST_SECONDS,
         standings: season.runners.map(runner => ({name: runner.name, points: runner.points, entries: runner.entries})),
         previousFinishes: season.rounds.map(round => round.simulation.finish.find(finish => finish.id === "owner")?.rank ?? null),
-        rules: "Choose enter and strategy (burst, conserve, surge). 3 races; everyone starts with 3 game-only entry tokens. All 3 entries are already included. Enter each race for points; watching scores 0. Unused entries expire and have no reward. Places earn 5/3/2/1 season points; tied times earn equal points. All horses have identical base speed and stamina. Burst is fast early but tires; conserve saves stamina; surge attacks late. Rain drains stamina; long courses reward endurance. These tokens have no cash value and cannot change the owner's allowance. One decision before each race; the engine runs movement. Your chosen strategy also drives a deterministic motor at two forks (12 and 24 simulation seconds): it chooses legal pace/path using public terrain, current stamina and opponent positions. Habits: burst takes an outside pass when close behind; conserve follows then passes tired leaders at the second fork; surge waits until the second fork to pass. Burst and surge can raise pace when challenged outside. The same motor drives the opponents. Everyone may use one burst: 1.7x speed for 4 simulation seconds, costing 20 stamina immediately, only when at least 20 remains. Burst strategy triggers it at 22% distance; conserve at 78%; surge at 65%. Motors wait until clear of an inner horse before using a burst, rather than wasting it while blocked. No forced comeback or hidden stat advantage.",
+        rules: "Choose enter and strategy (burst, conserve, surge). 3 races; everyone starts with 3 game-only entry tokens. All 3 entries are already included. Enter each race for points; watching scores 0. Unused entries expire and have no reward. Places earn 5/3/2/1 season points; tied times earn equal points. All horses start with 100 stamina. Base speed is 19m/s; an NFT guardian has a public aptitude of 4, 5 or 6, adjusting base speed by -2%, 0% or +2%. Opponents and trial couriers have aptitude 5. Burst is fast early but tires; conserve saves stamina; surge attacks late. Rain drains stamina; long courses reward endurance. These tokens have no cash value and cannot change the owner's allowance. One decision before each race; the engine runs movement. Your chosen strategy also drives a deterministic motor at two forks (12 and 24 simulation seconds): it chooses legal pace/path using public terrain, current stamina and opponent positions. Habits: burst takes an outside pass when close behind; conserve follows then passes tired leaders at the second fork; surge waits until the second fork to pass. Burst and surge can raise pace when challenged outside. The same motor drives the opponents. Everyone may use one burst: 1.7x speed for 4 simulation seconds, costing 20 stamina immediately, only when at least 20 remains. Burst strategy triggers it at 22% distance; conserve at 78%; surge at 65%. Motors wait until clear of an inner horse before using a burst, rather than wasting it while blocked. No forced comeback. Aptitude is fixed and public.",
     };
 }
 
@@ -161,7 +163,7 @@ export function simulateRace(course: RaceCourse, entrants: Racer[], commands: re
     if (!Number.isFinite(course.distance) || course.distance < 1 || course.distance > 2_000 || !Number.isFinite(course.gust)
         || !["clear", "rain", "wind"].includes(course.weather)
         || entrants.length < 1 || entrants.length > 4 || new Set(entrants.map(runner => runner.id)).size !== entrants.length
-        || entrants.some(runner => !RACE_STRATEGIES.includes(runner.strategy))) throw new Error("Invalid race entrants or course");
+        || entrants.some(runner => !RACE_STRATEGIES.includes(runner.strategy) || (runner.aptitude !== undefined && ![4, 5, 6].includes(runner.aptitude)))) throw new Error("Invalid race entrants or course");
     if (commands.length > RACE_CHECKPOINTS.length || commands.some((command, index) =>
         command.at !== RACE_CHECKPOINTS[index] || !RACE_PACES.includes(command.pace) || !RACE_ROUTES.includes(command.route) || Object.keys(command).some(key => key !== "at" && key !== "pace" && key !== "route"))
         || (commands.length > 0 && !entrants.some(runner => runner.id === "owner"))) throw new Error("Invalid race checkpoint command");
@@ -213,7 +215,7 @@ export function simulateRace(course: RaceCourse, entrants: Racer[], commands: re
             const fatigue = .4 + .6 * Math.min(1, stamina / 25);
             const route = activeCall ? raceRouteEffect(raceTerrain(course, RACE_CHECKPOINTS.indexOf(activeCall.at as typeof RACE_CHECKPOINTS[number])), activeCall.route, activeCall.pace, stamina) : {speed: position.path === "wide" ? RACE_OUTSIDE_SPEED : 1, drain: 1};
             const burstSpeed = burst && now < burst.at + RACE_BURST_SECONDS ? RACE_BURST_SPEED : 1;
-            const speed = 19 * pace * weather * fatigue * route.speed * burstSpeed;
+            const speed = 19 * (1 + ((runner.aptitude ?? 5) - 5) * .02) * pace * weather * fatigue * route.speed * burstSpeed;
             const efficiency = activeCall ? 1 : runner.strategy === "conserve" ? .65 : runner.strategy === "burst" ? 1.1 : .92;
             const drain = ((pace ** 3 * 1.55 - .8) + (course.weather === "rain" ? .48 : course.weather === "wind" ? .22 : 0)) * efficiency;
             return {...position, distance: position.distance + speed * step,
@@ -287,14 +289,15 @@ export function raceLiveRank(race: RaceSimulation, frame: RaceFrame, id: string)
         (position.distance >= race.course.distance && p.distance >= race.course.distance && race.finish.find(f => f.id === p.id)!.seconds < finish.seconds - 1e-7))).length;
 }
 
-export function createRaceSeason(seed: number, name: string, locale: "ko" | "en"): RaceSeason {
+export function createRaceSeason(seed: number, name: string, locale: "ko" | "en", aptitudes?: GuardianAptitudes): RaceSeason {
+    if (aptitudes !== undefined && !validGuardianAptitudes(aptitudes)) throw new Error("Invalid guardian aptitudes");
     makeRaceCourse(seed, 0);
     const labels = locale === "ko" ? ["번개", "느긋", "막판"] : ["Flash", "Steady", "Closer"];
     const runners: Racer[] = [
-        {id: "owner", name, strategy: "conserve"},
+        {id: "owner", name, strategy: "conserve", ...(aptitudes ? {aptitude: aptitudes.race} : {})},
         ...RACE_STRATEGIES.map((strategy, index) => ({id: strategy, name: labels[index]!, strategy})),
     ];
-    return {seed, round: 0, rounds: [], rivalId: RACE_STRATEGIES[hash(seed) % RACE_STRATEGIES.length]!, runners: runners.map(runner => ({...runner, tokens: SEASON_TOKENS, points: 0, entries: 0, wins: 0}))};
+    return {seed, ...(aptitudes ? {aptitudes: {...aptitudes}} : {}), round: 0, rounds: [], rivalId: RACE_STRATEGIES[hash(seed) % RACE_STRATEGIES.length]!, runners: runners.map(runner => ({...runner, tokens: SEASON_TOKENS, points: 0, entries: 0, wins: 0}))};
 }
 
 export function applyRaceRound(season: RaceSeason, input: RaceAction, commands: readonly RaceCommand[] = [], burstAt?: number | null): RaceSeason {
@@ -302,7 +305,7 @@ export function applyRaceRound(season: RaceSeason, input: RaceAction, commands: 
     if (!action || season.round < 0 || season.round >= RACE_ROUNDS) throw new Error("Invalid race action or finished season");
     if (action.enter && season.runners.find(runner => runner.id === "owner")!.tokens < RACE_ENTRY_COST) throw new Error("Season entry token limit exceeded");
     const entrants = season.runners.filter(runner => runner.tokens >= 1 && (runner.id !== "owner" || action.enter))
-        .map(runner => ({id: runner.id, name: runner.name, strategy: runner.id === "owner" ? action.strategy : runner.strategy}));
+        .map(runner => ({id: runner.id, name: runner.name, strategy: runner.id === "owner" ? action.strategy : runner.strategy, ...(runner.aptitude === undefined ? {} : {aptitude: runner.aptitude})}));
     const simulation = simulateRace(makeRaceCourse(season.seed, season.round), entrants, commands, burstAt);
     const runners = season.runners.map(runner => {
         const result = simulation.finish.find(finish => finish.id === runner.id);

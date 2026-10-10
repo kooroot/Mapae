@@ -2,6 +2,7 @@ import {ARCADE_RULESET_VERSION, type ActivityOutcome, type AgentDecision, type A
 import {applyRaceRound, chooseRaceAction, createRaceSeason, makeRaceCourse, raceEndTime, raceHighlights, RACE_ROUNDS, seasonRanking, type RaceSeason, type RaceStrategy} from "./race";
 import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseShopMemory, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopOutcome, shopSellerObservation, type ShopMemory} from "./shop";
 import {advanceAgent, newGame, ROUND_MS, stampHighlights, type Game} from "./stamp";
+import {validGuardianAptitudes} from "./guardians";
 
 type Locale = "ko" | "en";
 export type RaceNote = {round: number; decision: Omit<AgentDecision, "source"> & {source: "human" | AgentDecision["source"]}; enter: boolean; strategy: RaceStrategy};
@@ -20,8 +21,8 @@ export function raceOutcome(season: RaceSeason, notes: RaceNote[], locale: Local
     const highlights = season.rounds.flatMap(round => raceHighlights(round.simulation)).slice(-1);
     if (owner.entries > 0) highlights.push({ko: `시즌 라이벌 ${rival.name}와 ${owner.points} 대 ${rival.points}점.`, en: `Season rival ${rival.name}: ${owner.points} to ${rival.points} points.`});
     return {
-        game: "race", score: owner.points, highlights,
-        replay: {seed: season.seed, version: ARCADE_RULESET_VERSION},
+        game: "race", score: owner.points, highlights, achievement: {victory: rank === 1 && owner.entries > 0},
+        replay: {seed: season.seed, version: ARCADE_RULESET_VERSION, ...(season.aptitudes ? {aptitudes: {...season.aptitudes}} : {})},
         summary: {ko: `${RACE_ROUNDS}경기 시즌 ${rank}위 · ${owner.entries}회 출전 · ${owner.points}점`, en: `Place ${rank} over ${RACE_ROUNDS} races · ${owner.entries} entries · ${owner.points} points`},
         metrics: [
             {label: {ko: "출전 수", en: "Races entered"}, value: owner.entries},
@@ -46,7 +47,7 @@ export function raceOutcome(season: RaceSeason, notes: RaceNote[], locale: Local
 
 export function stampOutcome(game: Game, name: string, explanation: string): ActivityOutcome {
     return {
-        game: "stamp", score: game.score, replay: {seed: game.seed, version: ARCADE_RULESET_VERSION},
+        game: "stamp", score: game.score, achievement: {victory: game.finished && game.bossDefeated > 0}, replay: {seed: game.seed, version: ARCADE_RULESET_VERSION, ...(game.aptitudes ? {aptitudes: {...game.aptitudes}} : {})},
         summary: {ko: `${game.hits}번 찍고 최대 ${game.bestCombo}콤보를 만들었어요.`, en: `${game.hits} stamps, best combo ${game.bestCombo}.`},
         metrics: [{label: {ko: "최대 콤보", en: "Best combo"}, value: game.bestCombo}, {label: {ko: "퇴치", en: "Hits"}, value: game.hits}, {label: {ko: "실수", en: "Mistakes"}, value: game.mistakes}, {label: {ko: "갑옷 도깨비", en: "Armored goblins"}, value: game.armorHits}, {label: {ko: "대장 퇴치", en: "Chief defeated"}, value: game.bossDefeated}, {label: {ko: "대장 정통", en: "Precise chief stamps"}, value: game.perfectHits}],
         highlights: stampHighlights(game), transcript: [{speaker: name, text: explanation}], ranking: [],
@@ -57,7 +58,7 @@ export function stampOutcome(game: Game, name: string, explanation: string): Act
 export function chooseOutingGame(profile: AgentProfile, choice: GameId | "auto", visited: readonly GameId[]): GameId {
     if (choice === "stamp" || choice === "race" || choice === "shop") return choice;
     if (choice !== "auto") throw new Error("Invalid outing game");
-    if (profile.goal === "score") return "race";
+    if (profile.goal === "score") return profile.aptitudes ? (["stamp", "race", "shop"] as const).reduce((best, game) => profile.aptitudes![game] > profile.aptitudes![best] ? game : best, "stamp") : "race";
     if (profile.goal === "save") return "shop";
     if (profile.goal !== "explore") throw new Error("Invalid outing goal");
     return (["race", "shop", "stamp"] as const).find(game => !visited.includes(game)) ?? "race";
@@ -76,15 +77,16 @@ export function runArcadeSimulation({game, seed, profile, locale, shopMemory}: {
     if (locale !== "ko" && locale !== "en") throw new Error("Invalid arcade locale");
     if (!profile || typeof profile.name !== "string" || !profile.name.trim() || profile.name.length > 30 ||
         !["red", "jade", "ink"].includes(profile.color) || !["curious", "bold", "calm"].includes(profile.temperament) || !["score", "save", "explore"].includes(profile.goal)) throw new Error("Invalid arcade profile");
+    if (profile.aptitudes !== undefined && !validGuardianAptitudes(profile.aptitudes)) throw new Error("Invalid guardian aptitudes");
     if (shopMemory !== undefined && parseShopMemory(shopMemory) === null) throw new Error("Invalid shop memory");
     if (game === "stamp") {
         const strategy = stampStrategy(profile, locale);
-        const completed = advanceAgent(newGame(seed), ROUND_MS, strategy.tempo);
+        const completed = advanceAgent(newGame(seed, "auto", profile.aptitudes), ROUND_MS, strategy.tempo);
         if (!completed.finished) throw new Error("Stamp did not finish");
         return stampOutcome(completed, profile.name, strategy.explanation);
     }
     if (game === "race") {
-        let season = createRaceSeason(seed, profile.name, locale);
+        let season = createRaceSeason(seed, profile.name, locale, profile.aptitudes);
         const notes: RaceNote[] = [];
         for (let round = 0; round < RACE_ROUNDS; round++) {
             const policy = chooseRaceAction(profile, makeRaceCourse(seed, season.round), season.runners.find(runner => runner.id === "owner")!.tokens);
@@ -96,9 +98,9 @@ export function runArcadeSimulation({game, seed, profile, locale, shopMemory}: {
     }
     if (game === "shop") {
         const config = {...DEFAULT_SHOP_CONFIG, name: locale === "ko" ? `${profile.name.slice(0, 10)} 잡화점` : `${profile.name.slice(0, 10)}'s shop`};
-        let state = createShop(seed, config, shopMemory);
+        let state = createShop(seed, config, shopMemory, profile.aptitudes);
         // Same turn boundary and role-specific observations as ShopGame, with a finite guard.
-        for (let turn = 0; turn < 40 && state.phase !== "finished"; turn++) {
+        for (let turn = 0; turn < 64 && state.phase !== "finished"; turn++) {
             state = state.phase === "transition" ? nextShopCustomer(state) : state.phase === "seller"
                 ? applySellerAction(state, ruleSellerAction(shopSellerObservation(state), locale))
                 : applyBuyerAction(state, ruleBuyerAction(shopBuyerObservation(state)));

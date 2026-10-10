@@ -1,4 +1,5 @@
 import {ARCADE_RULESET_VERSION, type ActivityOutcome} from "@mapae/arcade";
+import {validGuardianAptitudes, type GuardianAptitudes} from "@mapae/arcade/guardians";
 
 export const ARCADE_REPLAY_VERSION = ARCADE_RULESET_VERSION;
 export const validReplaySeed = (value: unknown): value is number =>
@@ -10,11 +11,12 @@ export function gameSeed(visit: {id: string; replaySeed?: number}): number {
 }
 
 export function replaySeed(outcome: ActivityOutcome | null): number | undefined {
-    return outcome?.replay?.version === ARCADE_REPLAY_VERSION && validReplaySeed(outcome.replay.seed)
+    return outcome?.replay?.version === ARCADE_REPLAY_VERSION && validReplaySeed(outcome.replay.seed) && (outcome.replay.aptitudes === undefined || validGuardianAptitudes(outcome.replay.aptitudes))
         ? outcome.replay.seed : undefined;
 }
 
-export function withReplay(outcome: ActivityOutcome, seed: number): ActivityOutcome {
+export function withReplay(outcome: ActivityOutcome, seed: number, aptitudes?: GuardianAptitudes): ActivityOutcome {
     if (!validReplaySeed(seed)) throw new Error("Invalid practice scenario");
-    return {...outcome, replay: {...outcome.replay, seed, version: ARCADE_REPLAY_VERSION}};
+    if (aptitudes !== undefined && !validGuardianAptitudes(aptitudes)) throw new Error("Invalid guardian aptitudes");
+    return {...outcome, replay: {...outcome.replay, seed, version: ARCADE_REPLAY_VERSION, ...(aptitudes ? {aptitudes: {...aptitudes}} : {})}};
 }

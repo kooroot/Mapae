@@ -3,6 +3,7 @@ import {validGuardian, projectGuardian, type Guardian} from "./guardian";
 import {parseActivities, type Activity} from "./activity";
 import {validAllowance} from "./allowance";
 import {validReplaySeed} from "./replay";
+import {validGuardianAptitudes, type GuardianAptitudes} from "@mapae/arcade/guardians";
 
 export const COLORS = ["red", "jade", "ink"] as const;
 export const TEMPERAMENTS = ["curious", "bold", "calm"] as const;
@@ -19,6 +20,7 @@ export type Run = {
     id: string; characterId: string; name: string; color: Color; appearance?: Guardian; at: number;
     score: number; bestCombo: number; replaySeed?: number; ruleset?: number;
     hits: number; mistakes: number; missed: number; status: "unfinished" | "complete";
+    aptitudes?: GuardianAptitudes;
 };
 export type ArcadeState = {
     characters: Companion[]; selectedCharacterId: string | null;
@@ -71,20 +73,21 @@ export function parseArcadeState(raw: string | null, reducedMotion = false): Arc
         for (const run of v.runs) {
             if (!object(run) || typeof run.id !== "string" || !run.id || typeof run.characterId !== "string" || !ids.has(run.characterId) || typeof run.name !== "string" ||
                 Array.from(run.name).length > 12 || (run.appearance !== undefined && !validGuardian(run.appearance)) || !color(run.color) || ![run.at, run.score, run.bestCombo, run.hits, run.mistakes, run.missed].every(integer) ||
-                (run.ruleset !== undefined && (!integer(run.ruleset) || run.ruleset === 0)) || (run.replaySeed !== undefined && !validReplaySeed(run.replaySeed)) || (run.status !== "unfinished" && run.status !== "complete")) return clean;
+                (run.ruleset !== undefined && (!integer(run.ruleset) || run.ruleset === 0)) || (run.replaySeed !== undefined && !validReplaySeed(run.replaySeed)) || (run.aptitudes !== undefined && !validGuardianAptitudes(run.aptitudes)) || (run.status !== "unfinished" && run.status !== "complete")) return clean;
         }
         return v as ArcadeState;
     } catch {return clean;}
 }
 export type Admission = {ok: true; demo: ArcadeState; ticket: Run} | {ok: false; reason: "character" | "duplicate"};
 /** Human practice never spends or creates tokens. Paid agent outings use GIWA tickets. */
-export function admitPracticeRun(demo: ArcadeState, id: string, at: number, replaySeed?: number): Admission {
+export function admitPracticeRun(demo: ArcadeState, id: string, at: number, replaySeed?: number, aptitudes?: GuardianAptitudes): Admission {
     if (replaySeed !== undefined && !validReplaySeed(replaySeed)) throw new Error("Invalid practice scenario");
+    if (aptitudes !== undefined && !validGuardianAptitudes(aptitudes)) throw new Error("Invalid guardian aptitudes");
     if (demo.runs.some(run => run.id === id)) return {ok: false, reason: "duplicate"};
     const character = selectedCharacter(demo);
     if (!character) return {ok: false, reason: "character"};
     const ticket: Run = {id, characterId: character.id, at, name: character.name, color: character.color, appearance: projectGuardian(character.appearance),
-        ruleset: ARCADE_RULESET_VERSION, score: 0, bestCombo: 0, hits: 0, mistakes: 0, missed: 0, status: "unfinished", ...(replaySeed === undefined ? {} : {replaySeed})};
+        ruleset: ARCADE_RULESET_VERSION, score: 0, bestCombo: 0, hits: 0, mistakes: 0, missed: 0, status: "unfinished", ...(replaySeed === undefined ? {} : {replaySeed}), ...(aptitudes ? {aptitudes: {...aptitudes}} : {})};
     return {ok: true, ticket, demo: {...demo, runs: [ticket, ...demo.runs].slice(0, 40)}};
 }
 export function finishPracticeRun(demo: ArcadeState, id: string, result: Pick<Run, "score" | "bestCombo" | "hits" | "mistakes" | "missed">): ArcadeState {

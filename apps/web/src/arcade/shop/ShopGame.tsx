@@ -86,7 +86,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
 
     useEffect(() => {
         if (state || !autoAdvance || blocked) return;
-        const timer = window.setTimeout(() => setState(createShop(seed, config, props.memory)), 5000);
+        const timer = window.setTimeout(() => setState(createShop(seed, config, props.memory, profile.aptitudes)), 5000);
         return () => window.clearTimeout(timer);
     }, [state, autoAdvance, blocked, seed, config, props.memory]);
 
@@ -147,7 +147,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
         <header className="shop-heading"><span>{c.tag}</span><button type="button" className="arc-text-button" onClick={onExit}>{c.exit}</button><h1 id="shop-title">{c.title}</h1><p>{c.sub}</p></header>
         {autoAdvance && <p role="status">{locale === "ko" ? "자동 진행 · 5초 뒤 시작해요. 위에서 자동 진행을 끄면 편하게 설정할 수 있어요." : "Automatic play · Starts in 5 seconds. Turn it off above to configure at your pace."}</p>}
         <form className="shop-setup"
-            onSubmit={event => { event.preventDefault(); setPaused(false); setState(createShop(seed, config, props.memory)); }}>
+            onSubmit={event => { event.preventDefault(); setPaused(false); setState(createShop(seed, config, props.memory, profile.aptitudes)); }}>
             <div className="shop-owner"><GameArt game="shop" className="shop-owner-art" /><GuardianAvatar appearance={appearance} color={profile.color} /><strong>{profile.name}</strong><span>{mode === "llm" ? c.llm : c.rules}</span><p>{sellerRole ? c.sellerHelp : c.buyerHelp}</p></div>
             <div className="shop-config">
                 {human && sellerRole && <GameGuide game="shop" locale={locale} />}

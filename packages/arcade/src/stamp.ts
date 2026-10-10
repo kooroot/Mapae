@@ -1,3 +1,5 @@
+import {validGuardianAptitudes, type GuardianAptitudes} from "./guardians";
+
 export const ROUND_MS = 60_000;
 export const CELL_COUNT = 9;
 export const FEVER_TARGET = 8;
@@ -41,6 +43,7 @@ export type Impact = {kind: "stamp" | "wrong" | "miss" | "crack" | "guard"; unti
 export type Cell = {actor: Actor | null; impact: Impact | null};
 export type Game = {
     seed: number;
+    aptitudes?: GuardianAptitudes;
     practice: "full" | "boss";
     durationMs: number;
     perfectHits: number;
@@ -69,9 +72,11 @@ export type Game = {
     finished: boolean;
 };
 
-export function newGame(seed = 0, feverMode: FeverMode = "auto"): Game {
+export function newGame(seed = 0, feverMode: FeverMode = "auto", aptitudes?: GuardianAptitudes): Game {
     if (!Number.isSafeInteger(seed)) throw new Error("Invalid stamp seed");
+    if (aptitudes !== undefined && !validGuardianAptitudes(aptitudes)) throw new Error("Invalid guardian aptitudes");
     return {
+        ...(aptitudes ? {aptitudes: {...aptitudes}} : {}),
         seed, practice: "full", durationMs: ROUND_MS, perfectHits: 0,
         feverMode, feverActivations: 0, feverBonus: 0, feverGoldHits: 0, guardedHits: 0,
         elapsed: 0, nextSpawn: 300,
@@ -247,7 +252,8 @@ export function setFeverMode(game: Game, mode: FeverMode): Game {
 /** Both agent strategies use the same hit function as a person; there is no privileged boss damage or extra fever. */
 export function advanceAgent(game: Game, deltaMs: number, tempo: "careful" | "quick"): Game {
     if (game.finished || !Number.isFinite(deltaMs) || deltaMs <= 0) return game;
-    const interval = tempo === "quick" ? 260 : 510;
+    const focus = (game.aptitudes?.stamp ?? 5) - 5;
+    const interval = (tempo === "quick" ? 260 : 510) - focus * 40;
     const end = Math.min(game.durationMs, game.elapsed + deltaMs);
     let next = setFeverMode(game, tempo === "quick" ? "auto" : "manual");
     let beat = (Math.floor(game.elapsed / interval) + 1) * interval;
@@ -265,7 +271,7 @@ export function advanceAgent(game: Game, deltaMs: number, tempo: "careful" | "qu
         if (at === beat) beat += interval;
         if (next.finished) break;
         if (tempo === "careful" && (goldParade(at)?.phase === "active" || at >= game.durationMs - FEVER_MS || at === preciseAt)) next = activateFever(next);
-        const targets = next.cells.map((cell, index) => ({actor: cell.actor, index})).filter(({actor}) => actor?.kind === "goblin" && at - actor.bornAt >= (tempo === "quick" ? 180 : 390) && (actor.special !== "boss" || (tempo === "careful" ? at === preciseAt : bossWindow(actor, at).phase === "open")));
+        const targets = next.cells.map((cell, index) => ({actor: cell.actor, index})).filter(({actor}) => actor?.kind === "goblin" && at - actor.bornAt >= (tempo === "quick" ? 180 : 390) - focus * 30 && (actor.special !== "boss" || (tempo === "careful" ? at === preciseAt : bossWindow(actor, at).phase === "open")));
         targets.sort((a, b) => Number(b.actor!.special === "boss") - Number(a.actor!.special === "boss") || Number(!!b.actor!.golden) - Number(!!a.actor!.golden) || a.actor!.expiresAt - b.actor!.expiresAt);
         if (targets[0]) next = stamp(next, targets[0].index);
     }

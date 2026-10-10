@@ -16,6 +16,7 @@ export function serializeArcadeState(demo: ArcadeState): string {
             mistakes: run.mistakes, missed: run.missed, status: run.status,
             ...(run.ruleset === undefined ? {} : {ruleset: run.ruleset}),
             ...(run.replaySeed === undefined ? {} : {replaySeed: run.replaySeed}),
+            ...(run.aptitudes ? {aptitudes: {stamp: run.aptitudes.stamp, race: run.aptitudes.race, shop: run.aptitudes.shop}} : {}),
         })),
     });
 }

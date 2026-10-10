@@ -62,7 +62,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     } : {})};
     const [route, setRoute] = useState<RaceRoute>("shortcut");
     const [strategy, setStrategy] = useState<RaceStrategy>("burst");
-    const [season, setSeason] = useState(() => createRaceSeason(seed, profile.name || t.sample, locale));
+    const [season, setSeason] = useState(() => createRaceSeason(seed, profile.name || t.sample, locale, profile.aptitudes));
     const [phase, setPhase] = useState<Phase>("brief");
     const [notes, setNotes] = useState<Note[]>([]);
     const [raceTime, setRaceTime] = useState(0);
