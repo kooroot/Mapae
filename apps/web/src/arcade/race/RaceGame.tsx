@@ -19,31 +19,31 @@ const COPY = {
         title: "달려라 마패", subtitle: "감독님은 편하게 관전하세요. 에이전트가 상대를 보고 작전을 정해요.",
         rules: "규칙 기반 봇", llm: "실제 LLM 에이전트", season: "3경기 시즌", ticket: "시즌 입장권에 3경기 포함 · 베팅·현금 상금 없음",
         fairness: "모두 같은 말 능력치로 세 경기를 달려요. 세 번의 출전은 이미 포함돼 있어요. 관전은 0점이고 남은 출전권은 보상 없이 사라져요.",
-        points: "순위별 5 / 3 / 2 / 1점 · 세 마리가 도착하면 경기 종료 · 같은 기록은 공동 순위", start: "지금 바로 출발", starting: "에이전트가 곧 첫 경기를 준비해요.", back: "로비로 돌아가기",
+        points: "순위별 5 / 3 / 2 / 1점 · 세 마리가 도착하면 경기 종료 · 같은 기록은 공동 순위", start: "지금 바로 출발", back: "로비로 돌아가기",
         round: "경기", thinking: "코스와 상대를 살펴보고 있어요…", deciding: "출전과 전략을 결정하는 중", enter: "출전", skip: "이번엔 관전",
         entry: "출전권", left: "남은 출전권", strategy: "작전", pause: "관전 잠깐 멈추기", resume: "계속 관전하기", fast: "경기 결과 바로 보기",
         held: "관전을 멈췄어요. 다음 경기 결정도 기다려요.", auto: "잠시 후 에이전트가 다음 경기를 준비해요.", next: "다음 경기로", result: "시즌 결과 보기",
-        rankings: "시즌 순위", competitor: "출전자", score: "시즌 점수", spent: "출전 수", stamina: "체력", finish: "도착", standingsNote: "같은 조건의 시스템 상대와 비교한 이번 시즌 기록이에요.",
+        rankings: "시즌 순위", competitor: "출전자", score: "시즌 점수", spent: "출전 수", stamina: "체력", standingsNote: "같은 조건의 시스템 상대와 비교한 이번 시즌 기록이에요.",
         clear: "맑음", rain: "비", wind: "맞바람", short: "짧은 코스", long: "긴 코스", burst: "초반 질주", conserve: "체력 보존", surge: "후반 추월",
         error: "결정을 받지 못했어요. 참가 토큰은 차감되지 않았어요.", errorDetail: "연결 상태와 모델 설정을 확인한 뒤 다시 시도해 주세요. 규칙 봇으로 바꾸지 않았어요.", retry: "같은 경기 결정 다시 받기",
         history: "감독 노트", noEntry: "에이전트가 이번 경기는 쉬기로 했어요. 다른 말들의 경기를 관전해요.", watching: "관전 중", source: "결정", local: "브라우저 규칙", your: "우리 팀",
-        paused: "일시정지", settled: "경기 종료", budget: "공통 용돈", budgetNote: "입장 후 남은 용돈 · 경기 중 추가 결제 없음", exitNote: "지금 나가면 시즌 기록은 남지 않고 입장권은 사용된 채로 유지돼요.",
-        reduce: "움직임 줄이기 적용 · 움직이는 대신 구간별 위치로 보여요.", sample: "내 에이전트", saved: "남은 출전권", wins: "우승", entries: "출전 수",
+        settled: "경기 종료", budget: "공통 용돈", budgetNote: "입장 후 남은 용돈 · 경기 중 추가 결제 없음", exitNote: "지금 나가면 시즌 기록은 남지 않고 입장권은 사용된 채로 유지돼요.",
+        reduce: "움직임 줄이기 적용 · 움직이는 대신 구간별 위치로 보여요.", sample: "내 에이전트",
     },
     en: {
         title: "Small horses. Big race.", subtitle: "You're the coach. Your agent reads the field and picks a strategy.",
         rules: "Rules-based bot", llm: "Real LLM agent", season: "3-race season", ticket: "Season ticket includes 3 races · No betting or cash prizes",
         fairness: "Identical horses, three included entries. Watching earns zero points; unused entries expire without a reward.",
-        points: "Places earn 5 / 3 / 2 / 1 points · Race ends at the third arrival · Equal times share a place", start: "Start right now", starting: "Your agent will prepare the first race shortly.", back: "Back to the lobby",
+        points: "Places earn 5 / 3 / 2 / 1 points · Race ends at the third arrival · Equal times share a place", start: "Start right now", back: "Back to the lobby",
         round: "RACE", thinking: "Studying the course and rivals…", deciding: "Choosing entry and strategy", enter: "Enter", skip: "Watch this one",
         entry: "Entries", left: "Entries left", strategy: "Strategy", pause: "Pause watching", resume: "Keep watching", fast: "See race result now",
         held: "Watching is paused. The next decision waits too.", auto: "Your agent will prepare the next race shortly.", next: "Next race", result: "See season results",
-        rankings: "Season standings", competitor: "Runner", score: "Season points", spent: "Races entered", stamina: "Stamina", finish: "Finished", standingsNote: "This season compares your agent with system rivals under equal conditions.",
+        rankings: "Season standings", competitor: "Runner", score: "Season points", spent: "Races entered", stamina: "Stamina", standingsNote: "This season compares your agent with system rivals under equal conditions.",
         clear: "Clear", rain: "Rain", wind: "Headwind", short: "Short course", long: "Long course", burst: "Early burst", conserve: "Save stamina", surge: "Late surge",
         error: "The decision failed. No entry tokens were spent.", errorDetail: "Check the connection and model settings, then retry. We have not switched to a rules bot.", retry: "Retry this race decision",
         history: "Coach's notebook", noEntry: "Your agent is sitting this one out. Watch the other horses race.", watching: "WATCHING", source: "Decision", local: "Browser rules", your: "YOUR TEAM",
-        paused: "Paused", settled: "Race finished", budget: "Shared allowance", budgetNote: "Remaining after admission · No extra payments during races", exitNote: "Leaving now discards this season's record. Its admission remains used.",
-        reduce: "Reduced motion · Positions update in stages instead of continuous movement.", sample: "My agent", saved: "Unused entries", wins: "Wins", entries: "Races entered",
+        settled: "Race finished", budget: "Shared allowance", budgetNote: "Remaining after admission · No extra payments during races", exitNote: "Leaving now discards this season's record. Its admission remains used.",
+        reduce: "Reduced motion · Positions update in stages instead of continuous movement.", sample: "My agent",
     },
 } as const;
 
@@ -128,7 +128,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         playRound({enter, strategy}, {source: "human", action: {enter, strategy}, explanation: enter ? `${t.strategy}: ${t[strategy]}` : t.skip});
     }
     const beginRound = async () => {
-        if (mode === "human") {busy.current = false; setPaused(false); setPhase("choose"); return;}
+        if (human) {busy.current = false; setPaused(false); setPhase("choose"); return;}
         if (busy.current || season.round >= RACE_ROUNDS || finished.current) return;
         busy.current = true;
         setPhase("thinking");
@@ -243,7 +243,6 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         recapButton.current?.scrollIntoView({block: "center", behavior: reducedMotion ? "instant" : "smooth"});
     }, [phase, reducedMotion]);
 
-    const exit = () => onExit();
     const latest = notes.at(-1);
     const owner = season.runners.find(runner => runner.id === "owner")!;
     const rival = season.runners.find(runner => runner.id === season.rivalId)!;
@@ -262,7 +261,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                 <div key={strategy}><span aria-hidden="true">{["⚡", "◒", "↗"][index]}</span><strong>{t[strategy]}</strong></div>)}</div>
             {budget && <p className="arc-race-budget">{t.budget}: <strong>{budget.allowance} {MOCK_USDC.symbol}</strong> <small>{t.budgetNote}</small></p>}
 
-            {autoAdvance && <p role="status">{locale === "ko" ? "자동 진행 · 5초 뒤 출발해요. 위에서 자동 진행을 끌 수 있어요." : "Automatic play · Starts in 5 seconds. Turn it off above to wait."}</p>}
+            {autoAdvance && <p role="status">{ko ? "자동 진행 · 5초 뒤 출발해요. 위에서 자동 진행을 끌 수 있어요." : "Automatic play · Starts in 5 seconds. Turn it off above to wait."}</p>}
             <button type="button" className="arc-button" onClick={() => {setPaused(false); void beginRound();}}>{t.start} →</button>
         </div> : <>
             <div className="arc-race-scoreboard">
@@ -309,7 +308,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                 {phase === "recap" && <RaceRecap race={current.simulation} commands={current.simulation.calls.filter(call => call.id === "owner")} locale={locale} />}
                 <div className="arc-race-playback">
                     {phase !== "recap" && <button type="button" className="arc-button arc-button-plain" onClick={() => setPaused(value => !value)}>{paused ? t.resume : t.pause}</button>}
-                    {phase !== "recap" && <div className="mapae-speed" role="group" aria-label={locale === "ko" ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>}
+                    {phase !== "recap" && <div className="mapae-speed" role="group" aria-label={ko ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>}
                     {phase === "race" && !human ? <button type="button" className="arc-race-text-button" onClick={() => {setRaceTime(endTime); setPhase("recap");}}>{t.fast} →</button>
                         : phase === "recap" ? <button type="button" ref={recapButton} className="arc-button" onClick={advance}>{season.round < RACE_ROUNDS ? t.next : t.result} →</button> : null}
                 </div>
@@ -327,7 +326,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                 <ol>{notes.map(note => <li key={note.round}><strong>{note.round + 1}. {note.enter ? t[note.strategy] : t.skip}</strong><p>{note.decision.explanation}</p><small>{note.decision.source === "llm" ? note.decision.model || "LLM" : t.local}</small></li>)}</ol>
             </details>}
         </>}
-        <footer className="arc-race-exit"><button type="button" onClick={exit}>{t.back}</button>{phase !== "brief" && <small>{t.exitNote}</small>}</footer>
+        <footer className="arc-race-exit"><button type="button" onClick={() => onExit()}>{t.back}</button>{phase !== "brief" && <small>{t.exitNote}</small>}</footer>
     </section>;
 }
 

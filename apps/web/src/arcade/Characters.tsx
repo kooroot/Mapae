@@ -1,14 +1,8 @@
 import type {GameId} from "@mapae/arcade";
-import type {Color} from "./state";
 
 export const gameArt = (game: GameId) => `/arcade/${game}-scene.webp`;
-export const messengerArt = (color: Color) => `/arcade/messenger-${color}-512.webp`;
 
 /** Shared production sprites keep the same identity in portraits and playfields. */
-export function Horse({color = "red", className = ""}: {color?: Color; className?: string}) {
-    return <img src={messengerArt(color)} width={1024} height={1024} className={`arc-sprite arc-horse arc-color-${color} ${className}`} alt="" draggable={false} />;
-}
-
 export function Goblin({className = "", variant}: {className?: string; variant?: "armored" | "boss"}) {
     const asset = variant === "boss" ? "goblin-chief" : variant === "armored" ? "goblin-armored" : "goblin";
     return <img src={`/arcade/${asset}-512.webp`} width={512} height={512} className={`arc-sprite arc-goblin ${className}`} alt="" draggable={false} />;
