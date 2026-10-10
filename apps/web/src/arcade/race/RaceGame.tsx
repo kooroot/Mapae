@@ -6,7 +6,7 @@ import {applyRaceRound, createRaceSeason, makeRaceCourse, raceEndTime, raceNextC
     RACE_BURST_COST, RACE_HABITS, RACE_DRAFT_DISTANCE, raceTraffic, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceAction} from "@mapae/arcade/race";
 import type {PlayableGameProps} from "../agent-contract";
 import {motionTier, type MotionTier} from "../motion";
-import {countUp} from "../juice";
+import {countUp, holdEffects} from "../juice";
 import type {ArcadeSound} from "../sound";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
@@ -87,6 +87,9 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const [paused, setPaused] = useState(false);
     const [speed, setSpeed] = useState(1);
     const blocked = paused || suspended;
+    const root = useRef<HTMLElement>(null);
+    // CSS motion holds through `data-halted`; every scripted effect in the game holds here, the result's rolling points included.
+    useLayoutEffect(() => {if (root.current) holdEffects(root.current, blocked);}, [blocked]);
     // An agent run the owner watches gets feedback without ceremony, so motion never stretches its auto-advance beat.
     const tier = motionTier({still: reducedMotion, watched: autoAdvance});
     // "셋·둘·출발!" before a player's own race; the clock (never the simulation) waits through the first two beats.
@@ -302,7 +305,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const rival = season.runners.find(runner => runner.id === season.rivalId)!;
 
     // A halt pauses every CSS motion in the game (the dock's pulse, the result's stamps) until play resumes, with no delay.
-    return <section className="arc-race" aria-label={GAME_NAMES[locale].race} data-halted={blocked ? "" : undefined}>
+    return <section ref={root} className="arc-race" aria-label={GAME_NAMES[locale].race} data-halted={blocked ? "" : undefined}>
         <header className="arc-race-title">
             <div><p className="arc-overline">{GAME_NAMES[locale].race} / {t.season}</p><h1>{t.title}</h1><p>{t.subtitle}</p></div>
             <GuardianAvatar appearance={appearance} color={profile.color} />
@@ -399,7 +402,6 @@ function RaceRecap({race, commands, locale, tier, sound}: {race: RaceSimulation;
         cueSeal(place.current, sound);
         if (card.current) riseIn(card.current.querySelectorAll(".race-result-highlight"), tier, 70, 360);
         if (!score.current) return;
-        if (tier !== "still" && !document.hidden) score.current.textContent = "0";
         const roll = countUp(score.current, owner.points, {tier}, {ms: 500});
         return () => roll?.cancel();
         // One ceremony per result: the round's race, not later renders, starts it.

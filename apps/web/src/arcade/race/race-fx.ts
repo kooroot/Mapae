@@ -1,5 +1,5 @@
 import {raceEvents, raceTerrain, RACE_BASE_SPEED, RACE_BURST_SECONDS, RACE_CHECKPOINTS, RACE_ROUTE_SECONDS, type RaceEvent, type RaceSimulation, type RaceTerrain} from "@mapae/arcade/race";
-import {flash, parseTime, play, pop} from "../juice";
+import {ceremonyMs, flash, motionTokens, parseTime, play, pop} from "../juice";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
 import type {Locale} from "../../lib/i18n";
@@ -75,8 +75,6 @@ const PHOTO_FINISH = .8;
 /** The start signal: three beats ("셋·둘·출발!") this long; the clock holds through all but the last, which starts the race. */
 export const START_BEATS = 3;
 export const BEAT_MS = 400;
-/** The longest ceremony a watched agent's race may show, so nothing reads as holding up its auto-advance. */
-const LIGHT_MS = 300;
 /** Hanji confetti in the five obangsaek: blue, red, yellow, white, black. */
 const OBANG = ["#2f5d8a", "#b8432f", "#e2b23c", "#f6eedb", "#2b2723"] as const;
 const CONFETTI = 14;
@@ -90,11 +88,6 @@ export function startSignal(human: boolean, tier: MotionTier): boolean {
 /** One beat of the start signal: two ticks, then the go. */
 export function cueStartBeat(beat: number, sound: ArcadeSound) {
     if (!document.hidden) sound.play(beat < START_BEATS - 1 ? "tick" : "go");
-}
-
-/** A ceremony's length for the tier: a watched agent's is clipped to LIGHT_MS. */
-export function ceremonyMs(tier: MotionTier, ms: number): number {
-    return tier === "light" ? Math.min(ms, LIGHT_MS) : ms;
 }
 
 /** First and second crossed the line within PHOTO_FINISH of each other (a dead heat included). */
@@ -132,15 +125,8 @@ export function sealDelay(style: {animationDelay: string; animationDuration: str
     return parseTime(style.animationDelay) + parseTime(style.animationDuration) * .4;
 }
 
-const eases = new Map<string, string>();
 /** A CSS easing token for keyframe-level easing, which `play()` cannot resolve; linear until the stylesheet applies. */
-function ease(name: "out" | "in" | "back"): string {
-    const cached = eases.get(name);
-    if (cached) return cached;
-    const value = getComputedStyle(document.documentElement).getPropertyValue(`--arc-ease-${name}`).trim();
-    if (value) eases.set(name, value);
-    return value || "linear";
-}
+const ease = (name: "out" | "in" | "back") => motionTokens().ease[name];
 
 /** Rows rising into place one after another (results, standings). Reduced motion keeps the staggered fade. */
 export function riseIn(elements: Iterable<Element>, tier: MotionTier, step: number, start = 0) {

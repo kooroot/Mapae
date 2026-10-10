@@ -1,6 +1,7 @@
 import {useEffect, useLayoutEffect, useRef, useState, type RefObject} from "react";
 import {raceEndTime, raceFrameAt, raceWeatherFactor, RACE_BURST_SECONDS, type RaceEvent, type RaceFrame, type RaceRoute, type RaceSimulation} from "@mapae/arcade/race";
 import type {Color} from "../state";
+import {eased} from "../juice";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
 import type {Locale} from "../../lib/i18n";
@@ -44,18 +45,8 @@ export function raceLayout(width: number, height: number) {
     return {pony, row: height * .14, startY: height * .36, run: Math.max(0, width - pony - 34)};
 }
 
-let laneCurve: Animation | undefined;
-/** `--arc-ease-out` at `progress`: a paused, target-less effect evaluates the CSS token, so the curve is never restated here. */
-function easeOut(progress: number): number {
-    if (!laneCurve) {
-        const easing = getComputedStyle(document.documentElement).getPropertyValue("--arc-ease-out").trim();
-        // Stylesheet not applied yet: glide linearly this frame instead of caching the miss.
-        if (!easing) return progress;
-        laneCurve = new Animation(new KeyframeEffect(null, null, {duration: LANE_MS, easing, fill: "both"}));
-    }
-    laneCurve.currentTime = progress * LANE_MS;
-    return laneCurve.effect?.getComputedTiming().progress ?? progress;
-}
+/** Lanes glide on `--arc-ease-out`, read through juice so the curve lives in CSS only. */
+const easeOut = (progress: number) => eased("out", progress);
 
 /**
  * The moving layer of the course. React renders what a runner looks like (labels, lane line, burst glow) at the HUD's pace;

@@ -2,6 +2,7 @@ import {useEffect, useLayoutEffect, useRef, useState, type RefObject} from "reac
 import {raceEndTime, raceFrameAt, raceLiveRank, raceTerrain, RACE_HABITS, RACE_BURST_SECONDS, RACE_CHECKPOINTS, RACE_ROUTE_SECONDS, type RaceCommand, type RaceSimulation} from "@mapae/arcade/race";
 import {RaceRunners} from "./RaceRunners";
 import {flipRank, photoFinish, pickAnnouncement, RaceAnnouncer, rankShift, START_BEATS} from "./race-fx";
+import {holdEffects} from "../juice";
 import type {Color} from "../state";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
@@ -31,20 +32,11 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
     useEffect(() => () => announcer.stop(), [announcer]);
     const board = useRef<HTMLDivElement>(null);
     const places = useRef(new Map<string, number>());
-    const held = useRef<Animation[]>([]);
     const halted = !running && !ended;
     const holding = signal !== null && signal < START_BEATS - 1;
     useEffect(() => {track.current?.scrollIntoView({block: "start", behavior: "instant"});}, [race.course.round]);
-    // `[data-halted]` pauses CSS motion only: a halt pauses the race's scripted moments too, and resuming plays exactly those.
-    useEffect(() => {
-        if (halted) {
-            held.current = (track.current?.getAnimations({subtree: true}) ?? []).filter(animation => animation.playState === "running" && !(animation instanceof CSSAnimation) && !(animation instanceof CSSTransition));
-            for (const animation of held.current) animation.pause();
-            return;
-        }
-        for (const animation of held.current) if (animation.playState === "paused") animation.play();
-        held.current = [];
-    }, [halted]);
+    // `[data-halted]` pauses CSS motion only: a halt (pause, checkpoint) holds the race's scripted moments too, and resuming plays them.
+    useLayoutEffect(() => {if (track.current) holdEffects(track.current, halted);}, [halted]);
     const frame = raceFrameAt(race, ended ? raceEndTime(race) / race.seconds : reducedMotion ? Math.floor(progress * race.seconds / 2) * 2 / race.seconds : progress);
     const raceProgress = ended ? 1 : Math.min(1, progress * race.seconds / raceEndTime(race));
     const owner = frame.positions.find(p => p.id === "owner");
