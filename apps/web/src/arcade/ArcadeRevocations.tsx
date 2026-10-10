@@ -2,6 +2,7 @@ import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {isDelegationRevoked} from "@mapae/delegation/revocation";
 import {useQuery} from "@tanstack/react-query";
 import {useState} from "react";
+import {ChevronDown} from "lucide-react";
 import type {Hex} from "viem";
 import type {SessionGrant} from "../lib/grant";
 import {deployment, publicClient} from "../lib/config";
@@ -11,7 +12,7 @@ export function ArcadeRevocations({grants, ko, onRevoked}: {
     grants: SessionGrant[]; ko: boolean; onRevoked: (context: Hex) => void;
 }) {
     if (grants.length === 0) return null;
-    return <details className="arcade-revocations"><summary>{ko ? `내 아케이드 승인 기록 · ${grants.length}` : `My arcade permissions · ${grants.length}`}</summary>
+    return <details className="arcade-revocations"><summary><span>{ko ? `내 아케이드 승인 기록 · ${grants.length}` : `My arcade permissions · ${grants.length}`}</span><ChevronDown size={16} aria-hidden="true" /></summary>
         <p>{ko ? "이 브라우저에 남긴 권한입니다. 지갑 서명으로 GIWA에서 철회할 수 있어요. 철회 전에는 서명한 한도와 만료 시각이 적용됩니다." : "Permissions saved in this browser. Sign with the owner wallet to revoke on GIWA. Until then, each signed cap and expiry still applies."}</p>
         {grants.map(grant => {
             const root = decodeDelegations(grant.artifact.permissionContext).at(-1);

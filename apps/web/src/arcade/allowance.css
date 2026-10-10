@@ -1,5 +1,5 @@
 .arc-friend-allowances { display:grid; gap:14px; margin:24px 0 14px; }
-.arc-friend-allowance { min-width:0; padding:16px; border:1px solid #b8945838; border-radius:16px; background:linear-gradient(135deg,#3a2c205c,#17130f80); }
+.arc-friend-allowance { min-width:0; padding:16px; border:1px solid #b8945838; border-radius:12px; background:linear-gradient(135deg,#3a2c205c,#17130f80); }
 .arc-friend-allowance.is-ready { border-color:#a9b98a70; }
 .arc-friend-identity { display:flex; gap:12px; align-items:center; margin-bottom:16px; }
 .arc-friend-identity>.arc-sprite { width:54px; height:54px; flex:0 0 54px; border-radius:12px; }
