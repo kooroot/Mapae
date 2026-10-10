@@ -3,7 +3,7 @@ import {formatEther,type Address} from 'viem';
 import type {AgentGoal,GameId} from '@mapae/arcade';
 import {guardianTraits} from '@mapae/arcade/guardians';
 import {dailyChallenge} from '@mapae/arcade/challenge';
-import {useLocale,LocaleSwitch} from '../../lib/locale';
+import {useLocale} from '../../lib/locale';
 import {explorerAddressUrl,explorerTxUrl} from '../../lib/config';
 import {logoutProfile} from '../profile/client';
 import {useArcadeSession} from '../useArcadeSession';
@@ -14,10 +14,10 @@ import {OutingBoard} from '../OutingBoard';
 import {GuardianAvatar} from '../GuardianAvatar';
 import {GUARDIAN_NAMES} from '../guardian';
 import {GAME_NAMES} from '../game-names';
-import {ArcadeBrand} from '../ArcadeBrand';
 import {newArcadeState} from '../state';
 import {useGuardians} from './useGuardians';
 import {dailyObjective,nftCompanion} from './model';
+import {GuardianHeader} from './GuardianHeader';
 import {NftPractice} from './NftPractice';
 import type {GuardianToken} from '../profile/guardians';
 import {trackEngagement} from '../engagement/client';
@@ -44,11 +44,11 @@ export function GuardianArcade({owner,initialGame,onGuest}:{owner:Address;initia
     const crew=(nft.roster?.guardians??[]).filter(t=>t.revealed).map(t=>nftCompanion(t));
     const presentation={...newArcadeState(),characters:crew,selectedCharacterId:member?.id??null};
     async function disconnect(){setDisconnecting(true);try{await logoutProfile(owner);}finally{giwa.disconnect();setDisconnecting(false);}}
-    if(!session.ready)return <><SessionAccess session={session} ko={ko} onDisconnect={()=>void disconnect()}/>{onGuest&&<div className="nft-unsigned-free"><button className="arc-button" onClick={onGuest}>{ko?'로그인 없이 무료로 한 판':'Play free without signing in'}</button></div>}</>;
+    if(!session.ready)return <SessionAccess owner={owner} session={session} ko={ko} disconnecting={disconnecting} onDisconnect={()=>void disconnect()} onGuest={onGuest}/>;
     if(practice)return <NftPractice {...practice} ko={ko} reducedMotion={still} onClose={()=>swapScreen(still,()=>setPractice(null))}/>;
     return <main className="arcade agent-arcade nft-arcade">
-        <header className="arc-header"><a className="arc-wordmark" href={ko?'/ko/arcade':'/arcade'}><ArcadeBrand/></a><span className="arc-demo-label"><i/>{ko?'GIWA 테스트넷 · 전령단':'GIWA SEPOLIA · GUARDIANS'}</span><LocaleSwitch/></header>
-        <div className="arc-main"><div className="arc-wallet-identity"><span>{owner.slice(0,6)}…{owner.slice(-4)}</span><button className="arc-text-button" disabled={giwa.busy||nft.busy||disconnecting} onClick={()=>void disconnect()}>{ko?'지갑 연결 해제':'Disconnect wallet'}</button></div>
+        <GuardianHeader owner={owner} ko={ko} network={ko?'GIWA SEPOLIA · 전령단':'GIWA SEPOLIA · GUARDIANS'} disconnecting={disconnecting} blocked={giwa.busy||nft.busy} onDisconnect={()=>void disconnect()}/>
+        <div className="arc-main">
         <section className="nft-intro"><span className="arc-overline">MY MAPAE GUARDIANS</span><h1>{ko?'작은 전령, 커지는 모험.':'Little guardians. Growing adventures.'}</h1><p>{ko?'나만의 전령을 뽑고, 용돈과 작전을 맡겨보세요. 다녀온 모험이 전령의 이력이 됩니다.':'Draw your guardian, choose a strategy and set an allowance. Every verified outing becomes part of their story.'}</p><div className="nft-intro-actions">{onGuest&&<button className="arc-text-button" onClick={onGuest}>{ko?'무료로 직접 한 판':'Play a free round'}</button>}<button className="arc-text-button" disabled={nft.loading||nft.busy} onClick={()=>void nft.refresh()}>{nft.loading?(ko?'불러오는 중…':'Refreshing…'):(ko?'전령 새로고침':'Refresh guardians')}</button></div></section>
         {nft.error&&<p className="arc-notice" role="alert">{nft.error}</p>}
         {nft.busy&&<p role="status" className="arc-notice">{nft.phase}</p>}
@@ -72,6 +72,7 @@ export function GuardianArcade({owner,initialGame,onGuest}:{owner:Address;initia
         <OutingBoard giwa={giwa} demo={presentation} ko={ko} onOpen={()=>{}}/>
         {!member&&<ArcadeRevocations grants={giwa.grants} ko={ko} onRevoked={giwa.revoked}/>}
         {giwa.submission&&!member&&<section className="nft-panel"><p>{ko?'전송했던 외출 요청이 남아 있어요. 새 서명 없이 같은 요청을 확인하세요.':'An outing submission is pending. Recover the same request without signing again.'}</p><button className="arc-button" disabled={giwa.busy} onClick={()=>void giwa.recoverSubmission()}>{ko?'외출 요청 복구':'Recover outing submission'}</button></section>}
+        <footer className="arc-footer"><p>{ko?'작은 자유, 분명한 한도.':'A little freedom. A clear limit.'}</p><span>GIWA SEPOLIA · {ko?'테스트 토큰 사용':'TEST TOKENS'}</span></footer>
         </div>
     </main>;
 }
