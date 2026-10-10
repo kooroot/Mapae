@@ -16,6 +16,12 @@
 .shop-guest-reaction{position:absolute;right:-5%;top:12%;display:grid;place-items:center;width:48px;height:48px;background:#fff7df;border:2px solid #bc864d;border-radius:50%;font-size:26px;color:#b8543e;box-shadow:0 5px 0 #65442a20}
 .shop-deal-done .shop-guest>.arc-guardian{animation:shop-happy .5s ease-out 2}
 .shop-deal-rejected .shop-guest-reaction{color:#6b604e}
+/* Reactions per reason: gestures move .shop-guest by transform about its feet; the badge says why. */
+.shop-guest{transform-origin:50% 100%}
+.shop-reaction-price{font-size:15px;font-weight:800;letter-spacing:-.02em}
+.shop-reaction-farewell svg{transform-origin:70% 90%;animation:shop-wave var(--arc-dur-slow) var(--arc-ease-out) 2}
+.shop-limit-stamp{position:absolute;z-index:1;top:6px;right:8px;padding:2px 7px;border:2px solid #b8402f;border-radius:6px;background:#fff6dfe6;color:#b8402f;font:700 13px/1.4 var(--display);letter-spacing:.06em;pointer-events:none;rotate:-8deg;--seal-rest:-8deg;animation:arc-seal-slam var(--arc-dur-base) var(--arc-ease-stamp) both}
+@keyframes shop-wave{30%{rotate:16deg}65%{rotate:-10deg}}
 
 .shop-trading-table{border:1px solid #b0966c;border-radius:16px;background:linear-gradient(#fff9e9,#f5ebd7);box-shadow:0 5px 0 #ac87532b;padding:20px}
 .shop-product-picker{gap:9px;padding:0 0 10px;border-bottom:5px solid #a37743;box-shadow:0 3px 0 #634723;border-radius:0 0 5px 5px}
@@ -42,6 +48,7 @@
     .shop-customer-stage .shop-guest>div{padding:3px 6px;bottom:0;left:10%;right:0}.shop-guest>div>span{display:none}.shop-guest strong{font-size:12px}
     .shop-speech{top:45px;right:10px;width:65%;padding:10px 12px;font-size:12px;line-height:1.55;min-height:0;max-height:126px;overflow-y:auto}
     .shop-guest-reaction{width:30px;height:30px;font-size:18px;right:0;top:6%}.shop-counter-edge{padding:7px 12px;font-size:10px;min-height:30px}
+    .shop-guest-reaction.shop-reaction-price{font-size:10px}.shop-reaction-farewell svg{width:16px;height:16px}.shop-limit-stamp{top:4px;right:4px;font-size:11px}
     .shop-trading-table{padding:13px}
     .shop-product-picker{grid-template-columns:1fr;gap:6px}
     .shop-product-picker>div,.shop-product-picker>button{display:grid;grid-template-columns:42px minmax(0,1fr) 108px;gap:2px 7px;padding:8px;text-align:left;min-height:70px}
