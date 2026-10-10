@@ -19,6 +19,7 @@
 .shop-guest{transform-origin:50% 100%}
 .shop-reaction-price{font-size:15px;font-weight:800;letter-spacing:-.02em}
 .shop-reaction-farewell svg{transform-origin:70% 90%;animation:shop-wave var(--arc-dur-slow) var(--arc-ease-out) 2}
+.shop-game[data-motion=light] .shop-reaction-farewell svg{animation-duration:300ms;animation-iteration-count:1}
 .shop-limit-stamp{position:absolute;z-index:1;top:6px;right:8px;padding:2px 7px;border:2px solid #b8402f;border-radius:6px;background:#fff6dfe6;color:#b8402f;font:700 13px/1.4 var(--display);letter-spacing:.06em;pointer-events:none;rotate:-8deg;--seal-rest:-8deg;animation:arc-seal-slam var(--arc-dur-base) var(--arc-ease-stamp) both}
 @keyframes shop-wave{30%{rotate:16deg}65%{rotate:-10deg}}
 /* Deal and arrival beats. --shop-beat (1/speed) keeps every delay inside the transition; a watched agent (light) keeps only the seal and the count. */
@@ -35,7 +36,8 @@
 .shop-game[data-motion=light] .shop-guest{animation-duration:300ms}.shop-game[data-motion=light] .shop-speech{animation-delay:120ms}.shop-game[data-motion=light] .shop-number-roll{animation-delay:0s}
 /* Scroll first, then the entrance: a held stage keeps its arrival at the first frame until the counter is in view. */
 .shop-customer-stage[data-arrival-held] *{animation-play-state:paused}
-.shop-game .shop-guest.shop-guest-leaving{animation:shop-guest-leaves var(--shop-leave,380ms) var(--arc-ease-in) forwards}
+/* The leave is appended after the finished entrance (same name, so it never restarts): a pause that drops the class shows the customer at rest, not re-entering. */
+.shop-game .shop-guest.shop-guest-leaving{animation:shop-guest-arrives 520ms var(--arc-ease-out) both,shop-guest-leaves var(--shop-leave,380ms) var(--arc-ease-in) forwards}
 @keyframes shop-heart-pop{from{opacity:0;scale:.3}}
 @keyframes shop-speech-pop{from{opacity:0;scale:.6}}
 @keyframes shop-speech-pop-again{from{opacity:0;scale:.6}}

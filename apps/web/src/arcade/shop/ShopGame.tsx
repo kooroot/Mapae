@@ -11,7 +11,7 @@ import type {PlayableGameProps} from "../agent-contract";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
 import {motionTier} from "../motion";
-import {haltShopFx, leaveShopGuest, playShopEvent, shopLeaveMs, shopReaction, shopRefusal, SHOP_COIN_SLOTS, SHOP_COIN_SPRITE, SHOP_TRANSITION_MS, SHOP_TURN_MS, type ShopReaction} from "./shop-fx";
+import {endShopFx, haltShopFx, leaveShopGuest, playShopEvent, shopLeaveMs, shopReaction, shopRefusal, SHOP_COIN_SLOTS, SHOP_COIN_SPRITE, SHOP_TRANSITION_MS, SHOP_TURN_MS, type ShopReaction} from "./shop-fx";
 import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer,
     ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOutcome, shopSellerObservation,
     SHOP_BUYER_BALANCE, SHOP_GOALS, SHOP_INITIAL_CAPITAL, SHOP_PRODUCTS, SHOP_STORIES, SHOP_TEMPERAMENT_COPY, shopOffersRemaining, shopForecast, shopCampaign, shopCustomerName, shopEvents, SHOP_AD_COST, type ShopMemory, type ShopConfig, type ShopState} from "@mapae/arcade/shop";
@@ -137,6 +137,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
         return () => { window.clearTimeout(timer); node.classList.remove("shop-guest-leaving"); };
     }, [state, human, blocked, error, speed]);
     useLayoutEffect(() => { if (root.current) haltShopFx(root.current, blocked); }, [blocked, running]);
+    useEffect(() => endShopFx, []);
     // Through the CSSOM, not a style attribute (the CSP allows no inline styles): CSS delays scale with playback speed like the engine's beats.
     useLayoutEffect(() => {
         root.current?.style.setProperty("--shop-beat", String(1 / speed));

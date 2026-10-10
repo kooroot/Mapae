@@ -236,6 +236,11 @@ export function leaveShopGuest(guest: HTMLElement | null, tier: MotionTier): Pro
     return animation ? animation.finished.then(() => {}, () => {}) : Promise.resolve();
 }
 
+/** Leaving the game ends any rolling count: a clock paused mid-roll would otherwise keep its frame loop and its place in `clocks` forever. */
+export function endShopFx() {
+    for (const clock of clocks) clock.cancel();
+}
+
 /** Pause holds scripted effects mid-gesture and resumes them in place; CSS animations follow `[data-halted]` on their own. */
 export function haltShopFx(root: Element, halted: boolean) {
     for (const animation of [...root.getAnimations({subtree: true}), ...clocks]) {
