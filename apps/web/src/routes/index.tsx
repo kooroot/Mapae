@@ -77,6 +77,9 @@ const COPY: Record<
     {
         studioLoadingAria: string;
         hero: {
+            kicker: string;
+            metaLead: string;
+            metaTail: string;
             titleLine1: string;
             titleLine2: string;
             sub: string;
@@ -115,7 +118,9 @@ const COPY: Record<
             body: string;
             testnetNote: string;
         };
+        railAria: string;
         finalCall: {
+            kicker: string;
             titleLine1: string;
             titleLine2: string;
             body: string;
@@ -127,6 +132,9 @@ const COPY: Record<
     en: {
         studioLoadingAria: "Loading Mapae Studio",
         hero: {
+            kicker: "AGENT PAYMENTS ON GIWA · TESTNET",
+            metaLead: "MAPAE · GIWA",
+            metaTail: "LIMIT THE AUTHORITY · LET THE AGENT ACT",
             titleLine1: "Accept x402 on GIWA in one line.",
             titleLine2: "No server? One form.",
             sub: `Add agent payments with one line of code or a shop payment URL. Try it with ${MOCK_USDC.symbol} on GIWA Sepolia — test tokens, not real money.`,
@@ -166,7 +174,9 @@ const COPY: Record<
             testnetNote:
                 "Test tokens only. Real-value payments are not available.",
         },
+        railAria: "Mapae protocol foundation",
         finalCall: {
+            kicker: "PASS · PAY · PROCEED",
             titleLine1: "Set the boundaries.",
             titleLine2: "The agent moves within them.",
             body: "Start autonomous payments without handing over your wallet.",
@@ -177,8 +187,11 @@ const COPY: Record<
     ko: {
         studioLoadingAria: "Mapae Studio 불러오는 중",
         hero: {
-            titleLine1: "GIWA에서 x402 받기 = 마패 한 줄",
-            titleLine2: "서버가 없으면 폼 하나.",
+            kicker: "GIWA 에이전트 결제 · 테스트넷",
+            metaLead: "마패 · GIWA",
+            metaTail: "권한은 좁게 · 행동은 에이전트에게",
+            titleLine1: "GIWA에서 x402를 한 줄로 받으세요.",
+            titleLine2: "서버가 없다면 폼 하나로.",
             sub: `코드 한 줄 또는 가게 결제 URL로 에이전트 결제를 시작하세요. GIWA Sepolia의 ${MOCK_USDC.symbol} 테스트 토큰을 사용합니다.`,
             openStudio: "Studio 열기",
             sellerGuide: "셀러 가이드",
@@ -216,7 +229,10 @@ const COPY: Record<
             testnetNote:
                 "테스트 토큰만 사용합니다. 실제 자금 결제는 제공하지 않습니다.",
         },
+        railAria: "마패의 기반 기술",
         finalCall: {
+            // The brand motto stays in English in both locales, as in the footer tagline.
+            kicker: "PASS · PAY · PROCEED",
             titleLine1: "경계를 정하세요.",
             titleLine2: "에이전트가 그 안에서 움직입니다.",
             body: "지갑을 넘기지 않고도 자율 결제를 시작할 수 있습니다.",
@@ -388,7 +404,7 @@ function Hero() {
         <section className="home-hero hero-action" aria-labelledby="hero-title">
             <div className="hero-action-sticky">
                 <div className="home-hero-copy">
-                    <span className="home-kicker">AGENT PAYMENTS ON GIWA · TESTNET</span>
+                    <span className="home-kicker">{t.kicker}</span>
                     <h1 id="hero-title">
                         {t.titleLine1}
                         <strong>{t.titleLine2}</strong>
@@ -411,8 +427,8 @@ function Hero() {
                     </div>
                 </div>
                 <div className="home-hero-meta" aria-hidden="true">
-                    <span>MAPAE · GIWA</span>
-                    <span>LIMIT THE AUTHORITY · LET THE AGENT ACT</span>
+                    <span>{t.metaLead}</span>
+                    <span>{t.metaTail}</span>
                 </div>
                 <Dial />
             </div>
@@ -424,7 +440,7 @@ function StandardRail() {
     const {locale} = useLocale();
     const details = locale === "ko" ? ["정산 네트워크", "결제 통신", "위임 권한", "스마트 계정"] : STANDARDS.map(item => item.detail);
     return (
-        <section className="home-standard-rail" aria-label="Mapae protocol foundation">
+        <section className="home-standard-rail" aria-label={COPY[locale].railAria}>
             <div className="home-wrap home-standard-grid">
                 <p>{locale === "ko" ? "기반 기술" : "BUILT ON OPEN RAILS"}</p>
                 {STANDARDS.map((standard, index) => (
@@ -664,7 +680,7 @@ function FinalCall() {
             <div className="home-final-glow" aria-hidden="true" />
             <div className="home-wrap">
                 <Reveal>
-                    <span className="home-kicker">PASS · PAY · PROCEED</span>
+                    <span className="home-kicker">{t.kicker}</span>
                     <h2>
                         {t.titleLine1}
                         <strong>{t.titleLine2}</strong>

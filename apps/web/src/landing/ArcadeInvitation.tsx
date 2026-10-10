@@ -5,8 +5,8 @@ import {welcomeGuest} from "./arcade-greeter-store";
 import "./arcade-invitation.css";
 
 const COPY = {
-    en: {title: "A little play break?", enter: "Enter the arcade", label: "Enter Mapae Arcade", collapse: "Minimize arcade invitation", expand: "Expand arcade invitation", arcade: "Arcade"},
-    ko: {title: "잠깐, 놀다 갈까요?", enter: "오락실 놀러 가기", label: "마패 아케이드 입장", collapse: "아케이드 초대장 접기", expand: "아케이드 초대장 펼치기", arcade: "오락실"},
+    en: {title: "A little play break?", enter: "Enter the arcade", label: "Enter Mapae Arcade", region: "Mapae Arcade invitation", collapse: "Minimize arcade invitation", expand: "Expand arcade invitation"},
+    ko: {title: "잠깐, 놀다 갈까요?", enter: "오락실 놀러 가기", label: "마패 오락실 입장", region: "마패 오락실 초대장", collapse: "오락실 초대장 접기", expand: "오락실 초대장 펼치기"},
 };
 const GREETINGS: Record<Zodiac, {ko: string; en: string}> = {
     rat: {ko: "딱 한 판, 어때요?", en: "Just one more round?"},
@@ -23,13 +23,20 @@ const GREETINGS: Record<Zodiac, {ko: string; en: string}> = {
     pig: {ko: "놀러 갈 준비 됐어요?", en: "Ready for some fun?"},
 };
 
-/** A floating invitation, mounted outside the hero's clipping and scroll animation. */
+/**
+ * A floating invitation, mounted outside the hero's clipping and scroll animation.
+ *
+ * It docks to a tab at the viewport edge wherever the full card would sit over
+ * content: on narrow screens from the start, and on wide screens once the reader
+ * scrolls past the hero. An explicit toggle wins over that default.
+ */
 export function ArcadeInvitation() {
     const {locale} = useLocale();
     const t = COPY[locale];
     const [guest, setGuest] = useState<Zodiac | null>(null);
     const [ready, setReady] = useState(false);
-    const [minimized, setMinimized] = useState(false);
+    const [choice, setChoice] = useState<boolean | null>(null);
+    const [docked, setDocked] = useState(false);
     const welcomed = useRef(false);
     useEffect(() => {
         // Client-only randomness keeps SSR hydration stable; Strict Mode must not roll twice.
@@ -45,17 +52,28 @@ export function ArcadeInvitation() {
         window.addEventListener("pageshow", onReturn);
         return () => window.removeEventListener("pageshow", onReturn);
     }, []);
+    useEffect(() => {
+        const narrow = window.matchMedia("(max-width: 1080px)");
+        const dock = () => setDocked(narrow.matches || window.scrollY > window.innerHeight / 2);
+        dock();
+        narrow.addEventListener("change", dock);
+        window.addEventListener("scroll", dock, {passive: true});
+        return () => {
+            narrow.removeEventListener("change", dock);
+            window.removeEventListener("scroll", dock);
+        };
+    }, []);
+    const minimized = choice ?? docked;
     const title = guest ? GREETINGS[guest][locale] : t.title;
-    return <aside className="arcade-invitation-widget" aria-label="Mapae Arcade" data-minimized={minimized}>
+    return <aside className="arcade-invitation-widget" aria-label={t.region} data-minimized={minimized}>
         <a className="arcade-invitation" href={locale === "ko" ? "/ko/arcade" : "/arcade"}
             aria-label={minimized ? t.label : `${title} — ${t.label}`} data-guest={guest} data-ready={ready}>
             <span className="arcade-invitation-art" aria-hidden="true">
                 {guest && <img className="arcade-invitation-friend" src={guardianAsset(guest, 256)} width={256} height={256} alt="" decoding="async" onLoad={() => setReady(true)} />}
-                <span className="arcade-invitation-badge">{t.arcade}</span>
             </span>
             <span className="arcade-invitation-copy" id="arcade-invitation-copy"><span>MAPAE ARCADE</span><strong>{title}</strong><small>{t.enter}<span aria-hidden="true">↗</span></small></span>
         </a>
-        <button type="button" className="arcade-invitation-toggle" onClick={() => setMinimized(value => !value)}
+        <button type="button" className="arcade-invitation-toggle" onClick={() => setChoice(!minimized)}
             aria-label={minimized ? t.expand : t.collapse} aria-expanded={!minimized} aria-controls="arcade-invitation-copy">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d={minimized ? "M4 10L8 6L12 10" : "M4 6L8 10L12 6"} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>

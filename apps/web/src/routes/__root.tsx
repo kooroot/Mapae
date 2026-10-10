@@ -44,7 +44,10 @@ export const Route = createRootRoute({
             ko: "Mapae Arcade — 에이전트의 자유 시간",
         }) : isApp
             ? "Mapae Studio — Delegated payment control"
-            : "Mapae — Limit the authority. Let the agent act.";
+            : pick(locale, {
+                  en: "Mapae — Limit the authority. Let the agent act.",
+                  ko: "Mapae — 권한은 좁게, 행동은 에이전트에게.",
+              });
         const description = isArcade
             ? pick(locale, {
                   en: "Connect your wallet, create a guardian and send them racing, trading or stamping with a bounded GIWA Sepolia test-token allowance. Free manual practice is available.",
