@@ -6,7 +6,7 @@ import {applyRaceRound, createRaceSeason, makeRaceCourse, raceEndTime, raceNextC
     RACE_BURST_COST, RACE_HABITS, RACE_DRAFT_DISTANCE, raceTraffic, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceAction} from "@mapae/arcade/race";
 import type {PlayableGameProps} from "../agent-contract";
 import {motionTier, type MotionTier} from "../motion";
-import {countUp, holdEffects} from "../juice";
+import {countUp, holdEffects, riseIn} from "../juice";
 import type {ArcadeSound} from "../sound";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
@@ -14,7 +14,7 @@ import {requestRaceDecision} from "./decision";
 import {GAME_NAMES} from "../game-names";
 import {GameGuide} from "../GameGuide";
 import {RaceTrack} from "./RaceTrack";
-import {BEAT_MS, cueSeal, cueStartBeat, pressBurst, riseIn, startSignal, START_BEATS} from "./race-fx";
+import {BEAT_MS, cueSeal, cueStartBeat, pressBurst, startSignal, START_BEATS} from "./race-fx";
 import "./race.css";
 import "./race-play.css";
 

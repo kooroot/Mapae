@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {bannerBeats, ceremonyMs, gateTier, opacityOnly, parseTime, shakeFrames, LIGHT_MS} from "./juice";
+import {bannerBeats, ceremonyMs, gateTier, opacityOnly, parseTime, shakeFrames, staggerTiming, LIGHT_MS} from "./juice";
 
 const dur = {tap: 90, quick: 160, base: 240, slow: 420, ceremony: 900};
 
@@ -68,5 +68,16 @@ describe("ceremonyMs", () => {
     test("a player and reduced motion keep the authored length", () => {
         expect(ceremonyMs("full", 420)).toBe(420);
         expect(ceremonyMs("still", 420)).toBe(420);
+    });
+});
+
+describe("staggerTiming", () => {
+    test("a watched agent's entrance is one short beat, inside LIGHT_MS", () => {
+        const light = staggerTiming("light", 3, 50, 300);
+        expect(light.delay + dur[light.duration]).toBeLessThanOrEqual(LIGHT_MS);
+    });
+    test("a player and reduced motion keep the cascade", () => {
+        expect(staggerTiming("full", 3, 50, 300)).toEqual({delay: 450, duration: "base"});
+        expect(staggerTiming("still", 2, 60)).toEqual({delay: 120, duration: "base"});
     });
 });

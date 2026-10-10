@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, test} from "bun:test";
 import {makeRaceCourse, RACE_CHECKPOINTS, raceEvents, raceFrameAt, raceWeatherFactor, simulateRace, RACE_BASE_SPEED, type RaceCommand, type RaceEvent, type RaceSimulation} from "@mapae/arcade/race";
 import type {ArcadeSound, SoundKind} from "../sound";
-import {burstGlow, confettiPieces, cueStartBeat, dueEvents, gallopRate, groundAt, windRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, pickAnnouncement, rankShift, raceAnnouncement, RaceAnnouncer, ANNOUNCE_MS, RaceCues, runnerVelocity, sealDelay, staggerTiming, startSignal, START_BEATS} from "./race-fx";
+import {burstGlow, confettiPieces, cueStartBeat, dueEvents, gallopRate, groundAt, windRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, pickAnnouncement, rankShift, raceAnnouncement, RaceAnnouncer, ANNOUNCE_MS, RaceCues, runnerVelocity, sealDelay, startSignal, START_BEATS} from "./race-fx";
 
 const long = {...makeRaceCourse(0, 0), weather: "clear" as const, course: "long" as const, distance: 1_250};
 const calls: RaceCommand[] = [{at: 12, pace: "save", route: "shortcut"}, {at: 24, pace: "steady", route: "wide"}];
@@ -130,12 +130,6 @@ test("the signal ticks twice and goes on its last beat, and a hidden tab hears n
     hidden = true;
     cueStartBeat(0, run.sound);
     expect(played).toHaveLength(3);
-});
-
-test("a watched agent's staggered entrance ends within 300ms and a player's keeps its cascade", () => {
-    const light = staggerTiming("light", 3, 50, 300);
-    expect(light.delay + light.duration).toBeLessThanOrEqual(300);
-    expect(staggerTiming("full", 3, 50, 300)).toEqual({delay: 450, duration: 240});
 });
 
 test("a photo finish is first and second within .8s, dead heat included, and flashes on the second arrival", () => {

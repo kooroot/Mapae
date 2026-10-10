@@ -115,11 +115,6 @@ export function confettiPieces(count = CONFETTI): ConfettiPiece[] {
     });
 }
 
-/** Staggered entrance timing: the full cascade for a player, everything at once and short for a watched agent. */
-export function staggerTiming(tier: MotionTier, index: number, step: number, start = 0): {delay: number; duration: number} {
-    return tier === "light" ? {delay: 0, duration: 160} : {delay: start + index * step, duration: 240};
-}
-
 /** Milliseconds from mount to the impact frame of a CSS `arc-seal-slam` (40% through it), read from the element's own computed timing. */
 export function sealDelay(style: {animationDelay: string; animationDuration: string}): number {
     return parseTime(style.animationDelay) + parseTime(style.animationDuration) * .4;
@@ -127,12 +122,6 @@ export function sealDelay(style: {animationDelay: string; animationDuration: str
 
 /** A CSS easing token for keyframe-level easing, which `play()` cannot resolve; linear until the stylesheet applies. */
 const ease = (name: "out" | "in" | "back") => motionTokens().ease[name];
-
-/** Rows rising into place one after another (results, standings). Reduced motion keeps the staggered fade. */
-export function riseIn(elements: Iterable<Element>, tier: MotionTier, step: number, start = 0) {
-    let index = 0;
-    for (const el of elements) play(el, [{opacity: 0, transform: "translateY(8px)"}, {opacity: 1, transform: "translateY(0)"}], {id: "race-rise", ...staggerTiming(tier, index++, step, start), easing: "out", fill: "backwards"}, {tier});
-}
 
 /** The burst button gives under the press and springs back before it turns into its "used" stamp. */
 export function pressBurst(button: Element | null, tier: MotionTier) {
@@ -230,6 +219,7 @@ function cueRaceEvent(event: RaceEvent, {tier, sound, sprite, point, layer, flag
             if (pony) pop(pony, {tier}, {scale: own ? 1.12 : 1.06});
             const against = event.otherId === "owner";
             // Only passes the owner is part of earn a tag: its own in full, a rival's over it smaller and muted (the sprite's own variant).
+            // A watched agent's tier ("light") clips the tag's hold to LIGHT_MS, so it never outlasts the auto-advance beat.
             const tag = own || against ? sprite(event.id)?.querySelector(".race-pass-tag") : null;
             if (tag) play(tag, [
                 {opacity: 0, transform: "translateY(0) scale(.55)", easing: ease("out")},
@@ -237,7 +227,7 @@ function cueRaceEvent(event: RaceEvent, {tier, sound, sprite, point, layer, flag
                 {opacity: 1, transform: "translateY(0) scale(1)", offset: .32},
                 {opacity: 1, transform: "translateY(0) scale(1)", offset: .62, easing: ease("in")},
                 {opacity: 0, transform: "translateY(-18px) scale(1)"},
-            ], {id: "race-pass-tag", duration: PASS_TAG_MS}, {tier});
+            ], {id: "race-pass-tag", duration: ceremonyMs(tier, PASS_TAG_MS)}, {tier});
             // The passed horse flinches; a watched agent's race keeps to feedback without recoil.
             const passed = tier === "full" && event.otherId ? sprite(event.otherId)?.querySelector(".race-pony-bounce") : null;
             if (passed) play(passed, [{transform: "translateX(0) rotate(0deg)"}, {transform: "translateX(-5px) rotate(3deg)", offset: .35}, {transform: "translateX(0) rotate(0deg)"}], {id: "race-flinch", duration: FLINCH_MS, easing: "shake", composite: "add"}, {tier});
@@ -257,7 +247,7 @@ function cueRaceEvent(event: RaceEvent, {tier, sound, sprite, point, layer, flag
                 {transform: "translate(-3px,2px) skewX(0deg) scale(1.03,.92)", offset: .21, easing: ease("out")},
                 {transform: "translate(10px,0) skewX(-6deg) scale(1,1)", offset: .54, easing: ease("back")},
                 {transform: "translate(0,0) skewX(0deg) scale(1,1)"},
-            ], {id: "race-kick", duration: KICK_MS, composite: "add"}, {tier});
+            ], {id: "race-kick", duration: ceremonyMs(tier, KICK_MS), composite: "add"}, {tier});
             if (own) sound.play("fever");
             break;
         case "burst-end":

@@ -144,6 +144,22 @@ export function pop(el: Element, gate: MotionGate, {scale = 1.14, ms}: {scale?: 
     return play(el, [{transform: "scale(1)"}, {transform: `scale(${scale})`}, {transform: "scale(1)"}], {id: "arc-pop", duration: ms ?? "quick", easing: "back", composite: "add"}, gate);
 }
 
+/** Staggered entrance timing: the full cascade for a player, everything at once and short for a watched agent. */
+export function staggerTiming(tier: MotionTier, index: number, step: number, start = 0): {delay: number; duration: Duration} {
+    return tier === "light" ? {delay: 0, duration: "quick"} : {delay: start + index * step, duration: "base"};
+}
+
+/** Rows rising into place one after another (results, standings, choices). Reduced motion keeps the staggered fade. */
+export function riseIn(elements: Iterable<Element>, tier: MotionTier, step: number, start = 0): Animation[] {
+    const rising: Animation[] = [];
+    let index = 0;
+    for (const el of elements) {
+        const animation = play(el, [{opacity: 0, transform: "translateY(8px)"}, {opacity: 1, transform: "translateY(0)"}], {id: "arc-rise", ...staggerTiming(tier, index++, step, start), easing: "out", fill: "backwards"}, {tier});
+        if (animation) rising.push(animation);
+    }
+    return rising;
+}
+
 /**
  * A hanji banner: unfurls, holds, lifts away, and stays hidden after (`fill: both`); await `finished` before unmounting it.
  * Under reduced motion it simply shows for the hold and fades. Null (nothing to await) when the tab is hidden or the tokens are not loaded.
