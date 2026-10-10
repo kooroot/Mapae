@@ -150,14 +150,9 @@ export function staggerTiming(tier: MotionTier, index: number, step: number, sta
 }
 
 /** Rows rising into place one after another (results, standings, choices). Reduced motion keeps the staggered fade. */
-export function riseIn(elements: Iterable<Element>, tier: MotionTier, step: number, start = 0): Animation[] {
-    const rising: Animation[] = [];
+export function riseIn(elements: Iterable<Element>, tier: MotionTier, step: number, start = 0) {
     let index = 0;
-    for (const el of elements) {
-        const animation = play(el, [{opacity: 0, transform: "translateY(8px)"}, {opacity: 1, transform: "translateY(0)"}], {id: "arc-rise", ...staggerTiming(tier, index++, step, start), easing: "out", fill: "backwards"}, {tier});
-        if (animation) rising.push(animation);
-    }
-    return rising;
+    for (const el of elements) play(el, [{opacity: 0, transform: "translateY(8px)"}, {opacity: 1, transform: "translateY(0)"}], {id: "arc-rise", ...staggerTiming(tier, index++, step, start), easing: "out", fill: "backwards"}, {tier});
 }
 
 /**

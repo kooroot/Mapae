@@ -12,7 +12,7 @@ import type {ArcadeSound, SoundKind} from "./sound";
 export type RitualBeat = {at: number; ms: number};
 export type RitualCue = {kind: SoundKind; at: number};
 export type RitualPlan = {
-    paper: number; count: RitualBeat; seal: RitualBeat | null; shake: number | null;
+    paper: number; count: RitualBeat | null; seal: RitualBeat | null; shake: number | null;
     stats: {start: number; step: number}; points: {start: number; step: number}; record: RitualBeat | null; sounds: RitualCue[];
 };
 
@@ -20,21 +20,27 @@ export type RitualPlan = {
 const FULL = {paper: 360, countAt: 180, count: 900, sealAt: 1100, seal: 300, statStep: 60, pointStep: 80};
 const IMPACT = .4;
 
+/** What a result screen holds: the plan only times the parts it has, so a screen without a seal never waits for one. */
+export type RitualParts = {record: boolean; seal: boolean; count: boolean; stats: number};
+
 /**
- * The beats for a tier. Full: the whole ritual, about 1.4s. Light (a watched agent): everything at once inside LIGHT_MS, no
- * shake. Still: no movement (the juice gate turns the paper and rows into fades); the bell alone marks the result.
+ * The beats for a tier. Full: the whole ritual, about 1.4s with a count and a seal. Light (a watched agent): everything at once
+ * inside LIGHT_MS, no shake. Still: no movement (the juice gate turns the paper and rows into fades); the bell alone marks the result.
  */
-export function ritualPlan(tier: MotionTier, {record, stats}: {record: boolean; stats: number}, dur: Record<Duration, number>): RitualPlan {
+export function ritualPlan(tier: MotionTier, {record, seal, count, stats}: RitualParts, dur: Record<Duration, number>): RitualPlan {
     const bell: SoundKind = record ? "record" : "end";
-    if (tier === "still") return {paper: dur.quick, count: {at: 0, ms: 0}, seal: null, shake: null, stats: {start: 0, step: 0}, points: {start: 0, step: 0}, record: null, sounds: [{kind: bell, at: 0}]};
-    if (tier === "light") return {paper: dur.quick, count: {at: 0, ms: LIGHT_MS}, seal: {at: 0, ms: dur.base}, shake: null, stats: {start: 0, step: 0}, points: {start: 0, step: 0},
-        record: record ? {at: 0, ms: LIGHT_MS} : null, sounds: [{kind: bell, at: 0}, {kind: "seal", at: Math.round(dur.base * IMPACT)}]};
-    const impact = FULL.sealAt + Math.round(FULL.seal * IMPACT), landed = FULL.sealAt + FULL.seal;
+    if (tier === "still") return {paper: dur.quick, count: null, seal: null, shake: null, stats: {start: 0, step: 0}, points: {start: 0, step: 0}, record: null, sounds: [{kind: bell, at: 0}]};
+    if (tier === "light") return {paper: dur.quick, count: count ? {at: 0, ms: LIGHT_MS} : null, seal: seal ? {at: 0, ms: dur.base} : null, shake: null, stats: {start: 0, step: 0}, points: {start: 0, step: 0},
+        record: record ? {at: 0, ms: LIGHT_MS} : null, sounds: [{kind: bell, at: 0}, ...seal ? [{kind: "seal" as const, at: Math.round(dur.base * IMPACT)}] : []]};
+    // The seal caps the count; without one the rows follow whatever came last, the count or the paper.
+    const impact = FULL.sealAt + Math.round(FULL.seal * IMPACT);
+    const settled = seal ? impact : count ? FULL.countAt + FULL.count : FULL.paper;
+    const landed = seal ? FULL.sealAt + FULL.seal : settled;
     return {
-        paper: FULL.paper, count: {at: FULL.countAt, ms: FULL.count}, seal: {at: FULL.sealAt, ms: FULL.seal}, shake: impact,
-        stats: {start: impact, step: FULL.statStep}, points: {start: impact + stats * FULL.statStep, step: FULL.pointStep},
+        paper: FULL.paper, count: count ? {at: FULL.countAt, ms: FULL.count} : null, seal: seal ? {at: FULL.sealAt, ms: FULL.seal} : null, shake: seal ? impact : null,
+        stats: {start: settled, step: FULL.statStep}, points: {start: settled + stats * FULL.statStep, step: FULL.pointStep},
         record: record ? {at: landed, ms: dur.slow} : null,
-        sounds: [{kind: "end", at: 0}, {kind: "seal", at: impact}, ...record ? [{kind: "record" as const, at: landed}] : []],
+        sounds: [{kind: "end", at: 0}, ...seal ? [{kind: "seal" as const, at: impact}] : [], ...record ? [{kind: "record" as const, at: landed}] : []],
     };
 }
 
@@ -61,13 +67,13 @@ export function resultRitual(root: HTMLElement, tier: MotionTier, sound: ArcadeS
     if (document.hidden) return () => {};
     const {dur} = motionTokens();
     const stats = Array.from(part("stats")?.children ?? []), points = Array.from(part("points")?.children ?? []);
-    const plan = ritualPlan(tier, {record, stats: stats.length}, dur);
+    const seal = part("seal"), mark = part("record"), count = part("count");
+    const plan = ritualPlan(tier, {record: record && !!mark, seal: !!seal, count: !!count, stats: stats.length}, dur);
     const paper = part("paper") ?? root;
     play(paper, [{opacity: 0, transform: "translateY(-14px)"}, {opacity: 1, transform: "translateY(0)"}], {id: "arc-ritual-paper", duration: plan.paper, easing: "out"}, {tier});
-    const count = part("count");
-    const roll = count ? countUp(count, Number(count.dataset.count), {tier}, {delay: plan.count.at, ms: plan.count.ms}) : null;
+    // Still has no beat for it: countUp writes the final value at once.
+    const roll = count ? countUp(count, Number(count.dataset.count), {tier}, {delay: plan.count?.at ?? 0, ms: plan.count?.ms}) : null;
     // The seal and the underline are CSS (`arc-seal-slam`, `arc-unfurl`); the attributes React never writes start them on this timeline.
-    const seal = part("seal"), mark = part("record");
     if (plan.seal) {
         root.style.setProperty("--ritual-seal-at", `${plan.seal.at}ms`);
         root.style.setProperty("--ritual-seal-ms", `${plan.seal.ms}ms`);
@@ -91,7 +97,9 @@ export function resultRitual(root: HTMLElement, tier: MotionTier, sound: ArcadeS
         removeEventListener("pointerdown", skip, true);
         removeEventListener("keydown", skip, true);
     };
-    function skip() {
+    function skip(event: Event) {
+        // A held key's repeats (a player still mashing the round's keys) are not a request to skip.
+        if (event instanceof KeyboardEvent && event.repeat) return;
         settle();
         const owed = owedCue(plan.sounds, performance.now() - started);
         if (owed) sound.play(owed);
