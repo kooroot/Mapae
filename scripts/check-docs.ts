@@ -53,6 +53,9 @@ const DOCS = [
     "docs/x402-reference.md",
     "docs/revocation-runbook.md",
     "docs/giwa-demo-runbook.md",
+    "docs/arcade-guardians-plan.md",
+    "docs/arcade-guardians-release.md",
+    "docs/arcade-guardians-pilot.md",
     "docs/infra-map.md",
     "docs/README.md",
     "docs/README.ko.md",
@@ -141,7 +144,7 @@ async function loadCanonicalAddresses(): Promise<Set<string>> {
         if (!entry.endsWith(".json")) continue;
         walk(await Bun.file(join(REPO, "deployments", entry)).json());
     }
-    for (const source of ["packages/shared/src/token.ts", "packages/shared/src/chain.ts"]) {
+    for (const source of ["packages/shared/src/token.ts", "packages/shared/src/chain.ts", "packages/arcade/src/guardians.ts"]) {
         const text = await Bun.file(join(REPO, source)).text();
         for (const match of text.matchAll(ADDRESS)) add(match[0]);
     }

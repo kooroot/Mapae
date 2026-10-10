@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-1474%20TS%20%2B%2014%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-1548%20TS%20%2B%2037%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -108,8 +108,8 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://docs.mapae.io).
-- Regression suite: **1474 TypeScript tests (1056 shared/delegation/seller/store/facilitator/shop/scripts/scheduler + 3 MCP + 380 web + 35 docs)
-  + 14 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
+- Regression suite: **1548 TypeScript tests (1094 shared/delegation/seller/store/facilitator/shop/scripts/scheduler + 3 MCP + 416 web + 35 docs)
+  + 37 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
   claim you cannot check against anything the command actually shows you.
@@ -491,6 +491,8 @@ docs/                      technical notes and the deployed-contract reference
 - [Technical documentation](https://docs.mapae.io)
 - [MCP guide](docs/mcp-guide.md) — register the payment server in an MCP client
 - [Revocation runbook](docs/revocation-runbook.md) — the kill switch, and how to verify it
+- [Arcade Guardians release](docs/arcade-guardians-release.md) — NFT contract, guest play, bounded agent outings and deployment checks
+- [Guardian adoption pilot](docs/arcade-guardians-pilot.md) — human retention and verified transaction reporting
 - [Deployed contracts](docs/deployed-contracts.md)
 
 ## Deployment safety
