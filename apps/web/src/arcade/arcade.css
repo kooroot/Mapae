@@ -177,6 +177,8 @@
 @keyframes arc-rise-in { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
 .arc-still *, .arc-still *::before, .arc-still *::after { animation: none !important; transition: none !important; }
 [data-halted] *, [data-halted] *::before, [data-halted] *::after { animation-play-state: paused !important; }
+.arc-hitstop, .arc-hitstop *, .arc-hitstop *::before, .arc-hitstop *::after { animation-play-state: paused !important; }
+.arc-flash-host::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--arc-flash, transparent); opacity: 0; pointer-events: none; }
 @media (max-width: 950px) {
     .arc-lobby-grid { grid-template-columns: minmax(0, 1fr) 245px; gap: 24px; }
     .arc-cabinet { padding-left: 13px; padding-right: 13px; }
