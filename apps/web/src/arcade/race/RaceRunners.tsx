@@ -1,5 +1,5 @@
 import {useEffect, useLayoutEffect, useRef, useState, type RefObject} from "react";
-import {raceEndTime, raceFrameAt, raceWeatherFactor, RACE_BURST_SECONDS, type RaceFrame, type RaceRoute, type RaceSimulation} from "@mapae/arcade/race";
+import {raceEndTime, raceFrameAt, raceWeatherFactor, RACE_BURST_SECONDS, type RaceEvent, type RaceFrame, type RaceRoute, type RaceSimulation} from "@mapae/arcade/race";
 import type {Color} from "../state";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
@@ -62,7 +62,7 @@ function easeOut(progress: number): number {
  * a requestAnimationFrame loop reads the shared race clock and writes every position as translate3d, so horses move at the
  * display's frame rate without a React render. The sprite element's transform belongs to placement: effects animate inside it.
  */
-export function RaceRunners({race, frame, rivalId, color, locale, clock, follow, live, meter, weather, tier, sound, playback}: {
+export function RaceRunners({race, frame, rivalId, color, locale, clock, follow, live, meter, weather, tier, sound, playback, say}: {
     race: RaceSimulation; frame: RaceFrame; rivalId: string; color: Color; locale: Locale; tier: MotionTier; sound: ArcadeSound;
     /** Viewing speed (1× or 2×): strides quicken with it, as the clock does. */
     playback: number;
@@ -75,6 +75,8 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
     meter: RefObject<HTMLSpanElement | null>;
     /** The weather layer: its wind blows on the gust curve the engine slows the horses with. */
     weather: RefObject<HTMLDivElement | null>;
+    /** Hands the moments each clock step crosses to the race's screen-reader announcement. */
+    say: (events: RaceEvent[], photo: RaceEvent | undefined) => void;
 }) {
     const ko = locale === "ko";
     const scene = useRef<SVGSVGElement>(null);
@@ -135,7 +137,7 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
             }
             if (meter.current) meter.current.style.transform = `scaleX(${Math.min(1, time / endTime)})`;
             // Moments follow the clock itself, so reduced motion (a held two-second picture) still hears and sees them on time.
-            cues.fire(race, clock.current, {tier, sound, sprite: id => sprites[race.entrants.findIndex(runner => runner.id === id)], layer: layer.current, flag: flag.current,
+            cues.fire(race, clock.current, {tier, sound, say, sprite: id => sprites[race.entrants.findIndex(runner => runner.id === id)], layer: layer.current, flag: flag.current,
                 point: id => {const at = points.get(id); return at && {x: at.x + pony / 2, y: at.y - pony * .4};}});
         };
         // Every render places too: new sprites and links never paint a frame at the origin, and a held race shows its exact moment.

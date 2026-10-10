@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, test} from "bun:test";
-import {makeRaceCourse, raceEvents, raceFrameAt, raceWeatherFactor, simulateRace, RACE_BASE_SPEED, type RaceCommand, type RaceSimulation} from "@mapae/arcade/race";
+import {makeRaceCourse, RACE_CHECKPOINTS, raceEvents, raceFrameAt, raceWeatherFactor, simulateRace, RACE_BASE_SPEED, type RaceCommand, type RaceEvent, type RaceSimulation} from "@mapae/arcade/race";
 import type {ArcadeSound, SoundKind} from "../sound";
-import {burstGlow, ceremonyMs, confettiPieces, cueStartBeat, dueEvents, gallopRate, groundAt, windRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, RaceCues, runnerVelocity, sealDelay, staggerTiming, startSignal, START_BEATS} from "./race-fx";
+import {burstGlow, ceremonyMs, confettiPieces, cueStartBeat, dueEvents, gallopRate, groundAt, windRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, pickAnnouncement, raceAnnouncement, RaceAnnouncer, ANNOUNCE_MS, RaceCues, runnerVelocity, sealDelay, staggerTiming, startSignal, START_BEATS} from "./race-fx";
 
 const long = {...makeRaceCourse(0, 0), weather: "clear" as const, course: "long" as const, distance: 1_250};
 const calls: RaceCommand[] = [{at: 12, pace: "save", route: "shortcut"}, {at: 24, pace: "steady", route: "wide"}];
@@ -73,8 +73,9 @@ beforeEach(() => {hidden = false; Object.defineProperty(globalThis, "document", 
 afterEach(() => {Object.defineProperty(globalThis, "document", {value: realDocument, configurable: true});});
 
 function stage() {
-    const played: SoundKind[] = [];
-    return {played, stage: {tier: "full" as const, sound: {play: (kind: SoundKind) => {played.push(kind);}} as unknown as ArcadeSound, sprite: () => undefined, point: () => undefined, layer: null, flag: null}};
+    const played: SoundKind[] = [], said: RaceEvent[][] = [];
+    return {played, said, stage: {tier: "full" as const, sound: {play: (kind: SoundKind) => {played.push(kind);}} as unknown as ArcadeSound, say: (due: RaceEvent[]) => {said.push(due);},
+        sprite: () => undefined, point: () => undefined, layer: null, flag: null}};
 }
 const walk = (cues: RaceCues, sim: RaceSimulation, from: number, to: number, run: ReturnType<typeof stage>["stage"]) => {
     for (let time = from; time <= to + 1e-9; time += 1 / 60 * 3) cues.fire(sim, time, run);
@@ -173,4 +174,68 @@ test("confetti is fourteen obangsaek pieces thrown upward, the same every time",
 test("the result seal's thump lands 40% into the slam, after its delay; no animation means at once", () => {
     expect(sealDelay({animationDelay: "160ms", animationDuration: ".42s"})).toBeCloseTo(328);
     expect(sealDelay({animationDelay: "0s", animationDuration: "0s"})).toBe(0);
+});
+
+test("each clock step hands its crossed moments to the announcement once, and the gate's first lead never", () => {
+    const cues = new RaceCues(), {said, stage: run} = stage();
+    walk(cues, race, 0, race.seconds, run);
+    const heard = said.flat();
+    expect(said.every(batch => batch.length > 0)).toBe(true);
+    const same = (a: RaceEvent) => (b: RaceEvent | undefined) => !!b && a.time === b.time && a.type === b.type && a.id === b.id;
+    expect(heard.filter(same(pass))).toHaveLength(1);
+    expect(heard.some(same(events.find(event => event.type === "lead")!))).toBe(false);
+    expect(heard.filter(event => event.type === "call" && event.id === "owner")).toHaveLength(2);
+});
+
+test("announcements speak from the owner's seat in both languages, and stay quiet about others' traffic", () => {
+    const say = (event: RaceEvent, locale: "ko" | "en" = "en", photo = false) => raceAnnouncement(event, race, "rival", locale, photo)?.text ?? null;
+    expect(say({time: 30, type: "pass", id: "owner", otherId: "rival", rank: 1})).toBe("Passed Rival · now place 1");
+    expect(say({time: 30, type: "pass", id: "owner", otherId: "rival", rank: 1}, "ko")).toBe("Rival 추월! 지금 1위");
+    expect(say({time: 30, type: "pass", id: "rival", otherId: "owner", rank: 1}, "ko")).toBe("Rival에게 추월당했어요");
+    expect(say({time: 12, type: "call", id: "owner", terrain: "hill"}, "ko")).toBe(`1번째 갈림길 · 고개`);
+    expect(say({time: RACE_CHECKPOINTS[1], type: "call", id: "owner", terrain: "mud"})).toBe("Fork 2 · mud");
+    expect(say({time: 12, type: "call", id: "rival", terrain: "hill"})).toBeNull();
+    expect(say({time: 31, type: "burst-start", id: "rival"})).toBe("Rival makes a move!");
+    expect(say({time: 35, type: "burst-end", id: "owner"})).toBeNull();
+    expect(say({time: 60, type: "finish", id: "owner", rank: 2}, "ko", true)).toBe("결승선 접전! 결승선 통과 · 2위");
+    expect(say({time: 60, type: "finish", id: "rival", rank: 2}, "en", true)).toBe("Photo finish!");
+    expect(say({time: 60, type: "finish", id: "rival", rank: 1})).toBeNull();
+    // Watching without an entry, the lead and the winner carry the race.
+    const watched = simulateRace(long, [{id: "a", name: "Ari", strategy: "burst"}, {id: "b", name: "Bo", strategy: "conserve"}]);
+    expect(raceAnnouncement({time: 9, type: "lead", id: "b", rank: 1}, watched, "a", "en", false)?.text).toBe("Bo leads");
+    expect(raceAnnouncement({time: 60, type: "finish", id: "a", rank: 1}, watched, "a", "ko", false)?.text).toBe("Ari 1위로 도착");
+});
+
+test("moments landing together speak once: the weightiest, and the cause among equals", () => {
+    const passing: RaceEvent = {time: 30, type: "pass", id: "owner", otherId: "rival", rank: 1};
+    const leading: RaceEvent = {time: 30, type: "lead", id: "owner", rank: 1};
+    const drafting: RaceEvent = {time: 30, type: "draft-start", id: "owner", otherId: "rival"};
+    expect(pickAnnouncement([drafting, passing, leading], undefined, race, "rival", "en")?.text).toBe("Passed Rival · now place 1");
+    expect(pickAnnouncement([drafting], undefined, race, "rival", "en")?.weight).toBe(0);
+    expect(pickAnnouncement([{time: 30, type: "draft-end", id: "owner", otherId: "rival"}], undefined, race, "rival", "en")).toBeNull();
+});
+
+test("the live region speaks at most once per 1.5s, keeping only the weightiest news that waited", () => {
+    let now = 0;
+    const timers: {run: () => void; at: number}[] = [], spoken: string[] = [];
+    const announcer = new RaceAnnouncer(text => spoken.push(text), {now: () => now, after: (run, ms) => {const timer = {run, at: now + ms}; timers.push(timer); return () => {timers.splice(timers.indexOf(timer), 1);};}});
+    const advance = (ms: number) => {now += ms; for (const timer of timers.filter(item => item.at <= now)) {timers.splice(timers.indexOf(timer), 1); timer.run();}};
+    announcer.offer({text: "fork", weight: 1});
+    expect(spoken).toEqual(["fork"]);
+    advance(400);
+    announcer.offer({text: "pass", weight: 2});
+    announcer.offer({text: "draft", weight: 0});
+    expect(spoken).toEqual(["fork"]);
+    advance(ANNOUNCE_MS - 401);
+    expect(spoken).toEqual(["fork"]);
+    advance(1);
+    expect(spoken).toEqual(["fork", "pass"]);
+    announcer.offer(null);
+    advance(ANNOUNCE_MS);
+    announcer.offer({text: "finish", weight: 3});
+    expect(spoken).toEqual(["fork", "pass", "finish"]);
+    announcer.offer({text: "late", weight: 1});
+    announcer.stop();
+    advance(ANNOUNCE_MS);
+    expect(spoken).toEqual(["fork", "pass", "finish"]);
 });

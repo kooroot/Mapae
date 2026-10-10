@@ -1,7 +1,7 @@
-import {useEffect, useRef, type RefObject} from "react";
+import {useEffect, useRef, useState, type RefObject} from "react";
 import {raceEndTime, raceFrameAt, raceLiveRank, raceTerrain, RACE_HABITS, RACE_BURST_SECONDS, RACE_CHECKPOINTS, RACE_ROUTE_SECONDS, type RaceCommand, type RaceSimulation} from "@mapae/arcade/race";
 import {RaceRunners} from "./RaceRunners";
-import {photoFinish, START_BEATS} from "./race-fx";
+import {photoFinish, pickAnnouncement, RaceAnnouncer, START_BEATS} from "./race-fx";
 import type {Color} from "../state";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
@@ -25,6 +25,10 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
     const track = useRef<HTMLDivElement>(null);
     const meter = useRef<HTMLSpanElement>(null);
     const weather = useRef<HTMLDivElement>(null);
+    // The race's one live region: moments from the event list, at most one per 1.5s, written straight to the node (no render).
+    const said = useRef<HTMLParagraphElement>(null);
+    const [announcer] = useState(() => new RaceAnnouncer(text => {if (said.current) said.current.textContent = text;}));
+    useEffect(() => () => announcer.stop(), [announcer]);
     const held = useRef<Animation[]>([]);
     const halted = !running && !ended;
     const holding = signal !== null && signal < START_BEATS - 1;
@@ -72,16 +76,18 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
         <div className="race-world-scene">
             <img src="/arcade/race-course.webp" width={1536} height={1024} alt="" className="race-world-art" draggable={false} />
             <div ref={weather} className="race-weather-fx" aria-hidden="true">{race.course.weather === "wind" && <>{WIND_STREAKS.map(i => <i key={`streak-${i}`} className="race-wind-streak" />)}{WIND_LEAVES.map(i => <i key={`leaf-${i}`} className="race-wind-leaf" />)}</>}</div>
-            <RaceRunners race={race} frame={frame} rivalId={rivalId} color={color} locale={locale} clock={clock} meter={meter} weather={weather} follow={!ended && !reducedMotion} live={running && !ended && !reducedMotion && !holding} tier={tier} sound={sound} playback={playback} />
+            <RaceRunners race={race} frame={frame} rivalId={rivalId} color={color} locale={locale} clock={clock} meter={meter} weather={weather} follow={!ended && !reducedMotion} live={running && !ended && !reducedMotion && !holding} tier={tier} sound={sound} playback={playback}
+                say={(events, photo) => announcer.offer(pickAnnouncement(events, photo, race, rivalId, locale))} />
             {signal !== null && <div className="race-start-signal" aria-hidden="true"><span key={signal}>{(ko ? ["셋", "둘", "출발!"] : ["3", "2", "GO!"])[signal]}</span></div>}
-            {closeFinish && <div className="race-close-finish" role="status"><strong>{finishGap < 1e-7 ? ko ? "공동 우승!" : "A DEAD HEAT!" : ko ? "결승선 접전!" : "PHOTO FINISH!"}</strong><span>{finishGap < 1e-7 ? ko ? "같은 기록, 같은 점수" : "Equal times, equal points" : ko ? `${finishGap.toFixed(2)}초가 가른 승부` : `Decided by ${finishGap.toFixed(2)} seconds`}</span></div>}
-            <div className="race-route-ribbon" role="status">{routeStatus}</div>
+            {closeFinish && <div className="race-close-finish"><strong>{finishGap < 1e-7 ? ko ? "공동 우승!" : "A DEAD HEAT!" : ko ? "결승선 접전!" : "PHOTO FINISH!"}</strong><span>{finishGap < 1e-7 ? ko ? "같은 기록, 같은 점수" : "Equal times, equal points" : ko ? `${finishGap.toFixed(2)}초가 가른 승부` : `Decided by ${finishGap.toFixed(2)} seconds`}</span></div>}
+            <div className="race-route-ribbon">{routeStatus}</div>
         </div>
         {owner && <div className={`race-live-callout ${gained > 0 ? "race-gaining" : ""}`}>
-            <strong role="status">{ended ? ko ? `${rank}위 확정` : `PLACE ${rank} CONFIRMED` : owner.distance >= race.course.distance ? ko ? "완주!" : "FINISHED!" : gained > 0 ? ko ? `${gained}자리 추월!` : `UP ${gained} PLACE${gained > 1 ? "S" : ""}!` : owner.stamina < 25 ? ko ? "체력 경고 · 속도가 떨어져요" : "LOW ENERGY · LOSING SPEED" : rank === 1 ? ko ? "선두를 달리고 있어요!" : "YOU'RE IN THE LEAD!" : ko ? "앞말을 따라잡아 봐요!" : "CHASE THE HORSES AHEAD!"}</strong>
+            <strong>{ended ? ko ? `${rank}위 확정` : `PLACE ${rank} CONFIRMED` : owner.distance >= race.course.distance ? ko ? "완주!" : "FINISHED!" : gained > 0 ? ko ? `${gained}자리 추월!` : `UP ${gained} PLACE${gained > 1 ? "S" : ""}!` : owner.stamina < 25 ? ko ? "체력 경고 · 속도가 떨어져요" : "LOW ENERGY · LOSING SPEED" : rank === 1 ? ko ? "선두를 달리고 있어요!" : "YOU'RE IN THE LEAD!" : ko ? "앞말을 따라잡아 봐요!" : "CHASE THE HORSES AHEAD!"}</strong>
             {!ended && <span>{ko ? `남은 거리 ${Math.ceil(race.course.distance - owner.distance)}m` : `${Math.ceil(race.course.distance - owner.distance)}m to go`}</span>}
             {latestCall && <small>{ko ? `이번 작전 이후 체력 −${Math.round(energyUsed)}%` : `Energy since your call: −${Math.round(energyUsed)}%`}</small>}
         </div>}
+        <p ref={said} className="sr-only" role="status" />
         {rival && <p className="race-habit-strip"><strong>{rival.name} · {ko ? "라이벌" : "RIVAL"}</strong> {RACE_HABITS[rival.strategy][locale]}</p>}
         <div className="race-runners-board" aria-label={ko ? "실시간 순위와 체력" : "Live positions and stamina"}>
             {race.entrants.map((runner) => {

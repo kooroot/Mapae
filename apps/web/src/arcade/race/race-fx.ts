@@ -2,6 +2,7 @@ import {raceEvents, raceTerrain, RACE_BASE_SPEED, RACE_BURST_SECONDS, RACE_CHECK
 import {flash, parseTime, play, pop} from "../juice";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
+import type {Locale} from "../../lib/i18n";
 
 /** A clock jump longer than this many simulation seconds ("see the result now") skips the moments it crossed instead of firing them at once. */
 export const MAX_CUE_JUMP = 1.5;
@@ -159,6 +160,8 @@ export function cueSeal(place: Element | null, sound: ArcadeSound) {
 
 export type RaceStage = {
     tier: MotionTier; sound: ArcadeSound;
+    /** The moments one clock step crossed, for the screen-reader announcement; `photo` is the arrival that made a photo finish. */
+    say: (events: RaceEvent[], photo: RaceEvent | undefined) => void;
     /** An entrant's sprite: its pony and its pass tag. */
     sprite: (id: string) => Element | undefined;
     /** The middle of an entrant's pony, in moment-layer pixels. */
@@ -190,9 +193,11 @@ export class RaceCues {
             this.opening = this.events.find(event => event.type === "lead");
             this.photo = photoFinishEvent(race, this.events);
         }
-        const due = dueEvents(this.events, this.mark, time);
+        const due = dueEvents(this.events, this.mark, time).filter(event => event !== this.opening);
         this.mark = Math.max(this.mark, time);
-        if (!document.hidden) for (const event of due) if (event !== this.opening) cueRaceEvent(event, stage, event === this.photo);
+        if (document.hidden || !due.length) return;
+        for (const event of due) cueRaceEvent(event, stage, event === this.photo);
+        stage.say(due, this.photo);
     }
 }
 
@@ -278,5 +283,98 @@ export function cueRaceEvent(event: RaceEvent, {tier, sound, sprite, point, laye
         case "draft-start":
         case "draft-end":
             break;
+    }
+}
+
+/** Screen readers hear at most one race moment this often (wall time, so 2× viewing does not double the chatter). */
+export const ANNOUNCE_MS = 1500;
+export type Announcement = {text: string; weight: number};
+const FORK_NAMES = {ko: {mud: "진흙", hill: "고개", meadow: "들판"}, en: {mud: "mud", hill: "hill", meadow: "meadow"}} as const;
+
+/**
+ * The words for one race moment from the owner's seat, or null for moments it need not hear. Watching without an entry, the
+ * lead and the winner are the story. `weight` ranks moments competing for one announcement: an arrival, then a pass or the lead,
+ * then a burst, a block or a fork, then a draft.
+ */
+export function raceAnnouncement(event: RaceEvent, race: RaceSimulation, rivalId: string, locale: Locale, photo: boolean): Announcement | null {
+    const ko = locale === "ko", own = event.id === "owner", watching = !race.entrants.some(runner => runner.id === "owner");
+    const name = (id: string | undefined) => race.entrants.find(runner => runner.id === id)?.name ?? "";
+    switch (event.type) {
+        case "finish": {
+            const close = ko ? "결승선 접전!" : "Photo finish!";
+            if (own) return {text: `${photo ? `${close} ` : ""}${ko ? `결승선 통과 · ${event.rank}위` : `Finished · place ${event.rank}`}`, weight: 3};
+            if (photo) return {text: close, weight: 3};
+            return watching && event.rank === 1 ? {text: ko ? `${name(event.id)} 1위로 도착` : `${name(event.id)} wins`, weight: 3} : null;
+        }
+        case "pass":
+            if (own) return {text: ko ? `${name(event.otherId)} 추월! 지금 ${event.rank}위` : `Passed ${name(event.otherId)} · now place ${event.rank}`, weight: 2};
+            return event.otherId === "owner" ? {text: ko ? `${name(event.id)}에게 추월당했어요` : `${name(event.id)} passed you`, weight: 2} : null;
+        case "lead":
+            if (own) return {text: ko ? "선두로 나섰어요!" : "You take the lead!", weight: 2};
+            return watching ? {text: ko ? `${name(event.id)} 선두` : `${name(event.id)} leads`, weight: 2} : null;
+        case "burst-start":
+            if (own) return {text: ko ? "승부수! 짧고 강한 가속" : "Burst! A short, strong dash", weight: 1};
+            return event.id === rivalId ? {text: ko ? `${name(event.id)}의 승부수!` : `${name(event.id)} makes a move!`, weight: 1} : null;
+        case "blocked":
+            return own ? {text: ko ? `${name(event.otherId)} 뒤에서 막혔어요 · 바깥길로 나가야 추월해요` : `Blocked behind ${name(event.otherId)} · Move outside to pass`, weight: 1} : null;
+        case "call": {
+            if (!own || !event.terrain) return null;
+            const fork = RACE_CHECKPOINTS.indexOf(event.time as typeof RACE_CHECKPOINTS[number]) + 1;
+            return {text: ko ? `${fork}번째 갈림길 · ${FORK_NAMES.ko[event.terrain]}` : `Fork ${fork} · ${FORK_NAMES.en[event.terrain]}`, weight: 1};
+        }
+        case "draft-start":
+            return own ? {text: ko ? `${name(event.otherId)} 뒤를 따라가요 · 체력 소모 −40%` : `Drafting ${name(event.otherId)} · −40% drain`, weight: 0} : null;
+        case "burst-end":
+        case "draft-end":
+            return null;
+    }
+}
+
+/** The one announcement for moments that land together: the weightiest, and the earliest (the cause) among equals, so a pass speaks for the lead it took. */
+export function pickAnnouncement(events: readonly RaceEvent[], photo: RaceEvent | undefined, race: RaceSimulation, rivalId: string, locale: Locale): Announcement | null {
+    let best: Announcement | null = null;
+    for (const event of events) {
+        const next = raceAnnouncement(event, race, rivalId, locale, event === photo);
+        if (next && (!best || next.weight > best.weight)) best = next;
+    }
+    return best;
+}
+
+export type AnnounceClock = {now: () => number; after: (run: () => void, ms: number) => () => void};
+const wallClock: AnnounceClock = {now: () => performance.now(), after: (run, ms) => {const id = setTimeout(run, ms); return () => clearTimeout(id);}};
+
+/**
+ * One polite live region for the whole race, spoken at most once per ANNOUNCE_MS. A moment arriving sooner waits for the gap;
+ * while it waits, a moment at least as weighty replaces it, so the region speaks the latest news that matters, never a backlog.
+ */
+export class RaceAnnouncer {
+    private last = -Infinity;
+    private pending: Announcement | null = null;
+    private cancel: (() => void) | null = null;
+
+    constructor(private readonly write: (text: string) => void, private readonly clock: AnnounceClock = wallClock) {}
+
+    offer(message: Announcement | null) {
+        if (!message) return;
+        const wait = this.last + ANNOUNCE_MS - this.clock.now();
+        if (wait <= 0 && !this.cancel) {this.speak(message); return;}
+        if (!this.pending || message.weight >= this.pending.weight) this.pending = message;
+        this.cancel ??= this.clock.after(() => {
+            this.cancel = null;
+            const next = this.pending;
+            this.pending = null;
+            if (next) this.speak(next);
+        }, Math.max(0, wait));
+    }
+
+    stop() {
+        this.cancel?.();
+        this.cancel = null;
+        this.pending = null;
+    }
+
+    private speak(message: Announcement) {
+        this.last = this.clock.now();
+        this.write(message.text);
     }
 }

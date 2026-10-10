@@ -12,7 +12,8 @@ const render = (time: number, locale: "en" | "ko", reducedMotion = false) => ren
 test("track labels and visual draft links use observed traffic rather than predicted finishing order", () => {
     const drafting = race.frames.find(frame => frame.positions[0]!.draftingId)!;
     const markup = render(drafting.time, "en");
-    expect(markup).toContain("race-draft-link");
+    expect(markup).toContain("race-draft-link race-draft-on");
+    expect(render(0, "en")).not.toContain("race-draft-on");
     expect(markup).toContain("Drafting Rival");
     expect(markup).toContain("DRAFT −40%");
     expect(markup).not.toContain("Passed Rival on the outside!");
@@ -55,4 +56,11 @@ test("every horse carries a pass tag, a rival's in the smaller muted variant", (
     expect(markup).toContain("<span class=\"race-pass-tag race-pass-tag-against\">추월!</span>");
     expect(markup).toContain("race-moment-layer arc-flash-host");
     expect(markup).toContain("data-tier=\"full\"");
+});
+
+test("one polite live region speaks for the race; the ribbon and callout no longer announce every update", () => {
+    const markup = render(30, "en");
+    expect(markup.match(/role="status"/g)).toHaveLength(1);
+    expect(markup).toContain("<p class=\"sr-only\" role=\"status\"></p>");
+    expect(markup).toContain("<div class=\"race-route-ribbon\">");
 });
