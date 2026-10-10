@@ -30,16 +30,6 @@
     transform: none;
 }
 
-/* ── Letterpress ───────────────────────────────────────────────────────────
-   One white highlight below one dark glyph. It is the whole trick, it costs a
-   single shadow, and on warm paper it is the difference between type printed on
-   a surface and type struck into it. Applied only to display sizes: at body size
-   the highlight muddies the stroke instead of defining it. */
-
-.h2 {
-    text-shadow: 0 1px 0 rgba(255, 253, 248, 0.9);
-}
-
 /* ── Nav ───────────────────────────────────────────────────────────────── */
 
 .nav {
@@ -200,272 +190,6 @@
     transform: translateY(0);
 }
 
-/* ── Hero: off-axis, with the object crossing the fold ─────────────────── */
-
-/* `clip`, not `hidden`, and the distinction is the whole reason the dial's
-   readout is visible. The underprint is placed at `right: -24%` and would
-   otherwise widen the page, so the horizontal axis has to be contained — but
-   `overflow: hidden` contains BOTH axes whatever you write on the other one,
-   and the medallion deliberately hangs 72px past this section's bottom edge.
-   Only `clip` accepts a per-axis answer. */
-.hero {
-    position: relative;
-    padding: 96px 0 0;
-    overflow-x: clip;
-    overflow-y: visible;
-    isolation: isolate;
-}
-
-.hero-copy {
-    max-width: 620px;
-}
-
-@media (max-width: 1024px) {
-    .hero-copy {
-        max-width: 100%;
-    }
-    .hero {
-        padding-top: 64px;
-    }
-}
-
-/* ── Numbers: an off-grid trio, not three equal cards ──────────────────── */
-
-.numbers {
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 20px;
-    padding: 84px 0;
-}
-
-.numbers > *:nth-child(1) {
-    grid-column: 1 / span 5;
-}
-
-.numbers > *:nth-child(2) {
-    grid-column: 6 / span 4;
-    margin-top: 44px;
-}
-
-.numbers > *:nth-child(3) {
-    grid-column: 10 / span 3;
-    margin-top: 88px;
-}
-
-.stat {
-    padding: 26px 24px 24px;
-}
-
-@media (max-width: 900px) {
-    .numbers {
-        grid-template-columns: 1fr;
-        gap: 14px;
-        padding: 56px 0;
-    }
-    .numbers > *:nth-child(1),
-    .numbers > *:nth-child(2),
-    .numbers > *:nth-child(3) {
-        grid-column: 1 / -1;
-        margin-top: 0;
-    }
-}
-
-/* ── Section frame ─────────────────────────────────────────────────────── */
-
-.band {
-    position: relative;
-    padding: var(--band) 0;
-}
-
-/* A section marker rather than a full-width rule: the wordmark's chevron,
-   turned on its side as a register mark. Rules across the whole page are what
-   made the first draft read as a form. */
-.band::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: var(--gutter);
-    width: 34px;
-    height: 2px;
-    background: var(--red);
-}
-
-.step {
-    counter-increment: step;
-    position: relative;
-    display: grid;
-    grid-template-columns: 64px 1fr;
-    gap: 22px;
-    padding: 24px 0;
-    border-bottom: 1px solid var(--hair);
-}
-
-.step:first-child {
-    border-top: 1px solid var(--hair);
-}
-
-.step::before {
-    content: counter(step, decimal-leading-zero);
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.1em;
-    color: var(--ink-4);
-    padding-top: 5px;
-    transition: color 240ms var(--ease);
-}
-
-.step:hover::before {
-    color: var(--ink);
-}
-
-/* The refusal branch physically steps out of the rail — the flow leaves the
-   happy path, and the layout says so before the sentence does. */
-.step[data-branch="refuse"] {
-    background: linear-gradient(90deg, var(--red-wash), transparent 78%);
-    border-bottom-color: var(--red-hair);
-    margin-left: -20px;
-    padding-left: 20px;
-    box-shadow: inset 2px 0 0 var(--red);
-}
-
-.step[data-branch="refuse"]::before {
-    color: var(--red-ink);
-}
-
-/* ── Comparison: unequal on purpose ────────────────────────────────────── */
-
-.compare {
-    display: grid;
-    grid-template-columns: 0.85fr 1.15fr;
-    margin-top: 48px;
-    border: 1px solid var(--hair);
-    border-radius: var(--radius);
-    overflow: hidden;
-}
-
-@media (max-width: 860px) {
-    .compare {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* ── Parameter table ───────────────────────────────────────────────────── */
-
-.params {
-    width: 100%;
-    margin-top: 8px;
-    border-collapse: collapse;
-    text-align: left;
-}
-
-.params th {
-    font-family: var(--mono);
-    font-weight: 500;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--ink-3);
-    padding: 18px 18px 12px 24px;
-    border-bottom: 1px solid var(--hair-strong);
-    white-space: nowrap;
-}
-
-.params td {
-    padding: 16px 18px 16px 24px;
-    border-bottom: 1px solid var(--hair);
-    vertical-align: top;
-    font-size: 14px;
-}
-
-.params tbody tr {
-    transition: background 220ms var(--ease);
-}
-
-.params tbody tr:hover {
-    background: color-mix(in srgb, var(--paper-2) 60%, transparent);
-}
-
-.params tbody tr:last-child td {
-    border-bottom: 0;
-}
-
-.params .k {
-    font-weight: 500;
-    color: var(--ink);
-    white-space: nowrap;
-}
-
-.params .v {
-    font-family: var(--mono);
-    font-variant-numeric: tabular-nums;
-    color: var(--ink);
-}
-
-.params .who {
-    font-family: var(--mono);
-    color: var(--ink-3);
-    font-size: 12.5px;
-}
-
-/* ── Code well: a plate with a struck edge ─────────────────────────────── */
-
-.code {
-    margin-top: 36px;
-    background: var(--obsidian);
-    border-radius: var(--radius);
-    border-left: 2px solid var(--red);
-    padding: 24px 26px;
-    overflow-x: auto;
-}
-
-.code pre {
-    font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1.85;
-    color: var(--on-obsidian);
-    white-space: pre;
-}
-
-.code .c {
-    color: var(--on-obsidian-dim);
-}
-
-.code .s {
-    color: var(--red-on-dark);
-}
-
-/* ── Evidence: ruled like a register ───────────────────────────────────── */
-
-.evidence {
-    margin-top: 36px;
-}
-
-.evidence-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 18px;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--hair);
-    transition: background 220ms var(--ease), padding-left 220ms var(--ease);
-}
-
-.evidence-row:first-child {
-    border-top: 1px solid var(--hair-strong);
-}
-
-.evidence-row:hover {
-    background: var(--paper-0);
-    padding-left: 26px;
-}
-
-@media (max-width: 640px) {
-    .evidence-row {
-        flex-direction: column;
-        gap: 5px;
-    }
-}
-
 /* ── Footer ────────────────────────────────────────────────────────────── */
 
 .foot {
@@ -491,61 +215,6 @@
 /* The one marked word in the motto reads in full ink against the muted label. */
 .foot-motto span {
     color: var(--ink);
-}
-
-/* The period ring. Non-text weight, so --ink-4 is allowed here and nowhere
-   a sentence goes. */
-.second {
-    stroke: var(--ink-4);
-    stroke-width: 1;
-    opacity: 0.55;
-}
-
-.elapsed {
-    fill: none;
-    stroke: var(--ink-4);
-    stroke-width: 2;
-    stroke-linecap: round;
-    opacity: 0.85;
-}
-
-.over {
-    fill: none;
-    stroke: var(--red);
-    stroke-width: 2.5;
-    stroke-linecap: butt;
-    stroke-dasharray: 1400;
-    stroke-dashoffset: 1400;
-    animation: draw 460ms var(--ease) forwards;
-}
-
-.boundary {
-    stroke: var(--red);
-    stroke-width: 2;
-}
-
-@keyframes draw {
-    to {
-        stroke-dashoffset: 0;
-    }
-}
-
-/* Number, seal, sentence. The number stays: this is a procedure, and a procedure
-   that drops its numbering to make room for pictures has traded the thing being
-   read for the thing being looked at. An earlier pass hid the counter when the
-   marks went in, which left six intricate engravings and no order to read them
-   in. */
-.step {
-    align-items: start;
-    grid-template-columns: 32px 56px 1fr;
-    gap: 18px;
-}
-
-@media (max-width: 640px) {
-    .step {
-        grid-template-columns: 26px 40px 1fr;
-        gap: 12px;
-    }
 }
 
 /* The tagline, rebuilt from the sheet: the words spaced wide, a red rule either
@@ -812,30 +481,6 @@
    sentence, one field of light. The canvas now enhances that artwork instead
    of competing with it. */
 
-.nav {
-    border-bottom-color: rgba(237, 231, 218, 0.1);
-    background: rgba(8, 8, 7, 0.92);
-    backdrop-filter: saturate(1.2) blur(18px);
-}
-
-.nav .lockup img {
-    filter: brightness(0) invert(0.92) sepia(0.1);
-}
-
-.nav-links a {
-    color: rgba(237, 231, 218, 0.62);
-}
-
-.nav-links a:hover {
-    color: var(--on-obsidian);
-}
-
-.nav .btn {
-    color: var(--obsidian);
-    background: var(--on-obsidian);
-    box-shadow: none;
-}
-
 .hero-action {
     min-height: calc(100svh - 68px);
     background:
@@ -894,38 +539,6 @@
     border-radius: 50%;
 }
 
-.ritual-object::after {
-    content: "DRAG";
-    position: absolute;
-    z-index: 5;
-    top: 50%;
-    left: 50%;
-    display: grid;
-    width: 58px;
-    height: 58px;
-    place-items: center;
-    border: 1px solid rgba(237, 231, 218, 0.28);
-    border-radius: 50%;
-    color: rgba(237, 231, 218, 0.68);
-    background: rgba(8, 8, 7, 0.38);
-    backdrop-filter: blur(8px);
-    font-family: var(--mono);
-    font-size: 7px;
-    letter-spacing: 0.12em;
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.86);
-    transition:
-        opacity 220ms var(--ease),
-        transform 220ms var(--ease);
-    pointer-events: none;
-}
-
-.ritual-object:hover::after,
-.ritual-object:focus-visible::after {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-}
-
 .ritual-canvas-host::before {
     display: none;
 }
@@ -949,10 +562,6 @@
     text-align: right;
 }
 
-.ritual[data-stage="0"] .ritual-readout {
-    visibility: hidden;
-}
-
 .ritual-readout strong {
     font-family: var(--sans);
     font-size: clamp(24px, 2.1vw, 34px);
@@ -961,34 +570,6 @@
 }
 
 @media (max-width: 720px) {
-    .nav-inner {
-        height: 60px;
-    }
-
-    .nav-github {
-        width: 38px;
-        height: 38px;
-        padding: 0;
-    }
-
-    .nav-github span {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-    }
-
-    .nav .btn {
-        height: 38px;
-        padding-inline: 16px;
-        font-size: 11px;
-    }
-
     .hero-action {
         min-height: calc(100svh - 60px);
         background:
