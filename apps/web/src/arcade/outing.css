@@ -43,4 +43,3 @@
 .arc-daily-game:disabled { opacity:.5; cursor:default; }
 .arc-daily-game:focus-visible,.arc-outing button:focus-visible { outline:2px solid #f0c982; outline-offset:4px; }
 @media(max-width:700px) { .arc-outing-list { grid-template-columns:1fr; }.arc-outing { padding:18px; }.arc-daily-games { grid-template-columns:1fr; }.arc-daily-game { display:grid; grid-template-columns:28px 1fr; gap:10px 14px; min-height:100px; padding:18px; }.arc-daily-game>span { grid-column:2; }.arc-daily-game>svg { grid-row:1/3; align-self:center; }.arc-daily-game strong { font-size:16px; } }
-@media(prefers-reduced-motion:reduce) { .arc-daily-game { transition:none; } }
