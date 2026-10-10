@@ -1,5 +1,5 @@
 import type {ShopEvent, ShopState} from "@mapae/arcade/shop";
-import {countUp, flash, play} from "../juice";
+import {ceremonyMs, countUp, flash, play, LIGHT_MS} from "../juice";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound, SoundKind} from "../sound";
 
@@ -9,8 +9,6 @@ export const SHOP_TRANSITION_MS = 1700;
 /** An agent's customer walks out in the transition's last beat; a player's leaves before the next state, quick enough not to feel like a wait. */
 export const SHOP_LEAVE_MS = 380;
 const HUMAN_LEAVE_MS = 300;
-/** juice's light ceiling: a watched agent's next beat comes 1050ms later at 1×, 525ms at 2×, so no gesture may run past this. */
-const LIGHT_MS = 300;
 const LIMIT_RED = "#b8402f";
 /** One red pulse over the counter edge when the owner's cap stops a purchase. */
 const LIMIT_FLASH_MS = 320;
@@ -82,11 +80,6 @@ export function shopGesture(event: ShopEvent): ShopGesture | null {
     if (event.type === "close") return "farewell";
     if (event.type !== "reject" || event.reason === "need") return null;
     return event.reason === "done" ? "farewell" : event.reason;
-}
-
-/** A duration as the tier may spend it: unchanged for a player, clipped to the light ceiling for a watched agent. */
-export function tierMs(ms: number, tier: MotionTier): number {
-    return tier === "light" ? Math.min(ms, LIGHT_MS) : ms;
 }
 
 /** The auto leave, shortened with the speed like the transition it ends. */
@@ -162,8 +155,6 @@ function throwCoins(layer: HTMLElement, from: Element, to: Element, plan: ShopDe
     });
 }
 
-/** Rolling cash counters, so pause can hold them: their clocks have no element for `getAnimations` to find. */
-const clocks = new Set<Animation>();
 const rolls = new WeakMap<Node, object>();
 /**
  * The deal: hop, seal sound, coins from the customer to the cash cell (from the purse to the counter when buying), then the count and a gold flash.
@@ -180,11 +171,7 @@ function playDeal(event: Extract<ShopEvent, {type: "deal"}>, scene: ShopScene, t
     rolls.set(count, token);
     count.textContent = String(from);
     const roll = () => {
-        const clock = countUp(count, to, {tier}, {from, ms: plan.count, format: n => String(Math.round(n))});
-        if (clock) {
-            clocks.add(clock);
-            clock.finished.finally(() => clocks.delete(clock)).catch(() => {});
-        }
+        countUp(count, to, {tier}, {from, ms: plan.count, format: n => String(Math.round(n))});
         if (tier === "full") flash(cell, GOLD, {tier}, GOLD_FLASH_MS);
     };
     const [origin, target] = scene.seller ? [scene.guest, count] : [count, scene.edge?.querySelector("b") ?? scene.edge];
@@ -225,27 +212,13 @@ export function playShopEvent(event: ShopEvent, scene: ShopScene, tier: MotionTi
     const kind = shopSound(event);
     if (kind) sound.play(kind);
     const gesture = shopGesture(event);
-    if (gesture && guest) play(guest, SHOP_GESTURES[gesture].keyframes, {id: "shop-gesture", duration: tierMs(SHOP_GESTURES[gesture].ms, tier), easing: SHOP_GESTURES[gesture].easing, composite: "add"}, {tier});
-    if (event.type === "capBlocked" && edge) flash(edge, LIMIT_RED, {tier}, tierMs(LIMIT_FLASH_MS, tier));
+    if (gesture && guest) play(guest, SHOP_GESTURES[gesture].keyframes, {id: "shop-gesture", duration: ceremonyMs(tier, SHOP_GESTURES[gesture].ms), easing: SHOP_GESTURES[gesture].easing, composite: "add"}, {tier});
+    if (event.type === "capBlocked" && edge) flash(edge, LIMIT_RED, {tier}, ceremonyMs(tier, LIMIT_FLASH_MS));
 }
 
 /** A player's customer steps out before the next one comes in. Resolves at once under reduced motion or when nothing could play. */
 export function leaveShopGuest(guest: HTMLElement | null, tier: MotionTier): Promise<void> {
     if (!guest || tier === "still") return Promise.resolve();
-    const animation = play(guest, LEAVE, {id: "shop-leave", duration: tierMs(HUMAN_LEAVE_MS, tier), easing: "in", fill: "forwards"}, {tier});
+    const animation = play(guest, LEAVE, {id: "shop-leave", duration: ceremonyMs(tier, HUMAN_LEAVE_MS), easing: "in", fill: "forwards"}, {tier});
     return animation ? animation.finished.then(() => {}, () => {}) : Promise.resolve();
-}
-
-/** Leaving the game ends any rolling count: a clock paused mid-roll would otherwise keep its frame loop and its place in `clocks` forever. */
-export function endShopFx() {
-    for (const clock of clocks) clock.cancel();
-}
-
-/** Pause holds scripted effects mid-gesture and resumes them in place; CSS animations follow `[data-halted]` on their own. */
-export function haltShopFx(root: Element, halted: boolean) {
-    for (const animation of [...root.getAnimations({subtree: true}), ...clocks]) {
-        if (animation instanceof CSSAnimation || animation instanceof CSSTransition) continue;
-        if (halted && animation.playState === "running") animation.pause();
-        else if (!halted && animation.playState === "paused") animation.play();
-    }
 }

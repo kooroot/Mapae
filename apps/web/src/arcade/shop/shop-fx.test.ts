@@ -2,7 +2,8 @@ import {describe, expect, test} from "bun:test";
 import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopEvents,
     shopSellerObservation, type ShopConfig, type ShopEvent, type ShopState} from "@mapae/arcade/shop";
 import {coinPath, SHOP_COIN_SLOTS, SHOP_GESTURES, SHOP_LEAVE_MS, SHOP_TRANSITION_MS, SHOP_TURN_MS, shopCashSwing, shopCoinCount, shopCue, shopDealEnd, shopDealPlan, shopGesture, shopLeaveMs,
-    shopOfferEnd, shopOfferPlan, shopReaction, shopRefusal, shopSound, tierMs} from "./shop-fx";
+    shopOfferEnd, shopOfferPlan, shopReaction, shopRefusal, shopSound} from "./shop-fx";
+import {ceremonyMs} from "../juice";
 
 const heard = () => applyBuyerAction(createShop(32), {type: "request", wants: ["water"], reason: "need"});
 const offered = (price = 3) => applySellerAction(heard(), {type: "offer", items: [{id: "water", quantity: 1}], price, message: "For you"});
@@ -63,10 +64,10 @@ describe("shop gesture timing", () => {
     test("a watched agent's gestures fit inside its 2× beat; players and still keep the authored length", () => {
         const twoTimesBeat = 1050 / 2;
         for (const {ms} of Object.values(SHOP_GESTURES)) {
-            expect(tierMs(ms, "light")).toBeLessThanOrEqual(300);
-            expect(tierMs(ms, "light")).toBeLessThan(twoTimesBeat);
-            expect(tierMs(ms, "full")).toBe(ms);
-            expect(tierMs(ms, "still")).toBe(ms);
+            expect(ceremonyMs("light", ms)).toBeLessThanOrEqual(300);
+            expect(ceremonyMs("light", ms)).toBeLessThan(twoTimesBeat);
+            expect(ceremonyMs("full", ms)).toBe(ms);
+            expect(ceremonyMs("still", ms)).toBe(ms);
         }
     });
 });
