@@ -181,7 +181,7 @@ export function RevokeButton({
         <div className="studio-revoke-action">
             {gate.kind === "disconnected" ? <WalletPicker context="studio" /> : <button
                 type="button"
-                className="studio-revoke-button"
+                className="mapae-action studio-danger-action"
                 disabled={
                     busy || gate.kind !== "ready"
                 }

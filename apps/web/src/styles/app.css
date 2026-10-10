@@ -362,42 +362,13 @@
     color: var(--studio-metal);
 }
 
-.studio-primary-button,
-.studio-secondary-button,
-.studio-icon-button,
-.studio-read-fault button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid transparent;
-    transition:
-        transform 160ms ease,
-        border-color 160ms ease,
-        background 160ms ease,
-        color 160ms ease;
-}
-
-.studio-primary-button {
-    width: 100%;
-    min-height: 48px;
-    gap: 8px;
-    border-radius: 9px;
-    color: #140d08;
-    background: linear-gradient(135deg, var(--studio-metal-bright), #e39b70);
-    font-size:14px;
-    font-weight: 650;
-    box-shadow: 0 16px 34px rgba(133, 62, 29, 0.2);
-}
-
-.studio-primary-button:hover:not(:disabled) {
-    transform: translateY(-1px);
-}
-
-.studio-primary-button:disabled {
-    cursor: not-allowed;
-    color: rgba(242, 238, 231, 0.28);
-    background: rgba(255, 255, 255, 0.045);
-    box-shadow: none;
+/*
+ * Studio has three button styles and no more: `.mapae-action-primary`, `.mapae-action-secondary`
+ * and the destructive `.studio-danger-action` below, all on `.mapae-action`'s geometry.
+ */
+.mapae-action.studio-icon-action {
+    width: 48px;
+    padding: 0;
 }
 
 .studio-privacy {
@@ -446,28 +417,17 @@
     gap: 8px;
 }
 
-.studio-icon-button,
 .studio-secondary-button {
+    display: inline-flex;
     min-height: 38px;
-    border-color: var(--studio-line);
+    align-items: center;
+    justify-content: center;
+    padding: 0 14px;
+    border: 1px solid var(--studio-line);
     border-radius: 8px;
     color: var(--studio-text-2);
     background: rgba(255, 255, 255, 0.025);
-}
-
-.studio-icon-button {
-    width: 38px;
-}
-
-.studio-secondary-button {
-    padding: 0 14px;
     font-size:14px;
-}
-
-.studio-icon-button:hover,
-.studio-secondary-button:hover {
-    border-color: var(--studio-line-strong);
-    color: var(--studio-text);
 }
 
 .studio-overview,
@@ -555,10 +515,6 @@
     align-items: flex-start;
     gap: 8px;
     margin-top: 22px;
-}
-
-.studio-topup .studio-secondary-button {
-    gap: 7px;
 }
 
 .studio-topup .studio-amount-note {
@@ -1043,38 +999,18 @@ a.studio-metric:hover {
     margin-top: 16px;
 }
 
-/* The kill switch reads as the destructive act it is — red, not the metal CTA. */
-.studio-revoke-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 40px;
-    padding: 0 22px;
-    border: 1px solid rgba(227, 107, 98, 0.45);
-    border-radius: 9px;
-    color: var(--studio-red);
-    background: var(--studio-red-wash);
-    font-size:14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition:
-        transform 160ms ease,
-        border-color 160ms ease,
-        background 160ms ease,
-        color 160ms ease;
+/* Revoke and forget read as the destructive acts they are — red, not the metal CTA. The
+   fallbacks keep it red in the arcade, which renders RevokeButton outside .studio-shell. */
+.mapae-action.studio-danger-action {
+    border-color: rgba(227, 107, 98, 0.45);
+    color: var(--studio-red, #e36b62);
+    background: var(--studio-red-wash, rgba(227, 107, 98, 0.1));
 }
 
-.studio-revoke-button:hover:not(:disabled) {
-    transform: translateY(-1px);
+.mapae-action.studio-danger-action:hover:not(:disabled) {
     border-color: rgba(227, 107, 98, 0.7);
     background: rgba(227, 107, 98, 0.16);
-}
-
-.studio-revoke-button:disabled {
-    cursor: not-allowed;
-    border-color: var(--studio-line);
-    color: var(--studio-text-3);
-    background: rgba(255, 255, 255, 0.03);
+    filter: none;
 }
 
 /* Status copy, not an error — the red form is opt-in via .fault. */
@@ -1248,14 +1184,8 @@ a.studio-metric:hover {
     font-size:14px;
 }
 
-.studio-read-fault button {
-    min-height: 36px;
+.studio-read-fault .mapae-action {
     margin-left: auto;
-    padding: 0 13px;
-    border-color: rgba(227, 107, 98, 0.3);
-    border-radius: 8px;
-    color: var(--studio-red);
-    font-size:14px;
 }
 
 .studio-create-page,
@@ -1320,27 +1250,6 @@ a.studio-metric:hover {
 
 .studio-wallet-block[data-tone="warning"] small {
     color: rgba(227, 107, 98, 0.78);
-}
-
-.studio-wallet-button {
-    display: inline-flex;
-    min-height: 42px;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 0 16px;
-    border: 1px solid rgba(232, 184, 143, 0.38);
-    border-radius: 9px;
-    color: #1a100b;
-    background: linear-gradient(135deg, var(--studio-metal-bright), #e39b70);
-    font-size:14px;
-    font-weight: 650;
-    box-shadow: 0 12px 28px rgba(116, 50, 26, 0.2);
-}
-
-.studio-wallet-button:disabled {
-    cursor: wait;
-    opacity: 0.62;
 }
 
 .studio-create-layout {
@@ -1760,13 +1669,8 @@ a.studio-metric:hover {
     overflow-wrap: anywhere;
 }
 
-.studio-manual-import .studio-secondary-button {
+.studio-manual-import form > .mapae-action {
     align-self: center;
-}
-
-.studio-manual-import .studio-secondary-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.35;
 }
 
 .studio-import-error {
@@ -1851,8 +1755,7 @@ a.studio-metric:hover {
     line-height: 1.6;
 }
 
-.studio-agents-empty .studio-primary-button {
-    width: auto;
+.studio-agents-empty .mapae-action {
     min-width: 180px;
     margin-top: 22px;
 }
@@ -1955,13 +1858,9 @@ a.studio-metric:hover {
     margin-top: 16px;
 }
 
-.studio-agent-card .studio-secondary-button {
-    gap: 6px;
-}
-
 .studio-agent-open {
     display: inline-flex;
-    min-height: 38px;
+    min-height: var(--ui-touch);
     align-items: center;
     gap: 7px;
     color: var(--studio-metal);
@@ -2248,7 +2147,7 @@ a.studio-metric:hover {
         flex-wrap: wrap;
     }
 
-    .studio-read-fault button {
+    .studio-read-fault .mapae-action {
         width: 100%;
         margin-left: 0;
     }
@@ -2289,7 +2188,7 @@ a.studio-metric:hover {
         grid-template-columns: minmax(190px, 0.45fr) minmax(0, 1fr);
     }
 
-    .studio-manual-import .studio-secondary-button {
+    .studio-manual-import form > .mapae-action {
         grid-column: 2;
         justify-self: end;
     }
@@ -2396,12 +2295,12 @@ a.studio-metric:hover {
         padding: 16px;
     }
 
-    .studio-manual-import .studio-secondary-button,
+    .studio-manual-import form > .mapae-action,
     .studio-import-error {
         grid-column: auto;
     }
 
-    .studio-manual-import .studio-secondary-button {
+    .studio-manual-import form > .mapae-action {
         width: 100%;
         justify-self: stretch;
     }
@@ -2466,8 +2365,7 @@ a.studio-metric:hover {
         flex-direction: column;
     }
 
-    .studio-agent-card .studio-secondary-button,
-    .studio-agent-open {
+    .studio-agent-card > footer > * {
         width: 100%;
     }
 
@@ -2547,10 +2445,11 @@ a.studio-metric:hover {
  */
 .studio-forget {
     display: inline-flex;
+    min-height: var(--ui-touch);
     align-items: center;
     gap: 6px;
-    margin-top: 14px;
-    padding: 0;
+    margin-top: 6px;
+    padding: 0 4px;
     border: 0;
     color: var(--studio-text-3);
     background: none;
@@ -2575,22 +2474,6 @@ a.studio-metric:hover {
     color: var(--studio-text-2);
     font-size:14px;
     line-height: 1.6;
-}
-
-.studio-forget-go,
-.studio-forget-cancel {
-    padding: 5px 12px;
-    border: 1px solid var(--studio-line);
-    border-radius: 999px;
-    background: none;
-    color: var(--studio-text-2);
-    font-size:14px;
-    cursor: pointer;
-}
-
-.studio-forget-go {
-    border-color: rgba(227, 107, 98, 0.5);
-    color: var(--studio-red);
 }
 
 /* The store has not been consulted yet — not "there are no agents". */

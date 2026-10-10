@@ -982,7 +982,7 @@ function ManualPermissionImport({
                 ) : null}
                 <button
                     type="submit"
-                    className="studio-secondary-button"
+                    className="mapae-action mapae-action-secondary"
                     disabled={parsed.kind !== "ok" || progress === "verifying"}
                 >
                     {progress === "verifying" ? t.verifyingOnChain : t.importSubmit}

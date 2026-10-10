@@ -534,7 +534,7 @@ function StudioBody() {
                             <div className="studio-head-actions">
                                 <button
                                     type="button"
-                                    className="studio-icon-button"
+                                    className="mapae-action mapae-action-secondary studio-icon-action"
                                     aria-label={t.refreshAria}
                                     title={t.refreshAria}
                                     onClick={() => setRefreshKey((value) => value + 1)}
@@ -543,7 +543,7 @@ function StudioBody() {
                                 </button>
                                 <button
                                     type="button"
-                                    className="studio-secondary-button"
+                                    className="mapae-action mapae-action-secondary"
                                     onClick={chooseAnotherPermission}
                                 >
                                     {t.myAgents}
@@ -1215,7 +1215,7 @@ function ReadFault({reason, onRetry}: {reason: string; onRetry?: () => void}) {
                 <p>{reason}</p>
             </div>
             {onRetry ? (
-                <button type="button" onClick={onRetry}>
+                <button type="button" className="mapae-action mapae-action-secondary" onClick={onRetry}>
                     {t.retry}
                 </button>
             ) : null}

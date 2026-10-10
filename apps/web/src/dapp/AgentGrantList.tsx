@@ -189,14 +189,14 @@ export function AgentGrantList({
                 <div className="studio-agents-actions">
                     <button
                         type="button"
-                        className="studio-secondary-button"
+                        className="mapae-action mapae-action-secondary"
                         onClick={() => void onRecover()}
                         disabled={recovering}
                     >
                         <History size={16} />
                         {recovering ? t.recovering : t.recover}
                     </button>
-                    <button type="button" className="studio-wallet-button" onClick={onCreate}>
+                    <button type="button" className="mapae-action mapae-action-primary" onClick={onCreate}>
                         <Plus size={17} />
                         {t.newGrant}
                     </button>
@@ -230,7 +230,7 @@ export function AgentGrantList({
                     </span>
                     <h2>{t.emptyTitle}</h2>
                     <p>{t.emptyBody}</p>
-                    <button type="button" className="studio-primary-button" onClick={onCreate}>
+                    <button type="button" className="mapae-action mapae-action-primary" onClick={onCreate}>
                         {t.createFirst}
                         <ArrowRight size={17} />
                     </button>
@@ -297,7 +297,7 @@ export function AgentGrantList({
                                     {grant.agentKey ? (
                                         <button
                                             type="button"
-                                            className="studio-secondary-button"
+                                            className="mapae-action mapae-action-secondary"
                                             onClick={() => void copyBundle(grant)}
                                         >
                                             {copied === `bundle:${grant.id}` ? (
@@ -312,7 +312,7 @@ export function AgentGrantList({
                                     ) : null}
                                     <button
                                         type="button"
-                                        className="studio-secondary-button"
+                                        className="mapae-action mapae-action-secondary"
                                         onClick={() => void copyGrant(grant)}
                                     >
                                         {copied === grant.id ? (
@@ -344,7 +344,7 @@ export function AgentGrantList({
                                         <span>{t.forgetWarning}</span>
                                         <button
                                             type="button"
-                                            className="studio-forget-go"
+                                            className="mapae-action studio-danger-action"
                                             onClick={() => {
                                                 setConfirming(undefined);
                                                 onForget(grant.artifact.permissionContext);
@@ -354,7 +354,7 @@ export function AgentGrantList({
                                         </button>
                                         <button
                                             type="button"
-                                            className="studio-forget-cancel"
+                                            className="mapae-action mapae-action-secondary"
                                             onClick={() => setConfirming(undefined)}
                                         >
                                             {t.forgetCancel}
