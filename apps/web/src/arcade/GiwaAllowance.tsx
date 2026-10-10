@@ -14,9 +14,9 @@ import {localizeUrl} from '../lib/i18n';
 import './allowance.css';
 import {activeGuardianOuting,type GuardianIdentity} from './nft/outing-model';
 
-export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,saved,ko,onLaunch,canLaunch,choice}: {
+export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,authenticated,ko,onLaunch,canLaunch,choice}: {
     ref: Ref<HTMLElement>; giwa: ReturnType<typeof useGiwaTickets>; members: (Companion & {nft:GuardianIdentity})[];
-    onAmountChange:(id:string,admissions:number)=>void; editable:boolean; saved:boolean; ko:boolean;
+    onAmountChange:(id:string,admissions:number)=>void; editable:boolean; authenticated:boolean; ko:boolean;
     onLaunch:()=>void; canLaunch:boolean; choice:GameId|'auto';
 }) {
     const [invalid,setInvalid]=useState<Record<string,boolean>>({});
@@ -34,9 +34,9 @@ export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,saved,ko
         })}</div>
         {!members.length&&<p>{ko?'함께할 친구를 먼저 골라 주세요.':'Choose a friend first.'}</p>}
         <p className="arc-allowance-summary"><b>{ko?`이번 외출 최대 ${total} ${MOCK_USDC.symbol}`:`Up to ${total} ${MOCK_USDC.symbol}`}</b><br/>{ko?'빠른 자동 진행 · 1회 1 mUSDC · 권한은 2시간 뒤 만료':'Fast automatic rounds · 1 mUSDC each · Permission expires in 2 hours'}</p>
-        {!giwa.available&&!giwa.pending&&<p role="status" className="arc-notice">{ko?'자동 외출은 잠시 준비 중이에요. 직접 연습은 무료로 즐길 수 있어요.':'Away outings are currently unavailable. You can still practice for free.'}</p>}
+        {!giwa.available&&<p role="status" className="arc-notice">{ko?'자동 외출은 잠시 준비 중이에요. 직접 연습은 무료로 즐길 수 있어요.':'Away outings are currently unavailable. You can still practice for free.'}</p>}
         {giwa.error&&<p role="alert" className="arc-notice">{giwa.error}</p>}
-        {giwa.busy && giwa.phase !== 'idle'?<AllowanceProgress phase={giwa.phase} walletName={giwa.walletName} target={giwa.approvalTarget} ko={ko}/>:<button className="arc-button arc-approve-button" disabled={giwa.busy||!canLaunch||!valid||!saved} onClick={()=>{if(giwa.pending||giwa.submission)onLaunch();else void giwa.approve(members.map(c=>({...c.nft,goal:c.agent.goal,name:c.name,admissions:c.agent.rounds})),choice);}}>{giwa.busy?(ko?'외출 상태 확인 중…':'Checking outing…'):giwa.pending?(ko?'입장권 복구':'Recover ticket'):giwa.submission?(ko?'외출 요청 확인':'Recover outing request'):(ko?'승인하고 놀러 보내기':'Approve and send')}<ArrowRight size={18}/></button>}
+        {giwa.busy && giwa.phase !== 'idle'?<AllowanceProgress phase={giwa.phase} walletName={giwa.walletName} target={giwa.approvalTarget} ko={ko}/>:<button className="arc-button arc-approve-button" disabled={giwa.busy||!canLaunch||!valid||!authenticated} onClick={()=>{if(giwa.submission)onLaunch();else void giwa.approve(members.map(c=>({...c.nft,goal:c.agent.goal,name:c.name,admissions:c.agent.rounds})),choice);}}>{giwa.busy?(ko?'외출 상태 확인 중…':'Checking outing…'):giwa.submission?(ko?'외출 요청 확인':'Recover outing request'):(ko?'승인하고 놀러 보내기':'Approve and send')}<ArrowRight size={18}/></button>}
         <p className="arc-allowance-guard"><ShieldCheck size={16}/>{ko?'잔액은 내 스마트 계정에 있어요. 서명한 한도만 사용할 수 있어요.':'Funds stay in your smart account. Only your signed allowance can be spent.'}</p>
         <a className="arc-text-button" href={localizeUrl(appUrl,ko?'ko':'en')}>{ko?'테스트 토큰 충전':'Get test tokens'}<ExternalLink size={14}/></a>
         <ArcadeRevocations grants={giwa.grants} ko={ko} onRevoked={giwa.revoked}/>

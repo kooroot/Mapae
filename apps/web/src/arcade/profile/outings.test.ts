@@ -3,29 +3,23 @@ import type {Address} from "viem";
 import {guardianTraits,guardianTraitsHash,type GuardianSnapshot} from "@mapae/arcade/guardians";
 import {ARCADE_RULESET_VERSION, type ActivityOutcome} from "@mapae/arcade";
 import type {OutingStatus, OutingView} from "@mapae/arcade/outings";
-import {admitHumanActivity, completeActivity} from "../activity";
-import {addCharacter, newArcadeState, newCompanion} from "../state";
-import {PROFILE_GENERATION, emptyProfile, profileState, projectProfile, type ProfileSnapshot} from "./model";
 import type {ProfileRepository} from "./repository";
 import {profileApi, tokenHash} from "./api";
-import {importOutingResults, outingsApi, parseOutingStatus, type OutingFetcher} from "./outings";
+import {outingsApi, parseOutingStatus, type OutingFetcher} from "./outings";
 const owner = "0x1111111111111111111111111111111111111111" as Address, other = "0x2222222222222222222222222222222222222222" as Address;
 const token = "1".repeat(64), receiptToken = "private-server-token".repeat(3), now = 1_800_000_000_000;
 const url = "https://mapae.io/api/arcade/profile/outings";
 const seed = `0x${"77".repeat(32)}` as const, traits=guardianTraits(seed);
 const guardian:GuardianSnapshot={chainId:91342,collection:other,tokenId:"1",owner,ownershipEpoch:"1",seed,traitsHash:guardianTraitsHash(seed),ruleset:ARCADE_RULESET_VERSION};
-const initialProfile = () => projectProfile(addCharacter(newArcadeState(), newCompanion("nft-1", {name: "#1", color: traits.color, temperament: traits.temperament})));
 function repository() {
-    const profiles = new Map<string, ProfileSnapshot>([[owner, {owner, revision: 1, generation: PROFILE_GENERATION, profile: initialProfile()}]]), limits = new Map<string, number>(); let writes = 0;
+    const limits = new Map<string, number>();
     const repo: ProfileRepository = {
         async rateLimit(k, _until, limit) {const n = (limits.get(k) ?? 0) + 1; limits.set(k, n); return n <= limit;},
         async challenge() {}, async consumeChallenge() {return null;}, async session() {}, async identity(hash, origin) {return hash === await tokenHash(token) ? {owner, origin, expires_at: now + 1000} : null;}, async logout() {}, async cleanup() {},
-        async read(address) {return structuredClone(profiles.get(address) ?? {owner: address, revision: 0, generation: PROFILE_GENERATION, profile: emptyProfile()});},
-        async write(address, revision, profile) {writes++; if ((profiles.get(address)?.revision ?? 0) !== revision) return false; profiles.set(address, {owner: address, revision: revision + 1, generation: PROFILE_GENERATION, profile: structuredClone(profile)}); return true;},
-    }; return {repo, profiles, writes: () => writes};
+    }; return {repo};
 }
 const request = (method = "GET", path = "", input?: unknown, headers: Record<string, string> = {}) => new Request(url + path, {method, headers: {Origin: "https://mapae.io", "Content-Type": "application/json", Cookie: `__Host-mapae-arcade-session=${token}`, "X-Mapae-Wallet": owner, ...headers}, ...(input === undefined ? {} : {body: JSON.stringify(input)})});
-const start = () => ({generation: PROFILE_GENERATION, id: "outing-one", tokenId: "1", goal:"explore", choice: "race", admissions: 2, permissionContext: "0x1234", locale: "ko"});
+const start = () => ({id: "outing-one", tokenId: "1", goal:"explore", choice: "race", admissions: 2, permissionContext: "0x1234", locale: "ko"});
 function outcome(seed = 123, score = 80): ActivityOutcome {return {game: "race", score, achievement:{victory:false}, replay: {version: ARCADE_RULESET_VERSION, seed}, summary: {ko: "도착!", en: "Finished!"}, metrics: [], ranking: [], transcript: []};}
 function job(index = 1, count = 1): OutingView {
     return {id: `outing-${index.toString().padStart(4, "0")}`, characterId: "nft-1", guardian, profile: {name: "#1", color: traits.color, temperament: traits.temperament, goal: "explore", aptitudes:traits.aptitudes}, locale: "ko", choice: "race", status: "complete", admissions: count, spent: count, reservedAdmissions: 0,
@@ -34,7 +28,7 @@ function job(index = 1, count = 1): OutingView {
 }
 const status = (jobs: OutingView[] = []): OutingStatus => ({enabled: true, agent: other, jobs});
 const respond = (value: unknown, code = 200) => (async () => Response.json(value, {status: code})) as OutingFetcher;
-const deps = (repo: ProfileRepository, fetcher = respond(status())) => ({profiles: repo, receiptToken, fetcher, now});
+const deps = (repo: ProfileRepository, fetcher = respond(status())) => ({receiptToken, fetcher});
 function handler(repo: ProfileRepository, fetcher = respond(status())) {return {now, outings: (r: Request, a: Address, v: unknown) => outingsApi(r, a, v, deps(repo, fetcher))};}
 
 describe("authenticated server outings", () => {
@@ -50,7 +44,7 @@ describe("authenticated server outings", () => {
         expect((await profileApi(request("POST","",start()),repo,handler(repo,fetcher))).status).toBe(200);
         expect(received!.url).toBe("https://seller.mapae.io/arcade/outing");expect(received!.init.redirect).toBe("manual");
         expect(received!.init.headers).toEqual({Authorization:`Bearer ${receiptToken}`,"X-Mapae-Owner":owner,Accept:"application/json","Content-Type":"application/json"});
-        const {generation,...expected}=start();expect(JSON.parse(String(received!.init.body))).toEqual(expected);
+        expect(JSON.parse(String(received!.init.body))).toEqual(start());
     });
     test("profile score, traits and shop memory cannot alter the NFT request",async()=>{
         const {repo}=repository();let calls=0;const fetcher:OutingFetcher=async()=>{calls++;return Response.json(status());};
@@ -58,16 +52,16 @@ describe("authenticated server outings", () => {
             expect((await outingsApi(request("POST"),owner,{...start(),...patch},deps(repo,fetcher))).status).toBe(400);
         expect(calls).toBe(0);
     });
-    test("rejects malformed token, stale generation and invalid operating fields",async()=>{
+    test("rejects malformed tokens, obsolete payload fields and invalid operating fields",async()=>{
         const {repo}=repository();let calls=0;const opts=handler(repo,async()=>{calls++;return Response.json(status());});
         for(const patch of [{id:'short'},{tokenId:'01'},{tokenId:(1n<<256n).toString()},{admissions:37},{admissions:0},{admissions:1.5},{choice:'bad'},{locale:'fr'},{permissionContext:'0x123'},{goal:'steal'}])
             expect((await profileApi(request('POST','',{...start(),...patch}),repo,opts)).status).toBe(400);
-        expect((await profileApi(request('POST','',{...start(),generation:'old'}),repo,opts)).status).toBe(409);expect(calls).toBe(0);
+        expect((await profileApi(request('POST','',{...start(),generation:'old'}),repo,opts)).status).toBe(400);expect(calls).toBe(0);
     });
     test("stop and resume use the authenticated owner and refuse other methods", async () => {
         const {repo} = repository(), calls: string[] = [];
         const fetcher = (async (target, init) => {calls.push(String(target)); expect((init!.headers as Record<string, string>)["X-Mapae-Owner"]).toBe(owner); expect(init!.body).toBe("{}"); return Response.json(status());}) as OutingFetcher;
-        for (const action of ["stop", "resume"]) expect((await profileApi(request("POST", `/outing-one/${action}`, {generation: PROFILE_GENERATION, owner: other}), repo, handler(repo, fetcher))).status).toBe(200);
+        for (const action of ["stop", "resume"]) expect((await profileApi(request("POST", `/outing-one/${action}`, {owner: other}), repo, handler(repo, fetcher))).status).toBe(200);
         expect(calls).toEqual(["https://seller.mapae.io/arcade/outing/outing-one/stop", "https://seller.mapae.io/arcade/outing/outing-one/resume"]);
         expect((await profileApi(request("GET", "/outing-one/stop"), repo, handler(repo))).status).toBe(405); expect((await profileApi(request("DELETE"), repo, handler(repo))).status).toBe(405);
         expect((await profileApi(request("GET", "?owner=other"), repo, handler(repo))).status).toBe(403);
@@ -79,7 +73,7 @@ describe("authenticated server outings", () => {
         const limited = await profileApi(request("GET"), repo, opts); expect(limited.status).toBe(429); expect(limited.headers.has("Retry-After")).toBe(true);
     });
     test("disabled configuration reports no service and never submits a start", async () => {
-        const {repo} = repository(); let called = false; const dependency = {profiles: repo, fetcher: (async () => {called = true; throw Error();}) as OutingFetcher};
+        let called = false; const dependency = {fetcher: (async () => {called = true; throw Error();}) as OutingFetcher};
         const r = await outingsApi(request(), owner, null, dependency); expect(r.status).toBe(200); expect(await r.json<unknown>()).toEqual({enabled: false, agent: null, jobs: []});
         expect((await outingsApi(request("POST"), owner, start(), dependency)).status).toBe(503); expect(called).toBe(false);
     });
@@ -92,15 +86,14 @@ describe("untrusted seller response", () => {
     });
     test("rejects malformed, duplicated, mismatched and excessive results atomically", async () => {
         const corruptions: ((s: OutingStatus) => void)[] = [s => {s.jobs[0]!.results[0]!.outcome.game = "shop";}, s => {s.jobs[0]!.results[0]!.outcome.replay!.seed++;}, s => {s.jobs[0]!.results[0]!.outcome.transcript = [{speaker: "seller", text: "x".repeat(1001)}];}, s => {s.jobs[0]!.results[0]!.transaction = "0x123";}, s => {s.jobs[0]!.spent = 0;}, s => {s.jobs[0]!.admissions = 37;}, s => {s.jobs[0]!.error = "private rpc and secret";}, s => {s.jobs.push(s.jobs[0]!);}, s => {const j = job(2); j.results[0]!.id = s.jobs[0]!.results[0]!.id; s.jobs.push(j);}, s => {s.agent = null;}, s => {s.jobs = Array.from({length: 25}, (_, i) => job(i + 1));}];
-        for (const corrupt of corruptions) {const {repo, writes} = repository(), value = status([job()]); corrupt(value); expect((await outingsApi(request(), owner, null, deps(repo, respond(value)))).status).toBe(502); expect(writes()).toBe(0);}
+        for (const corrupt of corruptions) {const {repo} = repository(), value = status([job()]); corrupt(value); expect((await outingsApi(request(), owner, null, deps(repo, respond(value)))).status).toBe(502);}
     });
-    test("all 24 jobs can sync their unsaved rounds beyond 1 MiB with a strict per-outcome cap", async () => {
+    test("all 24 jobs can return their verified rounds beyond 1 MiB with a strict per-outcome cap", async () => {
         const {repo} = repository(), value = status(Array.from({length: 24}, (_, i) => job(i + 1, 36)));
         for (const j of value.jobs) for (const r of j.results) r.outcome.transcript = [{speaker: "game", text: "x".repeat(1000)}, {speaker: "game", text: "y".repeat(1000)}];
         expect(JSON.stringify(value).length).toBeGreaterThan(1_048_576);
         expect((await outingsApi(request(), owner, null, deps(repo, respond(value)))).status).toBe(200);
-        expect((await repo.read(owner)).profile.activities).toHaveLength(40);
-        expect((await repo.read(owner)).profile.characters[0]!.bests.race).toBe(59);
+        expect(parseOutingStatus(value)?.jobs).toHaveLength(24);
         value.jobs[0]!.results[0]!.outcome.transcript = Array.from({length: 20}, () => ({speaker: "game", text: "a".repeat(1000)}));
         expect(parseOutingStatus(value)).toBeNull();
     });
@@ -109,10 +102,10 @@ describe("untrusted seller response", () => {
         const split = bytes.indexOf(0xeb) + 1;
         const response = new Response(new ReadableStream({start(controller) {controller.enqueue(bytes.slice(0, split)); controller.enqueue(bytes.slice(split)); controller.close();}}));
         expect((await outingsApi(request(), owner, null, deps(repo, async () => response))).status).toBe(200);
-        expect((await repo.read(owner)).profile.activities[0]!.name).toBe("#1");
+        expect(parseOutingStatus(status([job()]))?.jobs[0]?.profile.name).toBe("#1");
     });
     test("redirects, excessive advertised or streamed bodies and non-JSON fail closed", async () => {
-        for (const response of [new Response(null, {status: 302, headers: {Location: "https://evil.test"}}), new Response("{}", {headers: {"Content-Length": "16777217"}}), new Response("a".repeat(16_777_217)), new Response("not json")]) {const {repo, writes} = repository(); expect((await outingsApi(request(), owner, null, deps(repo, (async () => response) as OutingFetcher))).status).toBe(503); expect(writes()).toBe(0);}
+        for (const response of [new Response(null, {status: 302, headers: {Location: "https://evil.test"}}), new Response("{}", {headers: {"Content-Length": "16777217"}}), new Response("a".repeat(16_777_217)), new Response("not json")]) {const {repo} = repository(); expect((await outingsApi(request(), owner, null, deps(repo, (async () => response) as OutingFetcher))).status).toBe(503);}
     });
     test("only closed seller errors reach users; operational details and auth failures do not", async () => {
         const {repo} = repository();
@@ -121,38 +114,8 @@ describe("untrusted seller response", () => {
     });
 });
 
-describe("wallet result merge", () => {
-    test("imports receipt, deterministic replay and best once without a browser payment", async () => {
-        const {repo, writes} = repository(), value = status([job()]); expect((await profileApi(request(), repo, handler(repo, respond(value)))).status).toBe(200);
-        const saved = await repo.read(owner); expect(saved.profile.activities[0]).toMatchObject({source: "mapae-giwa", mode: "rules", ticketId: value.jobs[0]!.results[0]!.transaction, status: "complete", giwa: {balanceAfter: null, allowanceAfter: "0"}, outcome: {replay: {seed: 1}}}); expect(saved.profile.characters[0]!.bests.race).toBe(1);
-        expect((await profileApi(request(), repo, handler(repo, respond(value)))).status).toBe(200); expect(writes()).toBe(1); expect((await repo.read(other)).profile).toEqual(emptyProfile());
-    });
-    test("truncated results never churn revisions and cannot evict newer existing history", async () => {
-        const {repo, profiles, writes} = repository(); let state = profileState(initialProfile());
-        for (let i = 0; i < 5; i++) {const add = admitHumanActivity(state, `practice-${i}`, "nft-1", "race", now + i); if (add.ok) state = completeActivity(add.demo, add.activity.id, outcome(i, 10));}
-        profiles.get(owner)!.profile = projectProfile(state); const value = status([job(1, 36), job(2, 36)]);
-        expect((await outingsApi(request(), owner, null, deps(repo, respond(value)))).status).toBe(200); const first = await repo.read(owner);
-        expect(first.profile.activities).toHaveLength(40); expect(first.profile.activities.filter(a => a.source === "practice")).toHaveLength(5); expect(first.profile.characters[0]!.bests.race).toBe(37);
-        expect((await outingsApi(request(), owner, null, deps(repo, respond(value)))).status).toBe(200); expect(await repo.read(owner)).toEqual(first); expect(writes()).toBe(1);
-    });
-    test("revision retry preserves a concurrent rename and departure name", async () => {
-        const {repo, profiles} = repository(), write = repo.write; let attempts = 0;
-        repo.write = async (...args) => {if (++attempts === 1) {const old = profiles.get(owner)!; old.profile.characters[0]!.name = "새이름"; old.revision++; return false;} return write(...args);};
-        expect((await outingsApi(request(), owner, null, deps(repo, respond(status([job()]))))).status).toBe(200); const saved = await repo.read(owner);
-        expect(saved.profile.characters[0]!.name).toBe("새이름"); expect(saved.profile.activities[0]!.name).toBe("#1"); expect(attempts).toBe(2); expect((await repo.read(other)).revision).toBe(0);
-    });
-    test("bounded conflict retries return conflict without overwriting", async () => {
-        const {repo} = repository(); let attempts = 0; repo.write = async () => {attempts++; return false;};
-        expect((await outingsApi(request(), owner, null, deps(repo, respond(status([job()]))))).status).toBe(409); expect(attempts).toBe(3); expect((await repo.read(owner)).profile.activities).toHaveLength(0);
-    });
-    test("deleted characters and transaction aliases cannot create ghost or duplicate records", () => {
-        const original = importOutingResults(initialProfile(), [job()]), duplicate = job(2); duplicate.results[0]!.transaction = job().results[0]!.transaction;
-        expect(importOutingResults(original, [duplicate])).toEqual(original); expect(importOutingResults(emptyProfile(), [job()])).toEqual(emptyProfile());
-    });
-});
-
 describe("real seller and web bridge contract", () => {
-    test("start, simulated paid completion, profile sync and controls use one wire shape", async () => {
+    test("start, simulated paid completion and controls use one wire shape", async () => {
         const {createOutingApp} = await import("../../../../delegated-seller/outings/routes");
         const {OutingStore} = await import("../../../../delegated-seller/outings/store");
         const {OutingRunner} = await import("../../../../delegated-seller/outings/runner");
@@ -170,10 +133,10 @@ describe("real seller and web bridge contract", () => {
             expect(post.status).toBe(200); const created = await post.json<OutingStatus>(); expect(created.jobs[0]!.status).toBe("queued"); expect(created.jobs[0]!.expiresAt).toBe(now + 7200_000);
             await runner.tick(); expect(charged).toBe(1);
             const synced = await profileApi(request(), repo, handler(repo, fetcher)); expect(synced.status).toBe(200);
-            const saved = await repo.read(owner); expect(saved.profile.activities[0]).toMatchObject({ticketId: transaction, mode: "rules", status: "complete"});
-            const again = await profileApi(request(), repo, handler(repo, fetcher)); expect(again.status).toBe(200); expect((await repo.read(owner)).revision).toBe(saved.revision);
-            expect((await profileApi(request("POST", "/outing-one/stop", {generation: PROFILE_GENERATION}), repo, handler(repo, fetcher))).status).toBe(200);
-            expect((await profileApi(request("POST", "/missing-one/stop", {generation: PROFILE_GENERATION}), repo, handler(repo, fetcher))).status).toBe(404);
+            const saved = await synced.json<OutingStatus>(); expect(saved.jobs[0]?.results[0]).toMatchObject({transaction});
+            const again = await profileApi(request(), repo, handler(repo, fetcher)); expect(again.status).toBe(200); expect(await again.json<OutingStatus>()).toEqual(saved);
+            expect((await profileApi(request("POST", "/outing-one/stop", {}), repo, handler(repo, fetcher))).status).toBe(200);
+            expect((await profileApi(request("POST", "/missing-one/stop", {}), repo, handler(repo, fetcher))).status).toBe(404);
             const foreign = await app.request("/", {headers: {Authorization: `Bearer ${receiptToken}`, "X-Mapae-Owner": other}});
             expect((await foreign.json<OutingStatus>()).jobs).toEqual([]);
         } finally {store.close();}

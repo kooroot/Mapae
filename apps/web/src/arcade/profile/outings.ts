@@ -3,10 +3,8 @@ import {guardianTokenId,guardianTraits,type GuardianSnapshot} from "@mapae/arcad
 import {validGuardianSnapshot} from "./guardians";
 import type {AgentProfile, GameId} from "@mapae/arcade";
 import {MAX_OUTING_ADMISSIONS, type OutingResult, type OutingStart, type OutingStatus, type OutingView} from "@mapae/arcade/outings";
-import {admitActivity, completeActivity, isOutcome, projectActivity, type Activity} from "../activity";
+import {isOutcome, projectActivity} from "../activity";
 import {validReplaySeed} from "../replay";
-import {PROFILE_GENERATION, parseProfile, profileState, projectProfile, sameProfile, type Profile} from "./model";
-import type {ProfileRepository} from "./repository";
 
 const UPSTREAM = "https://seller.mapae.io/arcade/outing";
 // Twenty-four retained jobs can contain 864 completed rounds (~3.3 MiB measured for shop).
@@ -72,44 +70,6 @@ export function parseOutingStatus(v: unknown): OutingStatus | null {
     return {enabled: v.enabled, agent: v.agent as Address | null, jobs};
 }
 
-/** Fold all scores, then retain the newest history. Polling an already-truncated result never churns revisions. */
-export function importOutingResults(profile: Profile, jobs: OutingView[]): Profile {
-    let state = profileState(profile);
-    const history = new Map<string, Activity>(profile.activities.map(a => [a.id, a]));
-    const transactions = new Set(profile.activities.filter(a => a.ticketId).map(a => a.ticketId!.toLowerCase()));
-    const results = jobs.flatMap(job => job.results.map((result, index) => ({job, result, admission: index + 1})))
-        .sort((a, b) => a.result.at - b.result.at || b.result.id.localeCompare(a.result.id));
-    for (const {job, result: r, admission} of results) {
-        const existing = history.get(r.id);
-        if (existing?.status === "complete" || !state.characters.some(c => c.id === job.characterId)) continue;
-        if (existing && (existing.characterId !== job.characterId || existing.game !== r.game || existing.ticketId?.toLowerCase() !== r.transaction.toLowerCase())) continue;
-        if (!existing && transactions.has(r.transaction.toLowerCase())) continue;
-        if (!existing) {
-            const admitted = admitActivity(state, {id: r.id, characterId: job.characterId, game: r.game, source: "mapae-giwa", mode: "rules", ticketId: r.transaction,
-                model: null, reason: job.locale === "ko" ? "서버에서 규칙 기반 친구가 놀고 왔어요." : "Your rule-based companion played on the server.", giwa: {balanceAfter: null, allowanceAfter: String(job.admissions - admission)}}, r.at);
-            if (!admitted.ok) continue;
-            state = admitted.demo;
-            // The name used on the outing remains its departure name; current character edits stay intact.
-            state = {...state, activities: state.activities.map(a => a.id === r.id ? {...a, name: job.profile.name, color: job.profile.color} : a)};
-        } else if (existing.status === "stopped") continue;
-        else if (!state.activities.some(a => a.id === r.id)) state = {...state, activities: [existing, ...state.activities].slice(0, 40)};
-        state = completeActivity(state, r.id, r.outcome);
-        const completed = state.activities.find(a => a.id === r.id);
-        if (completed) history.set(r.id, completed);
-        transactions.add(r.transaction.toLowerCase());
-    }
-    state = {...state, activities: [...history.values()].sort((a, b) => b.at - a.at || a.id.localeCompare(b.id)).slice(0, 40)};
-    return projectProfile(state);
-}
-async function mergeResults(repo: ProfileRepository, owner: string, jobs: OutingView[], now: number): Promise<boolean> {
-    for (let retry = 0; retry < 3; retry++) {
-        const current = await repo.read(owner), merged = importOutingResults(current.profile, jobs);
-        if (sameProfile(current.profile, merged)) return true;
-        const clean = parseProfile(merged); if (!clean) throw new Error("invalid_profile");
-        if (await repo.write(owner, current.revision, clean, now)) return true;
-    }
-    return false;
-}
 async function boundedJson(response: Response): Promise<unknown> {
     const advertised = response.headers.get("Content-Length");
     if (advertised && Number(advertised) > MAX_RESPONSE_BYTES) {await response.body?.cancel(); throw new Error("response_too_large");}
@@ -124,10 +84,10 @@ async function boundedJson(response: Response): Promise<unknown> {
     return JSON.parse(text + decoder.decode());
 }
 export type OutingFetcher = (url: string, init?: RequestInit) => Promise<Response>;
-export type OutingDependencies = {profiles: ProfileRepository; receiptToken?: string; fetcher?: OutingFetcher; now?: number};
+export type OutingDependencies = {receiptToken?: string; fetcher?: OutingFetcher; now?: number};
 /** Only profileApi may call this: identity, Origin, cookies and per-wallet limits have already been checked. */
 export async function outingsApi(request: Request, owner: Address, input: unknown, deps: OutingDependencies): Promise<Response> {
-    const path = new URL(request.url).pathname, now = deps.now ?? Date.now();
+    const path = new URL(request.url).pathname;
     const base = path === "/api/arcade/profile/outings", action = /^\/api\/arcade\/profile\/outings\/([A-Za-z0-9_-]{8,80})\/(stop|resume)$/.exec(path);
     if (!base && !action) return error("not_found", 404);
     if (request.method !== "POST" && !(base && request.method === "GET")) return error("method_not_allowed", 405);
@@ -135,10 +95,9 @@ export async function outingsApi(request: Request, owner: Address, input: unknow
     let payload: OutingStart | Record<string, never> | undefined;
     if (request.method === "POST") {
         if (!object(input)) return error("invalid_request", 400);
-        if (input.generation !== PROFILE_GENERATION) return error("server_restored", 409);
         if (base) {
             const {id, tokenId, goal, admissions, permissionContext, locale} = input;
-            if (Object.keys(input).some(k => !['generation','id','tokenId','goal','choice','admissions','permissionContext','locale'].includes(k)) ||
+            if (Object.keys(input).some(k => !['id','tokenId','goal','choice','admissions','permissionContext','locale'].includes(k)) ||
                 typeof id !== "string" || !JOB_ID.test(id) || !guardianTokenId(tokenId) ||
                 (goal !== 'score' && goal !== 'save' && goal !== 'explore') ||
                 !choice(input.choice) || !natural(admissions) || admissions < 1 || admissions > MAX_OUTING_ADMISSIONS ||
@@ -160,7 +119,6 @@ export async function outingsApi(request: Request, owner: Address, input: unknow
             return codeStatus === undefined ? error("outings_unavailable", 503) : error(code === "unauthorized" ? "outings_unavailable" : code, codeStatus);
         }
         const status = parseOutingStatus(value); if (!status) return error("invalid_outing_response", 502);
-        if (!await mergeResults(deps.profiles, owner, status.jobs, now)) return error("revision_conflict", 409);
         return json(status);
     } catch {return error("outings_unavailable", 503);}
 }

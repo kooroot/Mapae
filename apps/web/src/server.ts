@@ -1,8 +1,5 @@
 import {env} from "cloudflare:workers";
 import {outingsApi} from "./arcade/profile/outings";
-import {checkoutApi, checkoutRepository} from "./arcade/profile/checkout";
-import {derivePayerAccount} from "./lib/grant";
-import {deployment} from "./lib/config";
 import {profileApi, profileSessionOwner} from "./arcade/profile/api";
 import {profileRepository} from "./arcade/profile/repository";
 import {engagementApi, recordAuthenticatedEngagement} from "./arcade/engagement/api";
@@ -52,11 +49,7 @@ const entry = createServerEntry({fetch: (request, options) => {
             development: import.meta.env.DEV,
             guardians: (r, owner, input) => guardiansApi(r, owner, input, {receiptToken: env.ARCADE_RECEIPT_TOKEN}),
             onAuthenticated: (r, owner, now) => recordAuthenticatedEngagement(r, engagementRepository(env.ARCADE_DB), owner, now),
-            outings: (r, owner, input) => outingsApi(r, owner, input, {profiles, receiptToken: env.ARCADE_RECEIPT_TOKEN}),
-            checkout: (r, owner, input) => checkoutApi(r, owner, input, {
-                repo: checkoutRepository(env.ARCADE_DB), profiles, payer: derivePayerAccount,
-                manager: deployment.environment.DelegationManager, receiptToken: env.ARCADE_RECEIPT_TOKEN,
-            }),
+            outings: (r, owner, input) => outingsApi(r, owner, input, {receiptToken: env.ARCADE_RECEIPT_TOKEN}),
         });
     }
     return path.startsWith("/api/arcade/") ? arcadeProductionApi(request) : start(request, options);

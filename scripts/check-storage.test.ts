@@ -44,11 +44,9 @@ describe("findStorageWrites", () => {
         // not silently inherit permission to write secrets to disk.
         expect(STORE_MODULES).toEqual([
             "apps/web/src/lib/grant-store.ts",
-            "apps/web/src/arcade/state-store.ts",
-            "apps/web/src/arcade/profile/device-store.ts",
             "apps/web/src/arcade/outing-submission.ts",
             "apps/web/src/arcade/nft/transaction-store.ts",
         ]);
-        expect(SESSION_STORE_MODULES).toEqual(["apps/web/src/arcade/giwa-store.ts", "apps/web/src/landing/arcade-greeter-store.ts", "apps/web/src/arcade/guest/store.ts"]);
+        expect(SESSION_STORE_MODULES).toEqual(["apps/web/src/landing/arcade-greeter-store.ts", "apps/web/src/arcade/guest/store.ts"]);
     });
 });

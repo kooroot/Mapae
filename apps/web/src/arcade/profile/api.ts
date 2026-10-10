@@ -1,6 +1,5 @@
 import {getAddress, isAddress, verifyMessage, type Address, type Hex} from "viem";
 import {createSiweMessage, generateSiweNonce} from "viem/siwe";
-import {PROFILE_GENERATION, MAX_PROFILE_BYTES, parseProfile} from "./model";
 import type {ProfileRepository} from "./repository";
 
 const SESSION = "__Host-mapae-arcade-session", CHALLENGE = "__Host-mapae-arcade-challenge";
@@ -39,7 +38,7 @@ export async function profileSessionOwner(request: Request, repo: ProfileReposit
 }
 
 /** The stored challenge supplies the identity and message; no client-selected profile owner. */
-export async function profileApi(request: Request, repo: ProfileRepository, options: {verify?: ProfileVerifier; now?: number; development?: boolean; checkout?: (request: Request, owner: Address, input: unknown) => Promise<Response>; outings?: (request: Request, owner: Address, input: unknown) => Promise<Response>; guardians?: (request: Request, owner: Address, input: unknown) => Promise<Response>; onAuthenticated?: (request: Request, owner: string, now: number) => Promise<void>} = {}): Promise<Response> {
+export async function profileApi(request: Request, repo: ProfileRepository, options: {verify?: ProfileVerifier; now?: number; development?: boolean; outings?: (request: Request, owner: Address, input: unknown) => Promise<Response>; guardians?: (request: Request, owner: Address, input: unknown) => Promise<Response>; onAuthenticated?: (request: Request, owner: string, now: number) => Promise<void>} = {}): Promise<Response> {
     const url = new URL(request.url), now = options.now ?? Date.now();
     const local = options.development && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
     const historyCursor = /^\/api\/arcade\/profile\/guardians\/[1-9][0-9]{0,77}$/.test(url.pathname) && request.method === "GET" && /^\?before=[1-9][0-9]{0,15}$/.test(url.search) && Number.isSafeInteger(Number(url.searchParams.get("before")));
@@ -50,7 +49,7 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
     const path = url.pathname;
     const outingPath = /^\/api\/arcade\/profile\/outings(?:\/[A-Za-z0-9_-]{8,80}\/(?:stop|resume))?$/.test(path);
     const guardianPath = /^\/api\/arcade\/profile\/guardians(?:\/[1-9][0-9]{0,77}|\/results\/0x[a-fA-F0-9]{64}\/claim)?$/.test(path);
-    if (!outingPath && !guardianPath && !["/api/arcade/profile", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout", "/api/arcade/profile/checkout", "/api/arcade/profile/checkout/ack"].includes(path)) return error("not_found", 404);
+    if (!outingPath && !guardianPath && !["/api/arcade/profile/session", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout"].includes(path)) return error("not_found", 404);
     try {
         if (path.endsWith("/challenge") && request.method === "POST") {
             const input = await body(request, 1024);
@@ -61,7 +60,7 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
             const window = Math.floor(now / 600_000), until = (window + 1) * 600_000;
             if (!await repo.rateLimit(`owner:${owner}:${window}`, until, 20) || (ip && !await repo.rateLimit(`ip:${await tokenHash(ip)}:${window}`, until, 60))) return limited(until, now);
             await repo.cleanup(now);
-            const message = createSiweMessage({address: getAddress(owner), chainId: 91342, domain: url.host, uri: `${url.origin}/ko/arcade`, version: "1", nonce: generateSiweNonce(), issuedAt: new Date(now), expirationTime: new Date(now + 300_000), statement: "Sign in to Mapae Arcade to sync your characters and play history. This does not authorize payments or spending."});
+            const message = createSiweMessage({address: getAddress(owner), chainId: 91342, domain: url.host, uri: `${url.origin}/ko/arcade`, version: "1", nonce: generateSiweNonce(), issuedAt: new Date(now), expirationTime: new Date(now + 300_000), statement: "Sign in to Mapae Arcade to manage your NFT guardians and outings. This does not authorize payments or spending."});
             const nonce = token();
             await repo.challenge(await tokenHash(nonce), {owner, origin: url.origin, message, expires_at: now + 300_000});
             return json({message}, 200, cookie(CHALLENGE, nonce, 300));
@@ -106,27 +105,11 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
             if (!options.outings) return error("outings_unavailable", 503);
             return await options.outings(request, getAddress(identity.owner).toLowerCase() as Address, request.method === "GET" ? null : await body(request, 65_536));
         }
-        if (path.startsWith("/api/arcade/profile/checkout")) {
-            const window = Math.floor(now / 60_000), until = (window + 1) * 60_000;
-            if (!await repo.rateLimit(`checkout:${identity.owner}:${window}`, until, 30)) return limited(until, now);
-            if (await repo.rateLimit(`cleanup:${window}`, until, 1)) await repo.cleanup(now);
-            if (!options.checkout) return error("checkout_unavailable", 503);
-            return await options.checkout(request, getAddress(identity.owner).toLowerCase() as Address, request.method === "GET" ? null : await body(request, 27_000));
-        }
-        if (path !== "/api/arcade/profile") return error("method_not_allowed", 405);
-        if (request.method !== "GET" && request.method !== "PUT") return error("method_not_allowed", 405);
-        const window = Math.floor(now / 60_000), until = (window + 1) * 60_000;
-        // One wallet shares its limit across tabs, devices and Worker isolates.
-        if (!await repo.rateLimit(`profile:${identity.owner}:${request.method}:${window}`, until, request.method === "GET" ? 60 : 30)) return limited(until, now);
-        if (await repo.rateLimit(`cleanup:${window}`, until, 1)) await repo.cleanup(now);
-        if (request.method === "GET") return json(await repo.read(identity.owner));
-        if (request.method !== "PUT") return error("method_not_allowed", 405);
-        const input = await body(request, MAX_PROFILE_BYTES + 1024);
-        if (!object(input) || typeof input.revision !== "number" || !Number.isSafeInteger(input.revision) || input.revision < 0) return error("invalid_profile", 400);
-        if (input.generation !== PROFILE_GENERATION) return json({error: {code: "server_restored"}, snapshot: await repo.read(identity.owner)}, 409);
-        const profile = parseProfile(input.profile); if (!profile) return error("invalid_profile", 400);
-        if (!await repo.write(identity.owner, input.revision, profile, now)) return json({error: {code: "revision_conflict"}, snapshot: await repo.read(identity.owner)}, 409);
-        return json({owner: identity.owner, generation: PROFILE_GENERATION, revision: input.revision + 1, profile});
+        if (path !== "/api/arcade/profile/session" || request.method !== "GET") return error("method_not_allowed", 405);
+        const until = (requestWindow + 1) * 60_000;
+        if (!await repo.rateLimit(`session:${identity.owner}:${requestWindow}`, until, 60)) return limited(until, now);
+        if (await repo.rateLimit(`cleanup:${requestWindow}`, until, 1)) await repo.cleanup(now);
+        return json({owner: identity.owner});
     } catch (e) {
         return error(e instanceof Error && e.message === "body_too_large" ? "body_too_large" : e instanceof SyntaxError ? "invalid_json" : "profile_unavailable", e instanceof Error && e.message === "body_too_large" ? 413 : e instanceof SyntaxError ? 400 : 503);
     }

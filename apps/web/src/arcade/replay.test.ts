@@ -2,8 +2,8 @@ import {describe, expect, test} from "bun:test";
 import {DEFAULT_SHOP_CONFIG, createShop} from "@mapae/arcade/shop";
 import type {ActivityOutcome} from "@mapae/arcade";
 import {admitActivity, admitHumanActivity, completeActivity, isOutcome, latestShopMemory, paidBest, practiceBest} from "./activity";
-import {addCharacter, admitPracticeRun, newArcadeState, newCompanion, finishPracticeRun} from "./state";
-import {parseProfile, projectProfile, mergeProfiles, profileState} from "./profile/model";
+import {parseArcadeState, addCharacter, admitPracticeRun, newArcadeState, newCompanion, finishPracticeRun} from "./state";
+import {serializeArcadeState} from "./state-store";
 import {ARCADE_REPLAY_VERSION, gameSeed, replaySeed, withReplay} from "./replay";
 
 const fresh = () => addCharacter(newArcadeState(), newCompanion("maru", {name: "마루", color: "jade", temperament: "calm"}));
@@ -23,13 +23,13 @@ describe("Same-scenario free practice", () => {
         expect(done.characters[0]!.bests.shop).toBe(50);
         expect(done.activities.find(a => a.id === paid.activity.id)).toEqual(completed.activities[0]);
     });
-    test("highlights, original shop setup and practice seed round-trip through the wallet profile", () => {
+    test("highlights, original shop setup and practice seed round-trip through practice storage", () => {
         const admission = admitHumanActivity(fresh(), "12345678-example", "maru", "shop", 1, 0);
         if (!admission.ok) throw Error("admission");
         const shop = {...DEFAULT_SHOP_CONFIG, role: "buyer" as const, buyerGoal: "gift" as const, advertising: "poster" as const};
         const result = withReplay({...outcome, replay: {version: ARCADE_REPLAY_VERSION, seed: 0, shop}}, 0);
         const finished = completeActivity(admission.demo, admission.activity.id, result);
-        const loaded = parseProfile(projectProfile(finished));
+        const loaded = parseArcadeState(serializeArcadeState(finished));
         expect(loaded?.activities[0]?.outcome).toEqual(result);
         expect(gameSeed(loaded!.activities[0]!)).toBe(0);
         expect(createShop(0, loaded!.activities[0]!.outcome!.replay!.shop)).toEqual(createShop(0, shop));
@@ -58,7 +58,7 @@ describe("Same-scenario free practice", () => {
 });
 
 describe("Rule changes and authored shop memory", () => {
-    test("an old high score stays in history but cannot outrank current rules or return through device merge", () => {
+    test("an old high score stays in history but cannot outrank current rules or return through reload", () => {
         const base = fresh();
         base.characters[0]!.recordVersion = 1;
         base.characters[0]!.best = 90000;
@@ -72,23 +72,23 @@ describe("Rule changes and authored shop memory", () => {
         const current = admitPracticeRun(oldState, "current-stamp", 2);
         if (!current.ok) throw Error();
         const next = finishPracticeRun(current.demo, current.ticket.id, {score: 700, bestCombo: 3, hits: 3, mistakes: 0, missed: 0});
-        const merged = profileState(mergeProfiles(projectProfile(oldState), projectProfile(next), projectProfile(oldState)));
+        const merged = parseArcadeState(serializeArcadeState(next));
         expect(practiceBest(merged, "maru", "stamp")).toBe(700);
         expect(paidBest(merged, "maru", "shop")).toBe(0);
         expect(merged.activities[0]!.outcome!.score).toBe(9999);
         expect(merged.runs[0]!.ruleset).toBe(ARCADE_REPLAY_VERSION);
-        expect(parseProfile(projectProfile(merged))).not.toBeNull();
+        expect(parseArcadeState(serializeArcadeState(merged))).not.toBeNull();
     });
-    test("completed follow-up and original starting memory both round-trip to another device", () => {
+    test("completed follow-up and original starting memory both round-trip through practice storage", () => {
         const start = {npc: "twins" as const, visits: 1 as const, service: "complete" as const, value: 90};
         const next = {...start, visits: 2 as const, service: "partial" as const, value: 80};
         const a = admitHumanActivity(fresh(), "shop-memory", "maru", "shop", 20, 7);
         if (!a.ok) throw Error();
         const result = withReplay({...outcome, shopMemory: next, replay: {seed: 7, version: ARCADE_REPLAY_VERSION, shop: DEFAULT_SHOP_CONFIG, shopMemory: start}}, 7);
         const state = completeActivity(a.demo, a.activity.id, result);
-        const loaded = parseProfile(projectProfile(state));
+        const loaded = parseArcadeState(serializeArcadeState(state));
         expect(loaded).not.toBeNull();
-        const synced = profileState(mergeProfiles(projectProfile(fresh()), loaded!, projectProfile(fresh())));
+        const synced = loaded!;
         expect(latestShopMemory(synced, "maru")).toEqual(next);
         expect(synced.activities[0]!.outcome!.replay!.shopMemory).toEqual(start);
         expect(latestShopMemory(synced, "someone-else")).toBeUndefined();
@@ -96,7 +96,7 @@ describe("Rule changes and authored shop memory", () => {
         if (!stopped.ok) throw Error();
         expect(latestShopMemory(completeActivity(stopped.demo, stopped.activity.id, null), "maru")).toEqual(next);
     });
-    test("memory cannot smuggle money, authority, secrets or invalid stories into wallet profiles", () => {
+    test("memory cannot smuggle money, authority, secrets or invalid stories into practice records", () => {
         const valid = {npc: "courier", visits: 1, service: "missed", value: 0};
         for (const memory of [{...valid, cap: 9999}, {...valid, privateKey: "secret"}, {...valid, visits: 3}, {...valid, value: Infinity}, {...valid, npc: "admin"}]) {
             expect(isOutcome({...outcome, shopMemory: memory})).toBe(false);
