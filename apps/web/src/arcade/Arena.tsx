@@ -11,8 +11,9 @@ import type {GuardianAptitudes} from "@mapae/arcade/guardians";
 import {StampChallenges} from "./StampChallenges";
 import {StampWindow} from "./StampWindow";
 import {BossTimingCue} from "./BossTimingCue";
+import {holdEffects} from "./juice";
 import {motionTier} from "./motion";
-import {FINAL_SECONDS, GO_MS, feverGauge, haltStampFx, stampCountdownFx, stampEndMs, stampFx, syncFeverGauge, type StampTap} from "./stamp-fx";
+import {FINAL_SECONDS, GO_MS, feverGauge, stampCountdownFx, stampEndMs, stampFx, syncFeverGauge, type StampTap} from "./stamp-fx";
 import "./stamp.css";
 import "./game-guide.css";
 import "./stamp-scene.css";
@@ -56,8 +57,9 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
         return practice === "boss" ? newBossPractice(chosenSeed) : newGame(chosenSeed, autopilot === "careful" ? "manual" : "auto", aptitudes);
     });
     const state = useRef(view);
-    const [countdown, setCountdown] = useState(3);
-    const countdownRef = useRef(3_000);
+    // A player counts down from three; a watched agent's round starts at once, with no countdown to wait through.
+    const [countdown, setCountdown] = useState(autopilot ? 0 : 3);
+    const countdownRef = useRef(autopilot ? 0 : 3_000);
     // "시작!" after the countdown and the "끝!" seal before the results: display only, the clock and input never wait on them.
     const [go, setGo] = useState(false);
     const [ending, setEnding] = useState(false);
@@ -122,9 +124,9 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     if (seconds !== shown) {
                         shown = seconds;
                         setCountdown(seconds);
-                        stampCountdownFx(soundRef.current, seconds, !!autopilot);
-                        // A watched agent keeps the plain countdown; a hidden tab schedules nothing.
-                        if (seconds === 0 && !autopilot && !document.hidden) setGo(true);
+                        stampCountdownFx(soundRef.current, seconds);
+                        // A hidden tab schedules nothing.
+                        if (seconds === 0 && !document.hidden) setGo(true);
                     }
                 } else {
                     // Detect events on every frame, before the paint throttle. An event frame renders synchronously, so the impact
@@ -208,7 +210,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
 
     const frozen = suspended || paused;
     const halted = frozen || countdown > 0;
-    useLayoutEffect(() => {if (root.current) haltStampFx(root.current, halted);}, [halted]);
+    useLayoutEffect(() => {if (root.current) holdEffects(root.current, halted);}, [halted]);
     useLayoutEffect(() => {if (drain.current) syncFeverGauge(drain.current, view, tier, halted);}, [view, tier, halted]);
     const ko = locale === "ko";
     const drill = view.practice === "boss";
@@ -227,7 +229,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const urgent = seconds > 0 && seconds <= 10;
     const tierUp = multiplier(view.combo);
     return (
-        <section ref={root} className={`arc-arena${fever ? " stamp-fever" : ""}${meter.waning ? " stamp-fever-waning" : ""}${tier === "light" ? " stamp-light" : ""}`} aria-label={t.playfield} data-halted={frozen ? "true" : countdown > 0 ? "countdown" : undefined}>
+        <section ref={root} className={`arc-arena${fever ? " stamp-fever" : ""}${meter.waning ? " stamp-fever-waning" : ""}${tier === "light" ? " stamp-light" : ""}`} aria-label={t.playfield} data-halted={halted ? "" : undefined}>
             <div className="arc-arena-heading"><span>{drill ? ko ? "대장 10초 연습" : "Ten-second chief drill" : ko ? "도깨비 도장찍기" : "Dokkaebi Stamp"}</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
             <div className="arc-scoreboard" ref={board}>
                 <div><span>{t.score}</span><strong data-testid="score"><span className="stamp-pulse" data-fx="score">{view.score.toLocaleString()}</span></strong></div>
@@ -269,7 +271,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     <small>{drill ? ko ? "연습 점수는 기록에 남지 않아요" : "Drill scores do not change your records" : t.stopped}</small>
                 </div> : countdown > 0 ? <div key="countdown" className="arc-game-overlay" role="status" aria-label={t.ready}>
                     <span>{t.ready}</span>
-                    <span key={countdown} className={autopilot ? undefined : "stamp-count"}>{!autopilot && <i aria-hidden="true" />}<strong className="arc-countdown">{countdown}</strong></span>
+                    <span key={countdown} className="stamp-count" data-halt-exempt={frozen ? undefined : ""}><i aria-hidden="true" /><strong className="arc-countdown">{countdown}</strong></span>
                     <p>{rules}</p>
                 </div> : go && <div key="go" className="arc-game-overlay stamp-go" aria-hidden="true"><b>{t.go}</b></div>}
                 {ending && <div className="stamp-end" aria-hidden="true"><b>{t.end}</b></div>}

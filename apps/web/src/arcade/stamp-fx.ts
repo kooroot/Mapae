@@ -337,19 +337,13 @@ export function syncFeverGauge(fill: HTMLElement, game: Game, tier: MotionTier, 
 /** "시작!" stays this long after the countdown; input is already open beneath it. */
 export const GO_MS = 450;
 
-/**
- * The countdown's sound as it shows `seconds` (0 is the start). A watched agent keeps the plain start it always had: no ticks,
- * no go, nothing that dresses up its run. Watching decides this, not the tier: reduced motion outranks light in the tier, but
- * never turns an agent's run back into a player's.
- */
-export function countdownCue(seconds: number, watched: boolean): SoundKind | null {
-    if (watched) return seconds === 0 ? "start" : null;
+/** The countdown's sound as it shows `seconds` (0 is the start). Only a player counts down: a watched agent's round starts at once. */
+export function countdownCue(seconds: number): SoundKind {
     return seconds === 0 ? "go" : "tick";
 }
 
-export function stampCountdownFx(sound: ArcadeSound, seconds: number, watched: boolean) {
-    const kind = countdownCue(seconds, watched);
-    if (kind) sound.play(kind);
+export function stampCountdownFx(sound: ArcadeSound, seconds: number) {
+    sound.play(countdownCue(seconds));
 }
 
 /**
@@ -358,16 +352,4 @@ export function stampCountdownFx(sound: ArcadeSound, seconds: number, watched: b
  */
 export function stampEndMs({still, watched}: {still: boolean; watched: boolean}): number {
     return watched ? 0 : still ? 250 : 700;
-}
-
-/**
- * Holds the round's scripted effects while it is halted (paused, suspended, counting down) and plays them on resume. CSS
- * animations stop through `[data-halted]` instead: pausing one through the API would detach it from `animation-play-state`.
- */
-export function haltStampFx(root: Element, halted: boolean) {
-    for (const animation of root.getAnimations({subtree: true})) {
-        if (animation instanceof CSSAnimation || animation instanceof CSSTransition) continue;
-        if (halted && animation.playState === "running") animation.pause();
-        else if (!halted && animation.playState === "paused") animation.play();
-    }
 }

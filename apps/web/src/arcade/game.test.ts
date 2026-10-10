@@ -524,9 +524,8 @@ describe("Dokkaebi Stamp motion plan", () => {
         const missed = advance(withActor(game, "goblin"), 10_000);
         expect(stampMotions(stampEvents(withActor(game, "goblin"), missed), missed, "full")).toContainEqual({kind: "comboBreak", shake: true});
     });
-    test("the countdown ticks and goes for a player, keeps the plain start for a watched agent, and only a player's end seal holds", () => {
-        expect([3, 2, 1, 0].map(n => countdownCue(n, false))).toEqual(["tick", "tick", "tick", "go"]);
-        expect([3, 2, 1, 0].map(n => countdownCue(n, true))).toEqual([null, null, null, "start"]);
+    test("a player's countdown ticks and goes, and only a player's end seal holds", () => {
+        expect([3, 2, 1, 0].map(n => countdownCue(n))).toEqual(["tick", "tick", "tick", "go"]);
         expect(stampEndMs({still: false, watched: false})).toBe(700);
         expect(stampEndMs({still: true, watched: false})).toBe(250);
         // A watched agent's run goes straight to its results at every tier, reduced motion included.
