@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, test} from "bun:test";
 import {makeRaceCourse, raceEvents, raceFrameAt, simulateRace, RACE_BASE_SPEED, type RaceCommand, type RaceSimulation} from "@mapae/arcade/race";
 import type {ArcadeSound, SoundKind} from "../sound";
-import {dueEvents, gallopRate, MAX_CUE_JUMP, RaceCues, runnerVelocity} from "./race-fx";
+import {burstGlow, ceremonyMs, confettiPieces, cueStartBeat, dueEvents, gallopRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, RaceCues, runnerVelocity, sealDelay, staggerTiming, startSignal, START_BEATS} from "./race-fx";
 
 const long = {...makeRaceCourse(0, 0), weather: "clear" as const, course: "long" as const, distance: 1_250};
 const calls: RaceCommand[] = [{at: 12, pace: "save", route: "shortcut"}, {at: 24, pace: "steady", route: "wide"}];
@@ -44,7 +44,7 @@ afterEach(() => {Object.defineProperty(globalThis, "document", {value: realDocum
 
 function stage() {
     const played: SoundKind[] = [];
-    return {played, stage: {tier: "full" as const, sound: {play: (kind: SoundKind) => {played.push(kind);}} as unknown as ArcadeSound, sprite: () => undefined}};
+    return {played, stage: {tier: "full" as const, sound: {play: (kind: SoundKind) => {played.push(kind);}} as unknown as ArcadeSound, sprite: () => undefined, point: () => undefined, layer: null, flag: null}};
 }
 const walk = (cues: RaceCues, sim: RaceSimulation, from: number, to: number, run: ReturnType<typeof stage>["stage"]) => {
     for (let time = from; time <= to + 1e-9; time += 1 / 60 * 3) cues.fire(sim, time, run);
@@ -83,4 +83,64 @@ test("edging ahead off the gate is not a lead change", () => {
     const cues = new RaceCues(), {played, stage: run} = stage();
     walk(cues, early, 0, 3, run);
     expect(played).not.toContain("golden");
+});
+
+test("the start signal belongs to a player's own race at full motion: a watched agent or reduced motion starts at once", () => {
+    expect(startSignal(true, "full")).toBe(true);
+    expect(startSignal(true, "still")).toBe(false);
+    expect(startSignal(true, "light")).toBe(false);
+    expect(startSignal(false, "full")).toBe(false);
+});
+
+test("the signal ticks twice and goes on its last beat, and a hidden tab hears none of it", () => {
+    const {played, stage: run} = stage();
+    for (let beat = 0; beat < START_BEATS; beat++) cueStartBeat(beat, run.sound);
+    expect(played).toEqual(["tick", "tick", "go"]);
+    hidden = true;
+    cueStartBeat(0, run.sound);
+    expect(played).toHaveLength(3);
+});
+
+test("a watched agent's ceremonies end within 300ms and a player's keep their length", () => {
+    expect(ceremonyMs("light", 420)).toBe(300);
+    expect(ceremonyMs("light", 160)).toBe(160);
+    expect(ceremonyMs("full", 420)).toBe(420);
+    expect(ceremonyMs("still", 420)).toBe(420);
+    const light = staggerTiming("light", 3, 50, 300);
+    expect(light.delay + light.duration).toBeLessThanOrEqual(300);
+    expect(staggerTiming("full", 3, 50, 300)).toEqual({delay: 450, duration: 240});
+});
+
+test("a photo finish is first and second within .8s, dead heat included, and flashes on the second arrival", () => {
+    const [first, second] = race.finish;
+    const at = (gap: number): RaceSimulation => ({...race, finish: [first!, {...second!, seconds: first!.seconds + gap}]});
+    const arrivals = events.filter(event => event.type === "finish");
+    expect(photoFinish(at(.5))).toBe(true);
+    expect(photoFinish(at(0))).toBe(true);
+    expect(photoFinish(at(.81))).toBe(false);
+    expect(photoFinishEvent(at(.5), events)).toBe(arrivals[1]);
+    expect(photoFinishEvent(at(2), events)).toBeUndefined();
+    expect(photoFinish({...race, finish: [first!]})).toBe(false);
+});
+
+test("the burst glow holds, then fades over the burst's last 30%", () => {
+    expect(burstGlow(0)).toBe(1);
+    expect(burstGlow(2.8)).toBeCloseTo(1);
+    expect(burstGlow(3.4)).toBeCloseTo(.5);
+    expect(burstGlow(4)).toBe(0);
+    expect(burstGlow(6)).toBe(0);
+});
+
+test("confetti is fourteen obangsaek pieces thrown upward, the same every time", () => {
+    const pieces = confettiPieces();
+    expect(pieces).toHaveLength(14);
+    expect(pieces).toEqual(confettiPieces());
+    expect(pieces.every(piece => piece.dy < 0 && piece.delay < 100)).toBe(true);
+    expect(new Set(pieces.map(piece => piece.color)).size).toBe(5);
+    expect(pieces.some(piece => piece.dx < 0) && pieces.some(piece => piece.dx > 0)).toBe(true);
+});
+
+test("the result seal's thump lands 40% into the slam, after its delay; no animation means at once", () => {
+    expect(sealDelay({animationDelay: "160ms", animationDuration: ".42s"})).toBeCloseTo(328);
+    expect(sealDelay({animationDelay: "0s", animationDuration: "0s"})).toBe(0);
 });

@@ -4,7 +4,7 @@ import type {Color} from "../state";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
 import type {Locale} from "../../lib/i18n";
-import {gallopRate, RaceCues, runnerVelocity, setGallop} from "./race-fx";
+import {burstGlow, gallopRate, RaceCues, runnerVelocity, setGallop} from "./race-fx";
 
 /** A path change glides between the inner and outer lane instead of jumping 17px. */
 export const LANE_MS = 220;
@@ -73,6 +73,8 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
     const scene = useRef<SVGSVGElement>(null);
     const links = useRef<SVGGElement>(null);
     const field = useRef<HTMLDivElement>(null);
+    const layer = useRef<HTMLDivElement>(null);
+    const flag = useRef<SVGGElement>(null);
     const lanes = useRef({round: -1, byId: new Map<string, Lane>()});
     const draw = useRef<(time: number, step: number | null) => void>(() => {});
     const [cues] = useState(() => new RaceCues());
@@ -109,6 +111,10 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
                 if (sprite) sprite.style.transform = `translate3d(${point.x - SPRITE_LEFT}px,${point.y - pony - SPRITE_TOP}px,0)`;
                 // Strides follow the horse's own speed; only a live race gallops, and an arrived horse has stopped.
                 if (sprite && step !== null && position.distance < race.course.distance) setGallop(sprite, gallopRate(runnerVelocity(race, time, index), playback, position.stamina));
+                // The burst glow swells in on mount (CSS) and fades out over the burst's last stretch, on the clock.
+                const glow = sprite?.querySelector<SVGElement>(".race-burst-glow");
+                const burst = glow && race.bursts.find(item => item.id === runner.id && time >= item.at);
+                if (glow && burst) glow.style.opacity = `${burstGlow(time - burst.at)}`;
             });
             for (const link of links.current?.children ?? []) {
                 const from = points.get((link as SVGElement).dataset.from!), to = points.get((link as SVGElement).dataset.to!);
@@ -116,7 +122,8 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
             }
             if (meter.current) meter.current.style.transform = `scaleX(${Math.min(1, time / endTime)})`;
             // Moments follow the clock itself, so reduced motion (a held two-second picture) still hears and sees them on time.
-            cues.fire(race, clock.current, {tier, sound, sprite: id => sprites[race.entrants.findIndex(runner => runner.id === id)]});
+            cues.fire(race, clock.current, {tier, sound, sprite: id => sprites[race.entrants.findIndex(runner => runner.id === id)], layer: layer.current, flag: flag.current,
+                point: id => {const at = points.get(id); return at && {x: at.x + pony / 2, y: at.y - pony * .4};}});
         };
         // Every render places too: new sprites and links never paint a frame at the origin, and a held race shows its exact moment.
         draw.current(follow ? clock.current : frame.time, live ? 0 : null);
@@ -138,8 +145,8 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
         <svg ref={scene} className="race-world-runners" viewBox={`0 0 ${size.width} ${size.height}`} role="img" aria-label={ko ? `한 코스에서 달리는 ${race.entrants.length}마리 말. 아래에서 순위와 체력을 확인하세요.` : `${race.entrants.length} horses on one course. Positions and stamina are listed below.`}>
             <g className="race-finish-post" transform={`translate(${size.width - 28} ${startY - 48})`}>
                 <path d={`M0 0V${row * 4 + 36}`} stroke="#ffefc8" strokeWidth="7" strokeDasharray="7 7" />
-                <path d="M-14 -12h28v25h-28z" fill="#2e4938" stroke="#f4d592" strokeWidth="2" />
-                <path d="M-10 -8h8v8h-8zm16 0h5v8H6zM-2 0h8v8h-8z" fill="#fceaca" />
+                <g ref={flag} className="race-finish-flag"><path d="M-14 -12h28v25h-28z" fill="#2e4938" stroke="#f4d592" strokeWidth="2" />
+                    <path d="M-10 -8h8v8h-8zm16 0h5v8H6zM-2 0h8v8h-8z" fill="#fceaca" /></g>
             </g>
             <g ref={links} aria-hidden="true">{frame.positions.filter(position => position.draftingId).map(position =>
                 <path key={`draft-${position.id}`} className="race-draft-link" data-from={position.id} data-to={position.draftingId} fill="none" stroke={position.blockedBy ? "#ffb573" : "#d5f7b2"} strokeWidth="3" strokeDasharray="5 4" />)}</g>
@@ -157,11 +164,14 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
                     <text className="race-path-label" x={pony / 2} y="34" textAnchor="middle" fill="#fff4d9" fontSize="9" fontWeight="800">{position.blockedBy ? ko ? "막힘" : "BLOCKED" : position.draftingId ? ko ? "따라가기 −40%" : "DRAFT −40%" : position.path === "wide" ? ko ? "바깥 추월" : "OUTSIDE" : ko ? "안쪽" : "INSIDE"}</text>
                     <ellipse cx={pony * .52} cy="16" rx={pony * .38} ry="6" fill="#54301b" opacity=".25" />
                     <g className="race-dust" fill="#fff0bd"><circle cx="8" cy="8" r="7" /><circle cx="0" cy="13" r="4" /><circle cx="-8" cy="7" r="3" /></g>
-                    {bursting && <ellipse cx={pony * .5} cy={-pony * .32} rx={pony * .5} ry={pony * .4} fill="#ffd274" opacity=".35" />}
+                    {bursting && <ellipse className="race-burst-glow" cx={pony * .5} cy={-pony * .32} rx={pony * .5} ry={pony * .4} fill="#ffd274" fillOpacity=".35" />}
+                    {bursting && <g className="race-burst-streaks" stroke="#3b2a1c" strokeWidth="2.5" strokeLinecap="round"><path d={`M-2 ${-pony * .62}h-24`} /><path d={`M-6 ${-pony * .42}h-30`} /><path d={`M-2 ${-pony * .22}h-20`} /></g>}
                     <g className="race-pony-bounce"><image href={`/arcade/race-pony-${tone}-512.webp`} x="0" y={-pony + 18} width={pony} height={pony} /></g>
                     <g transform={`translate(${owner ? pony / 2 : pony - 2} ${owner ? -pony + 10 : 2})`}><rect x="-19" y="-17" width="38" height="18" rx="9" fill={owner ? "#2a523d" : "#362a20"} stroke={owner ? "#ffe29a" : "#d3b17c"} /><text textAnchor="middle" y="-5" fill="#fff0c8" fontSize="10" fontWeight="800">{owner ? ko ? "내 말" : "YOU" : rival ? ko ? "맞수" : "RIVAL" : index + 1}</text></g>
                 </svg>
+                <span className={`race-pass-tag ${owner ? "" : "race-pass-tag-against"}`}>{ko ? "추월!" : "PASS!"}</span>
             </div>;
         })}</div>
+        <div ref={layer} className="race-moment-layer arc-flash-host" aria-hidden="true" />
     </>;
 }
