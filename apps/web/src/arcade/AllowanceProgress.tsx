@@ -8,8 +8,8 @@ import type {ApprovalPhase} from "./useGiwaTickets";
 const STEP: Record<ApprovalPhase, number> = {idle: 0, catalogue: 0, wallet: 0, switching: 0, preparing: 1, signing: 1, authorizing: 1, bootstrap: 2, verifying: 3, submitting: 3};
 
 /** Stages follow the real approval request. Elapsed time is not a completion estimate. */
-export function AllowanceProgress({phase, walletName, ko, reducedMotion, target}: {
-    phase: ApprovalPhase; walletName: string; ko: boolean; reducedMotion: boolean;
+export function AllowanceProgress({phase, walletName, ko, target}: {
+    phase: ApprovalPhase; walletName: string; ko: boolean;
     target?: {name: string; admissions: number; index: number; total: number} | null;
 }) {
     const [open, setOpen] = useState(true);
@@ -38,10 +38,10 @@ export function AllowanceProgress({phase, walletName, ko, reducedMotion, target}
         : phase === "verifying" ? ko ? "스마트 계정의 잔액과 서명한 권한을 확인하고 있어요. 확인이 끝나야 용돈을 사용할 수 있어요." : "Checking the smart-account balance and signed permission before the allowance becomes available."
         : ko ? "입장권과 연결한 지갑을 확인하고 있어요. 필요한 단계에서 지갑 서명을 안내할게요." : "Checking tickets and your connected wallet. We will guide you when a signature is needed.";
     return <Dialog.Root open={open} onOpenChange={setOpen} disablePointerDismissal>
-        <Dialog.Trigger className="arc-progress-inline"><LoaderCircle size={18} className={reducedMotion ? "" : "arc-loading-icon"} /><span aria-live={open ? "off" : "polite"}>{title}<small>{ko ? "진행 상황 보기" : "View progress"} ↗</small></span></Dialog.Trigger>
+        <Dialog.Trigger className="arc-progress-inline"><LoaderCircle size={18} className="arc-loading-icon" /><span aria-live={open ? "off" : "polite"}>{title}<small>{ko ? "진행 상황 보기" : "View progress"} ↗</small></span></Dialog.Trigger>
         <Dialog.Portal className="arc-ui-theme">
             <Dialog.Backdrop className="arc-editor-backdrop" />
-            <Dialog.Popup className={`arc-approval-dialog ${reducedMotion ? "arc-progress-still" : ""}`}>
+            <Dialog.Popup className="arc-approval-dialog">
                 <div className="arc-progress-top"><span>MAPAE · GIWA SEPOLIA</span><Dialog.Close aria-label={ko ? "진행 창 접기 · 요청은 계속돼요" : "Minimize progress · request continues"}><ChevronDown size={20} /></Dialog.Close></div>
                 <div className="arc-progress-art" aria-hidden="true"><span /><img src="/arcade/guardians/horse-256.webp" width={256} height={256} alt="" /><i>{walletAction ? <Wallet size={22} /> : <LoaderCircle size={22} className="arc-loading-icon" />}</i></div>
                 <div role="status" aria-live="polite" aria-atomic="true">{target && <p className="arc-progress-friend">{target.index} / {target.total} · {target.name} · {target.admissions * ARCADE_TICKET_COST} {MOCK_USDC.symbol}</p>}<Dialog.Title>{title}</Dialog.Title><Dialog.Description>{description}</Dialog.Description></div>

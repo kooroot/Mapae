@@ -75,4 +75,4 @@ button.mapae-role[data-checked] {background:#30271d;color:#f2d4ab;border-color:#
 .mapae-select-description,.mapae-switch-row small{font-size:14px}.mapae-switch-row{font-size:15px;min-height:44px}.mapae-switch{min-width:44px}
 .arc-wallet-dialog{z-index:150}.arc-wallet-dialog-top button{width:44px;height:44px}.arc-wallet-list small,.arc-wallet-mobile-entry small,.arc-wallet-dialog .arc-wallet-assurance{font-size:14px}.arc-loading-icon{animation:mapae-spin 1.2s linear infinite}
 @media(max-width:480px){.mapae-confirm{padding:22px}.mapae-confirm-actions{flex-direction:column}.mapae-progress ol{flex-direction:column}.mapae-action{padding:12px 16px}}
-@media(prefers-reduced-motion:reduce){.mapae-spinner,.arc-loading-icon{animation:none}}
+@media(prefers-reduced-motion:reduce){.mapae-spinner{animation:none}}

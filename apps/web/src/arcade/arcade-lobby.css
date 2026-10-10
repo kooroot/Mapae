@@ -125,8 +125,6 @@
 body:has(.arc-approval-dialog) .agent-quickstart { visibility:hidden; }
 @keyframes arc-loading-turn { to { transform:rotate(360deg); } }
 .arc-loading-icon { animation:arc-loading-turn 1.4s linear infinite; }
-.arc-still .arc-loading-icon,.arc-progress-still .arc-loading-icon { animation:none; }
-@media(prefers-reduced-motion:reduce) { .arc-loading-icon { animation:none; } }
 @media(max-width:960px) {
     .arc-preparation { gap:16px; grid-template-columns:minmax(0,1fr) minmax(300px,.8fr); }
     .arc-crew-desk,.arc-ticket-desk { padding:20px; }.arc-preparation .arc-roster-heading { flex-wrap:wrap; }
