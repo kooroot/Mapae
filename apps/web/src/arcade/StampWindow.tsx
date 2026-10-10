@@ -52,7 +52,7 @@ export const StampWindow = memo(function StampWindow({index, actor, impact, phas
                 <span className="arc-target-label">{targetCue}</span>
             </span>}
             {actor?.special && <progress className="stamp-enemy-hp" aria-label={ko ? "남은 타격" : "Hits remaining"} max={actor.special === "boss" ? BOSS_OPENINGS : 2} value={actor.hp} />}
-            {impact?.kind === "miss" && <span className="stamp-escape" key={impact.until}><Goblin variant={impact.actor.special} className={impact.actor.golden ? "stamp-gold-art" : ""} /></span>}
+            {impact?.kind === "miss" && <span className="stamp-escape" key={`escape-${impact.until}`}><Goblin variant={impact.actor.special} className={impact.actor.golden ? "stamp-gold-art" : ""} /></span>}
             {impact && (impact.kind !== "crack" || impact.perfect) && <span className="arc-impact" key={impact.until} role={impact.perfect ? "status" : undefined}>
                 {impact.kind === "stamp" && <Goblin variant={impact.actor.special} className={`stamp-squash${impact.actor.golden ? " stamp-gold-art" : ""}`} />}
                 {impact.kind === "wrong" && <GuardianAvatar appearance={appearance} color={color} className="stamp-flinch" />}
