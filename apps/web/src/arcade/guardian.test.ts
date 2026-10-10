@@ -91,7 +91,9 @@ describe("Mapae guardian customization", () => {
             codes.add(guardianCode(look, "red"));
             const layers = guardianLayers(look);
             expect(layers.every(layer => layer.x >= 0 && layer.y >= 0 && layer.x + layer.width <= 400 && layer.y + layer.height <= 400)).toBe(true);
-            expect(layers.every(layer => !layer.clip || (layer.clip.x >= layer.x && layer.clip.y >= layer.y && layer.clip.width > 0 && layer.clip.height > 0 && layer.clip.x + layer.clip.width <= layer.x + layer.width + .001 && layer.clip.y + layer.clip.height <= layer.y + layer.height + .001))).toBe(true);
+            expect(layers.every(layer => !layer.clip || (layer.clip.length >= 3 && layer.clip.every(point =>
+                Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= layer.x && point.y >= layer.y &&
+                point.x <= layer.x + layer.width + .001 && point.y <= layer.y + layer.height + .001)))).toBe(true);
         }
         expect(codes.size).toBe(12 * 9 * 8 * 5);
         const dragon = guardianLayers({...g, zodiac: "dragon", wardrobe: {hat: "satgat", outfit: "scholar", shoes: "taesahye"}});
@@ -100,7 +102,19 @@ describe("Mapae guardian customization", () => {
         const brim = dragon.findLastIndex(layer => layer.src === wardrobeAsset("hat", "satgat"));
         expect(straps).toBeLessThan(head); expect(brim).toBeGreaterThan(head);
         const front = dragon[brim]!;
-        expect(front.clip!.y + front.clip!.height).toBeLessThan(120);
+        // At the center of the satgat, the face must sit in front of the hollow
+        // underside. Its front rim slopes down to the right instead of using a
+        // horizontal cut through the whole hat and hanging cords.
+        const centerRim = front.clip!.find(p => Math.abs(p.x - (front.x + front.width / 2)) < .001)!;
+        expect(centerRim.y).toBeLessThan(112);
+        expect(front.clip!.some(p => p.x > centerRim.x && p.y > centerRim.y + 10)).toBe(true);
+        expect(dragon[straps]!.clip).toBeUndefined();
+        // A high forehead must not shrink the hat's width along with its height:
+        // the snake's broad skull needs a wider opening than the rabbit's.
+        for (const hat of HATS.filter(h => h !== "none")) {
+            const hatOn = (zodiac: "snake" | "rabbit") => guardianLayers({...g, zodiac, wardrobe: {hat, outfit: "scholar", shoes: "taesahye"}}).find(l => l.src === wardrobeAsset("hat", hat))!;
+            expect(hatOn("snake").width).toBeGreaterThan(hatOn("rabbit").width * 1.3);
+        }
         const original = {...g, wardrobe: undefined};
         expect(validGuardian(original)).toBe(true); expect(projectGuardian(original)).not.toHaveProperty("wardrobe");
         expect(validWardrobe([])).toBe(false);

@@ -1,27 +1,18 @@
 import {guardianAsset, charmAsset, type Guardian, type Zodiac} from "./guardian";
 import {wardrobeAsset, type Hat} from "./wardrobe";
+import fitting from "../../public/arcade/wardrobe/fit.json";
 
 type ArtBox = {x: number; y: number; width: number; height: number};
-export type ArtLayer = ArtBox & {src: string; clip?: ArtBox};
-// Contact is the opening against the forehead, not the image's bottom tassel.
-const HAT_ART: Record<Exclude<Hat, "none">, {width: number; ratio: number; contact: number; front: number}> = {
-    topknot: {width: 150, ratio: 512 / 504, contact: .74, front: .82},
-    gat: {width: 185, ratio: 345 / 512, contact: .92, front: 1},
-    satgat: {width: 218, ratio: 418 / 512, contact: .66, front: .67},
-    samo: {width: 225, ratio: 273 / 512, contact: .84, front: 1},
-    ikseongwan: {width: 118, ratio: 512 / 428, contact: .81, front: 1},
-    jeonrip: {width: 172, ratio: 484 / 512, contact: .77, front: .79},
-    paeraengi: {width: 200, ratio: 425 / 512, contact: .67, front: .69},
-    headwrap: {width: 180, ratio: 421 / 512, contact: .49, front: .59},
-};
-const HEAD_SEAT: Record<Zodiac, {x: number; y: number; scale: number}> = {
-    rat: {x: 200, y: 128, scale: .96}, ox: {x: 201, y: 125, scale: .98},
-    tiger: {x: 207, y: 125, scale: .98}, rabbit: {x: 207, y: 153, scale: .82},
-    dragon: {x: 200, y: 113, scale: .91}, snake: {x: 207, y: 99, scale: .8},
-    horse: {x: 203, y: 127, scale: .95}, goat: {x: 206, y: 130, scale: 1},
-    monkey: {x: 202, y: 135, scale: .95}, rooster: {x: 207, y: 143, scale: .82},
-    dog: {x: 204, y: 130, scale: .92}, pig: {x: 204, y: 130, scale: .97},
-};
+type Point = {x: number; y: number};
+export type ArtLayer = ArtBox & {src: string; clip?: readonly Point[]; stretch?: boolean};
+// Calibrated data ships with the artwork in Mapae-arcade-asset.
+// Openings and front edges are measured in normalized source-image coordinates.
+// The satgat's sloping rim is in front; its hollow underside and cords sit behind
+// the head. A horizontal split incorrectly lays the entire underside over it.
+const HAT_ART: Record<Exclude<Hat, "none">, {ratio: number; opening: {x: number; y: number; width: number}; front?: readonly Point[]}> = fitting.hats;
+// Forehead center and width in the composed 400px avatar, excluding ears,
+// horns, mane and comb. Those protrusions are not the hat's opening size.
+const HEAD_FIT: Record<Zodiac, {x: number; y: number; width: number}> = fitting.heads;
 /** One composition shared by SVG, PNG exports and receipts. Coordinates use a 400px canvas. */
 export function guardianLayers(g: Guardian): ArtLayer[] {
     const w = g.wardrobe;
@@ -31,14 +22,16 @@ export function guardianLayers(g: Guardian): ArtLayer[] {
     ] : [{src: guardianAsset(g.zodiac), x: 8, y: 0, width: 384, height: 384}];
     let front: ArtLayer | undefined;
     if (w && w.hat !== "none") {
-        const art = HAT_ART[w.hat], seat = HEAD_SEAT[g.zodiac];
-        const scale = Math.min(seat.scale, (seat.y - 12) / (art.width * art.ratio * art.contact));
-        const width = art.width * scale, height = width * art.ratio;
-        const hat = {src: wardrobeAsset("hat", w.hat), x: seat.x - width / 2, y: seat.y - height * art.contact, width, height};
-        if (art.front < 1) {
-            const cut = height * art.front;
-            layers.push({...hat, clip: {x: hat.x, y: hat.y + cut, width, height: height - cut}});
-            front = {...hat, clip: {x: hat.x, y: hat.y, width, height: cut}};
+        const art = HAT_ART[w.hat], seat = HEAD_FIT[g.zodiac];
+        const width = seat.width / art.opening.width;
+        // Keep the opening fitted to the skull when a tall crown reaches the top.
+        // Shrinking both axes here would turn wide-headed guardians' hats tiny.
+        const height = Math.min(width * art.ratio, (seat.y - 12) / art.opening.y);
+        const hat: ArtLayer = {src: wardrobeAsset("hat", w.hat), x: seat.x - width * art.opening.x,
+            y: seat.y - height * art.opening.y, width, height, stretch: true};
+        if (art.front) {
+            layers.push(hat);
+            front = {...hat, clip: art.front.map(({x, y}) => ({x: hat.x + x * width, y: hat.y + y * height}))};
         } else front = hat;
     }
     if (w) layers.push({src: wardrobeAsset("head", g.zodiac), x: 84, y: 47, width: 232, height: 190});
@@ -56,9 +49,14 @@ export async function guardianCanvas(g: Guardian, size = 400): Promise<HTMLCanva
     layers.forEach((layer, i) => {
         const image = images[i]!;
         const scale = Math.min(layer.width / image.naturalWidth, layer.height / image.naturalHeight);
-        const width = image.naturalWidth * scale, height = image.naturalHeight * scale;
+        const width = layer.stretch ? layer.width : image.naturalWidth * scale;
+        const height = layer.stretch ? layer.height : image.naturalHeight * scale;
         context.save();
-        if (layer.clip) {context.beginPath(); context.rect(layer.clip.x, layer.clip.y, layer.clip.width, layer.clip.height); context.clip();}
+        if (layer.clip) {
+            context.beginPath();
+            layer.clip.forEach((point, index) => index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y));
+            context.closePath(); context.clip();
+        }
         context.drawImage(image, layer.x + (layer.width - width) / 2, layer.y + layer.height - height, width, height);
         context.restore();
     });
