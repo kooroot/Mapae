@@ -11,7 +11,7 @@ import {ArcadeSound} from '../sound';
 import {modelDecision} from '../agents';
 
 /** Finishes the already-authorized standalone checkout; it cannot create a new admission or NFT growth. */
-export function LegacyTicketRecovery({giwa,store,ko}:{giwa:ReturnType<typeof useGiwaTickets>;store:ReturnType<typeof useArcadeState>;ko:boolean}){
+export function LegacyTicketRecovery({giwa,store,ko,reducedMotion}:{giwa:ReturnType<typeof useGiwaTickets>;store:ReturnType<typeof useArcadeState>;ko:boolean;reducedMotion:boolean}){
     const [activity,setActivity]=useState<Activity|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[sound]=useState(()=>new ArcadeSound());
     const lock=useRef(false);useEffect(()=>()=>sound.dispose(),[sound]);
     const pending=giwa.pending;
@@ -28,6 +28,6 @@ export function LegacyTicketRecovery({giwa,store,ko}:{giwa:ReturnType<typeof use
     }catch{setError(ko?'같은 입장권 복구를 다시 시도해 주세요.':'Retry recovery of this same admission.');}finally{lock.current=false;setBusy(false);}}
     function complete(outcome:ActivityOutcome){if(!activity)return;const next=store.update(v=>completeActivity(v,activity.id,withReplay(outcome,gameSeed(activity))));setActivity(next.activities.find(a=>a.id===activity.id)??activity);void store.flush().catch(()=>setError(ko?'결과를 저장하지 못했어요. 다시 동기화해 주세요.':'Could not save this result. Retry profile sync.'));}
     if(!pending&&!activity)return null;
-    const props=member&&activity?{appearance:member.appearance,profile:{name:member.name,color:member.color,temperament:member.temperament,goal:member.agent.goal},locale:ko?'ko' as const:'en' as const,mode:'rules' as const,seed:gameSeed(activity),budget:{balance:0,allowance:0},decide:modelDecision,reducedMotion:store.demo.reducedMotion,autoAdvance:true,onComplete:complete,onExit:()=>{store.update(v=>completeActivity(v,activity!.id,null));setActivity(null);}}:null;
+    const props=member&&activity?{appearance:member.appearance,profile:{name:member.name,color:member.color,temperament:member.temperament,goal:member.agent.goal},locale:ko?'ko' as const:'en' as const,mode:'rules' as const,seed:gameSeed(activity),budget:{balance:0,allowance:0},decide:modelDecision,reducedMotion,autoAdvance:true,onComplete:complete,onExit:()=>{store.update(v=>completeActivity(v,activity!.id,null));setActivity(null);}}:null;
     return <section className="nft-panel" id="legacy-ticket-recovery"><h2>{ko?'기존 입장권 이어서 확인하기':'Recover an earlier admission'}</h2><p>{ko?'이미 승인했던 입장권만 복구해요. 이 기록은 NFT 성장에 포함되지 않아요.':'Recovers only the earlier authorized admission. It does not award NFT growth.'}</p>{error&&<p role="alert">{error}</p>}{!member?<p role="alert">{ko?'입장권의 이전 캐릭터 기록을 동기화한 뒤 다시 시도해 주세요.':'Sync the original character record before retrying.'}</p>:activity&&activity.status!=='active'?<p role="status">{ko?'입장권 기록을 복구했어요':'Admission record recovered'}{activity.outcome&&` · ${activity.outcome.score}`}</p>:props&&activity?<>{activity.game==='stamp'?<StampAgent {...props} sound={sound}/>:activity.game==='race'?<RaceGame {...props}/>:<ShopGame {...props}/>}</>:<button className="arc-button" disabled={busy||giwa.busy||!store.saved} onClick={()=>void recover()}>{busy?(ko?'확인 중…':'Checking…'):(ko?'기존 입장권 복구':'Recover existing ticket')}</button>}</section>;
 }

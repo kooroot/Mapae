@@ -26,6 +26,7 @@ import {gameSeed, withReplay} from "./replay";
 import type {PracticeEvent} from "./engagement/model";
 import type {GuardianAptitudes} from '@mapae/arcade/guardians';
 import {ArcadeSound} from "./sound";
+import {useArcadeMotion} from "./motion";
 import {ResultImage} from "./ResultImage";
 import "./arcade.css";
 
@@ -86,6 +87,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
     const {locale} = useLocale();
     const t = COPY[locale];
     const {demo, ready, update} = store;
+    const still = useArcadeMotion(demo.reducedMotion);
     const ko = locale === "ko";
     const [selectedGame, setSelectedGame] = useState<GameId>(initialGame);
     const best = practiceBest(demo, character.id, selectedGame);
@@ -201,7 +203,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         if (!ok) setNotice(t.soundError);
     }
     return (
-        <main className={`arcade arc-practice ${demo.reducedMotion ? "arc-still" : ""}`}>
+        <main className="arcade arc-practice">
             <header className="arc-header"><button className="arc-back" onClick={requestBack} aria-label={locale === "ko" ? "에이전트 오락실로 돌아가기" : "Back to agent arcade"}><ArrowLeft size={20} /></button>
                 <a className="arc-wordmark" href={localizePath("/", locale)} aria-label={t.home}><ArcadeBrand /></a>
                 <span className="arc-demo-label"><i /> {t.demo}</span>
@@ -251,11 +253,11 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                     if (editing) lobby(); else begin(next);
                 }} />}
                 {screen === "play" && initialReplay && initialGame === selectedGame && (manual?.source === "practice" ? manual.replaySeed : ticket?.replaySeed) === initialReplay.seed && <p className="arc-replay-invite">{initialReplay.daily ? ko ? "오늘의 도전 · 모두 같은 출발 조건 · 무료" : "Daily challenge · Same scenario for everyone · Free" : ko ? `${initialReplay.name}의 ${initialReplay.score.toLocaleString()}점에 도전 · 같은 출발 조건 · 무료` : `Challenge ${initialReplay.name}'s ${initialReplay.score.toLocaleString()} points · Same starting scenario · Free`}</p>}
-                {screen === "play" && drillSeed !== null && <Arena key={`drill-${drillSeed}`} practice="boss" seed={drillSeed} suspended={settingsOpen || exitOpen} locale={locale} character={character} reducedMotion={demo.reducedMotion} sound={sound} onFinish={finish} />}
-                {screen === "play" && ticket && <Arena aptitudes={ticket.aptitudes} seed={gameSeed(ticket)} suspended={settingsOpen || exitOpen} key={ticket.id} locale={locale} character={{...character, name: ticket.name, color: ticket.color, appearance: ticket.appearance}} reducedMotion={demo.reducedMotion} sound={sound} onFinish={finish} />}
+                {screen === "play" && drillSeed !== null && <Arena key={`drill-${drillSeed}`} practice="boss" seed={drillSeed} suspended={settingsOpen || exitOpen} locale={locale} character={character} reducedMotion={still} sound={sound} onFinish={finish} />}
+                {screen === "play" && ticket && <Arena aptitudes={ticket.aptitudes} seed={gameSeed(ticket)} suspended={settingsOpen || exitOpen} key={ticket.id} locale={locale} character={{...character, name: ticket.name, color: ticket.color, appearance: ticket.appearance}} reducedMotion={still} sound={sound} onFinish={finish} />}
                 {screen === "play" && manual && (() => {
                     const props = {mode: "human" as const, profile: {name: manual.name, color: manual.color, temperament: character.temperament, goal: character.agent.goal, aptitudes}, appearance: manual.appearance,
-                        locale, seed: gameSeed(manual), reducedMotion: demo.reducedMotion, suspended: settingsOpen || exitOpen, onComplete: finishManual, onExit: () => setExitOpen(true)};
+                        locale, seed: gameSeed(manual), reducedMotion: still, suspended: settingsOpen || exitOpen, onComplete: finishManual, onExit: () => setExitOpen(true)};
                     return manual.game === "race" ? <RaceGame key={manual.id} {...props} /> : <ShopGame key={manual.id} {...props} initialConfig={shopConfig} memory={shopMemory} />;
                 })()}
                 {screen === "result" && manual && <><AgentReceipt activity={manual} locale={locale} best={practiceBest(demo, manual.characterId, manual.game)} /><div className="practice-turn-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)), gameSeed(manual), manual.outcome?.replay?.shop, manual.outcome?.replay?.shopMemory, manual.outcome?.replay?.aptitudes)}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"} →</button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button><button className="arc-text-button" onClick={onBack}>{t.lobby}</button></div></>}

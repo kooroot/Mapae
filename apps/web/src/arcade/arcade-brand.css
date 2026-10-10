@@ -14,8 +14,7 @@
 }
 @media(max-width:360px){.arc-main{padding-inline:12px}.arc-header-actions{gap:3px}.arc-brand-type>img{width:74px}.arc-brand-emblem{width:28px}.arc-sound,.arc-back{padding:9px}.arc-practice .arc-brand-type>img{width:62px}.arc-race-scoreboard{gap:7px;font-size:10px}.arc-race-scoreboard strong{font-size:14px}}
 @media(max-height:520px) and (orientation:landscape){.agent-quickstart{position:static;border:1px solid var(--arc-hair);border-radius:14px}.agent-in-lobby{padding-bottom:0}.arc-windows{height:240px}}
-@media(prefers-reduced-motion:reduce){.arcade *{scroll-behavior:auto!important}}
-html:has(.arcade.arc-still){scroll-behavior:auto}
+html.arc-still{scroll-behavior:auto}
 @media(max-width:620px){.agent-arcade[data-screen=receipt]{padding-bottom:calc(105px + env(safe-area-inset-bottom))}.agent-receipt-actions{position:fixed;z-index:30;bottom:0;left:0;right:0;flex-direction:row;gap:10px;padding:14px 16px calc(14px + env(safe-area-inset-bottom));margin:0;background:#211c17fa;border-top:1px solid var(--arc-hair)}.agent-receipt-actions .arc-button{flex:1;min-width:0;padding:12px 10px;font-size:12px;gap:7px}}
 
 .arcade-revocations { margin-top: 18px; border-top: 1px solid #8d7658; padding-top: 14px; }
