@@ -64,3 +64,11 @@ test("one polite live region speaks for the race; the ribbon and callout no long
     expect(markup).toContain("<p class=\"sr-only\" role=\"status\"></p>");
     expect(markup).toContain("<div class=\"race-route-ribbon\">");
 });
+
+test("stamina is a labelled meter bar the board scales, not a native <meter>", () => {
+    const markup = render(30, "ko");
+    expect(markup).not.toContain("<meter");
+    const owner = race.frames.find(frame => frame.time >= 30)!.positions[0]!;
+    expect(markup).toContain(`role="meter" aria-label="Coach 체력" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(owner.stamina)}"`);
+    expect(markup.match(/role="meter"/g)).toHaveLength(2);
+});

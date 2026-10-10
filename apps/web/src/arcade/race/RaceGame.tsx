@@ -1,6 +1,6 @@
 import {raceOutcome} from "@mapae/arcade/simulation";
 import {MOCK_USDC} from "@mapae/shared";
-import {useEffect, useLayoutEffect, useRef, useState} from "react";
+import {Fragment, useEffect, useLayoutEffect, useRef, useState} from "react";
 import type {AgentDecision} from "@mapae/arcade";
 import {applyRaceRound, createRaceSeason, makeRaceCourse, raceEndTime, raceNextCheckpoint, raceFrameAt,
     RACE_BURST_COST, RACE_HABITS, RACE_DRAFT_DISTANCE, raceTraffic, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceAction} from "@mapae/arcade/race";
@@ -80,6 +80,10 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const [relaxed, setRelaxed] = useState(false);
     const roundStart = useRef(season);
     const checkpointButton = useRef<HTMLButtonElement>(null);
+    const dock = useRef<HTMLDivElement>(null);
+    const calls = useRef<HTMLParagraphElement>(null);
+    /** The coach just chose at a fork, so its call lands with the seal's thump; a plan running on by itself lands silently. */
+    const chose = useRef(false);
     const [paused, setPaused] = useState(false);
     const [speed, setSpeed] = useState(1);
     const blocked = paused || suspended;
@@ -217,6 +221,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         const nextSeason = applyRaceRound(roundStart.current, current.action, next, burstAt);
         setSeason(nextSeason);
         setRoute(nextSeason.rounds.at(-1)!.simulation.calls.find(call => call.id === "owner" && call.at > at)?.route ?? "wide");
+        chose.current = true;
         setCommands(next); setPhase("race");
     }
     function triggerBurst() {
@@ -243,6 +248,21 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         window.addEventListener("keydown", keydown);
         return () => window.removeEventListener("keydown", keydown);
     }, [human, phase, blocked, windowOpen, canBurst, route, current, commands]);
+
+    // A fork opening deals its choices in one after another; they take input at once, so the cascade never holds a call back.
+    useLayoutEffect(() => {
+        if (windowOpen && dock.current) riseIn(dock.current.querySelectorAll(".race-route-picker button, .race-pace-options button"), tier, 40);
+        // Only the window opening deals the cards; a tier change while it is open leaves them in place.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [windowOpen]);
+
+    // Each call is stamped into the dock's record as it lands (CSS); the coach's own choice also thumps on the stamp's impact.
+    useLayoutEffect(() => {
+        if (!chose.current) return;
+        chose.current = false;
+        cueSeal(calls.current?.lastElementChild ?? null, sound);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [commands.length]);
 
     useEffect(() => {
         if (phase !== "checkpoint") return;
@@ -281,7 +301,8 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const owner = season.runners.find(runner => runner.id === "owner")!;
     const rival = season.runners.find(runner => runner.id === season.rivalId)!;
 
-    return <section className="arc-race" aria-label={GAME_NAMES[locale].race}>
+    // A halt pauses every CSS motion in the game (the dock's pulse, the result's stamps) until play resumes, with no delay.
+    return <section className="arc-race" aria-label={GAME_NAMES[locale].race} data-halted={blocked ? "" : undefined}>
         <header className="arc-race-title">
             <div><p className="arc-overline">{GAME_NAMES[locale].race} / {t.season}</p><h1>{t.title}</h1><p>{t.subtitle}</p></div>
             <GuardianAvatar appearance={appearance} color={profile.color} />
@@ -324,16 +345,16 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                 </div>
                 {!latest.enter && <p className="arc-race-sitout">{t.noEntry}</p>}
                 <RaceTrack rivalId={season.rivalId} commands={current.simulation.calls.filter(call => call.id === "owner")} race={current.simulation} progress={progress} clock={clock} ended={phase === "recap"} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} tier={tier} sound={sound} playback={speed} signal={phase === "race" ? signal : null} />
-                {human && phase !== "recap" && <div className={`race-command-dock ${windowOpen ? "race-awaiting" : ""}`}>
+                {human && phase !== "recap" && <div ref={dock} className={`race-command-dock ${windowOpen ? "race-awaiting" : ""}`}>
                     <div><span className="arc-overline">{windowOpen ? ko ? `${commands.length + 1}번째 갈림길` : `FORK ${commands.length + 1}` : ko ? `작전 ${commands.length} / 2` : `CALLS ${commands.length} / 2`}</span>
                         <h2>{windowOpen ? phase === "checkpoint" ? ko ? "멈춘 사이, 작전을 골라요" : "Paused — pick your call" : ko ? `${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}초 뒤 갈림길 · 바꿀까요?` : `Fork in ${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}s · Change your plan?` : nextCall === undefined ? ko ? "남은 승부는 결승선에서!" : "All the way to the finish!" : ko ? "말이 작전대로 달리고 있어요" : "Your horse is following the plan"}</h2>
                         {windowOpen && <p>{phase === "checkpoint" ? ko ? "선택하면 출발 · " : "Choose to resume · " : plannedCall ? `${ko ? "기본" : "Default"}: ${ROUTE_LABELS[locale][plannedCall.route]} · ${PACE_LABELS[locale][plannedCall.pace]} · ` : ""}{t.stamina} <strong>{Math.round(ownerFrame?.stamina ?? 0)}%</strong></p>}</div>
-                    {windowOpen && <p className="race-traffic-scout" role="status">{traffic?.aheadId ? `${current.simulation.entrants.find(runner => runner.id === traffic.aheadId)?.name} · ${Math.round(traffic.gap)}m ${ko ? "앞" : "ahead"}. ${traffic.gap <= RACE_DRAFT_DISTANCE ? ko ? "안쪽에서 따라가면 소모 −40%, 추월은 바깥에서." : "Follow inside for −40% drain; pass on the outside." : ko ? "아직 멀어서 따라가기 이득이 없어요." : "Too far away for a draft yet."}` : ko ? "안쪽 앞말이 없어요. 따라가기 이득 없이 자유롭게 달려요." : "No inner horse ahead: clear running, no draft bonus."}</p>}
+                    {windowOpen && <p className="race-traffic-scout">{traffic?.aheadId ? `${current.simulation.entrants.find(runner => runner.id === traffic.aheadId)?.name} · ${Math.round(traffic.gap)}m ${ko ? "앞" : "ahead"}. ${traffic.gap <= RACE_DRAFT_DISTANCE ? ko ? "안쪽에서 따라가면 소모 −40%, 추월은 바깥에서." : "Follow inside for −40% drain; pass on the outside." : ko ? "아직 멀어서 따라가기 이득이 없어요." : "Too far away for a draft yet."}` : ko ? "안쪽 앞말이 없어요. 따라가기 이득 없이 자유롭게 달려요." : "No inner horse ahead: clear running, no draft bonus."}</p>}
                     {windowOpen && <RaceRoutePicker terrain={raceTerrain(course, commands.length)} route={route} onChange={setRoute} locale={locale} disabled={blocked} />}
                     {windowOpen && <div className="race-pace-options">{RACE_PACES.map((pace, i) => <button ref={i === 0 ? checkpointButton : undefined} key={pace} disabled={blocked} onClick={() => callPace(pace)}>
                         <span aria-hidden="true">{["◒", "→", "↗"][i]}</span><strong><kbd>{i + 1}</kbd> {PACE_LABELS[locale][pace]}</strong><small>{PACE_HINTS[locale][pace]}</small>
                     </button>)}</div>}
-                    {commands.length > 0 && <p className="race-calls">{commands.map((command, index) => `${index + 1}. ${ROUTE_LABELS[locale][command.route]} · ${PACE_LABELS[locale][command.pace]}`).join(" → ")}</p>}
+                    {commands.length > 0 && <p ref={calls} className="race-calls">{commands.map((command, index) => <Fragment key={index}>{index > 0 && " → "}<span>{`${index + 1}. ${ROUTE_LABELS[locale][command.route]} · ${PACE_LABELS[locale][command.pace]}`}</span></Fragment>)}</p>}
                 </div>}
                 {human && phase !== "recap" && <div className="race-burst-control">
                     <div><strong>{burstAt !== null ? ko ? "승부수를 썼어요" : "Burst used" : ko ? "한 번뿐인 추월 기회" : "One chance to make your move"}</strong><small>{ko ? `체력 ${RACE_BURST_COST}% · 짧고 강한 가속` : `${RACE_BURST_COST}% energy · A short, strong dash`}</small></div>
