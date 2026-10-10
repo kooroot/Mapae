@@ -26,7 +26,7 @@ import {gameSeed, withReplay} from "./replay";
 import type {PracticeEvent} from "./engagement/model";
 import type {GuardianAptitudes} from '@mapae/arcade/guardians';
 import {ArcadeSound} from "./sound";
-import {useArcadeMotion} from "./motion";
+import {swapScreen, useArcadeMotion} from "./motion";
 import {ResultImage} from "./ResultImage";
 import {useResultRitual} from "./result-ritual";
 import "./arcade.css";
@@ -135,9 +135,15 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         begin(demo, initialReplay.seed, initialReplay.shop, initialReplay.shopMemory, initialReplay.aptitudes);
     }, [ready, initialReplay]);
 
+    // Audio unlocks only inside the press itself (Safari), so it starts there; the screen swap lands a frame later and reports it.
+    function soundNotice(audio: Promise<boolean>) {void audio.then(ok => {if (!ok) setNotice(t.soundError);});}
     function begin(next: ArcadeState = demo, scenario?: number, shop?: NonNullable<ActivityOutcome["replay"]>["shop"], memory?: NonNullable<ActivityOutcome["replay"]>["shopMemory"], replayAptitudes?: GuardianAptitudes) {
         if (entryLock.current || !ready) return;
         entryLock.current = true;
+        const audio = selectedGame === "stamp" ? sound.enable(next.sound) : null;
+        swapScreen(still, () => enter(next, audio, scenario, shop, memory, replayAptitudes));
+    }
+    function enter(next: ArcadeState, audio: Promise<boolean> | null, scenario?: number, shop?: NonNullable<ActivityOutcome["replay"]>["shop"], memory?: NonNullable<ActivityOutcome["replay"]>["shopMemory"], replayAptitudes?: GuardianAptitudes) {
         setDrillSeed(null);
         setShopConfig(shop);
         setAptitudes(replayAptitudes);
@@ -158,18 +164,21 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         setTicket(admission.ticket);
         opened(admission.ticket.id);
         setNotice("");
-        void sound.enable(next.sound).then(ok => {if (!ok) setNotice(t.soundError);});
+        if (audio) soundNotice(audio);
         setScreen("play");
     }
     function beginDrill(seed = crypto.getRandomValues(new Uint32Array(1))[0]!) {
         if (entryLock.current || !ready) return;
         entryLock.current = true;
-        setTicket(null); setManual(null); setResult(null); setFinishedGame(null); setEarly(false); setRecord(false);
-        setDrillSeed(seed); setNotice("");
-        void sound.enable(demo.sound).then(ok => {if (!ok) setNotice(t.soundError);});
-        setScreen("play");
+        const audio = sound.enable(demo.sound);
+        swapScreen(still, () => {
+            setTicket(null); setManual(null); setResult(null); setFinishedGame(null); setEarly(false); setRecord(false);
+            setDrillSeed(seed); setNotice(""); soundNotice(audio);
+            setScreen("play");
+        });
     }
-    function finish(game: Game, stopped: boolean) {
+    function finish(game: Game, stopped: boolean) {swapScreen(still, () => settle(game, stopped));}
+    function settle(game: Game, stopped: boolean) {
         if (game.practice === "boss") {
             setFinishedGame(game); setEarly(stopped); setScreen("result"); return;
         }
@@ -183,7 +192,8 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         setEarly(stopped);
         setScreen("result");
     }
-    function finishManual(outcome: ActivityOutcome) {
+    function finishManual(outcome: ActivityOutcome) {swapScreen(still, () => settleManual(outcome));}
+    function settleManual(outcome: ActivityOutcome) {
         if (!manual) return;
         const next = update(v => completeActivity(v, manual.id, withReplay(outcome, gameSeed(manual), aptitudes)));
         const finished = next.activities.find(a => a.id === manual.id);
@@ -198,7 +208,8 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         onBack();
     }
     function requestBack() {if (screen === "play") setExitOpen(true); else onBack();}
-    function lobby() {setNotice(""); setScreen("lobby");}
+    function lobby() {swapScreen(still, () => {setNotice(""); setScreen("lobby");});}
+    function setup(edit: boolean) {swapScreen(still, () => {setEditing(edit); setScreen("setup");});}
     async function toggleSound() {
         const enabled = !demo.sound;
         const ok = await sound.enable(enabled);
@@ -235,7 +246,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
 
                                 </div>
                                 <div className="arc-control-deck"><div className="arc-joystick" aria-hidden="true"><i /><b /></div><button className="arc-button" disabled={!ready} onClick={() => {
-                                    if (!character.configured) {setEditing(false); setScreen("setup");} else begin();
+                                    if (!character.configured) setup(false); else begin();
                                 }}>{!ready ? t.loading : t.play}<span>→</span></button><div className="arc-arcade-buttons" aria-hidden="true"><i /><i /></div></div>
                                 <p className="arc-cabinet-caption">{t.oneTicket}</p>
                                 {selectedGame === "stamp" && <button className="practice-drill-button" disabled={!ready} onClick={() => beginDrill()}>{ko ? "대장만 10초 연습 →" : "Practice the chief · 10 seconds →"}</button>}
@@ -244,7 +255,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
 
                         </div>
                         <aside className="arc-side">
-                            <section className="arc-player-pass"><div className="arc-section-label"><span>{t.player}</span><button onClick={() => {setEditing(true); setScreen("setup");}}>{t.edit} ↗</button></div>
+                            <section className="arc-player-pass"><div className="arc-section-label"><span>{t.player}</span><button onClick={() => setup(true)}>{t.edit} ↗</button></div>
                                 <BrandSelect className="arc-practice-character-select" tone="paper" label={locale === "ko" ? "플레이할 캐릭터" : "Playing as"} value={character.id} onValueChange={id => update(v => selectCharacter(v, id))} options={demo.characters.map(c => ({value: c.id, label: c.name}))} /><div className="arc-pass-portrait"><GuardianAvatar appearance={character.appearance} color={character.color} /><span className="arc-pass-stamp">PLAYER<br />01</span></div><h2>{character.name}</h2><p>{t[character.temperament]} <span>· {t.newPlayer}</span></p>
                                 <div className="arc-personal-best"><span>{selectedGame === "stamp" ? t.best : ko ? "최근 연습 최고 기록" : "Best recent practice"}</span><strong>{best.toLocaleString()}<small>{t.points}</small></strong></div>
                             </section>
