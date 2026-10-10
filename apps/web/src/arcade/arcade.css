@@ -224,7 +224,7 @@
     .arc-player-pass > h2 { align-self: end; }
     .arc-player-pass > p { align-self: start; }
     .arc-pass-portrait > .arc-sprite { width: 116px; height: 129px; }
-    .arc-pass-stamp { width: 42px; height: 42px; font-size: 10px; top: 8px; }
+    .arc-pass-stamp { display: none; }
     .arc-cabinet-screen { padding-top: 17px; }
     .arc-cabinet-screen h2 { font-size: 36px; }
     .arc-cabinet-marquee { font-size: 12px; letter-spacing: .07em; height: 40px; }
