@@ -121,11 +121,11 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     const seconds = Math.ceil(countdownRef.current / 1_000);
                     if (seconds !== shown) {
                         shown = seconds;
-                        stampCountdownFx({sound: soundRef.current, tier: tierRef.current}, seconds);
+                        setCountdown(seconds);
+                        stampCountdownFx(soundRef.current, seconds, !!autopilot);
                         // A watched agent keeps the plain countdown; a hidden tab schedules nothing.
-                        if (seconds === 0 && tierRef.current !== "light" && !document.hidden) setGo(true);
+                        if (seconds === 0 && !autopilot && !document.hidden) setGo(true);
                     }
-                    setCountdown(seconds);
                 } else {
                     // Detect events on every frame, before the paint throttle. An event frame renders synchronously, so the impact
                     // React mounts lands in the same frame as the sound and the fx started on the persistent layers.
@@ -136,9 +136,9 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                         painted = time;
                     }
                     if (state.current.finished) {
-                        // Input closes now; the "끝!" seal holds a beat (none in a hidden tab) before the results take over.
+                        // Input closes now; a player's "끝!" seal holds a beat (none in a hidden tab) before the results take over.
                         done.current = true;
-                        const hold = document.hidden ? 0 : stampEndMs(tierRef.current);
+                        const hold = document.hidden ? 0 : stampEndMs({still: tierRef.current === "still", watched: !!autopilot});
                         if (!hold) {finishRef.current(state.current, false); return;}
                         setEnding(true);
                         ended = window.setTimeout(() => finishRef.current(state.current, false), hold);
@@ -269,7 +269,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     <small>{drill ? ko ? "연습 점수는 기록에 남지 않아요" : "Drill scores do not change your records" : t.stopped}</small>
                 </div> : countdown > 0 ? <div key="countdown" className="arc-game-overlay" role="status" aria-label={t.ready}>
                     <span>{t.ready}</span>
-                    <span key={countdown} className={tier === "light" ? undefined : "stamp-count"}>{tier !== "light" && <i aria-hidden="true" />}<strong className="arc-countdown">{countdown}</strong></span>
+                    <span key={countdown} className={autopilot ? undefined : "stamp-count"}>{!autopilot && <i aria-hidden="true" />}<strong className="arc-countdown">{countdown}</strong></span>
                     <p>{rules}</p>
                 </div> : go && <div key="go" className="arc-game-overlay stamp-go" aria-hidden="true"><b>{t.go}</b></div>}
                 {ending && <div className="stamp-end" aria-hidden="true"><b>{t.end}</b></div>}

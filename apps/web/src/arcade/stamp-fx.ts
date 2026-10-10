@@ -290,6 +290,8 @@ export function stampSounds(events: readonly StampEvent[]): SoundKind[] {
 /** The one place a round's events become feedback, whether a person or an agent is playing. `game` is the state after them. */
 export function stampFx(events: readonly StampEvent[], game: Game, fx: StampFx, tap?: StampTap) {
     for (const kind of stampSounds(events)) fx.sound.play(kind, game.combo);
+    // A hidden tab schedules no motion at all, not even the timers that would start a freeze later.
+    if (document.hidden) return;
     const gate = {tier: fx.tier};
     for (const motion of stampMotions(events, game, fx.tier, tap)) render(motion, fx, gate);
 }
@@ -337,21 +339,25 @@ export const GO_MS = 450;
 
 /**
  * The countdown's sound as it shows `seconds` (0 is the start). A watched agent keeps the plain start it always had: no ticks,
- * no go, nothing that dresses up its run.
+ * no go, nothing that dresses up its run. Watching decides this, not the tier: reduced motion outranks light in the tier, but
+ * never turns an agent's run back into a player's.
  */
-export function countdownCue(seconds: number, tier: MotionTier): SoundKind | null {
-    if (tier === "light") return seconds === 0 ? "start" : null;
+export function countdownCue(seconds: number, watched: boolean): SoundKind | null {
+    if (watched) return seconds === 0 ? "start" : null;
     return seconds === 0 ? "go" : "tick";
 }
 
-export function stampCountdownFx({sound, tier}: Pick<StampFx, "sound" | "tier">, seconds: number) {
-    const kind = countdownCue(seconds, tier);
+export function stampCountdownFx(sound: ArcadeSound, seconds: number, watched: boolean) {
+    const kind = countdownCue(seconds, watched);
     if (kind) sound.play(kind);
 }
 
-/** How long the "끝!" seal holds before the results: a full beat, a light one for a watched agent, a glance under reduced motion. */
-export function stampEndMs(tier: MotionTier): number {
-    return tier === "full" ? 700 : tier === "light" ? 300 : 250;
+/**
+ * How long the "끝!" seal holds before the results: a full beat for a player, a glance under reduced motion, and none for a
+ * watched agent, whose run no ceremony may lengthen (whatever its tier).
+ */
+export function stampEndMs({still, watched}: {still: boolean; watched: boolean}): number {
+    return watched ? 0 : still ? 250 : 700;
 }
 
 /**
