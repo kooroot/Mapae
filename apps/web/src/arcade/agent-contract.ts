@@ -1,10 +1,11 @@
 import type {ActivityOutcome, AgentMode, AgentProfile, Decide} from "@mapae/arcade";
 import type {Guardian} from "./guardian";
 import type {Locale} from "../lib/i18n";
+import type {ArcadeSound} from "./sound";
 
 export type AutonomousGameProps = {
     appearance?: Guardian; profile: AgentProfile; locale: Locale; mode: AgentMode; seed: number;
-    budget: {balance: number; allowance: number}; decide: Decide; reducedMotion: boolean;
+    budget: {balance: number; allowance: number}; decide: Decide; reducedMotion: boolean; sound: ArcadeSound;
     suspended?: boolean; autoAdvance?: boolean;
     onComplete: (result: ActivityOutcome) => void; onExit: () => void;
 };

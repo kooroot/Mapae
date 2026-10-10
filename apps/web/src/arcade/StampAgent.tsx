@@ -3,10 +3,9 @@ import type {AgentDecision} from "@mapae/arcade";
 import type {AutonomousGameProps} from "./agent-contract";
 import {Arena} from "./Arena";
 import {stampOutcome} from "@mapae/arcade/simulation";
-import {ArcadeSound} from "./sound";
 import {ruleDecision} from "./agents";
 
-export function StampAgent(props: AutonomousGameProps & {sound: ArcadeSound}) {
+export function StampAgent(props: AutonomousGameProps) {
     const {profile, mode, decide, locale, budget, onComplete, onExit, reducedMotion, sound} = props;
     const [decision, setDecision] = useState<AgentDecision | null>(null);
     const [error, setError] = useState("");
