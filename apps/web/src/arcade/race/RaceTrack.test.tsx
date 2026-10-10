@@ -72,3 +72,14 @@ test("stamina is a labelled meter bar the board scales, not a native <meter>", (
     expect(markup).toContain(`role="meter" aria-label="Coach 체력" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(owner.stamina)}"`);
     expect(markup.match(/role="meter"/g)).toHaveLength(2);
 });
+
+test("a headwind brings its streaks and leaves, and a horse on the fork's shortcut wears its ground", () => {
+    const windy = simulateRace({...course, weather: "wind"}, [{id: "owner", name: "Coach", strategy: "conserve"}, {id: "rival", name: "Rival", strategy: "burst"}], commands, null);
+    const at = (sim: typeof race, time: number) => renderToStaticMarkup(<RaceTrack race={sim} commands={commands} rivalId="rival" progress={time / sim.seconds} clock={{current: time}} ended={false} locale="en" color="jade" running reducedMotion={false} tier="light" sound={new ArcadeSound()} playback={1} />);
+    expect(at(windy, 5).match(/race-wind-streak/g)).toHaveLength(4);
+    expect(at(windy, 5).match(/race-wind-leaf/g)).toHaveLength(6);
+    expect(render(5, "en")).not.toContain("race-wind");
+    // Round 0's first fork is a hill: the owner's shortcut call tilts it for eight seconds.
+    expect(render(13, "en")).toContain("race-terrain-hill");
+    expect(render(21, "en")).not.toContain("race-terrain-hill");
+});
