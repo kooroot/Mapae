@@ -159,6 +159,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@mapae/shared": "workspace:*",
+        "viem": "^2.55.8",
       },
     },
     "packages/delegation": {

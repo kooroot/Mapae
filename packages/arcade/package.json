@@ -13,9 +13,12 @@
     "./outings": "./src/outings.ts",
     "./stamp": "./src/stamp.ts",
     "./simulation": "./src/simulation.ts",
-    "./challenge": "./src/challenge.ts"
+    "./challenge": "./src/challenge.ts",
+    "./guardians": "./src/guardians.ts",
+    "./guardian-abi": "./src/guardian-abi.ts"
   },
   "dependencies": {
-    "@mapae/shared": "workspace:*"
+    "@mapae/shared": "workspace:*",
+    "viem": "^2.55.8"
   }
 }
