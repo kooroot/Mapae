@@ -274,15 +274,14 @@ function render(motion: StampMotion, {field, windows, board, gauge}: StampFx, ga
 }
 
 /**
- * Everything a step sounds like: its one cue, then the state changes that ring on their own. The final bell outranks the
- * fever ending with it, and the last three seconds tick under whatever else the step played.
+ * Everything a step sounds like: its one cue, then the state changes that ring on their own. The round's closing bell belongs to
+ * the result ritual, so a fever ending with the round stays silent; the last three seconds tick under whatever else the step played.
  */
 export function stampSounds(events: readonly StampEvent[]): SoundKind[] {
     const has = (type: StampEvent["type"]) => events.some(event => event.type === type);
     const kind = cue(events);
     const sounds: SoundKind[] = kind ? [kind] : [];
-    if (has("finished")) sounds.push("end");
-    else if (has("feverEnd") && !has("feverStart")) sounds.push("feverEnd");
+    if (has("feverEnd") && !has("feverStart") && !has("finished")) sounds.push("feverEnd");
     if (events.some(event => event.type === "urgentSecond" && event.seconds <= FINAL_SECONDS)) sounds.push("tick");
     return sounds;
 }

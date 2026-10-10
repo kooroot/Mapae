@@ -70,7 +70,8 @@ export function shopSound(event: ShopEvent): SoundKind | null {
         case "capBlocked": return "break";
         case "deal": return "seal";
         case "close": return "guard";
-        case "finished": return "end";
+        // The market closes quietly: the result ritual rings the closing bell once, on the receipt.
+        case "finished": return null;
     }
 }
 

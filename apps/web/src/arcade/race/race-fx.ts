@@ -268,7 +268,8 @@ function cueRaceEvent(event: RaceEvent, {tier, sound, sprite, point, layer, flag
             if (!own) break;
             const at = point(event.id);
             if (tier === "full" && layer && at && (event.rank ?? 4) <= 3) confetti(layer, at);
-            sound.play(event.rank === 1 ? "perfect" : "end");
+            // A win rings out; any other place climbs like a pass. The closing bell waits for the result ritual.
+            sound.play(event.rank === 1 ? "perfect" : "combo", 5 - (event.rank ?? 4));
             break;
         }
         case "draft-start":

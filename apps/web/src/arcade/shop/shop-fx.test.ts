@@ -45,7 +45,7 @@ describe("shop event cues", () => {
     });
 
     test("sounds mark refusals, the stamp and the close of market; a restated need stays quiet", () => {
-        expect(all.map(shopSound)).toEqual(["start", "golden", "tick", "tick", "hit", "wrong", "wrong", null, null, "break", "seal", "guard", "end"]);
+        expect(all.map(shopSound)).toEqual(["start", "golden", "tick", "tick", "hit", "wrong", "wrong", null, null, "break", "seal", "guard", null]);
     });
 
     test("gestures follow the reason table and a cap block leaves the customer still", () => {

@@ -562,7 +562,7 @@ describe("Dokkaebi Stamp fever motion", () => {
         expect(kinds(stampMotions(events, after, "light"))).toContain("charge");
         expect(kinds(stampMotions(events, after, "still"))).not.toContain("charge");
     });
-    test("fever leaves by fading its glow and ringing down, unless the final bell rings over it", () => {
+    test("fever leaves by fading its glow and ringing down, unless the round ends with it and leaves the bell to the result", () => {
         const running = {...newGame(), elapsed: 10_000, feverUntil: 10_050, nextSpawn: 20_000};
         const ended = advance(running, 100);
         const events = stampEvents(running, ended);
@@ -570,7 +570,8 @@ describe("Dokkaebi Stamp fever motion", () => {
         for (const tier of ["full", "light", "still"] as const) expect(kinds(stampMotions(events, ended, tier))).toEqual(["glowOut"]);
         expect(stampSounds(events)).toEqual(["feverEnd"]);
         const last = {...newGame(), elapsed: ROUND_MS - 500, feverUntil: ROUND_MS, nextSpawn: ROUND_MS};
-        expect(stampSounds(stampEvents(last, advance(last, 600)))).toEqual(["end"]);
+        expect(stampSounds(stampEvents(last, advance(last, 600)))).not.toContain("end");
+        expect(stampSounds(stampEvents(last, advance(last, 600)))).not.toContain("feverEnd");
     });
     test("the gauge reads charge, then the share of fever left, and wanes for the last two seconds", () => {
         expect(feverGauge({...newGame(), feverCharge: 2})).toEqual({fever: false, left: 0, ratio: 2 / FEVER_TARGET, waning: false});
