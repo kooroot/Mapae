@@ -28,6 +28,7 @@ import type {GuardianAptitudes} from '@mapae/arcade/guardians';
 import {ArcadeSound} from "./sound";
 import {useArcadeMotion} from "./motion";
 import {ResultImage} from "./ResultImage";
+import {useResultRitual} from "./result-ritual";
 import "./arcade.css";
 
 const COPY = {
@@ -120,6 +121,8 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
     function opened(runId: string) {trackedRun.current = {game: selectedGame, runId}; onPracticeEvent?.({event: 'practice_opened', ...trackedRun.current});}
     function ended(result: 'completed' | 'ended_early' | 'abandoned') {if (!trackedRun.current) return; onPracticeEvent?.({event: 'practice_finished', ...trackedRun.current, result}); trackedRun.current = null;}
     const focusHeading = useRef<HTMLHeadingElement>(null);
+    const ritual = useRef<HTMLElement>(null);
+    useResultRitual(ritual, screen === "result" ? result?.id ?? manual?.id ?? drillSeed : null, {tier: still ? "still" : "full", sound, record});
     useEffect(() => () => sound.dispose(), [sound]);
     useEffect(() => {
         entryLock.current = false;
@@ -186,6 +189,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         const finished = next.activities.find(a => a.id === manual.id);
         if (!finished || finished.status !== "complete") return;
         ended('completed');
+        setRecord(outcome.score > practiceBest(demo, manual.characterId, manual.game));
         setManual(finished); setScreen("result");
     }
     function leave() {
@@ -260,21 +264,21 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                         locale, seed: gameSeed(manual), reducedMotion: still, sound, suspended: settingsOpen || exitOpen, onComplete: finishManual, onExit: () => setExitOpen(true)};
                     return manual.game === "race" ? <RaceGame key={manual.id} {...props} /> : <ShopGame key={manual.id} {...props} initialConfig={shopConfig} memory={shopMemory} />;
                 })()}
-                {screen === "result" && manual && <><AgentReceipt activity={manual} locale={locale} best={practiceBest(demo, manual.characterId, manual.game)} /><div className="practice-turn-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)), gameSeed(manual), manual.outcome?.replay?.shop, manual.outcome?.replay?.shopMemory, manual.outcome?.replay?.aptitudes)}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"} →</button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button><button className="arc-text-button" onClick={onBack}>{t.lobby}</button></div></>}
-                {screen === "result" && result && <section className="arc-result-layout"><div className="arc-result-paper">
+                {screen === "result" && manual && <><AgentReceipt ref={ritual} activity={manual} locale={locale} best={practiceBest(demo, manual.characterId, manual.game)} record={record} /><div className="practice-turn-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)), gameSeed(manual), manual.outcome?.replay?.shop, manual.outcome?.replay?.shopMemory, manual.outcome?.replay?.aptitudes)}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"} →</button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button><button className="arc-text-button" onClick={onBack}>{t.lobby}</button></div></>}
+                {screen === "result" && result && <section ref={ritual} className="arc-result-layout"><div className="arc-result-paper" data-ritual="paper">
                     <div className="arc-section-label"><span>{t.result}</span><span>NO. {demo.runs.length.toString().padStart(3, "0")}</span></div>
-                    <div className="arc-result-character"><GuardianAvatar appearance={result.appearance} color={result.color} /><span>{result.name}<small>{t.human}</small></span><span className="arc-result-seal">{locale === "ko" ? early ? "수고" : "완주" : "GG!"}</span></div>
-                    <h1 ref={focusHeading} tabIndex={-1}>{early ? t.early : t.finished}</h1>
-                    <div className="arc-result-score"><span>{record ? t.record : t.game}</span><strong>{result.score.toLocaleString()}</strong><small>{t.points}</small></div>
-                    <div className="arc-result-stats"><div><span>{t.maxCombo}</span><b>{result.bestCombo}</b></div><div><span>{t.stamped}</span><b>{result.hits}</b></div><div><span>{t.errors}</span><b>{result.mistakes}</b></div><div><span>{t.missed}</span><b>{result.missed}</b></div></div>
+                    <div className="arc-result-character"><GuardianAvatar appearance={result.appearance} color={result.color} /><span>{result.name}<small>{t.human}</small></span><span className="arc-result-seal" data-ritual="seal">{locale === "ko" ? early ? "수고" : "완주" : "GG!"}</span></div>
+                    <h1 data-ritual="focus" tabIndex={-1}>{early ? t.early : t.finished}</h1>
+                    <div className="arc-result-score"><span data-ritual={record ? "record" : undefined}>{record ? t.record : t.game}</span><strong><span data-ritual="count" data-count={result.score} aria-hidden="true">{result.score.toLocaleString()}</span><span className="sr-only">{result.score.toLocaleString()}</span></strong><small>{t.points}</small></div>
+                    <div className="arc-result-stats" data-ritual="stats"><div><span>{t.maxCombo}</span><b>{result.bestCombo}</b></div><div><span>{t.stamped}</span><b>{result.hits}</b></div><div><span>{t.errors}</span><b>{result.mistakes}</b></div><div><span>{t.missed}</span><b>{result.missed}</b></div></div>
                     {finishedGame && <><TurningPoints highlights={stampHighlights(finishedGame)} locale={locale} /><StampChallenges game={finishedGame} locale={locale} early={early} result /><StampCoach game={finishedGame} locale={locale} early={early} /></>}
                     <dl className="arc-receipt-lines"><div><dt>{t.spent}</dt><dd>{t.free}</dd></div><div><dt>{t.best}</dt><dd>{practiceBest(demo, result.characterId, "stamp").toLocaleString()} {t.points}</dd></div></dl>
                     <p className="arc-receipt-disclaimer">{t.demo}</p>
                 </div><div className="arc-result-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, result.characterId)), gameSeed(result), undefined, undefined, result.aptitudes)}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"} →</button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, result.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={onBack}><ArrowLeft size={16} /> {t.lobby}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button><button className="arc-text-button" onClick={() => beginDrill()}>{ko ? "대장만 10초 연습" : "Practice the chief · 10 seconds"}</button><ResultImage run={result} best={practiceBest(demo, result.characterId, "stamp")} locale={locale} /></div></section>}
-                {screen === "result" && finishedGame?.practice === "boss" && <section className="practice-drill-result">
+                {screen === "result" && finishedGame?.practice === "boss" && <section ref={ritual} className="practice-drill-result">
                     <span className="arc-overline">{ko ? "대장 구간 연습 · 10초" : "CHIEF PRACTICE · 10 SECONDS"}</span>
-                    <h1 ref={focusHeading} tabIndex={-1}>{ko ? "열리는 순간을 익혀 봐요" : "Find your moment"}</h1>
-                    <div className="arc-result-stats"><div><span>{ko ? "성공한 타격" : "Successful stamps"}</span><b>{finishedGame.bossHits} / 3</b></div><div><span>{ko ? "정통 타격" : "Perfect stamps"}</span><b>{finishedGame.perfectHits} / 3</b></div></div>
+                    <h1 data-ritual="focus" tabIndex={-1}>{ko ? "열리는 순간을 익혀 봐요" : "Find your moment"}</h1>
+                    <div className="arc-result-stats" data-ritual="stats"><div><span>{ko ? "성공한 타격" : "Successful stamps"}</span><b>{finishedGame.bossHits} / 3</b></div><div><span>{ko ? "정통 타격" : "Perfect stamps"}</span><b>{finishedGame.perfectHits} / 3</b></div></div>
                     <StampCoach game={finishedGame} locale={locale} early={early} />
                     <p>{ko ? "짧은 연습이에요. 용돈·입장권을 쓰지 않고 최고 기록에도 포함되지 않아요." : "A short drill. No allowance, ticket or personal-best record."}</p>
                     <div className="practice-turn-actions"><button className="arc-button" onClick={() => beginDrill(drillSeed!)}>{ko ? "대장 다시 연습" : "Retry chief drill"} →</button><button className="arc-button arc-button-paper" onClick={() => begin()}>{ko ? "60초 한 판 시작" : "Start a full 60-second round"}</button><button className="arc-text-button" onClick={lobby}>{ko ? "놀이 고르기" : "Choose a game"}</button></div>
