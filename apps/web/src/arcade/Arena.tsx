@@ -1,5 +1,5 @@
-import {useCallback, useEffect, useId, useRef, useState} from "react";
-import {preload} from "react-dom";
+import {useCallback, useEffect, useId, useLayoutEffect, useRef, useState} from "react";
+import {flushSync, preload} from "react-dom";
 import type {Locale} from "../lib/i18n";
 import {guardianLayers} from "./guardian-layers";
 import {Goblin} from "./Characters";
@@ -12,7 +12,7 @@ import {StampChallenges} from "./StampChallenges";
 import {StampWindow} from "./StampWindow";
 import {BossTimingCue} from "./BossTimingCue";
 import {motionTier} from "./motion";
-import {stampFx, stampStartFx} from "./stamp-fx";
+import {haltStampFx, stampFx, stampStartFx, type StampTap} from "./stamp-fx";
 import "./stamp.css";
 import "./game-guide.css";
 import "./stamp-scene.css";
@@ -45,6 +45,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const t = COPY[locale];
     const bossHintId = useId();
     const tier = motionTier({still: reducedMotion, watched: !!autopilot});
+    const tierRef = useRef(tier); tierRef.current = tier;
     useEffect(() => {
         for (const src of [...SPRITES, ...character.appearance ? guardianLayers(character.appearance).map(layer => layer.src) : []]) preload(src, {as: "image"});
     }, [character.appearance]);
@@ -61,7 +62,9 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     useEffect(() => {last.current = null;}, [suspended]);
     const done = useRef(false);
     const last = useRef<number | null>(null);
+    const root = useRef<HTMLElement>(null);
     const field = useRef<HTMLDivElement>(null);
+    const windows = useRef<HTMLDivElement>(null);
     const resumeButton = useRef<HTMLButtonElement>(null);
     const finishRef = useRef(onFinish);
     finishRef.current = onFinish;
@@ -69,10 +72,10 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     soundRef.current = sound;
 
     /** Every state change passes through here, so a person and an agent get feedback from the same events. True when any occurred. */
-    const commit = (next: Game, tapped?: number) => {
-        const events = stampEvents(state.current, next, tapped);
+    const commit = (next: Game, tap?: StampTap) => {
+        const events = stampEvents(state.current, next, tap?.index);
         state.current = next;
-        if (events.length) stampFx(events, next, {sound: soundRef.current});
+        if (events.length) stampFx(events, next, {sound: soundRef.current, tier: tierRef.current, field: field.current, windows: windows.current}, tap);
         return events.length > 0;
     };
 
@@ -100,10 +103,12 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     setCountdown(Math.ceil(countdownRef.current / 1_000));
                     if (countdownRef.current === 0) stampStartFx({sound: soundRef.current});
                 } else {
-                    // Detect events on every frame, before the paint throttle, and paint an event frame at once so sound and picture land together.
+                    // Detect events on every frame, before the paint throttle. An event frame renders synchronously, so the impact
+                    // React mounts lands in the same frame as the sound and the fx started on the persistent layers.
                     const evented = commit(autopilot ? advanceAgent(state.current, delta, autopilot) : advance(state.current, delta));
                     if (evented || time - painted >= 40) {
-                        setView(state.current);
+                        if (evented) flushSync(() => setView(state.current));
+                        else setView(state.current);
                         painted = time;
                     }
                     if (state.current.finished) {
@@ -128,11 +133,11 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
         };
     }, []);
 
-    function hit(index: number) {
+    function hit(index: number, point?: StampTap["point"]) {
         if (autopilot || pauseRef.current || suspendedRef.current || countdownRef.current > 0 || done.current) return;
         // Account for time since the last frame before accepting an input at expiry.
         flushInputTime();
-        if (commit(stamp(state.current, index), index)) setView(state.current);
+        if (commit(stamp(state.current, index), {index, point})) setView(state.current);
     }
     function changeFeverMode(mode: FeverMode) {
         if (autopilot || pauseRef.current || suspendedRef.current || done.current) return;
@@ -155,7 +160,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const hitRef = useRef(hit);
     hitRef.current = hit;
     // Stable across renders, so a memoized window re-renders for its own cell only.
-    const hitWindow = useCallback((index: number) => hitRef.current(index), []);
+    const hitWindow = useCallback((index: number, point?: StampTap["point"]) => hitRef.current(index, point), []);
     useEffect(() => {
         const key = (event: KeyboardEvent) => {
             if (suspendedRef.current || event.defaultPrevented || isControlTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
@@ -172,6 +177,8 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
         return () => window.removeEventListener("keydown", key);
     }, []);
 
+    const halted = suspended || paused || countdown > 0;
+    useLayoutEffect(() => {if (root.current) haltStampFx(root.current, halted);}, [halted]);
     const ko = locale === "ko";
     const drill = view.practice === "boss";
     const rules = drill ? ko ? "대장만 10초 · 빈틈마다 한 번!" : "Ten-second chief drill · one stamp per opening!" : t.rules;
@@ -185,7 +192,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const stage = warning ? `${ko ? "곧" : "NEXT"}: ${wave.next![locale]}` : wave.current[locale];
     const seconds = Math.ceil((view.durationMs - view.elapsed) / 1_000);
     return (
-        <section className={`arc-arena${fever ? " stamp-fever" : ""}`} aria-label={t.playfield}>
+        <section ref={root} className={`arc-arena${fever ? " stamp-fever" : ""}`} aria-label={t.playfield} data-halted={halted || undefined}>
             <div className="arc-arena-heading"><span>{drill ? ko ? "대장 10초 연습" : "Ten-second chief drill" : ko ? "도깨비 도장찍기" : "Dokkaebi Stamp"}</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
             <div className="arc-scoreboard">
                 <div><span>{t.score}</span><strong data-testid="score">{view.score.toLocaleString()}</strong></div>
@@ -211,8 +218,8 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                 <p className={`stamp-parade-cue ${parade ? `is-${parade.phase}` : ""}`} role="status">{parade ? parade.phase === "soon" ? ko ? `★ 금도깨비 행렬 ${Math.ceil(parade.remaining / 1000)}초 전 · 출두를 준비해요` : `★ Gold parade in ${Math.ceil(parade.remaining / 1000)}s · ready your fever` : ko ? "★ 금도깨비 행렬! 출두로 두 배를 노려요" : "★ GOLD PARADE! Catch gold during fever" : charged && !fever ? ko ? "출두 준비 완료 · 지금 쓰거나 행렬을 기다려요" : "Fever ready · use it now or wait for gold" : ko ? "금도깨비 행렬은 2초 먼저 알려드려요" : "Watch for the two-second gold parade warning"}</p>
             </div>}
             <div className={`arc-playfield ${parade ? `stamp-parade-${parade.phase}` : ""}`} ref={field} tabIndex={-1}>
-                {chief || drill ? <BossTimingCue actor={chief ?? null} game={view} locale={locale} hintId={bossHintId} tier={tier} halted={suspended || paused || countdown > 0} /> : <div className="arc-field-caption"><span>{rules}</span><span>馬牌</span></div>}
-                <div className="arc-windows" inert={suspended || paused || countdown > 0}>
+                {chief || drill ? <BossTimingCue actor={chief ?? null} game={view} locale={locale} hintId={bossHintId} tier={tier} halted={halted} /> : <div className="arc-field-caption"><span>{rules}</span><span>馬牌</span></div>}
+                <div className="arc-windows" ref={windows} inert={halted}>
                     {view.cells.map((cell, i) => {
                         const boss = cell.actor?.special === "boss" ? bossWindow(cell.actor, view.elapsed) : null;
                         return <StampWindow key={i} index={i} actor={cell.actor} impact={cell.impact && cell.impact.until > view.elapsed ? cell.impact : null} phase={boss?.phase} perfect={boss?.perfect ?? false}
