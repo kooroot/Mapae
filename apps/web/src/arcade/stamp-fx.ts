@@ -1,10 +1,10 @@
 import {multiplier, type Game, type StampEvent} from "@mapae/arcade/stamp";
 import type {ArcadeSound, SoundKind} from "./sound";
 import type {MotionTier} from "./motion";
-import {hitStop, play, shake, type MotionGate} from "./juice";
+import {hitStop, play, pop, shake, type MotionGate} from "./juice";
 
-/** Where a Dokkaebi Stamp round sends its feedback: the speaker, how much motion it may spend, and the two surfaces it moves. */
-export type StampFx = {sound: ArcadeSound; tier: MotionTier; field: HTMLElement | null; windows: HTMLElement | null};
+/** Where a Dokkaebi Stamp round sends its feedback: the speaker, how much motion it may spend, and the surfaces it moves. */
+export type StampFx = {sound: ArcadeSound; tier: MotionTier; field: HTMLElement | null; windows: HTMLElement | null; board: HTMLElement | null};
 /** A tap the engine judged: its window, and the pointer in client coordinates when a pointer made it. */
 export type StampTap = {index: number; point?: {x: number; y: number}};
 
@@ -18,7 +18,10 @@ export type StampMotion =
     | {kind: "seal"; index: number; boost: number}
     | {kind: "float"; index: number; text: string}
     | {kind: "ripple"; index: number; point?: StampTap["point"]}
-    | {kind: "fieldShake"};
+    | {kind: "fieldShake"}
+    | {kind: "score"; scale: number}
+    | {kind: "comboUp"; text: string; ms: number}
+    | {kind: "comboBreak"; shake: boolean};
 
 /** The peak scale of the shared `arc-seal-slam`; a combo multiplier adds a tenth to it, applied as a factor on top. */
 export const SEAL_PEAK = 1.9;
@@ -32,10 +35,19 @@ export const SHARDS = [0, 1, 2, 3, 4, 5].map(i => {
     return {x: +(Math.cos(angle) * reach).toFixed(1), y: +(Math.sin(angle) * reach).toFixed(1), turn: (i % 2 ? 1 : -1) * (90 + i * 25)};
 });
 
+/** The scoreboard swells once per scoring step, more for a perfect stamp. */
+export const SCORE_POP = 1.12;
+export const PERFECT_POP = 1.28;
+/** From here the timer wears a red ring and ticks each second. */
+export const FINAL_SECONDS = 3;
+/** How long the "×3!" chip rises off the combo: a player gets the full beat, a watched agent a light one. */
+const COMBO_CHIP_MS = {full: 600, light: 300} as const;
+
 /**
  * What a step looks like at a tier. Full: everything. Light (a watched agent): the hit itself (seal, ink, score float, perfect
  * rings) without hit-stop, shake or shards. Still: the impact already stays on screen with its points, so the planned beats
- * are the short fades the motion gate turns them into, and nothing that only moves (press, float, shards, field shake).
+ * are the short fades the motion gate turns them into, and nothing that only moves (press, float, shards, field shake, combo chip).
+ * Scoreboard beats come after the windows' and once per step, however many stamps it held.
  */
 export function stampMotions(events: readonly StampEvent[], game: Game, tier: MotionTier, tap?: StampTap): StampMotion[] {
     const full = tier === "full", still = tier === "still";
@@ -65,6 +77,12 @@ export function stampMotions(events: readonly StampEvent[], game: Game, tier: Mo
         } else if (event.type === "pass") motions.push({kind: "pass", index: event.index});
         else if (event.type === "dud") motions.push({kind: "ripple", index: event.index, point: tap?.index === event.index ? tap.point : undefined});
     }
+    const scored = events.some(event => event.type === "hit" || event.type === "crack" && (game.cells[event.index]?.impact?.points ?? 0) > 0);
+    if (scored) motions.push({kind: "score", scale: events.some(event => event.type === "perfect") ? PERFECT_POP : SCORE_POP});
+    const up = events.find(event => event.type === "comboTier");
+    // A rising multiplier is the louder news; the slam on the multiplier itself is CSS, so still keeps the new number only.
+    if (up) {if (!still) motions.push({kind: "comboUp", text: `×${up.multiplier}!`, ms: COMBO_CHIP_MS[full ? "full" : "light"]});}
+    else if (events.some(event => event.type === "comboBreak")) motions.push({kind: "comboBreak", shake: full});
     return motions;
 }
 
@@ -89,6 +107,10 @@ const SPARK: Keyframe[] = [{opacity: 1, transform: "scale(.5) rotate(-20deg)"}, 
 /** A red ink stroke drawn in the first 120ms of the wrong impact's 420ms, held, then lifted. */
 const STRIKE: Keyframe[] = [{opacity: 1, transform: "scaleX(0)"}, {opacity: 1, transform: "scaleX(1)", offset: 120 / 420}, {opacity: 1, transform: "scaleX(1)", offset: .7}, {opacity: 0, transform: "scaleX(1)"}];
 const RIPPLE: Keyframe[] = [{opacity: .35, transform: "scale(.3)"}, {opacity: 0, transform: "scale(1.2)"}];
+/** The chip lifts off the multiplier, holds to be read, and drifts away. */
+const CHIP: Keyframe[] = [{opacity: 0, transform: "translateY(6px) scale(.8)"}, {opacity: 1, transform: "translateY(0) scale(1)", offset: .2}, {opacity: 1, transform: "translateY(-4px)", offset: .7}, {opacity: 0, transform: "translateY(-14px)"}];
+/** A broken streak dims and comes back, so the reset reads even without the shake. */
+const DIM: Keyframe[] = [{opacity: .45}, {opacity: 1}];
 const PASS: Keyframe[] = [{opacity: 0, transform: "translateY(30%) scale(.9)"}, {opacity: 1, transform: "translateY(0) scale(1)", offset: .25}, {opacity: 1, transform: "translateY(-10%)", offset: .7}, {opacity: 0, transform: "translateY(-40%)"}];
 /** A perfect seal slams in --arc-dur-quick and meets the paper about 40% in: the freeze lands on that contact, not before it. */
 const PERFECT_CONTACT_MS = 60;
@@ -99,9 +121,25 @@ function shardFrames({x, y, turn}: typeof SHARDS[number]): Keyframe[] {
 }
 
 /** Plays one planned beat. Every target is already in the DOM, so effects start in the same frame as the sound. */
-function render(motion: StampMotion, {field, windows}: StampFx, gate: MotionGate) {
+function render(motion: StampMotion, {field, windows, board}: StampFx, gate: MotionGate) {
     if (motion.kind === "fieldShake") {
         if (field) shake(field, gate, {px: 2});
+        return;
+    }
+    if (motion.kind === "score" || motion.kind === "comboUp" || motion.kind === "comboBreak") {
+        const target = (name: string) => board?.querySelector<HTMLElement>(`[data-fx=${name}]`);
+        if (motion.kind === "score") {const score = target("score"); if (score) pop(score, gate, {scale: motion.scale, ms: 180});}
+        else if (motion.kind === "comboUp") {
+            const chip = target("chip");
+            if (!chip) return;
+            chip.textContent = motion.text;
+            play(chip, CHIP, {id: "stamp-chip", duration: motion.ms, easing: "out"}, gate);
+        } else {
+            const combo = target("combo");
+            if (!combo) return;
+            if (motion.shake) shake(combo, gate, {px: 3});
+            play(combo, DIM, {id: "stamp-dim", duration: "base", easing: "out"}, gate);
+        }
         return;
     }
     const cell = windows?.children[motion.index];
@@ -144,13 +182,32 @@ export function stampFx(events: readonly StampEvent[], game: Game, fx: StampFx, 
     const kind = cue(events);
     if (kind) fx.sound.play(kind, game.combo);
     if (events.some(event => event.type === "finished")) fx.sound.play("end");
+    // The last three seconds tick under whatever else the step played.
+    if (events.some(event => event.type === "urgentSecond" && event.seconds <= FINAL_SECONDS)) fx.sound.play("tick");
     const gate = {tier: fx.tier};
     for (const motion of stampMotions(events, game, fx.tier, tap)) render(motion, fx, gate);
 }
 
-/** The countdown reaching zero. */
-export function stampStartFx({sound}: Pick<StampFx, "sound">) {
-    sound.play("start");
+/** "시작!" stays this long after the countdown; input is already open beneath it. */
+export const GO_MS = 450;
+
+/**
+ * The countdown's sound as it shows `seconds` (0 is the start). A watched agent keeps the plain start it always had: no ticks,
+ * no go, nothing that dresses up its run.
+ */
+export function countdownCue(seconds: number, tier: MotionTier): SoundKind | null {
+    if (tier === "light") return seconds === 0 ? "start" : null;
+    return seconds === 0 ? "go" : "tick";
+}
+
+export function stampCountdownFx({sound, tier}: Pick<StampFx, "sound" | "tier">, seconds: number) {
+    const kind = countdownCue(seconds, tier);
+    if (kind) sound.play(kind);
+}
+
+/** How long the "끝!" seal holds before the results: a full beat, a light one for a watched agent, a glance under reduced motion. */
+export function stampEndMs(tier: MotionTier): number {
+    return tier === "full" ? 700 : tier === "light" ? 300 : 250;
 }
 
 /**

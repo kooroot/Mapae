@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test";
 import {advance, newGame, stampEvents, newBossPractice, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, BOSS_PRACTICE_MS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "@mapae/arcade/stamp";
 import {cellForKey} from "./input";
-import {SEAL_PEAK, SHARDS, sealBoost, stampMotions} from "./stamp-fx";
+import {PERFECT_POP, SCORE_POP, SEAL_PEAK, SHARDS, countdownCue, sealBoost, stampEndMs, stampMotions} from "./stamp-fx";
 
 function withActor(game: Game, kind: "goblin" | "courier", index = 0): Game {
     return {...game, cells: game.cells.map((cell, i) => i === index ? {
@@ -460,17 +460,17 @@ describe("Dokkaebi Stamp motion plan", () => {
         const before = golden(withActor(newGame(), "goblin"));
         const after = stamp(before, 0);
         const motions = stampMotions(stampEvents(before, after, 0), after, "full", {index: 0, point: {x: 10, y: 20}});
-        expect(kinds(motions)).toEqual(["press", "seal", "ink", "float", "shards"]);
+        expect(kinds(motions)).toEqual(["press", "seal", "ink", "float", "shards", "score"]);
         expect(motions).toContainEqual({kind: "float", index: 0, text: "+250"});
     });
     test("a watched agent keeps the seal, ink and score float but drops shards, shake and hit-stop", () => {
         const hit = [{type: "hit", index: 2, actor: {kind: "goblin", golden: true}, points: 250}, {type: "perfect", index: 2}, {type: "wrong", index: 5, points: -100}] as const;
-        expect(kinds(stampMotions(hit, newGame(), "light"))).toEqual(["seal", "ink", "float", "rings", "strike"]);
-        expect(kinds(stampMotions(hit, newGame(), "full"))).toEqual(["seal", "ink", "float", "shards", "rings", "hitStop", "strike", "shake", "fieldShake"]);
+        expect(kinds(stampMotions(hit, newGame(), "light"))).toEqual(["seal", "ink", "float", "rings", "strike", "score"]);
+        expect(kinds(stampMotions(hit, newGame(), "full"))).toEqual(["seal", "ink", "float", "shards", "rings", "hitStop", "strike", "shake", "fieldShake", "score"]);
     });
     test("reduced motion leaves the points on the impact and only acknowledges, with no press, float, shards or field shake", () => {
         const events = [{type: "hit", index: 1, actor: {kind: "goblin", golden: true}, points: 250}, {type: "wrong", index: 3, points: -100}, {type: "pass", index: 4}] as const;
-        expect(kinds(stampMotions(events, newGame(), "still", {index: 1}))).toEqual(["seal", "ink", "strike", "shake", "pass"]);
+        expect(kinds(stampMotions(events, newGame(), "still", {index: 1}))).toEqual(["seal", "ink", "strike", "shake", "pass", "score"]);
     });
     test("a dud ripples where the pointer landed, and from the centre for a key", () => {
         const dud = [{type: "dud", index: 7}] as const;
@@ -494,5 +494,42 @@ describe("Dokkaebi Stamp motion plan", () => {
             expect(Math.hypot(x, y)).toBeGreaterThanOrEqual(23.9);
             expect(Math.hypot(x, y)).toBeLessThanOrEqual(40.1);
         }
+    });
+    test("the scoreboard swells once per scoring step, more for a perfect, and never for a plain crack or a miss", () => {
+        const two = [{type: "hit", index: 0, actor: {kind: "goblin"}, points: 100}, {type: "hit", index: 1, actor: {kind: "goblin"}, points: 100}] as const;
+        expect(stampMotions(two, newGame(), "full").filter(motion => motion.kind === "score")).toEqual([{kind: "score", scale: SCORE_POP}]);
+        expect(stampMotions([...two, {type: "perfect", index: 1}], newGame(), "light")).toContainEqual({kind: "score", scale: PERFECT_POP});
+        expect(kinds(stampMotions([{type: "crack", index: 4, actor: {kind: "goblin", special: "armored"}}, {type: "miss", index: 2, actor: {kind: "goblin"}}], newGame(), "full"))).not.toContain("score");
+    });
+    test("a rising multiplier floats its chip, shorter for a watched agent and not at all under reduced motion; a break shakes only for a player", () => {
+        const up = [{type: "comboTier", multiplier: 3}] as const;
+        expect(stampMotions(up, newGame(), "full")).toEqual([{kind: "comboUp", text: "×3!", ms: 600}]);
+        expect(stampMotions(up, newGame(), "light")).toEqual([{kind: "comboUp", text: "×3!", ms: 300}]);
+        expect(stampMotions(up, newGame(), "still")).toEqual([]);
+        const broken = [{type: "comboBreak", from: 12}] as const;
+        expect(stampMotions(broken, newGame(), "full")).toEqual([{kind: "comboBreak", shake: true}]);
+        expect(stampMotions(broken, newGame(), "light")).toEqual([{kind: "comboBreak", shake: false}]);
+        expect(stampMotions(broken, newGame(), "still")).toEqual([{kind: "comboBreak", shake: false}]);
+    });
+    test("a real round breaks the streak on a miss and lifts the multiplier on the engine's own events", () => {
+        let game = withActor(newGame(), "goblin");
+        const motions: ReturnType<typeof stampMotions> = [];
+        for (let i = 0; i < 5; i++) {
+            const next = stamp(withActor(game, "goblin"), 0);
+            motions.push(...stampMotions(stampEvents(game, next, 0), next, "full"));
+            game = next;
+        }
+        expect(motions.filter(motion => motion.kind === "score")).toHaveLength(5);
+        expect(motions.filter(motion => motion.kind === "comboUp")).toEqual([{kind: "comboUp", text: "×2!", ms: 600}]);
+        const missed = advance(withActor(game, "goblin"), 10_000);
+        expect(stampMotions(stampEvents(withActor(game, "goblin"), missed), missed, "full")).toContainEqual({kind: "comboBreak", shake: true});
+    });
+    test("the countdown ticks and goes for a player, keeps the plain start for a watched agent, and the end seal holds 700 / 300 / 250ms", () => {
+        expect([3, 2, 1, 0].map(n => countdownCue(n, "full"))).toEqual(["tick", "tick", "tick", "go"]);
+        expect([3, 2, 1, 0].map(n => countdownCue(n, "still"))).toEqual(["tick", "tick", "tick", "go"]);
+        expect([3, 2, 1, 0].map(n => countdownCue(n, "light"))).toEqual([null, null, null, "start"]);
+        expect(stampEndMs("full")).toBe(700);
+        expect(stampEndMs("light")).toBeLessThanOrEqual(300);
+        expect(stampEndMs("still")).toBe(250);
     });
 });
