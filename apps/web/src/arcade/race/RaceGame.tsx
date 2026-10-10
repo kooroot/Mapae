@@ -5,6 +5,7 @@ import type {AgentDecision} from "@mapae/arcade";
 import {applyRaceRound, createRaceSeason, makeRaceCourse, raceEndTime, raceNextCheckpoint, raceFrameAt,
     RACE_BURST_COST, RACE_HABITS, RACE_DRAFT_DISTANCE, raceTraffic, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceAction} from "@mapae/arcade/race";
 import type {PlayableGameProps} from "../agent-contract";
+import {motionTier} from "../motion";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
 import {requestRaceDecision} from "./decision";
@@ -52,7 +53,7 @@ const HUD_MS = 120;
 type Phase = "choose" | "brief" | "thinking" | "race" | "checkpoint" | "recap" | "error";
 type Note = {round: number; decision: Omit<AgentDecision, "source"> & {source: "human" | AgentDecision["source"]}; enter: boolean; strategy: RaceStrategy};
 
-export function RaceGame({appearance, profile, locale, mode, seed, budget, decide, reducedMotion, suspended = false, autoAdvance = false, onComplete, onExit}: PlayableGameProps) {
+export function RaceGame({appearance, profile, locale, mode, seed, budget, decide, reducedMotion, sound, suspended = false, autoAdvance = false, onComplete, onExit}: PlayableGameProps) {
     const human = mode === "human", ko = locale === "ko";
     const t = {...COPY[locale], ...(human ? {
         subtitle: ko ? "힘을 아낄까, 지금 치고 나갈까? 내가 부르는 작전, 말이 만드는 역전." : "Save your strength or make a move? Call the pace. Chase the finish.",
@@ -79,6 +80,8 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const [paused, setPaused] = useState(false);
     const [speed, setSpeed] = useState(1);
     const blocked = paused || suspended;
+    // An agent run the owner watches gets feedback without ceremony, so motion never stretches its auto-advance beat.
+    const tier = motionTier({still: reducedMotion, watched: autoAdvance});
     const [error, setError] = useState("");
     const busy = useRef(false);
     const finished = useRef(false);
@@ -294,7 +297,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                     <small>{t.source}: {latest.decision.source === "llm" ? latest.decision.model || "LLM" : t.local}{!human && <> · {t.entry}: {latest.enter ? "−1" : "0"}</>}</small>
                 </div>
                 {!latest.enter && <p className="arc-race-sitout">{t.noEntry}</p>}
-                <RaceTrack rivalId={season.rivalId} commands={current.simulation.calls.filter(call => call.id === "owner")} race={current.simulation} progress={progress} clock={clock} ended={phase === "recap"} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} />
+                <RaceTrack rivalId={season.rivalId} commands={current.simulation.calls.filter(call => call.id === "owner")} race={current.simulation} progress={progress} clock={clock} ended={phase === "recap"} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} tier={tier} sound={sound} playback={speed} />
                 {human && phase !== "recap" && <div className={`race-command-dock ${windowOpen ? "race-awaiting" : ""}`}>
                     <div><span className="arc-overline">{windowOpen ? ko ? `${commands.length + 1}번째 갈림길` : `FORK ${commands.length + 1}` : ko ? `작전 ${commands.length} / 2` : `CALLS ${commands.length} / 2`}</span>
                         <h2>{windowOpen ? phase === "checkpoint" ? ko ? "멈춘 사이, 작전을 골라요" : "Paused — pick your call" : ko ? `${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}초 뒤 갈림길 · 바꿀까요?` : `Fork in ${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}s · Change your plan?` : nextCall === undefined ? ko ? "남은 승부는 결승선에서!" : "All the way to the finish!" : ko ? "말이 작전대로 달리고 있어요" : "Your horse is following the plan"}</h2>

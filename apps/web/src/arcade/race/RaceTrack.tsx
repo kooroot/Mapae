@@ -2,6 +2,8 @@ import {useEffect, useRef, type RefObject} from "react";
 import {raceEndTime, raceFrameAt, raceLiveRank, raceTerrain, RACE_HABITS, RACE_BURST_SECONDS, RACE_CHECKPOINTS, RACE_ROUTE_SECONDS, type RaceCommand, type RaceSimulation} from "@mapae/arcade/race";
 import {RaceRunners} from "./RaceRunners";
 import type {Color} from "../state";
+import type {MotionTier} from "../motion";
+import type {ArcadeSound} from "../sound";
 import type {Locale} from "../../lib/i18n";
 import "./race-scene.css";
 
@@ -9,9 +11,9 @@ import "./race-scene.css";
  * One shared course; positions and weather are projections of the deterministic simulation.
  * `progress` paces the text at the HUD rate; `clock` is the live simulation time the runners follow every frame.
  */
-export function RaceTrack({race, commands, rivalId, progress, clock, ended, locale, color, reducedMotion, running}: {
+export function RaceTrack({race, commands, rivalId, progress, clock, ended, locale, color, reducedMotion, running, tier, sound, playback}: {
     race: RaceSimulation; commands: RaceCommand[]; rivalId: string; progress: number; clock: RefObject<number>; locale: Locale;
-    color: Color; reducedMotion: boolean; running: boolean; ended: boolean;
+    color: Color; reducedMotion: boolean; running: boolean; ended: boolean; tier: MotionTier; sound: ArcadeSound; playback: number;
 }) {
     const ko = locale === "ko";
     const track = useRef<HTMLDivElement>(null);
@@ -50,7 +52,7 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
         <div className="race-world-scene">
             <img src="/arcade/race-course.webp" width={1536} height={1024} alt="" className="race-world-art" draggable={false} />
             <div className="race-weather-fx" aria-hidden="true" />
-            <RaceRunners race={race} frame={frame} rivalId={rivalId} color={color} locale={locale} clock={clock} meter={meter} follow={!ended && !reducedMotion} live={running && !ended && !reducedMotion} />
+            <RaceRunners race={race} frame={frame} rivalId={rivalId} color={color} locale={locale} clock={clock} meter={meter} follow={!ended && !reducedMotion} live={running && !ended && !reducedMotion} tier={tier} sound={sound} playback={playback} />
             {closeFinish && <div className="race-close-finish" role="status"><strong>{finishGap < 1e-7 ? ko ? "공동 우승!" : "A DEAD HEAT!" : ko ? "결승선 접전!" : "PHOTO FINISH!"}</strong><span>{finishGap < 1e-7 ? ko ? "같은 기록, 같은 점수" : "Equal times, equal points" : ko ? `${finishGap.toFixed(2)}초가 가른 승부` : `Decided by ${finishGap.toFixed(2)} seconds`}</span></div>}
             <div className="race-route-ribbon" role="status">{routeStatus}</div>
         </div>

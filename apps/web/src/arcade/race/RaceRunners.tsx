@@ -1,7 +1,10 @@
 import {useEffect, useLayoutEffect, useRef, useState, type RefObject} from "react";
 import {raceEndTime, raceFrameAt, RACE_BURST_SECONDS, type RaceFrame, type RaceRoute, type RaceSimulation} from "@mapae/arcade/race";
 import type {Color} from "../state";
+import type {MotionTier} from "../motion";
+import type {ArcadeSound} from "../sound";
 import type {Locale} from "../../lib/i18n";
+import {gallopRate, RaceCues, runnerVelocity, setGallop} from "./race-fx";
 
 /** A path change glides between the inner and outer lane instead of jumping 17px. */
 export const LANE_MS = 220;
@@ -54,8 +57,10 @@ function easeOut(progress: number): number {
  * a requestAnimationFrame loop reads the shared race clock and writes every position as translate3d, so horses move at the
  * display's frame rate without a React render. The sprite element's transform belongs to placement: effects animate inside it.
  */
-export function RaceRunners({race, frame, rivalId, color, locale, clock, follow, live, meter}: {
-    race: RaceSimulation; frame: RaceFrame; rivalId: string; color: Color; locale: Locale;
+export function RaceRunners({race, frame, rivalId, color, locale, clock, follow, live, meter, tier, sound, playback}: {
+    race: RaceSimulation; frame: RaceFrame; rivalId: string; color: Color; locale: Locale; tier: MotionTier; sound: ArcadeSound;
+    /** Viewing speed (1× or 2×): strides quicken with it, as the clock does. */
+    playback: number;
     /** Simulation seconds, advanced by RaceGame every frame. */
     clock: RefObject<number>;
     /** Positions track the clock; false when still or ended, where `frame` is the picture. */
@@ -70,6 +75,7 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
     const field = useRef<HTMLDivElement>(null);
     const lanes = useRef({round: -1, byId: new Map<string, Lane>()});
     const draw = useRef<(time: number, step: number | null) => void>(() => {});
+    const [cues] = useState(() => new RaceCues());
     const [size, setSize] = useState({width: 800, height: 440});
     // Measured before the first paint: sprites sit at absolute pixels, so a guessed size would show them off the course.
     useLayoutEffect(() => {
@@ -101,12 +107,16 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
                 const sprite = sprites[index] as HTMLElement | undefined;
                 // The sprite box starts above and left of the runner's ground point (no style attribute: the CSP allows none).
                 if (sprite) sprite.style.transform = `translate3d(${point.x - SPRITE_LEFT}px,${point.y - pony - SPRITE_TOP}px,0)`;
+                // Strides follow the horse's own speed; only a live race gallops, and an arrived horse has stopped.
+                if (sprite && step !== null && position.distance < race.course.distance) setGallop(sprite, gallopRate(runnerVelocity(race, time, index), playback, position.stamina));
             });
             for (const link of links.current?.children ?? []) {
                 const from = points.get((link as SVGElement).dataset.from!), to = points.get((link as SVGElement).dataset.to!);
                 if (from && to) link.setAttribute("d", `M${from.x + pony * .8} ${from.y - 18} Q${Math.max(from.x, to.x) + pony} ${(from.y + to.y) / 2} ${to.x + pony * .45} ${to.y - 6}`);
             }
             if (meter.current) meter.current.style.transform = `scaleX(${Math.min(1, time / endTime)})`;
+            // Moments follow the clock itself, so reduced motion (a held two-second picture) still hears and sees them on time.
+            cues.fire(race, clock.current, {tier, sound, sprite: id => sprites[race.entrants.findIndex(runner => runner.id === id)]});
         };
         // Every render places too: new sprites and links never paint a frame at the origin, and a held race shows its exact moment.
         draw.current(follow ? clock.current : frame.time, live ? 0 : null);
