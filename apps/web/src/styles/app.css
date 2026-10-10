@@ -417,19 +417,6 @@
     gap: 8px;
 }
 
-.studio-secondary-button {
-    display: inline-flex;
-    min-height: 38px;
-    align-items: center;
-    justify-content: center;
-    padding: 0 14px;
-    border: 1px solid var(--studio-line);
-    border-radius: 8px;
-    color: var(--studio-text-2);
-    background: rgba(255, 255, 255, 0.025);
-    font-size:14px;
-}
-
 .studio-overview,
 .studio-activity-view,
 .studio-security-view {

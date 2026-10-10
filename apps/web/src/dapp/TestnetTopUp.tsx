@@ -59,7 +59,7 @@ export function TestnetTopUp({root, onMinted}: {root: Delegation; onMinted: () =
         <div className="studio-topup" data-tone={tone}>
             <button
                 type="button"
-                className="studio-secondary-button"
+                className="mapae-action mapae-action-secondary"
                 onClick={() => void topUp(endpoint)}
                 disabled={busy}
             >
