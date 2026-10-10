@@ -58,7 +58,7 @@ export function RaceTrack({race, commands, rivalId, progress, ended, locale, col
             y: startY + race.entrants.findIndex(runner => runner.id === id) * row + (position.path === "wide" ? 12 : -5)};
     };
     const runnerColor = (id: string, index: number) => id === "owner" ? color : (["jade", "ink", "red"] as const)[index % 3]!;
-    return <div ref={track} className={`race-world race-weather-${race.course.weather} ${running && !reducedMotion ? "race-world-moving" : ""}`}>
+    return <div ref={track} className={`race-world race-weather-${race.course.weather} ${ended || reducedMotion ? "" : "race-world-moving"}`} data-halted={running || ended ? undefined : ""}>
         <div className="race-world-hud"><span>{ko ? "제" : "ROUND"} {race.course.round + 1}{ko ? "경기" : ""}</span><strong>{ko ? {clear: "맑은 날", rain: "비 오는 날", wind: "바람 부는 날"}[race.course.weather] : race.course.weather.toUpperCase()}</strong><span>{Math.round(raceProgress * 100)}%</span></div>
         <progress className="race-distance-meter" value={raceProgress} max={1} aria-label={ko ? "경주 진행" : "Race progress"} />
         <div className="race-world-scene">
@@ -76,7 +76,7 @@ export function RaceTrack({race, commands, rivalId, progress, ended, locale, col
                         <path d={`M${from.x + pony * .8} ${from.y - 18} Q${Math.max(from.x, to.x) + pony} ${(from.y + to.y) / 2} ${to.x + pony * .45} ${to.y - 6}`} fill="none" stroke={position.blockedBy ? "#ffb573" : "#d5f7b2"} strokeWidth="3" strokeDasharray="5 4" />
                     </g>;
                 })}
-                {race.entrants.map((runner, index) => {
+                <g className="race-field">{race.entrants.map((runner, index) => {
                     const position = frame.positions.find(item => item.id === runner.id)!;
                     const arrived = position.distance >= race.course.distance;
                     const {x, y} = runnerPoint(runner.id);
@@ -93,7 +93,7 @@ export function RaceTrack({race, commands, rivalId, progress, ended, locale, col
                         <g className="race-pony-bounce"><image href={`/arcade/race-pony-${tone}-512.webp`} x="0" y={-pony + 18} width={pony} height={pony} /></g>
                         <g transform={`translate(${owner ? pony / 2 : pony - 2} ${owner ? -pony + 10 : 2})`}><rect x="-19" y="-17" width="38" height="18" rx="9" fill={owner ? "#2a523d" : "#362a20"} stroke={owner ? "#ffe29a" : "#d3b17c"} /><text textAnchor="middle" y="-5" fill="#fff0c8" fontSize="10" fontWeight="800">{owner ? ko ? "내 말" : "YOU" : rival ? ko ? "맞수" : "RIVAL" : index + 1}</text></g>
                     </g>;
-                })}
+                })}</g>
             </svg>
             {closeFinish && <div className="race-close-finish" role="status"><strong>{finishGap < 1e-7 ? ko ? "공동 우승!" : "A DEAD HEAT!" : ko ? "결승선 접전!" : "PHOTO FINISH!"}</strong><span>{finishGap < 1e-7 ? ko ? "같은 기록, 같은 점수" : "Equal times, equal points" : ko ? `${finishGap.toFixed(2)}초가 가른 승부` : `Decided by ${finishGap.toFixed(2)} seconds`}</span></div>}
             <div className="race-route-ribbon" role="status">{routeStatus}</div>

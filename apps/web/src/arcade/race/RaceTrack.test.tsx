@@ -27,3 +27,13 @@ test("reduced-motion track keeps path feedback and public rival habits without a
     expect(markup).toContain("Speed −6%");
     expect(markup).toContain("Takes the outside at either fork when close behind");
 });
+
+test("a halted race keeps its stride classes and freezes in pose instead of snapping to rest", () => {
+    const track = (running: boolean, ended: boolean) => renderToStaticMarkup(<RaceTrack race={race} commands={commands} rivalId="rival" progress={30 / race.seconds} ended={ended} locale="en" color="jade" running={running} reducedMotion={false} />);
+    expect(render(30, "en")).not.toContain("data-halted");
+    expect(track(false, false)).toContain("race-world-moving");
+    expect(track(false, false)).toContain("data-halted=\"\"");
+    expect(track(false, true)).not.toContain("data-halted");
+    expect(track(false, true)).not.toContain("race-world-moving");
+    expect(track(false, false)).toContain("<g class=\"race-field\">");
+});
