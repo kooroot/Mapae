@@ -14,16 +14,14 @@ const DESCRIPTIONS = {
 };
 
 /** The illustrated room stays separate from wallet permissions and game admission. */
-export function ArcadeRoom({locale, selected, onSelect, locked = false, reducedMotion = false, children}: {
+export function ArcadeRoom({locale, selected, onSelect, reducedMotion, children}: {
     locale: Locale; selected: GameId | "auto"; onSelect: (game: GameId) => void;
-    locked?: boolean; reducedMotion?: boolean; children: ReactNode;
+    reducedMotion: boolean; children: ReactNode;
 }) {
     const ko = locale === "ko";
     const [visible, setVisible] = useState(selected === "auto" ? 0 : GAMES.indexOf(selected));
-    const [systemReduced, setSystemReduced] = useState(false);
-    const still = reducedMotion || systemReduced;
     const [viewport, carousel] = useEmblaCarousel({
-        align: "center", containScroll: false, duration: still ? 0 : 25,
+        align: "center", containScroll: false, duration: reducedMotion ? 0 : 25,
         active: false, breakpoints: {"(max-width: 620px)": {active: true}},
     });
     const cabinets = useRef<(HTMLButtonElement | null)[]>([]);
@@ -31,12 +29,6 @@ export function ArcadeRoom({locale, selected, onSelect, locked = false, reducedM
     const resetting = useRef(false);
     const names = GAME_NAMES[locale];
 
-    useEffect(() => {
-        const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-        const sync = () => setSystemReduced(media.matches);
-        sync(); media.addEventListener("change", sync);
-        return () => media.removeEventListener("change", sync);
-    }, []);
     useEffect(() => {
         if (!carousel) return;
         const sync = () => {
@@ -55,13 +47,13 @@ export function ArcadeRoom({locale, selected, onSelect, locked = false, reducedM
     useEffect(() => {
         if (selected === "auto") return;
         const index = GAMES.indexOf(selected);
-        setVisible(index); carousel?.scrollTo(index, still);
-    }, [selected, carousel, still]);
+        setVisible(index); carousel?.scrollTo(index, reducedMotion);
+    }, [selected, carousel, reducedMotion]);
 
     function choose(index: number) {
         const game = GAMES[index];
         if (!game) return;
-        setVisible(index); onSelect(game); carousel?.scrollTo(index, still);
+        setVisible(index); onSelect(game); carousel?.scrollTo(index, reducedMotion);
     }
     return <section className="arc-room" aria-labelledby="arc-room-title">
         <picture className="arc-room-background"><source media="(max-width: 620px)" srcSet="/arcade/hanok-room-768.webp" /><img src="/arcade/hanok-room-1536.webp" width={1536} height={1024} alt="" fetchPriority="high" /></picture>
@@ -80,7 +72,7 @@ export function ArcadeRoom({locale, selected, onSelect, locked = false, reducedM
                 <img src={`/arcade/cabinet-${game}-640.webp`} srcSet={`/arcade/cabinet-${game}-384.webp 384w, /arcade/cabinet-${game}-640.webp 640w`} sizes="(max-width: 620px) 72vw, (max-width: 1000px) 28vw, 300px" width={640} height={960} alt="" draggable={false} />
                 <span className="arc-room-marquee" lang={locale}>{names[game]}</span>
                 <span className="arc-room-crt" aria-hidden="true" />
-                <span className="arc-room-slot">{locked ? ko ? "연결 후 플레이" : "CONNECT TO PLAY" : selected === game ? ko ? "선택 완료 ✓" : "SELECTED ✓" : ko ? "놀이 선택 ↗" : "SELECT GAME ↗"}</span>
+                <span className="arc-room-slot">{selected === game ? ko ? "선택 완료 ✓" : "SELECTED ✓" : ko ? "놀이 선택 ↗" : "SELECT GAME ↗"}</span>
             </button>)}
         </div></div>
         <div className="arc-room-navigation" role="group" aria-label={ko ? "게임기 넘기기" : "Browse cabinets"}>

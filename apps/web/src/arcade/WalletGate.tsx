@@ -15,7 +15,7 @@ import {trackEngagement} from './engagement/client';
 import './guest/guest.css';
 
 /** Wallet connection identifies the owner; profile login and spending are separate signatures. */
-export function WalletGate({children}: {children: (owner: Address, selected: GameId | "auto", onGuest: () => void) => ReactNode}) {
+export function WalletGate({reducedMotion, children}: {reducedMotion: boolean; children: (owner: Address, selected: GameId | "auto", onGuest: () => void) => ReactNode}) {
     const {address, status, connector} = useAccount();
     const {connectors} = useConnect();
     const {locale} = useLocale();
@@ -34,7 +34,7 @@ export function WalletGate({children}: {children: (owner: Address, selected: Gam
     return <main className="arcade agent-arcade arc-wallet-gate">
         <header className="arc-header"><a className="arc-wordmark" href={localizePath("/", locale)} aria-label={ko ? "Mapae 홈" : "Mapae home"}><ArcadeBrand /></a><span className="arc-demo-label"><i />GIWA SEPOLIA</span><div className="arc-header-actions"><LocaleSwitch /></div></header>
         <div className="arc-main">
-            <ArcadeRoom locale={locale} selected={selected} onSelect={setSelected}>
+            <ArcadeRoom locale={locale} selected={selected} onSelect={setSelected} reducedMotion={reducedMotion}>
                 <div className="arc-entry-dock">
                     <h2>{ko ? "먼저 한 판, 가볍게 놀아보세요" : "Try a round. Make yourself at home."}</h2>
                     <p>{ko ? "지갑 없이 직접 플레이하고, 마음에 들면 나의 전령을 만나보세요." : "Play without a wallet, then meet your own guardian."}</p>

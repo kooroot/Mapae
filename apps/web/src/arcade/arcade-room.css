@@ -98,5 +98,3 @@
     .arc-empty-departure a { width: 100%; }
 }
 @media (max-width: 360px) { .arc-room { margin-inline: -12px; } }
-@media (prefers-reduced-motion: reduce) { .arc-room-cabinet { transition: none; } }
-.arc-still .arc-room-cabinet { transition: none; }
