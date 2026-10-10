@@ -98,3 +98,11 @@
 .shop-forecast{transition:border-left-color var(--arc-dur-slow) var(--arc-ease-out)}.shop-forecast[data-arrived]{border-left-color:#a94b30}.shop-forecast-goods small{transition:color var(--arc-dur-base) var(--arc-ease-out)}
 .shop-forecast[data-arrived] .shop-forecast-title>span{animation:arc-rise-in var(--arc-dur-base) var(--arc-ease-out) both}.shop-forecast[data-arrived] .shop-forecast-title>b{animation:arc-heartbeat var(--arc-dur-base) var(--arc-ease-back) var(--arc-dur-base) 2}
 .shop-game[data-motion=light] .shop-forecast[data-arrived] .shop-forecast-title>b{animation:none}
+/* Market close: dusk settles over the stall for 1200ms (300ms for a watched agent), then the hanging lantern breathes at 0.3Hz. Reduced motion shows the dusk and a steady glow at once. */
+.shop-dusk{position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(#2a1840b3,#8a3b2a66 40%,#e0783a33 62%,#1a0f1f99);animation:shop-dusk 1200ms var(--arc-ease-ink) both}
+/* The 960² backdrop covers a 515px-tall stage never wider than 515px, so it is drawn 515px square and centred: its lantern (808,165) sits 176px right of centre, 89px down. */
+.shop-lantern{position:absolute;z-index:-1;left:calc(50% + 176px);top:89px;width:150px;height:190px;translate:-50% -50%;border-radius:50%;pointer-events:none;background:radial-gradient(closest-side,#ffd88acc,#ffa94d66 45%,transparent);mix-blend-mode:screen;opacity:.85;animation:shop-dusk 1200ms var(--arc-ease-ink) both,shop-lantern 3200ms var(--arc-ease-ink) 1200ms infinite}
+.shop-game[data-motion=light] .shop-dusk{animation-duration:300ms}.shop-game[data-motion=light] .shop-lantern{animation-duration:300ms,3200ms;animation-delay:0s,300ms}
+@keyframes shop-dusk{from{opacity:0}}
+@keyframes shop-lantern{50%{opacity:.5;scale:.95}}
+@media(max-width:760px){.shop-lantern{display:none}}

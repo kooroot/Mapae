@@ -267,6 +267,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
         <div className="shop-counter-layout" ref={counter} tabIndex={-1} aria-label={ko ? "손님과 흥정하기" : "Bargain at the counter"}>
             <div className="shop-stage-column"><section ref={stage} className={`shop-customer-stage ${traded ? "shop-deal-done" : ""} ${shopRefusal(reaction) ? "shop-deal-rejected" : ""}`} data-guest={state.customer % 2} aria-label={ko ? "오늘의 만남" : "Today's meeting"}>
                 <img src="/arcade/shop-market.webp" width={960} height={960} alt="" className="shop-stall-backdrop" draggable={false} />
+                {state.phase === "finished" && <><span className="shop-dusk" aria-hidden="true" /><span className="shop-lantern" aria-hidden="true" /></>}
                 <div className="shop-meeting-tag">{ko ? "흥정상회" : "TINY SHOP"}<span><span key={state.customer} className="shop-number-roll">{String(state.customer + 1).padStart(2, "0")}</span> / 03</span></div>
                 <div className="shop-guest" key={state.customer} ref={guest}>
                     {sellerRole ? <GuardianAvatar appearance={{version: 1, seed: "0000000000000001", zodiac: state.customer === 2 && state.forecast ? state.forecast.npc === "twins" ? "rabbit" : "tiger" : (["rabbit", "tiger", "pig"] as const)[(state.customer + Math.abs(seed % 3)) % 3]!, backdrop: "jade", charm: "none"}} color="jade" /> : <GuardianAvatar appearance={appearance} color={profile.color} />}
