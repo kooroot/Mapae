@@ -174,7 +174,10 @@ const counters = new Map<Node, Counter>();
  * still or hidden, it writes the final value at once. `holdEffects` pauses the roll, and cancelling it lands on the final value.
  */
 export function countUp(node: Node, to: number, gate: MotionGate, {from = 0, ms, format = n => Math.round(n).toLocaleString()}: {from?: number; ms?: number; format?: (n: number) => string} = {}): Animation | null {
-    counters.get(node)?.clock.cancel();
+    // Forgotten before it is cancelled, so its cancel event cannot land the old total over this one.
+    const previous = counters.get(node);
+    counters.delete(node);
+    previous?.clock.cancel();
     const write = (n: number) => {node.textContent = format(n);};
     const tier = gateTier(gate);
     if (document.hidden || (tier === "still" && !gate.essential)) {
@@ -226,7 +229,7 @@ export function holdEffects(root: Element, halted: boolean) {
     }
     for (const counter of counters.values()) {
         // A number unmounted mid-roll has nothing left to write: its clock goes now rather than waiting forever, paused.
-        if (!counter.node.isConnected) {counter.clock.cancel(); continue;}
+        if (!counter.node.isConnected) {counters.delete(counter.node); counter.clock.cancel(); continue;}
         if (!root.contains(counter.node)) continue;
         if (halted) counter.clock.pause();
         else if (counter.clock.playState === "paused" && !inner(counter.node.parentElement)) counter.resume();
