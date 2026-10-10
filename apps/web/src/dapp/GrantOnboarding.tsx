@@ -24,12 +24,7 @@ import {
     Wallet,
 } from "lucide-react";
 import {useEffect, useMemo, useRef, useState, type FormEvent} from "react";
-import {
-    useAccount,
-    useDisconnect,
-    useSwitchChain,
-    useWalletClient,
-} from "wagmi";
+import {useAccount, useSwitchChain, useWalletClient} from "wagmi";
 import {bootstrapAvailability, chain, deployment, publicClient} from "../lib/config";
 import {
     requestSponsoredBootstrap,
@@ -87,12 +82,9 @@ const COPY: Record<
         submitSwitchChain: string;
         submitCreate: string;
         privacyNote: string;
-        walletConnecting: string;
-        walletConnect: string;
         walletSwitching: string;
         walletSwitch: string;
         walletNoSignHere: string;
-        walletDisconnect: string;
         gateIdleTitle: string;
         gateIdleBody: string;
         gateLoadingTitle: string;
@@ -168,12 +160,9 @@ const COPY: Record<
         submitCreate: "Confirm the scope and create the permission",
         privacyNote:
             "Signing lets this agent spend within the limits shown. No tokens are transferred now.",
-        walletConnecting: "Connecting wallet…",
-        walletConnect: "Connect wallet",
         walletSwitching: "Switching network…",
         walletSwitch: "Switch to GIWA Sepolia",
         walletNoSignHere: "Nothing is signed on the current network.",
-        walletDisconnect: "Disconnect",
         gateIdleTitle: "Connect the owner wallet.",
         gateIdleBody:
             "After you connect, Studio checks whether the payer account it will use is ready on GIWA.",
@@ -253,12 +242,9 @@ const COPY: Record<
         submitCreate: "범위 확인하고 권한 만들기",
         privacyNote:
             "서명하면 이 에이전트가 표시된 한도 안에서 결제할 수 있습니다. 지금 토큰이 전송되지는 않습니다.",
-        walletConnecting: "지갑 연결 중…",
-        walletConnect: "지갑 연결",
         walletSwitching: "네트워크 전환 중…",
         walletSwitch: "GIWA Sepolia로 전환",
         walletNoSignHere: "현재 네트워크에서는 서명하지 않습니다.",
-        walletDisconnect: "연결 해제",
         gateIdleTitle: "소유자 지갑을 연결해 주세요.",
         gateIdleBody: "연결 후 사용할 지불 계정이 GIWA에 준비되어 있는지 확인합니다.",
         gateLoadingTitle: "지불 계정 확인 중",
@@ -360,7 +346,6 @@ export function GrantOnboarding({
     // one fired before the first has re-rendered `busy` into the button.
     const signing = useRef(false);
     const {address, chainId, isConnected} = useAccount();
-    const {disconnect} = useDisconnect();
     const {switchChain, isPending: switching} = useSwitchChain();
     const {data: walletClient} = useWalletClient({chainId: chain.id});
     const [accountReadiness, setAccountReadiness] = useState<AccountReadiness>({
@@ -556,8 +541,6 @@ export function GrantOnboarding({
         if (activeStep === 2 && validation.kind !== "ok") return;
         setAttempted(false); setStep(activeStep + 1);
     }
-    const walletControl = <WalletState address={address} chainId={chainId} switching={switching} busy={busy}
-        onSwitch={() => switchChain({chainId: chain.id})} onDisconnect={() => disconnect()} />;
     return (
         <div className="studio-create-page studio-wizard">
             <header className="studio-create-head">
@@ -569,17 +552,17 @@ export function GrantOnboarding({
                     </h1>
                     <p>{t.headIntro}</p>
                 </div>
-                {activeStep > 0 && walletControl}
             </header>
 
-            <ol className="studio-steps" aria-label={ko ? "권한 만들기 단계" : "Create permission steps"}>{steps.map((label, index) => <li key={label} aria-current={activeStep === index ? "step" : undefined} data-done={activeStep > index}><span>{index + 1}</span>{label}</li>)}</ol>
-            <h2 className="studio-step-heading" ref={stepHeading} tabIndex={-1}>{steps[activeStep]}</h2>
+            <ol className="studio-steps" aria-label={ko ? "권한 만들기 단계" : "Create permission steps"}>{steps.map((label, index) => <li key={label} aria-current={activeStep === index ? "step" : undefined} data-done={activeStep > index}><span>{activeStep > index ? <Check size={14} aria-hidden="true" /> : index + 1}</span>{label}</li>)}</ol>
+            {/* Visually hidden: the current stepper item already names the step. It stays as
+                the focus target so a step change is announced. */}
+            <h2 className="studio-step-heading sr-only" ref={stepHeading} tabIndex={-1}>{steps[activeStep]}</h2>
             <div className="studio-create-layout">
                 <form className="studio-grant-form" onSubmit={event => {if (activeStep < 3) {event.preventDefault(); nextStep();} else void signGrant(event);}}>
-                    {activeStep === 0 && <div className="studio-connect-intro"><Wallet size={36} /><h3>{isConnected && !wrongChain ? ko ? "지갑이 연결됐어요" : "Your wallet is connected" : ko ? "결제를 맡길 지갑부터 연결하세요" : "Start with your wallet"}</h3><p>{ko ? "연결만으로 결제 권한이 생기지 않아요. 마지막 단계에서 범위를 확인하고 서명합니다." : "Connecting grants no spending authority. You review and sign the limits in the last step."}</p>{walletControl}</div>}
+                    {activeStep === 0 && <div className="studio-connect-intro"><Wallet size={36} /><h3>{!isConnected ? ko ? "결제를 맡길 지갑부터 연결하세요" : "Start with your wallet" : wrongChain ? ko ? "GIWA 네트워크로 바꿔 주세요" : "Switch to the GIWA network" : ko ? "지갑이 연결됐어요" : "Your wallet is connected"}</h3><p>{ko ? "연결만으로 결제 권한이 생기지 않아요. 마지막 단계에서 범위를 확인하고 서명합니다." : "Connecting grants no spending authority. You review and sign the limits in the last step."}</p><WalletStep address={address} chainId={chainId} switching={switching} busy={busy} onSwitch={() => switchChain({chainId: chain.id})} /></div>}
                     {activeStep === 1 && <div className="studio-form-section">
                         <FormSectionHead
-                            index="01"
                             icon={Bot}
                             title={t.s1Title}
                             description={t.s1Desc}
@@ -613,7 +596,6 @@ export function GrantOnboarding({
 
                     {activeStep === 2 && <><div className="studio-form-section">
                         <FormSectionHead
-                            index="02"
                             icon={Coins}
                             title={t.s2Title}
                             description={t.s2Desc}
@@ -651,7 +633,6 @@ export function GrantOnboarding({
 
                     <div className="studio-form-section">
                         <FormSectionHead
-                            index="03"
                             icon={UserRoundCheck}
                             title={t.s3Title}
                             description={t.s3Desc}
@@ -720,7 +701,14 @@ export function GrantOnboarding({
                         </div>
                     ) : null}
 
-                    {activeStep === 3 && <><button type="submit" className="studio-primary-button" disabled={!formReady}>
+                    {activeStep === 3 && <p className="studio-privacy">
+                        <LockKeyhole size={15} />
+                        {t.privacyNote}
+                    </p>}
+                    {(activeStep > 0 || (isConnected && !wrongChain)) && <div className="studio-step-actions">
+                        {activeStep > 0 && <button type="button" className="mapae-action mapae-action-secondary" disabled={busy} onClick={() => {setAttempted(false); setStep(activeStep - 1);}}>{ko ? "이전" : "Back"}</button>}
+                        {activeStep < 3 && <button type="button" className="mapae-action mapae-action-primary" disabled={!isConnected || wrongChain || busy} onClick={nextStep}>{activeStep === 2 ? ko ? "승인할 내용 확인" : "Review permission" : ko ? "다음" : "Continue"}<ArrowRight size={18} /></button>}
+                        {activeStep === 3 && <button type="submit" className="mapae-action mapae-action-primary" disabled={!formReady}>
                         {progress.kind === "signing"
                             ? t.submitSigning
                             : progress.kind === "bootstrapping"
@@ -732,15 +720,8 @@ export function GrantOnboarding({
                                   : wrongChain
                                     ? t.submitSwitchChain
                                     : t.submitCreate}
-                        {progress.kind === "idle" ? <ArrowRight size={17} /> : null}
-                    </button>
-                    <p className="studio-privacy">
-                        <LockKeyhole size={15} />
-                        {t.privacyNote}
-                    </p></>}
-                    {(activeStep > 0 || (isConnected && !wrongChain)) && <div className="studio-step-actions">
-                        {activeStep > 0 && <button type="button" className="mapae-action mapae-action-secondary" disabled={busy} onClick={() => {setAttempted(false); setStep(activeStep - 1);}}>{ko ? "이전" : "Back"}</button>}
-                        {activeStep < 3 && <button type="button" className="mapae-action mapae-action-primary" disabled={!isConnected || wrongChain || busy} onClick={nextStep}>{activeStep === 2 ? ko ? "승인할 내용 확인" : "Review permission" : ko ? "다음" : "Continue"}<ArrowRight size={18} /></button>}
+                        {progress.kind === "idle" ? <ArrowRight size={18} /> : null}
+                    </button>}
                     </div>}
                 </form>
             </div>
@@ -750,56 +731,36 @@ export function GrantOnboarding({
     );
 }
 
-function WalletState({address, chainId, switching, busy, onSwitch, onDisconnect}: {
-    address?: `0x${string}`; chainId?: number; switching: boolean; busy: boolean;
-    onSwitch: () => void; onDisconnect: () => void;
+/** Step 0's one action: connect, or move to GIWA. Once connected the topbar shows the account. */
+function WalletStep({address, chainId, switching, busy, onSwitch}: {
+    address?: `0x${string}`; chainId?: number; switching: boolean; busy: boolean; onSwitch: () => void;
 }) {
     const {locale} = useLocale();
     const t = COPY[locale];
     if (!address) return <WalletPicker context="studio" />;
-    if (chainId !== chain.id) {
-        return (
-            <div className="studio-wallet-block" data-tone="warning">
-                <button
-                    type="button"
-                    className="studio-wallet-button"
-                    disabled={switching || busy}
-                    onClick={onSwitch}
-                >
-                    <CircleAlert size={17} />
-                    {switching ? t.walletSwitching : t.walletSwitch}
-                </button>
-                <small>{t.walletNoSignHere}</small>
-            </div>
-        );
-    }
+    if (chainId === chain.id) return null;
     return (
-        <div className="studio-wallet-connected">
-            <span>
-                <i />
-                {short(address)}
-            </span>
-            <button type="button" disabled={busy} onClick={onDisconnect}>
-                {t.walletDisconnect}
+        <div className="studio-wallet-block" data-tone="warning">
+            <button type="button" className="mapae-action mapae-action-primary" disabled={switching || busy} onClick={onSwitch}>
+                <CircleAlert size={18} />
+                {switching ? t.walletSwitching : t.walletSwitch}
             </button>
+            <small>{t.walletNoSignHere}</small>
         </div>
     );
 }
 
 function FormSectionHead({
-    index,
     icon: Icon,
     title,
     description,
 }: {
-    index: string;
     icon: typeof Bot;
     title: string;
     description: string;
 }) {
     return (
         <header className="studio-form-section-head">
-            <span>{index}</span>
             <i aria-hidden="true">
                 <Icon size={18} />
             </i>
