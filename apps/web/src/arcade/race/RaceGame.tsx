@@ -124,8 +124,9 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     useEffect(() => {
         const pauseIfHidden = () => {if (document.hidden) setPaused(true);};
         const pauseOnBlur = () => setPaused(true);
+        // An open settings popover or exit dialog owns Escape (it closes them), as in Stamp and Shop.
         const pauseOnEscape = (event: KeyboardEvent) => {
-            if (!event.defaultPrevented && event.key === "Escape") setPaused(value => !value);
+            if (!suspended && !event.defaultPrevented && event.key === "Escape") setPaused(value => !value);
         };
         document.addEventListener("visibilitychange", pauseIfHidden);
         window.addEventListener("blur", pauseOnBlur);
@@ -135,7 +136,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
             window.removeEventListener("blur", pauseOnBlur);
             window.removeEventListener("keydown", pauseOnEscape);
         };
-    }, []);
+    }, [suspended]);
 
     function playRound(action: RaceAction, decision: Note["decision"]) {
         roundStart.current = season;

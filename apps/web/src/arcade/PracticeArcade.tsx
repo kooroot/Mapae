@@ -140,10 +140,11 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
     function begin(next: ArcadeState = demo, scenario?: number, shop?: NonNullable<ActivityOutcome["replay"]>["shop"], memory?: NonNullable<ActivityOutcome["replay"]>["shopMemory"], replayAptitudes?: GuardianAptitudes) {
         if (entryLock.current || !ready) return;
         entryLock.current = true;
-        const audio = selectedGame === "stamp" ? sound.enable(next.sound) : null;
+        // Every game speaks through the shared speaker (race calls, shop coins, the result bell), so each one unlocks it.
+        const audio = sound.enable(next.sound);
         swapScreen(still, () => enter(next, audio, scenario, shop, memory, replayAptitudes));
     }
-    function enter(next: ArcadeState, audio: Promise<boolean> | null, scenario?: number, shop?: NonNullable<ActivityOutcome["replay"]>["shop"], memory?: NonNullable<ActivityOutcome["replay"]>["shopMemory"], replayAptitudes?: GuardianAptitudes) {
+    function enter(next: ArcadeState, audio: Promise<boolean>, scenario?: number, shop?: NonNullable<ActivityOutcome["replay"]>["shop"], memory?: NonNullable<ActivityOutcome["replay"]>["shopMemory"], replayAptitudes?: GuardianAptitudes) {
         setDrillSeed(null);
         setShopConfig(shop);
         setAptitudes(replayAptitudes);
@@ -152,7 +153,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         if (selectedGame !== "stamp") {
             const admission = admitHumanActivity(next, crypto.randomUUID(), next.selectedCharacterId!, selectedGame, Date.now(), scenario);
             if (!admission.ok) {entryLock.current = false; return;}
-            update(() => admission.demo); opened(admission.activity.id); setManual(admission.activity); setNotice(""); setScreen("play"); return;
+            update(() => admission.demo); opened(admission.activity.id); setManual(admission.activity); setNotice(""); soundNotice(audio); setScreen("play"); return;
         }
         const admission = admitPracticeRun(next, crypto.randomUUID(), Date.now(), scenario, replayAptitudes);
         if (!admission.ok) {
@@ -164,7 +165,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
         setTicket(admission.ticket);
         opened(admission.ticket.id);
         setNotice("");
-        if (audio) soundNotice(audio);
+        soundNotice(audio);
         setScreen("play");
     }
     function beginDrill(seed = crypto.getRandomValues(new Uint32Array(1))[0]!) {
