@@ -38,3 +38,21 @@ test("a halted race keeps its stride classes and freezes in pose instead of snap
     expect(track(false, true)).not.toContain("race-world-moving");
     expect(track(false, false)).toContain("<div class=\"race-field\" aria-hidden=\"true\">");
 });
+
+test("the start signal holds the horses at the gate on its first beats, and they run on the go", () => {
+    const track = (signal: number | null, locale: "en" | "ko" = "en") => renderToStaticMarkup(<RaceTrack race={race} commands={commands} rivalId="rival" progress={0} clock={{current: 0}} ended={false} locale={locale} color="jade" running reducedMotion={false} tier="full" sound={new ArcadeSound()} playback={1} signal={signal} />);
+    expect(track(0, "ko")).toContain(">셋</span>");
+    expect(track(0)).not.toContain("race-world-moving");
+    expect(track(0)).not.toContain("data-halted");
+    expect(track(2)).toContain(">GO!</span>");
+    expect(track(2)).toContain("race-world-moving");
+    expect(track(null)).not.toContain("race-start-signal");
+});
+
+test("every horse carries a pass tag, a rival's in the smaller muted variant", () => {
+    const markup = render(10, "ko");
+    expect(markup).toContain("<span class=\"race-pass-tag \">추월!</span>");
+    expect(markup).toContain("<span class=\"race-pass-tag race-pass-tag-against\">추월!</span>");
+    expect(markup).toContain("race-moment-layer arc-flash-host");
+    expect(markup).toContain("data-tier=\"full\"");
+});

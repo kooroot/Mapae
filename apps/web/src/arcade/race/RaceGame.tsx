@@ -1,17 +1,20 @@
 import {raceOutcome} from "@mapae/arcade/simulation";
 import {MOCK_USDC} from "@mapae/shared";
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useLayoutEffect, useRef, useState} from "react";
 import type {AgentDecision} from "@mapae/arcade";
 import {applyRaceRound, createRaceSeason, makeRaceCourse, raceEndTime, raceNextCheckpoint, raceFrameAt,
     RACE_BURST_COST, RACE_HABITS, RACE_DRAFT_DISTANCE, raceTraffic, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceAction} from "@mapae/arcade/race";
 import type {PlayableGameProps} from "../agent-contract";
-import {motionTier} from "../motion";
+import {motionTier, type MotionTier} from "../motion";
+import {countUp} from "../juice";
+import type {ArcadeSound} from "../sound";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
 import {requestRaceDecision} from "./decision";
 import {GAME_NAMES} from "../game-names";
 import {GameGuide} from "../GameGuide";
 import {RaceTrack} from "./RaceTrack";
+import {BEAT_MS, cueSeal, cueStartBeat, pressBurst, riseIn, startSignal, START_BEATS} from "./race-fx";
 import "./race.css";
 import "./race-play.css";
 
@@ -82,6 +85,11 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const blocked = paused || suspended;
     // An agent run the owner watches gets feedback without ceremony, so motion never stretches its auto-advance beat.
     const tier = motionTier({still: reducedMotion, watched: autoAdvance});
+    // "셋·둘·출발!" before a player's own race; the clock (never the simulation) waits through the first two beats.
+    const [signal, setSignal] = useState<number | null>(null);
+    const holding = signal !== null && signal < START_BEATS - 1;
+    const burstButton = useRef<HTMLButtonElement>(null);
+    const standings = useRef<HTMLTableSectionElement>(null);
     const [error, setError] = useState("");
     const busy = useRef(false);
     const finished = useRef(false);
@@ -97,7 +105,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const liveFrame = current ? raceFrameAt(current.simulation, progress) : undefined;
     const ownerFrame = liveFrame?.positions.find(p => p.id === "owner");
     const traffic = liveFrame ? raceTraffic(liveFrame.positions.filter(position => position.distance < current!.simulation.course.distance), "owner") : undefined;
-    const canBurst = human && phase === "race" && !blocked && burstAt === null && (ownerFrame?.stamina ?? 0) >= RACE_BURST_COST && (ownerFrame?.distance ?? 0) < (current?.simulation.course.distance ?? 0);
+    const canBurst = human && phase === "race" && !blocked && !holding && burstAt === null && (ownerFrame?.stamina ?? 0) >= RACE_BURST_COST && (ownerFrame?.distance ?? 0) < (current?.simulation.course.distance ?? 0);
     const displayedRound = phase === "race" || phase === "checkpoint" || phase === "recap" ? season.round - 1 : season.round;
     const course = makeRaceCourse(seed, Math.min(RACE_ROUNDS - 1, displayedRound));
 
@@ -129,6 +137,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         setRoute(next.rounds.at(-1)!.simulation.calls.find(call => call.id === "owner")?.route ?? "wide");
         setNotes(previous => [...previous, {round: season.round, decision, ...action}]);
         setSeason(next); seek(0); setPaused(false); setPhase("race");
+        setSignal(startSignal(human, tier) ? 0 : null);
     }
     function choose(enter: boolean) {
         if (phase !== "choose" || busy.current || suspended) return;
@@ -162,7 +171,16 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     }, [phase, autoAdvance, blocked]);
 
     useEffect(() => {
-        if (phase !== "race" || blocked || !current) return;
+        if (signal === null) return;
+        // A halt drops the rest of the signal, so resuming races at once instead of counting down again.
+        if (blocked) {setSignal(null); return;}
+        cueStartBeat(signal, sound);
+        const timer = window.setTimeout(() => setSignal(beat => beat !== null && beat < START_BEATS - 1 ? beat + 1 : null), BEAT_MS);
+        return () => window.clearTimeout(timer);
+    }, [signal, blocked, sound]);
+
+    useEffect(() => {
+        if (phase !== "race" || blocked || holding || !current) return;
         let frame = 0;
         let last: number | null = null;
         let painted = 0;
@@ -190,7 +208,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         // A halt catches the text up to the exact moment the runners froze on.
         return () => {cancelAnimationFrame(frame); setRaceTime(clock.current);};
         // Absolute simulation time keeps previously seen positions stable after a new call.
-    }, [phase, blocked, speed, current, commands.length, human, endTime, relaxed]);
+    }, [phase, blocked, holding, speed, current, commands.length, human, endTime, relaxed]);
 
     function callPace(pace: RacePace) {
         const at = RACE_CHECKPOINTS[commands.length];
@@ -208,6 +226,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         const next = applyRaceRound(roundStart.current, current.action, commands, at);
         if (!next.rounds.at(-1)!.simulation.bursts.some(burst => burst.id === "owner" && burst.at === at)) return;
         setBurstAt(at); setSeason(next);
+        pressBurst(burstButton.current, tier);
     }
     useEffect(() => {
         if (!human || (phase !== "race" && phase !== "checkpoint") || blocked) return;
@@ -244,6 +263,13 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         // Only a settled round starts its next-stage clock; a paused clock restarts on resume.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [phase, blocked, autoAdvance, season.round]);
+
+    // Standings rows rise in one after another once the result card has landed.
+    useLayoutEffect(() => {
+        if (phase === "recap" && standings.current) riseIn(standings.current.rows, tier, 50, 300);
+        // A tier change mid-recap leaves rows where they are.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase, season.round]);
 
     useEffect(() => {
         if (phase !== "recap") return;
@@ -297,7 +323,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                     <small>{t.source}: {latest.decision.source === "llm" ? latest.decision.model || "LLM" : t.local}{!human && <> · {t.entry}: {latest.enter ? "−1" : "0"}</>}</small>
                 </div>
                 {!latest.enter && <p className="arc-race-sitout">{t.noEntry}</p>}
-                <RaceTrack rivalId={season.rivalId} commands={current.simulation.calls.filter(call => call.id === "owner")} race={current.simulation} progress={progress} clock={clock} ended={phase === "recap"} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} tier={tier} sound={sound} playback={speed} />
+                <RaceTrack rivalId={season.rivalId} commands={current.simulation.calls.filter(call => call.id === "owner")} race={current.simulation} progress={progress} clock={clock} ended={phase === "recap"} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} tier={tier} sound={sound} playback={speed} signal={phase === "race" ? signal : null} />
                 {human && phase !== "recap" && <div className={`race-command-dock ${windowOpen ? "race-awaiting" : ""}`}>
                     <div><span className="arc-overline">{windowOpen ? ko ? `${commands.length + 1}번째 갈림길` : `FORK ${commands.length + 1}` : ko ? `작전 ${commands.length} / 2` : `CALLS ${commands.length} / 2`}</span>
                         <h2>{windowOpen ? phase === "checkpoint" ? ko ? "멈춘 사이, 작전을 골라요" : "Paused — pick your call" : ko ? `${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}초 뒤 갈림길 · 바꿀까요?` : `Fork in ${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}s · Change your plan?` : nextCall === undefined ? ko ? "남은 승부는 결승선에서!" : "All the way to the finish!" : ko ? "말이 작전대로 달리고 있어요" : "Your horse is following the plan"}</h2>
@@ -311,9 +337,9 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                 </div>}
                 {human && phase !== "recap" && <div className="race-burst-control">
                     <div><strong>{burstAt !== null ? ko ? "승부수를 썼어요" : "Burst used" : ko ? "한 번뿐인 추월 기회" : "One chance to make your move"}</strong><small>{ko ? `체력 ${RACE_BURST_COST}% · 짧고 강한 가속` : `${RACE_BURST_COST}% energy · A short, strong dash`}</small></div>
-                    <button type="button" disabled={!canBurst} onClick={triggerBurst}>{burstAt !== null ? ko ? "사용 완료" : "Used" : (ownerFrame?.stamina ?? 0) < RACE_BURST_COST ? ko ? "체력 부족" : "Low energy" : ko ? "승부수! [B]" : "BURST! [B]"}</button>
+                    <button type="button" ref={burstButton} className={burstAt !== null ? "race-burst-used" : undefined} disabled={!canBurst} onClick={triggerBurst}>{burstAt !== null ? <span className="race-burst-stamp">{ko ? "사용 완료" : "Used"}</span> : (ownerFrame?.stamina ?? 0) < RACE_BURST_COST ? ko ? "체력 부족" : "Low energy" : ko ? "승부수! [B]" : "BURST! [B]"}</button>
                 </div>}
-                {phase === "recap" && <RaceRecap race={current.simulation} commands={current.simulation.calls.filter(call => call.id === "owner")} locale={locale} />}
+                {phase === "recap" && <RaceRecap race={current.simulation} commands={current.simulation.calls.filter(call => call.id === "owner")} locale={locale} tier={tier} sound={sound} />}
                 <div className="arc-race-playback">
                     {phase !== "recap" && <button type="button" className="arc-button arc-button-plain" onClick={() => setPaused(value => !value)}>{paused ? t.resume : t.pause}</button>}
                     {phase !== "recap" && <div className="mapae-speed" role="group" aria-label={ko ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>}
@@ -326,7 +352,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
             {phase === "recap" && <div className="arc-race-standings">
                 <h2>{t.rankings}</h2>
                 <table><thead><tr><th>{t.competitor}</th><th>{t.score}</th><th>{t.spent}</th></tr></thead>
-                    <tbody>{seasonRanking(season).map(runner => <tr key={runner.id} className={runner.id === "owner" ? "arc-race-owner" : ""}>
+                    <tbody ref={standings}>{seasonRanking(season).map(runner => <tr key={runner.id} className={runner.id === "owner" ? "arc-race-owner" : ""}>
                         <th scope="row"><span>{runner.rank}</span> {runner.name} {runner.id === "owner" ? <small>{t.your}</small> : runner.id === season.rivalId ? <small>{ko ? "라이벌" : "RIVAL"}</small> : null}</th><td>{runner.points}</td><td>{human ? runner.entries : SEASON_TOKENS - runner.tokens} / {RACE_ROUNDS}</td>
                     </tr>)}</tbody></table><p>{t.standingsNote}</p>
             </div>}
@@ -340,15 +366,30 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
 
 const PACE_LABELS = {ko: {save: "힘 아끼기", steady: "속도 유지", push: "치고 나가기"}, en: {save: "Save energy", steady: "Hold pace", push: "Make a move"}};
 const PACE_HINTS = {ko: {save: "느리게 · 절약", steady: "균형 잡힌 속도", push: "빠르게 · 소모 큼"}, en: {save: "Slow · Save energy", steady: "Balanced effort", push: "Fast · High energy"}};
-function RaceRecap({race, commands, locale}: {race: RaceSimulation; commands: RaceCommand[]; locale: "ko" | "en"}) {
+function RaceRecap({race, commands, locale, tier, sound}: {race: RaceSimulation; commands: RaceCommand[]; locale: "ko" | "en"; tier: MotionTier; sound: ArcadeSound}) {
     const ko = locale === "ko", owner = race.finish.find(r => r.id === "owner");
+    const card = useRef<HTMLDivElement>(null);
+    const place = useRef<HTMLSpanElement>(null);
+    const score = useRef<HTMLSpanElement>(null);
+    // Before paint: the card lands, its place is stamped (CSS), the points roll up and the highlights follow one by one.
+    useLayoutEffect(() => {
+        if (!owner) return;
+        cueSeal(place.current, sound);
+        if (card.current) riseIn(card.current.querySelectorAll(".race-result-highlight"), tier, 70, 360);
+        if (!score.current) return;
+        if (tier !== "still" && !document.hidden) score.current.textContent = "0";
+        const roll = countUp(score.current, owner.points, {tier}, {ms: 500});
+        return () => roll?.cancel();
+        // One ceremony per result: the round's race, not later renders, starts it.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [race]);
     if (!owner) return null;
     const arrived = owner.seconds <= raceEndTime(race);
     const stamina = raceFrameAt(race, raceEndTime(race) / race.seconds).positions.find(p => p.id === "owner")!.stamina;
     const behind = Math.max(0, owner.seconds - race.finish[0]!.seconds);
-    return <div className="race-photo-finish" role="status">
-        <span className="race-place">{owner.rank}<small>{ko ? "위" : "PLACE"}</small></span>
-        <div><span className="arc-overline">RACE RESULT / +{owner.points} {ko ? "점" : "PTS"}</span><h2>{!arrived ? ko ? `${owner.rank}위로 경기 종료` : `Place ${owner.rank} confirmed` : owner.rank === 1 ? ko ? "결승선의 주인공!" : "First across the line!" : ko ? `선두와 ${behind.toFixed(2)}초 차이` : `${behind.toFixed(2)}s behind the leader`}</h2>
+    return <div ref={card} className="race-photo-finish" role="status" data-tier={tier}>
+        <span ref={place} className="race-place">{owner.rank}<small>{ko ? "위" : "PLACE"}</small></span>
+        <div><span className="arc-overline">RACE RESULT / +<span ref={score} key={owner.points} aria-hidden="true">{owner.points}</span><span className="sr-only">{owner.points}</span> {ko ? "점" : "PTS"}</span><h2>{!arrived ? ko ? `${owner.rank}위로 경기 종료` : `Place ${owner.rank} confirmed` : owner.rank === 1 ? ko ? "결승선의 주인공!" : "First across the line!" : ko ? `선두와 ${behind.toFixed(2)}초 차이` : `${behind.toFixed(2)}s behind the leader`}</h2>
             <p>{arrived ? ko ? `도착 ${owner.seconds.toFixed(2)}초 · 남긴 체력 ${Math.round(stamina)}%` : `${owner.seconds.toFixed(2)}s · ${Math.round(stamina)}% stamina left` : ko ? "세 마리가 도착해 남은 순위가 확정됐어요." : "Three horses finished, so the remaining place is settled."}</p>
             <p>{stamina < 1 ? ko ? "막판에는 체력이 바닥났어요. 다음엔 앞 구간에서 힘을 아껴봐요." : "You ran out of stamina. Try saving more in the early section." : owner.rank !== 1 && stamina > 30 ? ko ? "여력이 남았어요. 다음엔 더 일찍 치고 나가 볼까요?" : "You had energy left. Try making your move earlier." : ko ? "코스와 작전을 기억해 두고, 다음 경기에 도전해요." : "Keep this course and your choices in mind for the next race."}</p>
             {raceHighlights(race).map((highlight, i) => <p className="race-result-highlight" key={i}>{highlight[locale]}</p>)}
