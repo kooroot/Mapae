@@ -40,7 +40,8 @@ export function createOutingApp(options: {token?: string; store?: OutingStore; r
         const start = parseStart(value), owner = c.get('owner'), prior = options.store.get(start.id);
         if (prior) {if (prior.fingerprint !== fingerprint(owner, start)) throw new OutingError('conflict'); return c.json(status(owner));}
         const permission = await validate(owner, start, options.runner.agent, now());
-        options.store.insert(owner, start, permission, options.runner.agent, now());
+        const guardian = await options.runner.guardians.inspect(start.tokenId);
+        options.store.insert(owner, start, permission, options.runner.agent, now(), guardian);
         return c.json(status(owner), 201);
     });
     app.post('/:id/:action', c => {
@@ -52,8 +53,8 @@ export function createOutingApp(options: {token?: string; store?: OutingStore; r
     });
     app.onError(error => {
         const code = error instanceof OutingError ? error.code : 'storage_unavailable';
-        const status = code === 'unauthorized' ? 401 : code === 'not_found' ? 404 : code === 'conflict' ? 409 : code === 'busy' ? 429 :
-            ['disabled','storage_unavailable'].includes(code) ? 503 : 400;
+        const status = code === 'unauthorized' ? 401 : code === 'not_found' ? 404 : code === 'conflict' ? 409 : code === 'owner_changed' ? 409 : code === 'busy' ? 429 :
+            ['disabled','storage_unavailable','guardian_unavailable'].includes(code) ? 503 : 400;
         return Response.json({error: {code}}, {status, headers: {'Cache-Control': 'no-store'}});
     });
     return app;

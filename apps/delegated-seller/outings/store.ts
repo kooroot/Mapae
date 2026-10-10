@@ -1,6 +1,9 @@
 import {Database} from 'bun:sqlite';
 import {createHash, randomUUID} from 'node:crypto';
 import type {Address, Hex} from 'viem';
+import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
+import {guardianTraits, guardianTraitsHash, type GuardianSnapshot} from '@mapae/arcade/guardians';
+import {GuardianLedger} from '../guardians/ledger';
 import type {GameId} from '@mapae/arcade';
 import type {ShopMemory} from '@mapae/arcade/shop';
 import type {OutingStart, OutingView, OutingResult} from '@mapae/arcade/outings';
@@ -9,16 +12,17 @@ import {OutingError, type ValidatedPermission} from './validation';
 export type Pending = {game: GameId; seed: number; header: string | null; transaction: Hex | null};
 export type Job = OutingView & {owner: Address; payer: Address; agent: Address; context: Hex; fingerprint: string; contextHash: Hex; stopRequested: boolean; pending: Pending | null; shopMemory?: ShopMemory};
 export function publicJob(job: Job): OutingView {
-    const {id, characterId, profile, locale, choice, status, admissions, spent, createdAt, updatedAt, expiresAt, error, results} = job;
-    return {id, characterId, profile, locale, choice, status, admissions, spent: spent + (job.pending?.transaction ? 1 : 0), createdAt, updatedAt, expiresAt, error, results};
+    const {id, characterId, guardian, profile, locale, choice, status, admissions, spent, createdAt, updatedAt, expiresAt, error, results} = job;
+    return {id, characterId, guardian, profile, locale, choice, status, admissions, spent: spent + (job.pending?.transaction ? 1 : 0), createdAt, updatedAt, expiresAt, error, results};
 }
 // Canonical field order avoids a JSON property order becoming a second idempotency key.
 export function fingerprint(owner: Address, start: OutingStart): string {
-    return createHash('sha256').update(JSON.stringify([owner.toLowerCase(), start.characterId, start.profile.name, start.profile.color,
-        start.profile.temperament, start.profile.goal, start.locale, start.choice, start.admissions, start.permissionContext.toLowerCase(), start.shopMemory ?? null])).digest('hex');
+    return createHash('sha256').update(JSON.stringify([owner.toLowerCase(), start.tokenId, start.goal,
+        start.locale, start.choice, start.admissions, start.permissionContext.toLowerCase()])).digest('hex');
 }
 export class OutingStore {
     readonly db: Database;
+    readonly guardians: GuardianLedger;
     readonly workerId = randomUUID();
     constructor(path: string) {
         this.db = new Database(path, {create: true, strict: true});
@@ -26,26 +30,41 @@ export class OutingStore {
             CREATE TABLE IF NOT EXISTS arcade_outings(id TEXT PRIMARY KEY, owner TEXT NOT NULL, context_hash TEXT NOT NULL UNIQUE, updated_at INTEGER NOT NULL, state TEXT NOT NULL, data TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS arcade_outings_owner ON arcade_outings(owner, updated_at);
             CREATE TABLE IF NOT EXISTS arcade_outing_lease(id INTEGER PRIMARY KEY CHECK(id=1), worker TEXT NOT NULL, until_ms INTEGER NOT NULL);`);
+        if (this.db.query("SELECT id FROM arcade_outings WHERE state IN ('queued','running','paused') AND json_extract(data,'$.guardian') IS NULL LIMIT 1").get()) throw new Error('Drain previous mutable-character outings before guardian rollout');
+        this.guardians = new GuardianLedger(this.db);
     }
     get(id: string): Job | null {const row = this.db.query<{data: string}, [string]>('SELECT data FROM arcade_outings WHERE id=?').get(id); return row ? JSON.parse(row.data) as Job : null;}
-    list(owner: Address): Job[] {return this.db.query<{data: string}, [string]>("SELECT data FROM arcade_outings WHERE owner=? ORDER BY CASE WHEN state IN ('queued','running','paused') THEN 0 ELSE 1 END, updated_at DESC, id DESC LIMIT 24").all(owner.toLowerCase()).map(r => JSON.parse(r.data) as Job);}
+    list(owner: Address): Job[] {return this.db.query<{data: string}, [string]>("SELECT data FROM arcade_outings WHERE owner=? AND json_extract(data,'$.guardian') IS NOT NULL ORDER BY CASE WHEN state IN ('queued','running','paused') THEN 0 ELSE 1 END, updated_at DESC, id DESC LIMIT 24").all(owner.toLowerCase()).map(r => JSON.parse(r.data) as Job);}
     save(job: Job): void {this.db.query('UPDATE arcade_outings SET updated_at=?, state=?, data=? WHERE id=?').run(job.updatedAt, job.status, JSON.stringify(job), job.id);}
-    insert(owner: Address, start: OutingStart, permission: ValidatedPermission, agent: Address, now: number): Job {
+    insert(owner: Address, start: OutingStart, permission: ValidatedPermission, agent: Address, now: number, guardian: GuardianSnapshot): Job {
         return this.db.transaction(() => {
             const prior = this.get(start.id), hash = fingerprint(owner, start);
             if (prior) {if (prior.fingerprint !== hash) throw new OutingError('conflict'); return prior;}
+            if (guardian.owner.toLowerCase() !== owner.toLowerCase() || guardian.tokenId !== start.tokenId) throw new OutingError('owner_changed');
+            if (guardian.ruleset !== ARCADE_RULESET_VERSION || guardian.traitsHash !== guardianTraitsHash(guardian.seed)) throw new OutingError('guardian_unavailable');
+            const traits = guardianTraits(guardian.seed);
+            const characterId = `nft-${start.tokenId}`;
+            const profile = {name: `#${start.tokenId}`, color: traits.color, temperament: traits.temperament, goal: start.goal, aptitudes: traits.aptitudes};
             this.expireUnsubmitted(now);
-            const characterActive = this.db.query<{id: string}, [string, string]>("SELECT id FROM arcade_outings WHERE owner=? AND json_extract(data, '$.characterId')=? AND state IN ('queued','running','paused') LIMIT 1").get(owner.toLowerCase(), start.characterId);
-            if (characterActive) throw new OutingError('busy');
+            const characterActive = this.db.query<{data: string}, [string, string]>("SELECT data FROM arcade_outings WHERE lower(json_extract(data, '$.guardian.collection'))=? AND json_extract(data, '$.guardian.tokenId')=? AND state IN ('queued','running','paused') LIMIT 1").get(guardian.collection.toLowerCase(), guardian.tokenId);
+            if (characterActive) {
+                const previous = JSON.parse(characterActive.data) as Job;
+                const transferred = previous.guardian.ownershipEpoch !== guardian.ownershipEpoch || previous.owner.toLowerCase() !== owner.toLowerCase();
+                if (!transferred || previous.pending?.header || previous.pending?.transaction) throw new OutingError('busy');
+                // A new owner can retire an unsigned stale plan. An in-flight financial
+                // intent must instead be reconciled by its original actor first.
+                previous.stopRequested = true; previous.status = 'stopped'; previous.context = '0x'; previous.pending = null;
+                previous.error = 'owner_changed'; previous.updatedAt = now; this.save(previous);
+            }
             const active = this.db.query<{n: number}, [string]>("SELECT COUNT(*) n FROM arcade_outings WHERE owner=? AND state IN ('queued','running','paused')").get(owner.toLowerCase())!.n;
             const total = this.db.query<{n: number}, []>("SELECT COUNT(*) n FROM arcade_outings WHERE state IN ('queued','running','paused')").get()!.n;
-            if (active >= 12 || total >= 256) throw new OutingError('busy');
+            if (active >= 3 || total >= 256) throw new OutingError('busy');
             if (this.db.query('SELECT id FROM arcade_outings WHERE context_hash=?').get(permission.contextHash)) throw new OutingError('conflict');
             const job: Job = {id: start.id, owner, payer: permission.payer, agent, context: start.permissionContext, contextHash: permission.contextHash,
-                fingerprint: hash, characterId: start.characterId, profile: start.profile, locale: start.locale, choice: start.choice,
+                fingerprint: hash, characterId, guardian, profile, locale: start.locale, choice: start.choice,
                 admissions: start.admissions, spent: 0, status: 'queued', createdAt: now, updatedAt: now, expiresAt: permission.expiresAt,
-                error: null, stopRequested: false, pending: null, results: [], shopMemory: start.shopMemory};
-            this.db.query('INSERT INTO arcade_outings VALUES (?,?,?,?,?,?)').run(job.id, owner.toLowerCase(), permission.contextHash, now, job.status, JSON.stringify({...job, shopMemory: start.shopMemory}));
+                error: null, stopRequested: false, pending: null, results: [], shopMemory: this.guardians.memory(guardian.collection, guardian.tokenId)};
+            this.db.query('INSERT INTO arcade_outings VALUES (?,?,?,?,?,?)').run(job.id, owner.toLowerCase(), permission.contextHash, now, job.status, JSON.stringify(job));
             return job;
         }).immediate();
     }
@@ -72,7 +91,9 @@ export class OutingStore {
     result(jobId: string, result: OutingResult, now: number): void {
         this.db.transaction(() => {
             const job = this.get(jobId)!;
-            if (job.results.some(r => r.id === result.id)) return;
+            const existing = job.results.find(r => r.id === result.id);
+            if (existing) {if (JSON.stringify(existing) !== JSON.stringify(result)) throw new OutingError('conflict'); return;}
+            this.guardians.insert(job, result);
             job.results.push(result); if (result.outcome.shopMemory) job.shopMemory = result.outcome.shopMemory; job.spent = job.results.length; job.pending = null; job.updatedAt = now; job.error = null;
             job.status = job.stopRequested ? 'stopped' : job.spent >= job.admissions ? 'complete' : 'queued';
             if (job.status === 'complete' || job.status === 'stopped') job.context = '0x';

@@ -31,17 +31,26 @@ async function body(request: Request, max: number): Promise<unknown> {
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 export type ProfileVerifier = (input: {address: Address; message: string; signature: Hex}) => Promise<boolean>;
 
+/** Authenticated analytics attribution only; caller still enforces same-origin ingestion. */
+export async function profileSessionOwner(request: Request, repo: ProfileRepository, now = Date.now()): Promise<string | null> {
+    const session = readCookie(request, SESSION);
+    const identity = session ? await repo.identity(await tokenHash(session), new URL(request.url).origin, now) : null;
+    return identity && isAddress(identity.owner) ? identity.owner.toLowerCase() : null;
+}
+
 /** The stored challenge supplies the identity and message; no client-selected profile owner. */
-export async function profileApi(request: Request, repo: ProfileRepository, options: {verify?: ProfileVerifier; now?: number; development?: boolean; checkout?: (request: Request, owner: Address, input: unknown) => Promise<Response>; outings?: (request: Request, owner: Address, input: unknown) => Promise<Response>} = {}): Promise<Response> {
+export async function profileApi(request: Request, repo: ProfileRepository, options: {verify?: ProfileVerifier; now?: number; development?: boolean; checkout?: (request: Request, owner: Address, input: unknown) => Promise<Response>; outings?: (request: Request, owner: Address, input: unknown) => Promise<Response>; guardians?: (request: Request, owner: Address, input: unknown) => Promise<Response>; onAuthenticated?: (request: Request, owner: string, now: number) => Promise<void>} = {}): Promise<Response> {
     const url = new URL(request.url), now = options.now ?? Date.now();
     const local = options.development && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
-    if ((!ORIGINS.has(url.origin) && !local) || url.search) return error("origin_denied", 403);
+    const historyCursor = /^\/api\/arcade\/profile\/guardians\/[1-9][0-9]{0,77}$/.test(url.pathname) && request.method === "GET" && /^\?before=[1-9][0-9]{0,15}$/.test(url.search) && Number.isSafeInteger(Number(url.searchParams.get("before")));
+    if ((!ORIGINS.has(url.origin) && !local) || (url.search && !historyCursor)) return error("origin_denied", 403);
     if (request.headers.get("Sec-Fetch-Site") === "cross-site" || (request.headers.has("Origin") && request.headers.get("Origin") !== url.origin)) return error("origin_denied", 403);
     const write = request.method !== "GET";
     if (write && (request.headers.get("Origin") !== url.origin || request.headers.get("Content-Type")?.split(";")[0] !== "application/json")) return error("origin_denied", 403);
     const path = url.pathname;
     const outingPath = /^\/api\/arcade\/profile\/outings(?:\/[A-Za-z0-9_-]{8,80}\/(?:stop|resume))?$/.test(path);
-    if (!outingPath && !["/api/arcade/profile", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout", "/api/arcade/profile/checkout", "/api/arcade/profile/checkout/ack"].includes(path)) return error("not_found", 404);
+    const guardianPath = /^\/api\/arcade\/profile\/guardians(?:\/[1-9][0-9]{0,77}|\/results\/0x[a-fA-F0-9]{64}\/claim)?$/.test(path);
+    if (!outingPath && !guardianPath && !["/api/arcade/profile", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout", "/api/arcade/profile/checkout", "/api/arcade/profile/checkout/ack"].includes(path)) return error("not_found", 404);
     try {
         if (path.endsWith("/challenge") && request.method === "POST") {
             const input = await body(request, 1024);
@@ -71,6 +80,7 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
             await repo.session(await tokenHash(session), {owner: challenge.owner, origin: url.origin, expires_at: now + SESSION_SECONDS * 1000});
             const response = json({owner: challenge.owner}, 200, cookie(SESSION, session, SESSION_SECONDS));
             response.headers.append("Set-Cookie", cookie(CHALLENGE, "", 0));
+            try {await options.onAuthenticated?.(request, challenge.owner, now);} catch { /* Measurement never blocks a verified login. */ }
             return response;
         }
         const session = readCookie(request, SESSION);
@@ -80,6 +90,14 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
         if (path.endsWith("/logout") && request.method === "POST") {await repo.logout(await tokenHash(session!)); return json({ok: true}, 200, cookie(SESSION, "", 0));}
         const ip = request.headers.get("CF-Connecting-IP"), requestWindow = Math.floor(now / 60_000);
         if (ip && !await repo.rateLimit(`authenticated-ip:${await tokenHash(ip)}:${requestWindow}`, (requestWindow + 1) * 60_000, 600)) return limited((requestWindow + 1) * 60_000, now);
+        if (guardianPath) {
+            const claim = path.endsWith("/claim");
+            if (request.method !== (claim ? "POST" : "GET")) return error("method_not_allowed", 405);
+            const until = (requestWindow + 1) * 60_000;
+            if (!await repo.rateLimit(`guardians:${identity.owner}:${request.method}:${requestWindow}`, until, claim ? 12 : 30)) return limited(until, now);
+            if (!options.guardians) return error("guardians_unavailable", 503);
+            return await options.guardians(request, getAddress(identity.owner).toLowerCase() as Address, claim ? await body(request, 1024) : null);
+        }
         if (outingPath) {
             if (request.method !== "POST" && !(path === "/api/arcade/profile/outings" && request.method === "GET")) return error("method_not_allowed", 405);
             const window = Math.floor(now / 60_000), until = (window + 1) * 60_000;

@@ -1,0 +1,93 @@
+import {afterEach,describe,expect,test} from 'bun:test';
+import {Database} from 'bun:sqlite';
+import {readFileSync} from 'node:fs';
+import {guardianTraitsHash} from '@mapae/arcade/guardians';
+import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
+import type {Address} from 'viem';
+import {emptyProgress,type GuardianRoster} from '../../../../delegated-seller/guardians/types';
+import {profileRepository} from './repository';
+import {profileApi,tokenHash} from './api';
+import {d1} from './test-db';
+import {guardiansApi,validGuardianSnapshot} from './guardians';
+
+const owner='0x1111111111111111111111111111111111111111' as Address,other='0x2222222222222222222222222222222222222222' as Address;
+const session='a'.repeat(64),receiptToken='receipt-token'.repeat(4),now=2_000_000_000_000;
+const seed=`0x${'77'.repeat(32)}` as const,id=`0x${'44'.repeat(32)}` as const;
+const base='https://mapae.io/api/arcade/profile/guardians',dbs:Database[]=[];
+afterEach(()=>{for(const db of dbs.splice(0))db.close();});
+async function repository(){
+    const db=new Database(':memory:');dbs.push(db);db.exec(readFileSync(new URL('../../../schema/arcade.sql',import.meta.url),'utf8'));
+    const repo=profileRepository(d1(db));await repo.session(await tokenHash(session),{owner,origin:'https://mapae.io',expires_at:now+10000});return repo;
+}
+const request=(suffix='',method='GET',body?:unknown,headers:Record<string,string>={})=>new Request(base+suffix,{method,headers:{Origin:'https://mapae.io','Content-Type':'application/json',Cookie:`__Host-mapae-arcade-session=${session}`,'X-Mapae-Wallet':owner,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
+const token={tokenId:'1',owner,ownershipEpoch:'1',revealed:true,seed,sequence:'1',progress:emptyProgress()};
+const roster:GuardianRoster={enabled:true,chainId:91342,collection:other,signer:other,mintFee:'12',minted:1,pendingTokenId:null,guardians:[token]};
+const response=(value:unknown)=>async()=>Response.json(value);
+const result={resultId:id,tokenId:'1',actor:owner,ownershipEpoch:'1',paymentTx:id,traitsHash:guardianTraitsHash(seed),inputsHash:seed,ruleset:ARCADE_RULESET_VERSION,seed:1,game:0,score:10,victory:false};
+const claim={collection:other,signer:other,result,claimed:false,signature:`0x${'11'.repeat(65)}`};
+describe('authenticated guardian bridge',()=>{
+    test('auth, CSRF, methods and rate limits precede any trusted seller call',async()=>{
+        const repo=await repository();let calls=0;
+        const options={now,guardians:(r:Request,a:Address,v:unknown)=>guardiansApi(r,a,v,{receiptToken,fetcher:async()=>{calls++;return Response.json(roster);}})};
+        expect((await profileApi(request(),repo,options)).status).toBe(200);
+        for(const headers of [{Cookie:''},{'X-Mapae-Wallet':other}] as Record<string,string>[])expect((await profileApi(request('','GET',undefined,headers),repo,options)).status).toBe(401);
+        expect((await profileApi(request(`/results/${id}/claim`,'POST',{}, {Origin:'https://evil.test'}),repo,options)).status).toBe(403);
+        expect((await profileApi(request('','POST',{}),repo,options)).status).toBe(405);
+        expect((await profileApi(request('?owner='+other),repo,options)).status).toBe(403);
+        expect(calls).toBe(1);
+        for(let i=1;i<30;i++)await profileApi(request(),repo,options);
+        expect((await profileApi(request(),repo,options)).status).toBe(429);
+    });
+    test('exact token cursor path passes and generic queries/targets fail closed',async()=>{
+        const repo=await repository();let target='',headers:HeadersInit|undefined;
+        const options={now,guardians:(r:Request,a:Address,v:unknown)=>guardiansApi(r,a,v,{receiptToken,fetcher:async(url,init)=>{target=url;headers=init?.headers;return Response.json({guardian:token,earned:emptyProgress(),results:[],nextCursor:null});}})};
+        expect((await profileApi(request('/1?before=10'),repo,options)).status).toBe(200);
+        expect(target).toBe('https://seller.mapae.io/arcade/guardians/1?before=10');
+        expect(new Headers(headers).get('X-Mapae-Owner')).toBe(owner);expect(new Headers(headers).get('Authorization')).toBe('Bearer '+receiptToken);
+        for(const suffix of ['/1?before=-1','/1?before=1&before=2','/1?before=9007199254740992','/1?url=https://evil.test','?before=1'])
+            expect((await profileApi(request(suffix),repo,options)).status).toBe(403);
+    });
+    test('claim selects a committed id; client gameplay is never forwarded',async()=>{
+        let sent:RequestInit|undefined;
+        const r=await guardiansApi(request(`/results/${id}/claim`,'POST',{score:999999}),owner,{score:999999},{receiptToken,fetcher:async(_url,init)=>{sent=init;return Response.json({...claim,privateKey:'secret',result:{...result,permission:'secret'}});}});
+        expect(r.status).toBe(200);expect(sent?.body).toBeUndefined();expect(await r.json<unknown>()).toEqual(claim);
+    });
+    test('real seller completion produces a validated permanent detail through the bridge',async()=>{
+        const {OutingStore}=await import('../../../../delegated-seller/outings/store');
+        const {OutingRunner}=await import('../../../../delegated-seller/outings/runner');
+        const {createGuardianApp}=await import('../../../../delegated-seller/guardians/routes');
+        const s=new OutingStore(':memory:');
+        const snapshot={chainId:91342 as const,collection:other,tokenId:'1',owner,ownershipEpoch:'1',seed,traitsHash:guardianTraitsHash(seed),ruleset:ARCADE_RULESET_VERSION};
+        const reader={collection:other,inspect:async()=>snapshot,token:async()=>token,claimed:async()=>false,roster:async()=>roster};
+        try{
+            s.insert(owner,{id:'verified-bridge-job',tokenId:'1',goal:'explore',locale:'ko',choice:'stamp',admissions:1,permissionContext:'0xabcd'},{payer:owner,expiresAt:now+7200_000,contextHash:id},other,now,snapshot);
+            await new OutingRunner(s,other,{async pay(_j,_p,persist){persist('must-never-reach-browser');return id;}},reader,()=>now).tick();
+            const app=createGuardianApp({token:receiptToken,reader,ledger:s.guardians});
+            const r=await guardiansApi(request('/1'),owner,null,{receiptToken,fetcher:async(url,init)=>app.request(new Request(url.replace('https://seller.mapae.io/arcade/guardians','https://seller.mapae.io'),init))});
+            expect(r.status).toBe(200);
+            const body=await r.json<{earned:{plays:number};results:{outcome:{achievement:{victory:boolean}}}[]}>();
+            expect(body.earned.plays).toBe(1);expect(body.results).toHaveLength(1);expect(typeof body.results[0]!.outcome.achievement.victory).toBe('boolean');
+            expect(JSON.stringify(body)).not.toContain('must-never-reach-browser');
+        }finally{s.close();}
+    });
+    test('response projections strip extra fields and reject wrong owner or identity',async()=>{
+        const r=await guardiansApi(request(),owner,null,{receiptToken,fetcher:response({...roster,secret:'hidden',guardians:[{...token,secret:'hidden',progress:{...emptyProgress(),secret:'hidden'}}]})});
+        expect(await r.json<unknown>()).toEqual(roster);
+        for(const value of [{...roster,guardians:[{...token,owner:other}]},{...roster,guardians:[token,token]},{...roster,mintFee:'NaN'}])
+            expect((await guardiansApi(request(),owner,null,{receiptToken,fetcher:response(value)})).status).toBe(503);
+        for(const patch of [{tokenId:'01'},{ownershipEpoch:'0'},{game:3},{score:1e10},{seed:2**32},{ruleset:1}])
+            expect((await guardiansApi(request(`/results/${id}/claim`,'POST',{}),owner,{}, {receiptToken,fetcher:response({...claim,result:{...result,...patch}})})).status).toBe(503);
+    });
+    test('disabled, redirect, oversized, non-JSON and private upstream errors never leak',async()=>{
+        expect(await (await guardiansApi(request(),owner,null,{})).json()).toMatchObject({enabled:false,collection:null});
+        for(const r of [new Response(null,{status:302,headers:{Location:'https://evil.test'}}),new Response('x'.repeat(1_048_577)),new Response('bad'),Response.json({error:{code:'secret-url-key'}},{status:500})]){
+            const response=await guardiansApi(request(),owner,null,{receiptToken,fetcher:async()=>r});
+            expect(response.status).toBe(503);expect(await response.json<unknown>()).toEqual({error:{code:'guardian_unavailable'}});
+        }
+    });
+    test('snapshot binds a valid seed hash and bounded onchain epoch',()=>{
+        const v={chainId:91342,collection:other,tokenId:'1',owner,ownershipEpoch:'1',seed,traitsHash:guardianTraitsHash(seed),ruleset:ARCADE_RULESET_VERSION};
+        expect(validGuardianSnapshot(v)).toBe(true);
+        for(const patch of [{traitsHash:seed},{chainId:1},{ownershipEpoch:(1n<<64n).toString()},{tokenId:'0'}])expect(validGuardianSnapshot({...v,...patch})).toBe(false);
+    });
+});

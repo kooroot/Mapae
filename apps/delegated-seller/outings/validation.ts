@@ -1,7 +1,6 @@
 import {validateAccountBootstrap} from '@mapae/delegation/account-bootstrap';
 import {parseActiveDeploymentArtifactJson, MAX_PERMISSION_CONTEXT_HEX_LENGTH} from '@mapae/delegation/config';
 import {decodeTimestampTerms} from '@mapae/delegation/delegation-status';
-import {parseShopMemory} from '@mapae/arcade/shop';
 import {buildRootDelegationTypedData} from '@mapae/delegation/signing';
 import {preparePeriodDelegation} from '@mapae/delegation/policy';
 import {ARCADE_PAY_TO, ARCADE_TICKET_AMOUNT} from '@mapae/arcade/tickets';
@@ -14,23 +13,20 @@ export const deployment = parseActiveDeploymentArtifactJson(JSON.stringify(artif
 export const ID = /^[A-Za-z0-9_-]{8,80}$/;
 export const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 export class OutingError extends Error {
-    constructor(readonly code: 'disabled' | 'unauthorized' | 'invalid_request' | 'invalid_permission' | 'conflict' | 'not_found' | 'busy' | 'storage_unavailable') {super(code);}
+    constructor(readonly code: 'disabled' | 'unauthorized' | 'invalid_request' | 'invalid_permission' | 'conflict' | 'not_found' | 'busy' | 'storage_unavailable' | 'owner_changed' | 'guardian_unavailable' | 'result_unavailable' | 'receipt_unconfirmed') {super(code);}
 }
 const member = (v: unknown, items: readonly string[]) => typeof v === 'string' && items.includes(v);
+export const TOKEN_ID = /^[1-9][0-9]{0,77}$/;
+export function validTokenId(value: unknown): value is string {
+    return typeof value === 'string' && TOKEN_ID.test(value) && BigInt(value) < (1n << 256n);
+}
 export function parseStart(input: unknown): OutingStart {
-    if (!object(input) || Object.keys(input).some(k => !['id','characterId','profile','locale','choice','admissions','permissionContext','shopMemory'].includes(k)) ||
-        typeof input.id !== 'string' || !ID.test(input.id) || typeof input.characterId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(input.characterId) ||
-        !object(input.profile) || Object.keys(input.profile).sort().join(',') !== 'color,goal,name,temperament' ||
-        typeof input.profile.name !== 'string' || input.profile.name.trim() !== input.profile.name || !input.profile.name.length || Array.from(input.profile.name).length > 12 || /[\x00-\x1f\x7f]/.test(input.profile.name) ||
-        !member(input.profile.color, ['red','jade','ink']) || !member(input.profile.temperament, ['curious','bold','calm']) ||
-        !member(input.profile.goal, ['score','save','explore']) || !member(input.locale, ['ko','en']) || !member(input.choice, ['auto','stamp','race','shop']) ||
+    if (!object(input) || Object.keys(input).some(k => !['id','tokenId','goal','locale','choice','admissions','permissionContext'].includes(k)) ||
+        typeof input.id !== 'string' || !ID.test(input.id) || !validTokenId(input.tokenId) ||
+        !member(input.goal, ['score','save','explore']) || !member(input.locale, ['ko','en']) || !member(input.choice, ['auto','stamp','race','shop']) ||
         !Number.isSafeInteger(input.admissions) || Number(input.admissions) < 1 || Number(input.admissions) > MAX_OUTING_ADMISSIONS ||
         typeof input.permissionContext !== 'string' || !isHex(input.permissionContext) || input.permissionContext.length % 2 !== 0 ||
         input.permissionContext.length < 4 || input.permissionContext.length > MAX_PERMISSION_CONTEXT_HEX_LENGTH) throw new OutingError('invalid_request');
-    // Only authored customer memories may affect a replay; no arbitrary gameplay state.
-    if (input.shopMemory !== undefined) {
-        if (!parseShopMemory(input.shopMemory)) throw new OutingError('invalid_request');
-    }
     return input as OutingStart;
 }
 export type ValidatedPermission = {payer: Address; expiresAt: number; contextHash: Hex};

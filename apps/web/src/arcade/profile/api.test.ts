@@ -1,7 +1,7 @@
 import {PROFILE_GENERATION} from "./model";
 import {describe, expect, test} from "bun:test";
 import {generatePrivateKey, privateKeyToAccount} from "viem/accounts";
-import {profileApi} from "./api";
+import {profileApi, profileSessionOwner} from "./api";
 import type {Challenge, ProfileRepository} from "./repository";
 import {emptyProfile, projectProfile, type ProfileSnapshot} from "./model";
 import {addCharacter, newArcadeState, newCompanion} from "../state";
@@ -128,4 +128,29 @@ test("checkout callbacks never run before wallet authentication and same-origin 
     expect(calls).toBe(0);
     expect((await profileApi(request("/checkout", "GET", undefined, user.headers), repo, options)).status).toBe(200);
     expect(calls).toBe(1);
+});
+
+test("guardian routes derive their actor from SIWE and only allow a bounded history cursor", async () => {
+    const repo = repository(); let calls = 0;
+    const user = await login(repo);
+    const options = {now, guardians: async (_request: Request, owner: string) => {calls++; expect(owner).toBe(user.user.address.toLowerCase()); return Response.json({});}};
+    expect((await profileApi(request("/guardians"), repo, options)).status).toBe(401);
+    expect((await profileApi(request("/guardians", "GET", undefined, {...user.headers, "X-Mapae-Wallet": account().address}), repo, options)).status).toBe(401);
+    expect((await profileApi(request("/guardians/1?before=12", "GET", undefined, user.headers), repo, options)).status).toBe(200);
+    for (const path of ["/guardians?before=12", "/guardians/1?before=0", "/guardians/1?before=9007199254740992", "/guardians/1?before=12&owner=other"]) expect((await profileApi(request(path, "GET", undefined, user.headers), repo, options)).status).toBe(403);
+    const claim = `/guardians/results/0x${"12".repeat(32)}/claim`;
+    expect((await profileApi(request(claim, "GET", undefined, user.headers), repo, options)).status).toBe(405);
+    expect((await profileApi(request(claim, "POST", {}, {...user.headers, Origin: "https://evil.test"}), repo, options)).status).toBe(403);
+    expect((await profileApi(request(claim, "POST", {}, user.headers), repo, options)).status).toBe(200);
+    expect(calls).toBe(2);
+});
+
+test("foreground attribution requires a live session and measurement failure cannot break login", async () => {
+    const repo = repository(), ch = await challenge(repo); let calls = 0;
+    const response = await profileApi(request("/login", "POST", {signature: ch.signature}, ch.headers), repo, {now, onAuthenticated: async (_request, owner) => {calls++; expect(owner).toBe(ch.user.address.toLowerCase()); throw Error("metrics outage");}});
+    expect(response.status).toBe(200); expect(calls).toBe(1);
+    const headers = {Cookie: cookie(response, "__Host-mapae-arcade-session")};
+    expect(await profileSessionOwner(request("/guardians", "GET", undefined, headers), repo, now)).toBe(ch.user.address.toLowerCase());
+    expect(await profileSessionOwner(request("/guardians", "GET", undefined, {"X-Mapae-Wallet": ch.user.address}), repo, now)).toBe(null);
+    expect(await profileSessionOwner(request("/guardians", "GET", undefined, headers), repo, now + 8 * 86400000)).toBe(null);
 });

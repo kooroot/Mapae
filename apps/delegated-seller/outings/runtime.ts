@@ -19,11 +19,11 @@ export function readOutingConfig(env: Record<string, string | undefined> = proce
     let account: ReturnType<typeof privateKeyToAccount>;
     try {account = privateKeyToAccount(key as Hex);} catch {throw new Error('ARCADE_AGENT_PRIVATE_KEY is invalid');}
     const roles: Record<string, `0x${string}`> = {ARCADE_AGENT: account.address};
-    for (const name of ['PRIVATE_KEY','FACILITATOR_SIGNER_PRIVATE_KEY','BOOTSTRAP_PRIVATE_KEY','REVOCATION_RELAYER_PRIVATE_KEY','REVOCATION_SPONSOR_PRIVATE_KEY']) {
+    for (const name of ['ARCADE_RESULT_PRIVATE_KEY','PRIVATE_KEY','DEPLOYER_PRIVATE_KEY','GUARDIAN_DEPLOYER_PRIVATE_KEY','FRAMEWORK_ADMIN_PRIVATE_KEY','GUARDIAN_ADMIN_PRIVATE_KEY','FACILITATOR_SIGNER_PRIVATE_KEY','BOOTSTRAP_PRIVATE_KEY','REVOCATION_RELAYER_PRIVATE_KEY','REVOCATION_SPONSOR_PRIVATE_KEY']) {
         const value = env[name]?.trim();
         if (value) {try {roles[name] = privateKeyToAccount(value as Hex).address;} catch {throw new Error(`${name} invalid`);}}
     }
-    for (const name of ['DEPLOYER_ADDRESS','FACILITATOR_SIGNER_ADDRESS','BOOTSTRAP_ADDRESS','REVOCATION_RELAYER_ADDRESS','REVOCATION_SPONSOR_ADDRESS']) {
+    for (const name of ['DEPLOYER_ADDRESS','GUARDIAN_DEPLOYER_ADDRESS','FRAMEWORK_ADMIN_ADDRESS','GUARDIAN_ADMIN_ADDRESS','FACILITATOR_SIGNER_ADDRESS','BOOTSTRAP_ADDRESS','REVOCATION_RELAYER_ADDRESS','REVOCATION_SPONSOR_ADDRESS']) {
         const value = env[name]?.trim();
         if (value) {
             if (!isAddress(value)) throw new Error(`${name} must be an address`);

@@ -3,6 +3,8 @@ import {isLoopbackHost} from "@mapae/shared";
 import {openStore} from "@mapae/store";
 import {createShopApp} from "./app.js";
 import {readStorePath} from "./env.js";
+import {readGuardianConfig, createGuardianReader, createGuardianClaims} from "./guardians/runtime";
+import {createGuardianApp} from "./guardians/routes";
 import {OutingStore} from "./outings/store";
 import {OutingRunner} from "./outings/runner";
 import {createOutingPayment, readOutingConfig} from "./outings/runtime";
@@ -134,10 +136,14 @@ const app = createShopApp({
 });
 
 const outingsConfig = readOutingConfig();
+const guardianConfig = readGuardianConfig();
+const guardianReader = guardianConfig ? createGuardianReader(guardianConfig) : undefined;
 const outingStore = outingsConfig ? new OutingStore(STORE_PATH) : undefined;
-const outingRunner = outingsConfig && outingStore
-    ? new OutingRunner(outingStore, outingsConfig.account.address, createOutingPayment(outingsConfig, request => app.fetch(request))) : undefined;
+const outingRunner = outingsConfig && outingStore && guardianReader
+    ? new OutingRunner(outingStore, outingsConfig.account.address, createOutingPayment(outingsConfig, request => app.fetch(request)), guardianReader) : undefined;
 app.route("/arcade/outing", createOutingApp({token: ARCADE_RECEIPT_TOKEN, store: outingStore, runner: outingRunner}));
+app.route("/arcade/guardians", createGuardianApp({token: ARCADE_RECEIPT_TOKEN, reader: guardianReader, ledger: outingStore?.guardians,
+    claim: guardianConfig && guardianReader && outingStore ? createGuardianClaims(guardianConfig, outingStore.guardians, guardianReader) : undefined}));
 outingRunner?.start();
 
 const shops = store.sellers.list().filter((seller) => seller.kind === "hosted");

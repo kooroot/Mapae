@@ -1,7 +1,9 @@
 import {isAddress, type Address} from "viem";
+import {guardianTokenId,guardianTraits,type GuardianSnapshot} from "@mapae/arcade/guardians";
+import {validGuardianSnapshot} from "./guardians";
 import type {AgentProfile, GameId} from "@mapae/arcade";
 import {MAX_OUTING_ADMISSIONS, type OutingResult, type OutingStart, type OutingStatus, type OutingView} from "@mapae/arcade/outings";
-import {admitActivity, completeActivity, isOutcome, latestShopMemory, projectActivity, type Activity} from "../activity";
+import {admitActivity, completeActivity, isOutcome, projectActivity, type Activity} from "../activity";
 import {validReplaySeed} from "../replay";
 import {PROFILE_GENERATION, parseProfile, profileState, projectProfile, sameProfile, type Profile} from "./model";
 import type {ProfileRepository} from "./repository";
@@ -11,11 +13,11 @@ const UPSTREAM = "https://seller.mapae.io/arcade/outing";
 // Keep every unsynced result; the API and each outcome have independent hard bounds.
 const MAX_RESPONSE_BYTES = 16 * 1_048_576;
 const JOB_ID = /^[A-Za-z0-9_-]{8,80}$/;
-const CHARACTER_ID = /^[A-Za-z0-9-]{1,64}$/;
+const CHARACTER_ID = /^nft-[1-9][0-9]{0,77}$/;
 const RESULT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const TRANSACTION = /^0x[0-9a-fA-F]{64}$/;
-const JOB_ERRORS = new Set(["permission_expired", "key_changed", "payment_unresolved", "simulation_failed"]);
-const ROUTE_ERRORS: Record<string, number> = {disabled: 503, unauthorized: 503, invalid_request: 400, invalid_permission: 400, conflict: 409, not_found: 404, busy: 409, storage_unavailable: 503};
+const JOB_ERRORS = new Set(["permission_expired", "key_changed", "payment_unresolved", "simulation_failed", "owner_changed", "guardian_unavailable", "ruleset_changed"]);
+const ROUTE_ERRORS: Record<string, number> = {disabled: 503, unauthorized: 503, invalid_request: 400, invalid_permission: 400, conflict: 409, not_found: 404, busy: 409, storage_unavailable: 503, owner_changed: 409, guardian_unavailable: 503, result_unavailable: 503};
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const natural = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 const game = (v: unknown): v is GameId => v === "race" || v === "shop" || v === "stamp";
@@ -43,20 +45,26 @@ export function parseOutingStatus(v: unknown): OutingStatus | null {
             !time(j.createdAt) || !time(j.updatedAt) || !time(j.expiresAt) || j.updatedAt < j.createdAt || j.expiresAt < j.createdAt ||
             !(j.error === null || typeof j.error === "string" && JOB_ERRORS.has(j.error)) ||
             !Array.isArray(j.results) || j.results.length > j.spent) return null;
+        if (!validGuardianSnapshot(j.guardian)) return null;
+        const guardian = j.guardian as GuardianSnapshot;
+        if (j.characterId !== `nft-${guardian.tokenId}`) return null;
         const profile = agentProfile(j.profile); if (!profile) return null;
+        const traits = guardianTraits(guardian.seed);
+        if (profile.color !== traits.color || profile.temperament !== traits.temperament || profile.name !== `#${guardian.tokenId}`) return null;
+        profile.aptitudes = traits.aptitudes;
         const results: OutingResult[] = [];
         for (const r of j.results) {
             if (!object(r) || typeof r.id !== "string" || !RESULT_ID.test(r.id) || resultIds.has(r.id) || !game(r.game) ||
                 (j.choice !== "auto" && j.choice !== r.game) || !validReplaySeed(r.seed) || !time(r.at) || r.at < j.createdAt || r.at > j.updatedAt ||
                 typeof r.transaction !== "string" || !TRANSACTION.test(r.transaction) || transactions.has(r.transaction.toLowerCase()) ||
-                !isOutcome(r.outcome) || new TextEncoder().encode(JSON.stringify(r.outcome)).byteLength > 16_384 || !Number.isSafeInteger(r.outcome.score) || r.outcome.game !== r.game || r.outcome.replay?.seed !== r.seed) return null;
+                !isOutcome(r.outcome) || new TextEncoder().encode(JSON.stringify(r.outcome)).byteLength > 16_384 || !Number.isSafeInteger(r.outcome.score) || r.outcome.game !== r.game || r.outcome.replay?.seed !== r.seed || r.outcome.replay.version !== guardian.ruleset || typeof r.outcome.achievement?.victory !== 'boolean') return null;
             // Reuse the existing exhaustive outcome projection rather than retaining unknown nested fields.
             const projected = projectActivity({id: r.id, characterId: j.characterId, color: profile.color, name: profile.name, game: r.game, at: r.at,
                 reason: "", source: "mapae-giwa", mode: "rules", ticketId: r.transaction, model: null, giwa: {balanceAfter: null, allowanceAfter: null}, status: "complete", outcome: r.outcome});
             results.push({id: r.id, game: r.game, seed: r.seed, at: r.at, transaction: r.transaction as `0x${string}`, outcome: projected.outcome!});
             resultIds.add(r.id); transactions.add(r.transaction.toLowerCase());
         }
-        jobs.push({id: j.id, characterId: j.characterId, profile, locale: j.locale, choice: j.choice, status: j.status as OutingView["status"],
+        jobs.push({id: j.id, characterId: j.characterId, guardian: {chainId: guardian.chainId, collection: guardian.collection, tokenId: guardian.tokenId, owner: guardian.owner, ownershipEpoch: guardian.ownershipEpoch, seed: guardian.seed, traitsHash: guardian.traitsHash, ruleset: guardian.ruleset}, profile, locale: j.locale, choice: j.choice, status: j.status as OutingView["status"],
             admissions: j.admissions, spent: j.spent, createdAt: j.createdAt, updatedAt: j.updatedAt, expiresAt: j.expiresAt, error: j.error as string | null, results});
         ids.add(j.id);
     }
@@ -128,17 +136,14 @@ export async function outingsApi(request: Request, owner: Address, input: unknow
         if (!object(input)) return error("invalid_request", 400);
         if (input.generation !== PROFILE_GENERATION) return error("server_restored", 409);
         if (base) {
-            const {id, characterId, admissions, permissionContext, locale} = input;
-            if (typeof id !== "string" || !JOB_ID.test(id) || typeof characterId !== "string" || !CHARACTER_ID.test(characterId) ||
+            const {id, tokenId, goal, admissions, permissionContext, locale} = input;
+            if (Object.keys(input).some(k => !['generation','id','tokenId','goal','choice','admissions','permissionContext','locale'].includes(k)) ||
+                typeof id !== "string" || !JOB_ID.test(id) || !guardianTokenId(tokenId) ||
+                (goal !== 'score' && goal !== 'save' && goal !== 'explore') ||
                 !choice(input.choice) || !natural(admissions) || admissions < 1 || admissions > MAX_OUTING_ADMISSIONS ||
                 typeof permissionContext !== "string" || !/^0x(?:[0-9a-fA-F]{2}){1,30000}$/.test(permissionContext) ||
                 (locale !== "ko" && locale !== "en")) return error("invalid_request", 400);
-            const snapshot = await deps.profiles.read(owner), character = snapshot.profile.characters.find(c => c.id === characterId);
-            if (!character) return error("character_missing", 409);
-            if (character.agent.mode !== "rules") return error("rules_required", 409);
-            payload = {id, characterId, admissions, permissionContext: permissionContext as `0x${string}`, choice: input.choice, locale,
-                profile: {name: character.name, color: character.color, temperament: character.temperament, goal: character.agent.goal},
-                shopMemory: latestShopMemory(profileState(snapshot.profile), characterId)};
+            payload = {id, tokenId, goal, admissions, permissionContext: permissionContext as `0x${string}`, choice: input.choice, locale};
         } else payload = {};
     }
     try {
