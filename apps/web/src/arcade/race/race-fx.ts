@@ -1,4 +1,4 @@
-import {raceEvents, RACE_BASE_SPEED, RACE_BURST_SECONDS, type RaceEvent, type RaceSimulation} from "@mapae/arcade/race";
+import {raceEvents, raceTerrain, RACE_BASE_SPEED, RACE_BURST_SECONDS, RACE_CHECKPOINTS, RACE_ROUTE_SECONDS, type RaceEvent, type RaceSimulation, type RaceTerrain} from "@mapae/arcade/race";
 import {flash, parseTime, play, pop} from "../juice";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
@@ -28,22 +28,45 @@ export function gallopRate(velocity: number, playback: number, stamina: number):
     return Math.min(2.2, Math.max(.6, playback * velocity / RACE_BASE_SPEED)) * (stamina < 25 ? .8 : 1);
 }
 
-const strides = new WeakMap<Element, {animations: Animation[]; rate: number}>();
+/** The CSS animations a stride or a gust speeds up. */
+export const GALLOP: ReadonlySet<string> = new Set(["race-gallop", "race-dust", "race-mud", "race-grass", "race-slip"]);
+export const WIND: ReadonlySet<string> = new Set(["race-wind-streak", "race-wind-leaf", "race-leaf-spin"]);
+
+const rates = new WeakMap<Element, {animations: Animation[]; rate: number; key: string | null}>();
 /**
- * Sets the sprite's CSS gallop and dust to `rate`. Rate is not play state, so `[data-halted]` still pauses them.
- * The animations are found once and found again when CSS restarted them (a class toggle cancels the old ones).
+ * Sets the CSS animations named in `names` under `root` to `rate`. Rate is not play state, so `[data-halted]` still pauses them.
+ * The animations are found again whenever CSS may have started or restarted some: the root's classes changed (a terrain's kick
+ * comes and goes with one), or one went idle (a class toggle above the root cancels the old ones and starts new ones at 1×).
  */
-export function setGallop(sprite: Element, rate: number) {
-    let stride = strides.get(sprite);
-    if (!stride || !stride.animations.length || stride.animations.some(animation => animation.playState === "idle")) {
-        stride = {animations: sprite.getAnimations({subtree: true}).filter(animation => animation instanceof CSSAnimation
-            && (animation.animationName === "race-gallop" || animation.animationName === "race-dust")), rate: 1};
-        strides.set(sprite, stride);
+export function setRate(root: Element, names: ReadonlySet<string>, rate: number) {
+    const key = root.getAttribute("class");
+    let found = rates.get(root);
+    if (!found || found.key !== key || !found.animations.length || found.animations.some(animation => animation.playState === "idle")) {
+        // NaN: a fresh set mixes kept and new animations, so the rate is written to all of them once.
+        found = {animations: root.getAnimations({subtree: true}).filter(animation => animation instanceof CSSAnimation && names.has(animation.animationName)), rate: NaN, key};
+        rates.set(root, found);
     }
-    if (Math.abs(stride.rate - rate) < RATE_STEP) return;
-    stride.rate = rate;
-    // updatePlaybackRate keeps each stride's current pose, so a speed change never jumps the pony.
-    for (const animation of stride.animations) animation.updatePlaybackRate(rate);
+    if (Math.abs(found.rate - rate) < RATE_STEP) return;
+    found.rate = rate;
+    // updatePlaybackRate keeps each animation's current pose, so a speed change never jumps the picture.
+    for (const animation of found.animations) animation.updatePlaybackRate(rate);
+}
+
+/**
+ * The fork's ground under a runner at `time`: the engine applies a terrain to the shortcut for RACE_ROUTE_SECONDS after the call,
+ * and never to the outside path or an arrived horse. `slip` is a push through mud, where the engine cuts the speed.
+ */
+export function groundAt(race: RaceSimulation, time: number, id: string): {terrain: RaceTerrain; slip: boolean} | null {
+    const call = race.calls.findLast(item => item.id === id && item.at <= time);
+    const arrived = race.finish.find(item => item.id === id)?.seconds ?? Infinity;
+    if (!call || call.route !== "shortcut" || time >= call.at + RACE_ROUTE_SECONDS || time >= arrived) return null;
+    const terrain = raceTerrain(race.course, RACE_CHECKPOINTS.indexOf(call.at as typeof RACE_CHECKPOINTS[number]));
+    return {terrain, slip: terrain === "mud" && call.pace === "push"};
+}
+
+/** Wind scenery speed on the engine's own gust curve (`raceWeatherFactor`): 1× at the average headwind, faster as it bites, slower in a lull. */
+export function windRate(factor: number): number {
+    return Math.min(2, Math.max(.5, .5 + (1 - factor) * 12.5));
 }
 
 /** A first-to-second gap under this many simulation seconds is a photo finish: one flash at the line, then a banner drops. */

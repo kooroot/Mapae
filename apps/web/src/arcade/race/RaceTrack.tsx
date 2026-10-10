@@ -8,6 +8,9 @@ import type {ArcadeSound} from "../sound";
 import type {Locale} from "../../lib/i18n";
 import "./race-scene.css";
 
+/** A headwind's ink streaks and ginkgo leaves; CSS places and times each one, the runners' loop sets their pace from the gust. */
+const WIND_STREAKS = [0, 1, 2, 3], WIND_LEAVES = [0, 1, 2, 3, 4, 5];
+
 /**
  * One shared course; positions and weather are projections of the deterministic simulation.
  * `progress` paces the text at the HUD rate; `clock` is the live simulation time the runners follow every frame.
@@ -21,6 +24,7 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
     const ko = locale === "ko";
     const track = useRef<HTMLDivElement>(null);
     const meter = useRef<HTMLSpanElement>(null);
+    const weather = useRef<HTMLDivElement>(null);
     const held = useRef<Animation[]>([]);
     const halted = !running && !ended;
     const holding = signal !== null && signal < START_BEATS - 1;
@@ -67,8 +71,8 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
         <div className="race-distance-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(raceProgress * 100)} aria-label={ko ? "경주 진행" : "Race progress"}><span ref={meter} /></div>
         <div className="race-world-scene">
             <img src="/arcade/race-course.webp" width={1536} height={1024} alt="" className="race-world-art" draggable={false} />
-            <div className="race-weather-fx" aria-hidden="true" />
-            <RaceRunners race={race} frame={frame} rivalId={rivalId} color={color} locale={locale} clock={clock} meter={meter} follow={!ended && !reducedMotion} live={running && !ended && !reducedMotion && !holding} tier={tier} sound={sound} playback={playback} />
+            <div ref={weather} className="race-weather-fx" aria-hidden="true">{race.course.weather === "wind" && <>{WIND_STREAKS.map(i => <i key={`streak-${i}`} className="race-wind-streak" />)}{WIND_LEAVES.map(i => <i key={`leaf-${i}`} className="race-wind-leaf" />)}</>}</div>
+            <RaceRunners race={race} frame={frame} rivalId={rivalId} color={color} locale={locale} clock={clock} meter={meter} weather={weather} follow={!ended && !reducedMotion} live={running && !ended && !reducedMotion && !holding} tier={tier} sound={sound} playback={playback} />
             {signal !== null && <div className="race-start-signal" aria-hidden="true"><span key={signal}>{(ko ? ["셋", "둘", "출발!"] : ["3", "2", "GO!"])[signal]}</span></div>}
             {closeFinish && <div className="race-close-finish" role="status"><strong>{finishGap < 1e-7 ? ko ? "공동 우승!" : "A DEAD HEAT!" : ko ? "결승선 접전!" : "PHOTO FINISH!"}</strong><span>{finishGap < 1e-7 ? ko ? "같은 기록, 같은 점수" : "Equal times, equal points" : ko ? `${finishGap.toFixed(2)}초가 가른 승부` : `Decided by ${finishGap.toFixed(2)} seconds`}</span></div>}
             <div className="race-route-ribbon" role="status">{routeStatus}</div>

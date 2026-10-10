@@ -1,10 +1,10 @@
 import {useEffect, useLayoutEffect, useRef, useState, type RefObject} from "react";
-import {raceEndTime, raceFrameAt, RACE_BURST_SECONDS, type RaceFrame, type RaceRoute, type RaceSimulation} from "@mapae/arcade/race";
+import {raceEndTime, raceFrameAt, raceWeatherFactor, RACE_BURST_SECONDS, type RaceFrame, type RaceRoute, type RaceSimulation} from "@mapae/arcade/race";
 import type {Color} from "../state";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
 import type {Locale} from "../../lib/i18n";
-import {burstGlow, gallopRate, RaceCues, runnerVelocity, setGallop} from "./race-fx";
+import {burstGlow, gallopRate, GALLOP, groundAt, RaceCues, runnerVelocity, setRate, WIND, windRate} from "./race-fx";
 
 /** A path change glides between the inner and outer lane instead of jumping 17px. */
 export const LANE_MS = 220;
@@ -14,6 +14,11 @@ const MAX_STEP_MS = 100;
 
 /** Sprite margins around the pony: dust trails left, the "YOU" tag and burst glow rise above it. */
 const SPRITE_LEFT = 24, SPRITE_TOP = 12;
+/**
+ * A draft link's dashes over `pathLength` 100, then a gap as long again: a dash offset of 100 shows only the gap, 0 the whole
+ * dashed line, so the CSS draw-in rolls the line out from the follower toward the horse it follows.
+ */
+const DRAFT_DASH = `${"4 3 ".repeat(14)}2 100`;
 
 export type Lane = {from: number; to: number; ms: number};
 type Point = {x: number; y: number};
@@ -57,7 +62,7 @@ function easeOut(progress: number): number {
  * a requestAnimationFrame loop reads the shared race clock and writes every position as translate3d, so horses move at the
  * display's frame rate without a React render. The sprite element's transform belongs to placement: effects animate inside it.
  */
-export function RaceRunners({race, frame, rivalId, color, locale, clock, follow, live, meter, tier, sound, playback}: {
+export function RaceRunners({race, frame, rivalId, color, locale, clock, follow, live, meter, weather, tier, sound, playback}: {
     race: RaceSimulation; frame: RaceFrame; rivalId: string; color: Color; locale: Locale; tier: MotionTier; sound: ArcadeSound;
     /** Viewing speed (1× or 2×): strides quicken with it, as the clock does. */
     playback: number;
@@ -68,6 +73,8 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
     /** The clock is advancing, so the loop runs. */
     live: boolean;
     meter: RefObject<HTMLSpanElement | null>;
+    /** The weather layer: its wind blows on the gust curve the engine slows the horses with. */
+    weather: RefObject<HTMLDivElement | null>;
 }) {
     const ko = locale === "ko";
     const scene = useRef<SVGSVGElement>(null);
@@ -110,14 +117,20 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
                 // The sprite box starts above and left of the runner's ground point (no style attribute: the CSP allows none).
                 if (sprite) sprite.style.transform = `translate3d(${point.x - SPRITE_LEFT}px,${point.y - pony - SPRITE_TOP}px,0)`;
                 // Strides follow the horse's own speed; only a live race gallops, and an arrived horse has stopped.
-                if (sprite && step !== null && position.distance < race.course.distance) setGallop(sprite, gallopRate(runnerVelocity(race, time, index), playback, position.stamina));
+                if (sprite && step !== null && position.distance < race.course.distance) setRate(sprite, GALLOP, gallopRate(runnerVelocity(race, time, index), playback, position.stamina));
                 // The burst glow swells in on mount (CSS) and fades out over the burst's last stretch, on the clock.
                 const glow = sprite?.querySelector<SVGElement>(".race-burst-glow");
                 const burst = glow && race.bursts.find(item => item.id === runner.id && time >= item.at);
                 if (glow && burst) glow.style.opacity = `${burstGlow(time - burst.at)}`;
             });
+            // The gust where the owner runs (the leader when it sits out), at the viewing speed like the strides.
+            if (weather.current && step !== null && race.course.weather === "wind") {
+                const focus = now.positions.find(item => item.id === "owner")?.distance ?? Math.max(...now.positions.map(item => item.distance));
+                setRate(weather.current, WIND, playback * windRate(raceWeatherFactor(race.course, focus)));
+            }
+            // A link that let go keeps its last line while it fades out (no `data-to`).
             for (const link of links.current?.children ?? []) {
-                const from = points.get((link as SVGElement).dataset.from!), to = points.get((link as SVGElement).dataset.to!);
+                const from = points.get((link as SVGElement).dataset.from!), to = points.get((link as SVGElement).dataset.to ?? "");
                 if (from && to) link.setAttribute("d", `M${from.x + pony * .8} ${from.y - 18} Q${Math.max(from.x, to.x) + pony} ${(from.y + to.y) / 2} ${to.x + pony * .45} ${to.y - 6}`);
             }
             if (meter.current) meter.current.style.transform = `scaleX(${Math.min(1, time / endTime)})`;
@@ -148,8 +161,9 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
                 <g ref={flag} className="race-finish-flag"><path d="M-14 -12h28v25h-28z" fill="#2e4938" stroke="#f4d592" strokeWidth="2" />
                     <path d="M-10 -8h8v8h-8zm16 0h5v8H6zM-2 0h8v8h-8z" fill="#fceaca" /></g>
             </g>
-            <g ref={links} aria-hidden="true">{frame.positions.filter(position => position.draftingId).map(position =>
-                <path key={`draft-${position.id}`} className="race-draft-link" data-from={position.id} data-to={position.draftingId} fill="none" stroke={position.blockedBy ? "#ffb573" : "#d5f7b2"} strokeWidth="3" strokeDasharray="5 4" />)}</g>
+            {/* One link per horse, kept mounted: following draws it in, letting go fades it out, both in CSS. */}
+            <g ref={links} aria-hidden="true">{frame.positions.map(position =>
+                <path key={position.id} className={`race-draft-link ${position.draftingId ? "race-draft-on" : ""}`} data-from={position.id} data-to={position.draftingId ?? undefined} fill="none" stroke={position.blockedBy ? "#ffb573" : "#d5f7b2"} strokeWidth="3" pathLength={100} strokeDasharray={DRAFT_DASH} />)}</g>
         </svg>
         <div ref={field} className="race-field" aria-hidden="true">{race.entrants.map((runner, index) => {
             const position = frame.positions.find(item => item.id === runner.id)!;
@@ -158,12 +172,16 @@ export function RaceRunners({race, frame, rivalId, color, locale, clock, follow,
             const tone = owner ? color : (["jade", "ink", "red"] as const)[index % 3]!;
             const bursting = race.bursts.some(burst => burst.id === runner.id && frame.time >= burst.at && frame.time < burst.at + RACE_BURST_SECONDS);
             const rival = runner.id === rivalId;
-            return <div key={runner.id} className={`race-sprite ${owner ? "race-our-runner" : "race-other-runner"} ${arrived ? "race-arrived" : ""} ${bursting ? "race-runner-bursting" : ""}`}>
+            const ground = groundAt(race, frame.time, runner.id);
+            return <div key={runner.id} className={`race-sprite ${owner ? "race-our-runner" : "race-other-runner"} ${arrived ? "race-arrived" : ""} ${bursting ? "race-runner-bursting" : ""} ${ground ? `race-terrain-${ground.terrain}` : ""} ${ground?.slip ? "race-slipping" : ""}`}>
                 <svg viewBox={`${-SPRITE_LEFT} ${-pony - SPRITE_TOP} ${pony + 2 * SPRITE_LEFT} ${pony + SPRITE_TOP + 40}`} width={pony + 2 * SPRITE_LEFT} height={pony + SPRITE_TOP + 40}>
                     <path d={`M-4 22H${pony + 6}`} stroke={position.path === "wide" ? "#ffd39d" : "#cce8a8"} strokeWidth="3" strokeDasharray={position.path === "wide" ? "8 4" : undefined} opacity=".9" />
                     <text className="race-path-label" x={pony / 2} y="34" textAnchor="middle" fill="#fff4d9" fontSize="9" fontWeight="800">{position.blockedBy ? ko ? "막힘" : "BLOCKED" : position.draftingId ? ko ? "따라가기 −40%" : "DRAFT −40%" : position.path === "wide" ? ko ? "바깥 추월" : "OUTSIDE" : ko ? "안쪽" : "INSIDE"}</text>
                     <ellipse cx={pony * .52} cy="16" rx={pony * .38} ry="6" fill="#54301b" opacity=".25" />
                     <g className="race-dust" fill="#fff0bd"><circle cx="8" cy="8" r="7" /><circle cx="0" cy="13" r="4" /><circle cx="-8" cy="7" r="3" /></g>
+                    {/* The ground answers the hooves: mud splashes up behind, a meadow throws grass; a hill tilts the pony (CSS). */}
+                    {ground?.terrain === "mud" && <g className="race-kick race-kick-mud" fill="#5b3b22"><circle cx="10" cy="14" r="3.2" /><circle cx="4" cy="16" r="2.4" /><ellipse cx="14" cy="15" rx="3.6" ry="2.2" /></g>}
+                    {ground?.terrain === "meadow" && <g className="race-kick race-kick-meadow" stroke="#6f9a46" strokeWidth="2" strokeLinecap="round"><path d="M10 15l-3-6" /><path d="M5 16l-5-4" /><path d="M14 15l-1-7" /></g>}
                     {bursting && <ellipse className="race-burst-glow" cx={pony * .5} cy={-pony * .32} rx={pony * .5} ry={pony * .4} fill="#ffd274" fillOpacity=".35" />}
                     {bursting && <g className="race-burst-streaks" stroke="#3b2a1c" strokeWidth="2.5" strokeLinecap="round"><path d={`M-2 ${-pony * .62}h-24`} /><path d={`M-6 ${-pony * .42}h-30`} /><path d={`M-2 ${-pony * .22}h-20`} /></g>}
                     <g className="race-pony-bounce"><image href={`/arcade/race-pony-${tone}-512.webp`} x="0" y={-pony + 18} width={pony} height={pony} /></g>

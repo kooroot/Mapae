@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, test} from "bun:test";
-import {makeRaceCourse, raceEvents, raceFrameAt, simulateRace, RACE_BASE_SPEED, type RaceCommand, type RaceSimulation} from "@mapae/arcade/race";
+import {makeRaceCourse, raceEvents, raceFrameAt, raceWeatherFactor, simulateRace, RACE_BASE_SPEED, type RaceCommand, type RaceSimulation} from "@mapae/arcade/race";
 import type {ArcadeSound, SoundKind} from "../sound";
-import {burstGlow, ceremonyMs, confettiPieces, cueStartBeat, dueEvents, gallopRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, RaceCues, runnerVelocity, sealDelay, staggerTiming, startSignal, START_BEATS} from "./race-fx";
+import {burstGlow, ceremonyMs, confettiPieces, cueStartBeat, dueEvents, gallopRate, groundAt, windRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, RaceCues, runnerVelocity, sealDelay, staggerTiming, startSignal, START_BEATS} from "./race-fx";
 
 const long = {...makeRaceCourse(0, 0), weather: "clear" as const, course: "long" as const, distance: 1_250};
 const calls: RaceCommand[] = [{at: 12, pace: "save", route: "shortcut"}, {at: 24, pace: "steady", route: "wide"}];
@@ -35,6 +35,36 @@ test("runner speed is the engine step's distance over its time, and the burst sh
     expect(runnerVelocity(race, 31.05, 0)).toBeGreaterThan(runnerVelocity(race, 29.95, 0) * 1.5);
     expect(runnerVelocity(race, 0, 0)).toBeCloseTo(step(0), 6);
     expect(runnerVelocity(race, race.seconds + 5, 0)).toBe(0);
+});
+
+test("a horse feels the fork's ground only on the shortcut, for the call's eight seconds, until it arrives", () => {
+    // Round 0 in the clear: the first fork is a hill, the second a meadow.
+    expect(groundAt(race, 11.9, "owner")).toBeNull();
+    expect(groundAt(race, 12, "owner")).toEqual({terrain: "hill", slip: false});
+    expect(groundAt(race, 19.9, "owner")).toEqual({terrain: "hill", slip: false});
+    expect(groundAt(race, 20, "owner")).toBeNull();
+    expect(groundAt(race, 25, "owner")).toBeNull();
+    const meadow = simulateRace(long, pair, [calls[0]!, {at: 24, pace: "push", route: "shortcut"}], 30);
+    expect(groundAt(meadow, 25, "owner")).toEqual({terrain: "meadow", slip: false});
+    const arrived: RaceSimulation = {...meadow, finish: meadow.finish.map(item => item.id === "owner" ? {...item, seconds: 26} : item)};
+    expect(groundAt(arrived, 26, "owner")).toBeNull();
+    // Rain turns the first fork to mud, and only a push through it slips.
+    const rain = {...long, weather: "rain" as const};
+    expect(groundAt(simulateRace(rain, pair, [{at: 12, pace: "push", route: "shortcut"}], null), 13, "owner")).toEqual({terrain: "mud", slip: true});
+    expect(groundAt(simulateRace(rain, pair, [{at: 12, pace: "save", route: "shortcut"}], null), 13, "owner")).toEqual({terrain: "mud", slip: false});
+});
+
+test("the wind blows at 1× on the average headwind, faster as the gust bites, and stays within its bounds", () => {
+    expect(windRate(.96)).toBeCloseTo(1);
+    expect(windRate(.89)).toBeGreaterThan(windRate(.93));
+    expect(windRate(.89)).toBeLessThanOrEqual(2);
+    expect(windRate(1.03)).toBe(.5);
+    const wind = {...long, weather: "wind" as const};
+    for (let distance = 0; distance <= wind.distance; distance += 50) {
+        const rate = windRate(raceWeatherFactor(wind, distance));
+        expect(rate).toBeGreaterThanOrEqual(.5);
+        expect(rate).toBeLessThanOrEqual(2);
+    }
 });
 
 const realDocument = globalThis.document;
