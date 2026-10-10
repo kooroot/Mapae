@@ -3,8 +3,7 @@ import {LoaderCircle, LogOut} from 'lucide-react';
 import type {Address} from 'viem';
 import {LocaleSwitch} from '../../lib/locale';
 import {ArcadeBrand} from '../ArcadeBrand';
-
-export const shortAddress=(address:Address)=>`${address.slice(0,6)}…${address.slice(-4)}`;
+import {shortAddress} from '../../lib/dial';
 
 /** Signed-in arcade chrome: network label, the connected wallet and its disconnect control. */
 export function GuardianHeader({owner,ko,network,disconnecting,blocked,onDisconnect}:{owner:Address;ko:boolean;network:string;disconnecting:boolean;blocked:boolean;onDisconnect:()=>void}){

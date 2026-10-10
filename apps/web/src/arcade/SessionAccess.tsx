@@ -1,7 +1,8 @@
 import {ArrowRight, Gamepad2, LoaderCircle, ShieldCheck} from 'lucide-react';
 import type {Address} from 'viem';
 import type {useArcadeSession} from './useArcadeSession';
-import {GuardianHeader, shortAddress} from './nft/GuardianHeader';
+import {GuardianHeader} from './nft/GuardianHeader';
+import {shortAddress} from '../lib/dial';
 
 export function SessionAccess({owner, session, ko, disconnecting, onDisconnect, onGuest}: {owner: Address; session: ReturnType<typeof useArcadeSession>; ko: boolean; disconnecting: boolean; onDisconnect: () => void; onGuest?: () => void}) {
     const waiting = session.status === 'loading' || session.status === 'signing';
