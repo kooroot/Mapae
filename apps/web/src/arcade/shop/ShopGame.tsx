@@ -143,7 +143,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
     };
     const patch = (change: Partial<ShopConfig>) => { setConfig(current => ({...current, ...change})); };
 
-    if (!state) return <section className={`shop-game ${reducedMotion ? "shop-still" : ""}`} aria-labelledby="shop-title">
+    if (!state) return <section className="shop-game" aria-labelledby="shop-title">
         <header className="shop-heading"><span>{c.tag}</span><button type="button" className="arc-text-button" onClick={onExit}>{c.exit}</button><h1 id="shop-title">{c.title}</h1><p>{c.sub}</p></header>
         {autoAdvance && <p role="status">{locale === "ko" ? "자동 진행 · 5초 뒤 시작해요. 위에서 자동 진행을 끄면 편하게 설정할 수 있어요." : "Automatic play · Starts in 5 seconds. Turn it off above to configure at your pace."}</p>}
         <form className="shop-setup"
@@ -193,7 +193,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
         const next = nextShopCustomer(state); setState(next);
         if (next.phase === "finished" && !delivered.current) { delivered.current = true; onComplete(resultFor(next, props, model)); }
     };
-    return <section className={`shop-game ${reducedMotion ? "shop-still" : ""}`} aria-labelledby="shop-title">
+    return <section className="shop-game" aria-labelledby="shop-title">
         <header className="shop-heading shop-running"><span>{c.tag}</span><h1 id="shop-title">{sellerRole ? config.name : ko ? "오늘의 장보기" : "A day at the market"}</h1><div className="shop-controls">{!human && <div className="mapae-speed" role="group" aria-label={ko ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>}<button type="button" onClick={() => {setPaused(p => !p); setBusy(false);}}>{paused ? c.resume : c.pause}</button><button type="button" onClick={onExit}>{c.exit}</button></div></header>
         <div className="shop-agent-line"><b>{profile.name} · {mode === "llm" ? `${c.llm}${model ? ` (${model})` : ""}` : c.rules}</b><span>{c.opponent}</span></div>
         <div className="shop-scoreboard"><span>{sellerRole ? c.customer : c.store}<b>{state.customer + 1}<small> / 3</small></b></span><span>{ko ? "남은 제안" : "Offers left"}<b>{shopOffersRemaining(state)}</b></span><span>{sellerRole ? c.cash : c.remaining}<b>{sellerRole ? state.cash : buyer.cap - buyer.spent}<small> {c.units}</small></b></span><span>{sellerRole ? c.net : c.achieved}<b>{sellerRole ? stats.profit : stats.goal}<small>{sellerRole ? ` ${c.units}` : "%"}</small></b></span></div>

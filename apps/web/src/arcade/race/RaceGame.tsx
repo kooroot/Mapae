@@ -247,7 +247,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const owner = season.runners.find(runner => runner.id === "owner")!;
     const rival = season.runners.find(runner => runner.id === season.rivalId)!;
 
-    return <section className={`arc-race ${reducedMotion ? "arc-race-still" : ""}`} aria-label={GAME_NAMES[locale].race}>
+    return <section className="arc-race" aria-label={GAME_NAMES[locale].race}>
         <header className="arc-race-title">
             <div><p className="arc-overline">{GAME_NAMES[locale].race} / {t.season}</p><h1>{t.title}</h1><p>{t.subtitle}</p></div>
             <GuardianAvatar appearance={appearance} color={profile.color} />
