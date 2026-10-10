@@ -3,7 +3,7 @@ import {flushSync, preload} from "react-dom";
 import type {Locale} from "../lib/i18n";
 import {guardianLayers} from "./guardian-layers";
 import {Goblin} from "./Characters";
-import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldParade, stampWave, multiplier, newGame, newBossPractice, FEVER_TARGET, FEVER_MS, BOSS_OPENINGS, stamp, stampEvents, type Game, type FeverMode} from "@mapae/arcade/stamp";
+import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldParade, stampWave, multiplier, newGame, newBossPractice, FEVER_TARGET, BOSS_OPENINGS, stamp, stampEvents, type Game, type FeverMode} from "@mapae/arcade/stamp";
 import {cellForKey, isControlTarget} from "./input";
 import type {Character} from "./state";
 import type {ArcadeSound} from "./sound";
@@ -12,7 +12,7 @@ import {StampChallenges} from "./StampChallenges";
 import {StampWindow} from "./StampWindow";
 import {BossTimingCue} from "./BossTimingCue";
 import {motionTier} from "./motion";
-import {FINAL_SECONDS, GO_MS, haltStampFx, stampCountdownFx, stampEndMs, stampFx, type StampTap} from "./stamp-fx";
+import {FINAL_SECONDS, GO_MS, feverGauge, haltStampFx, stampCountdownFx, stampEndMs, stampFx, syncFeverGauge, type StampTap} from "./stamp-fx";
 import "./stamp.css";
 import "./game-guide.css";
 import "./stamp-scene.css";
@@ -69,6 +69,8 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const field = useRef<HTMLDivElement>(null);
     const windows = useRef<HTMLDivElement>(null);
     const board = useRef<HTMLDivElement>(null);
+    const gauge = useRef<HTMLDivElement>(null);
+    const drain = useRef<HTMLElement>(null);
     const resumeButton = useRef<HTMLButtonElement>(null);
     const finishRef = useRef(onFinish);
     finishRef.current = onFinish;
@@ -79,7 +81,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const commit = (next: Game, tap?: StampTap) => {
         const events = stampEvents(state.current, next, tap?.index);
         state.current = next;
-        if (events.length) stampFx(events, next, {sound: soundRef.current, tier: tierRef.current, field: field.current, windows: windows.current, board: board.current}, tap);
+        if (events.length) stampFx(events, next, {sound: soundRef.current, tier: tierRef.current, field: field.current, windows: windows.current, board: board.current, gauge: gauge.current}, tap);
         return events.length > 0;
     };
 
@@ -205,14 +207,16 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const frozen = suspended || paused;
     const halted = frozen || countdown > 0;
     useLayoutEffect(() => {if (root.current) haltStampFx(root.current, halted);}, [halted]);
+    useLayoutEffect(() => {if (drain.current) syncFeverGauge(drain.current, view, tier, halted);}, [view, tier, halted]);
     const ko = locale === "ko";
     const drill = view.practice === "boss";
     const rules = drill ? ko ? "대장만 10초 · 빈틈마다 한 번!" : "Ten-second chief drill · one stamp per opening!" : t.rules;
     const chief = view.cells.find(cell => cell.actor?.special === "boss")?.actor;
-    const fever = view.feverUntil > view.elapsed;
+    const meter = feverGauge(view);
+    const {fever} = meter;
     const charged = view.feverCharge === FEVER_TARGET;
+    const gaugeText = fever ? `${Math.ceil(meter.left / 1000)}s` : `${view.feverCharge} / ${FEVER_TARGET}`;
     const parade = goldParade(view.elapsed);
-    const feverValue = fever ? (view.feverUntil - view.elapsed) / FEVER_MS * 100 : view.feverCharge / FEVER_TARGET * 100;
     const wave = stampWave(view.elapsed);
     const warning = wave.next && wave.next.at - view.elapsed <= 3000;
     const stage = warning ? `${ko ? "곧" : "NEXT"}: ${wave.next![locale]}` : wave.current[locale];
@@ -221,7 +225,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const urgent = seconds > 0 && seconds <= 10;
     const tierUp = multiplier(view.combo);
     return (
-        <section ref={root} className={`arc-arena${fever ? " stamp-fever" : ""}`} aria-label={t.playfield} data-halted={frozen ? "true" : countdown > 0 ? "countdown" : undefined}>
+        <section ref={root} className={`arc-arena${fever ? " stamp-fever" : ""}${meter.waning ? " stamp-fever-waning" : ""}`} aria-label={t.playfield} data-halted={frozen ? "true" : countdown > 0 ? "countdown" : undefined}>
             <div className="arc-arena-heading"><span>{drill ? ko ? "대장 10초 연습" : "Ten-second chief drill" : ko ? "도깨비 도장찍기" : "Dokkaebi Stamp"}</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
             <div className="arc-scoreboard" ref={board}>
                 <div><span>{t.score}</span><strong data-testid="score"><span className="stamp-pulse" data-fx="score">{view.score.toLocaleString()}</span></strong></div>
@@ -232,8 +236,8 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                 {[ko ? "몸풀기" : "Warm up", ko ? "순찰" : "Patrol", ko ? "잔치" : "Parade", ko ? "대장" : "Chief", ko ? "소동" : "Rush"].map((label, i) => <span key={i} aria-current={wave.index === i ? "step" : undefined} className={i <= wave.index ? "is-reached" : ""}>{label}</span>)}
             </div>}
             {!drill && <div className={`stamp-fever-strip ${charged ? "stamp-fever-ready" : ""}`}>
-                <div><strong role="status">{fever ? ko ? "암행어사 출두! 점수 ×2" : "ROYAL INSPECTOR! SCORE ×2" : stage}</strong><span>{fever ? `${Math.ceil((view.feverUntil - view.elapsed) / 1000)}s` : `${view.feverCharge} / ${FEVER_TARGET}`}</span></div>
-                <progress className="stamp-fever-meter" aria-label={ko ? "출두 게이지" : "Fever charge"} value={feverValue} max={100} />
+                <div><strong role="status">{fever ? ko ? "암행어사 출두! 점수 ×2" : "ROYAL INSPECTOR! SCORE ×2" : stage}</strong><span>{gaugeText}</span></div>
+                <div ref={gauge} className="stamp-fever-meter" role="progressbar" aria-label={ko ? "출두 게이지" : "Fever charge"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(meter.ratio * 100)} aria-valuetext={gaugeText}><i ref={drain} /></div>
                 <div className="stamp-fever-controls">
                     {autopilot ? <span className="stamp-fever-strategy">{autopilot === "careful" ? ko ? "신중하게 · 대장 정통과 금도깨비 출두를 노려요" : "Careful · precise chief stamps and fever for gold" : ko ? "빠르게 · 첫 빈틈에 타격하고 바로 출두" : "Quick · hit the first opening and use fever immediately"}</span> : <>
                         <div className="stamp-fever-mode" role="group" aria-label={ko ? "출두 방식" : "Fever control"}>
@@ -266,6 +270,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                     <p>{rules}</p>
                 </div> : go && <div key="go" className="arc-game-overlay stamp-go" aria-hidden="true"><b>{t.go}</b></div>}
                 {ending && <div className="stamp-end" aria-hidden="true"><b>{t.end}</b></div>}
+                <div className="stamp-herald" data-banner="fever" aria-hidden="true"><i>馬牌</i><b>{ko ? "암행어사 출두요!" : "Make way, royal inspector!"}</b></div>
             </div>
             <div className="arc-play-footer"><span><i className="arc-live-dot" /> {character.name} · {autopilot ? locale === "ko" ? "에이전트 관전 중" : "WATCHING AGENT" : t.human}</span><span>{autopilot ? "AUTO" : t.touch}</span></div>
             <StampChallenges game={view} locale={locale} />

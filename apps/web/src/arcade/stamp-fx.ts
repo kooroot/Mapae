@@ -1,10 +1,10 @@
-import {multiplier, type Game, type StampEvent} from "@mapae/arcade/stamp";
+import {bossWindow, multiplier, FEVER_MS, FEVER_TARGET, type Game, type StampEvent} from "@mapae/arcade/stamp";
 import type {ArcadeSound, SoundKind} from "./sound";
 import type {MotionTier} from "./motion";
-import {hitStop, play, pop, shake, type MotionGate} from "./juice";
+import {banner, hitStop, play, pop, shake, type MotionGate} from "./juice";
 
 /** Where a Dokkaebi Stamp round sends its feedback: the speaker, how much motion it may spend, and the surfaces it moves. */
-export type StampFx = {sound: ArcadeSound; tier: MotionTier; field: HTMLElement | null; windows: HTMLElement | null; board: HTMLElement | null};
+export type StampFx = {sound: ArcadeSound; tier: MotionTier; field: HTMLElement | null; windows: HTMLElement | null; board: HTMLElement | null; gauge: HTMLElement | null};
 /** A tap the engine judged: its window, and the pointer in client coordinates when a pointer made it. */
 export type StampTap = {index: number; point?: {x: number; y: number}};
 
@@ -18,7 +18,8 @@ export type StampMotion =
     | {kind: "seal"; index: number; boost: number}
     | {kind: "float"; index: number; text: string}
     | {kind: "ripple"; index: number; point?: StampTap["point"]}
-    | {kind: "fieldShake"}
+    | {kind: "fieldShake" | "fieldBounce" | "charge" | "glowOut"}
+    | {kind: "banner"; name: "fever"}
     | {kind: "score"; scale: number}
     | {kind: "comboUp"; text: string; ms: number}
     | {kind: "comboBreak"; shake: boolean};
@@ -40,6 +41,20 @@ export const SCORE_POP = 1.12;
 export const PERFECT_POP = 1.28;
 /** From here the timer wears a red ring and ticks each second. */
 export const FINAL_SECONDS = 3;
+/** The last stretch of fever, when the lantern glow quickens and the gauge turns: time to cash in the double. */
+export const FEVER_WARNING_MS = 2_000;
+
+/** The fever gauge as one reading: charge toward the next fever, or the share of a running fever still left. */
+export function feverGauge(game: Game): {fever: boolean; left: number; ratio: number; waning: boolean} {
+    const left = Math.max(0, game.feverUntil - game.elapsed);
+    return left > 0 ? {fever: true, left, ratio: left / FEVER_MS, waning: left <= FEVER_WARNING_MS} : {fever: false, left: 0, ratio: game.feverCharge / FEVER_TARGET, waning: false};
+}
+
+/** While the chief is open the player is timing a stamp, so nothing may jolt the playfield under the needle. */
+export function chiefOpen(game: Game): boolean {
+    return game.cells.some(cell => cell.actor?.special === "boss" && bossWindow(cell.actor, game.elapsed).phase === "open");
+}
+
 /** How long the "×3!" chip rises off the combo: a player gets the full beat, a watched agent a light one. */
 const COMBO_CHIP_MS = {full: 600, light: 300} as const;
 
@@ -51,6 +66,7 @@ const COMBO_CHIP_MS = {full: 600, light: 300} as const;
  */
 export function stampMotions(events: readonly StampEvent[], game: Game, tier: MotionTier, tap?: StampTap): StampMotion[] {
     const full = tier === "full", still = tier === "still";
+    const steady = full && !chiefOpen(game);
     const motions: StampMotion[] = [];
     if (tap && full) motions.push({kind: "press", index: tap.index});
     for (const event of events) {
@@ -73,10 +89,16 @@ export function stampMotions(events: readonly StampEvent[], game: Game, tier: Mo
         } else if (event.type === "wrong") {
             motions.push({kind: "strike", index: event.index});
             if (tier !== "light") motions.push({kind: "shake", index: event.index});
-            if (full) motions.push({kind: "fieldShake"});
+            if (steady) motions.push({kind: "fieldShake"});
         } else if (event.type === "pass") motions.push({kind: "pass", index: event.index});
         else if (event.type === "dud") motions.push({kind: "ripple", index: event.index, point: tap?.index === event.index ? tap.point : undefined});
     }
+    // Fever arrives as a herald for everyone, with a bump of the playfield for a player; it leaves by fading its lantern glow.
+    if (events.some(event => event.type === "feverStart")) {
+        motions.push({kind: "banner", name: "fever"});
+        if (steady) motions.push({kind: "fieldBounce"});
+    } else if (events.some(event => event.type === "feverEnd")) motions.push({kind: "glowOut"});
+    if (!still && events.some(event => event.type === "feverCharge")) motions.push({kind: "charge"});
     const scored = events.some(event => event.type === "hit" || event.type === "crack" && (game.cells[event.index]?.impact?.points ?? 0) > 0);
     if (scored) motions.push({kind: "score", scale: events.some(event => event.type === "perfect") ? PERFECT_POP : SCORE_POP});
     const up = events.find(event => event.type === "comboTier");
@@ -112,6 +134,13 @@ const CHIP: Keyframe[] = [{opacity: 0, transform: "translateY(6px) scale(.8)"}, 
 /** A broken streak dims and comes back, so the reset reads even without the shake. */
 const DIM: Keyframe[] = [{opacity: .45}, {opacity: 1}];
 const PASS: Keyframe[] = [{opacity: 0, transform: "translateY(30%) scale(.9)"}, {opacity: 1, transform: "translateY(0) scale(1)", offset: .25}, {opacity: 1, transform: "translateY(-10%)", offset: .7}, {opacity: 0, transform: "translateY(-40%)"}];
+/** Fever's mapae seal lands on its herald: in large and turned, down to its slight resting tilt. */
+const HERALD_SEAL: Keyframe[] = [{opacity: 0, transform: "scale(2.2) rotate(-20deg)"}, {opacity: 1, transform: "scale(1) rotate(-6deg)"}];
+/** The playfield's bump as fever arrives, and its lantern glow letting go as fever leaves. */
+const FEVER_BOUNCE = 1.012;
+const GLOW_OUT: Keyframe[] = [{opacity: .9}, {opacity: 0}];
+/** Each charge thumps the gauge once. */
+const CHARGE: Keyframe[] = [{transform: "scaleY(1)"}, {transform: "scaleY(1.6)", offset: .4}, {transform: "scaleY(1)"}];
 /** A perfect seal slams in --arc-dur-quick and meets the paper about 40% in: the freeze lands on that contact, not before it. */
 const PERFECT_CONTACT_MS = 60;
 const PERFECT_FREEZE_MS = 70;
@@ -120,27 +149,38 @@ function shardFrames({x, y, turn}: typeof SHARDS[number]): Keyframe[] {
     return [{opacity: 1, transform: "translate(0, 0) rotate(0deg) scale(.6)"}, {opacity: 1, offset: .55}, {opacity: 0, transform: `translate(${x}px, ${y}px) rotate(${turn}deg) scale(1)`}];
 }
 
+const scoreboard = (board: HTMLElement | null, name: string) => board?.querySelector<HTMLElement>(`[data-fx=${name}]`);
+
 /** Plays one planned beat. Every target is already in the DOM, so effects start in the same frame as the sound. */
-function render(motion: StampMotion, {field, windows, board}: StampFx, gate: MotionGate) {
-    if (motion.kind === "fieldShake") {
-        if (field) shake(field, gate, {px: 2});
+function render(motion: StampMotion, {field, windows, board, gauge}: StampFx, gate: MotionGate) {
+    switch (motion.kind) {
+    case "fieldShake": if (field) shake(field, gate, {px: 2}); return;
+    case "fieldBounce": if (field) pop(field, gate, {scale: FEVER_BOUNCE, ms: 120}); return;
+    case "glowOut": if (field) play(field, GLOW_OUT, {id: "stamp-glow-out", duration: "base", easing: "out", pseudoElement: "::before"}, gate); return;
+    case "charge": if (gauge) play(gauge, CHARGE, {id: "stamp-charge", duration: 200, easing: "out"}, gate); return;
+    case "banner": {
+        const herald = field?.querySelector<HTMLElement>(`[data-banner=${motion.name}]`);
+        if (!herald) return;
+        banner(herald, gate);
+        const seal = herald.querySelector("i");
+        if (seal) play(seal, HERALD_SEAL, {id: "stamp-herald-seal", duration: "base", easing: "stamp", fill: "both"}, gate);
         return;
     }
-    if (motion.kind === "score" || motion.kind === "comboUp" || motion.kind === "comboBreak") {
-        const target = (name: string) => board?.querySelector<HTMLElement>(`[data-fx=${name}]`);
-        if (motion.kind === "score") {const score = target("score"); if (score) pop(score, gate, {scale: motion.scale, ms: 180});}
-        else if (motion.kind === "comboUp") {
-            const chip = target("chip");
-            if (!chip) return;
-            chip.textContent = motion.text;
-            play(chip, CHIP, {id: "stamp-chip", duration: motion.ms, easing: "out"}, gate);
-        } else {
-            const combo = target("combo");
-            if (!combo) return;
-            if (motion.shake) shake(combo, gate, {px: 3});
-            play(combo, DIM, {id: "stamp-dim", duration: "base", easing: "out"}, gate);
-        }
+    case "score": {const score = scoreboard(board, "score"); if (score) pop(score, gate, {scale: motion.scale, ms: 180}); return;}
+    case "comboUp": {
+        const chip = scoreboard(board, "chip");
+        if (!chip) return;
+        chip.textContent = motion.text;
+        play(chip, CHIP, {id: "stamp-chip", duration: motion.ms, easing: "out"}, gate);
         return;
+    }
+    case "comboBreak": {
+        const combo = scoreboard(board, "combo");
+        if (!combo) return;
+        if (motion.shake) shake(combo, gate, {px: 3});
+        play(combo, DIM, {id: "stamp-dim", duration: "base", easing: "out"}, gate);
+        return;
+    }
     }
     const cell = windows?.children[motion.index];
     if (!(cell instanceof HTMLElement)) return;
@@ -177,15 +217,62 @@ function render(motion: StampMotion, {field, windows, board}: StampFx, gate: Mot
     }
 }
 
+/**
+ * Everything a step sounds like: its one cue, then the state changes that ring on their own. The final bell outranks the
+ * fever ending with it, and the last three seconds tick under whatever else the step played.
+ */
+export function stampSounds(events: readonly StampEvent[]): SoundKind[] {
+    const has = (type: StampEvent["type"]) => events.some(event => event.type === type);
+    const kind = cue(events);
+    const sounds: SoundKind[] = kind ? [kind] : [];
+    if (has("finished")) sounds.push("end");
+    else if (has("feverEnd") && !has("feverStart")) sounds.push("feverEnd");
+    if (events.some(event => event.type === "urgentSecond" && event.seconds <= FINAL_SECONDS)) sounds.push("tick");
+    return sounds;
+}
+
 /** The one place a round's events become feedback, whether a person or an agent is playing. `game` is the state after them. */
 export function stampFx(events: readonly StampEvent[], game: Game, fx: StampFx, tap?: StampTap) {
-    const kind = cue(events);
-    if (kind) fx.sound.play(kind, game.combo);
-    if (events.some(event => event.type === "finished")) fx.sound.play("end");
-    // The last three seconds tick under whatever else the step played.
-    if (events.some(event => event.type === "urgentSecond" && event.seconds <= FINAL_SECONDS)) fx.sound.play("tick");
+    for (const kind of stampSounds(events)) fx.sound.play(kind, game.combo);
     const gate = {tier: fx.tier};
     for (const motion of stampMotions(events, game, fx.tier, tap)) render(motion, fx, gate);
+}
+
+const tracks = new WeakMap<Element, Animation>();
+/**
+ * A gauge the engine clock drives (the chief's timing needle, the fever drain): one compositor animation, snapped to the engine
+ * on every commit so it glides at frame rate without drifting from the judgement, and held while the round is halted. Both
+ * carry information, so they keep moving under reduced motion. `rest` is the same pose as a plain transform: what a hidden tab
+ * shows (it starts no animation) until a later commit can start one, and what remains when the track stops.
+ */
+export function syncTrack(el: HTMLElement, frames: Keyframe[], {duration, at, rest, loop = false, tier, halted}: {duration: number; at: number; rest: string; loop?: boolean; tier: MotionTier; halted: boolean}) {
+    el.style.transform = rest;
+    let track = tracks.get(el);
+    if (!track || track.playState === "idle") {
+        const started = play(el, frames, {id: "stamp-track", duration, iterations: loop ? Infinity : 1}, {tier, essential: true});
+        if (!started) return;
+        tracks.set(el, track = started);
+    }
+    track.currentTime = at;
+    if (halted) track.pause();
+    else if (track.playState !== "running") track.play();
+}
+
+export function stopTrack(el: HTMLElement) {
+    tracks.get(el)?.cancel();
+    tracks.delete(el);
+}
+
+const DRAIN: Keyframe[] = [{transform: "scaleX(1)"}, {transform: "scaleX(0)"}];
+/** Charge steps up as a plain pose; a running fever drains as one linear track over its full length, re-synced every commit. */
+export function syncFeverGauge(fill: HTMLElement, game: Game, tier: MotionTier, halted: boolean) {
+    const {fever, left, ratio} = feverGauge(game);
+    if (!fever) {
+        stopTrack(fill);
+        fill.style.transform = `scaleX(${ratio})`;
+        return;
+    }
+    syncTrack(fill, DRAIN, {duration: FEVER_MS, at: FEVER_MS - left, rest: `scaleX(${ratio})`, tier, halted});
 }
 
 /** "시작!" stays this long after the countdown; input is already open beneath it. */

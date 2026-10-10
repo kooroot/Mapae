@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test";
 import {advance, newGame, stampEvents, newBossPractice, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, BOSS_PRACTICE_MS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "@mapae/arcade/stamp";
 import {cellForKey} from "./input";
-import {PERFECT_POP, SCORE_POP, SEAL_PEAK, SHARDS, countdownCue, sealBoost, stampEndMs, stampMotions} from "./stamp-fx";
+import {FEVER_WARNING_MS, PERFECT_POP, SCORE_POP, SEAL_PEAK, SHARDS, chiefOpen, countdownCue, feverGauge, sealBoost, stampEndMs, stampMotions, stampSounds} from "./stamp-fx";
 
 function withActor(game: Game, kind: "goblin" | "courier", index = 0): Game {
     return {...game, cells: game.cells.map((cell, i) => i === index ? {
@@ -460,7 +460,7 @@ describe("Dokkaebi Stamp motion plan", () => {
         const before = golden(withActor(newGame(), "goblin"));
         const after = stamp(before, 0);
         const motions = stampMotions(stampEvents(before, after, 0), after, "full", {index: 0, point: {x: 10, y: 20}});
-        expect(kinds(motions)).toEqual(["press", "seal", "ink", "float", "shards", "score"]);
+        expect(kinds(motions)).toEqual(["press", "seal", "ink", "float", "shards", "charge", "score"]);
         expect(motions).toContainEqual({kind: "float", index: 0, text: "+250"});
     });
     test("a watched agent keeps the seal, ink and score float but drops shards, shake and hit-stop", () => {
@@ -531,5 +531,60 @@ describe("Dokkaebi Stamp motion plan", () => {
         expect(stampEndMs("full")).toBe(700);
         expect(stampEndMs("light")).toBeLessThanOrEqual(300);
         expect(stampEndMs("still")).toBe(250);
+    });
+});
+
+describe("Dokkaebi Stamp fever motion", () => {
+    const kinds = (motions: ReturnType<typeof stampMotions>) => motions.map(motion => motion.kind);
+    const chiefAt = (phaseTime: number): Game => {
+        const game = {...newGame(), elapsed: 46_000};
+        return {...game, cells: game.cells.map((cell, i) => i === 4 ? {impact: null, actor: {kind: "goblin" as const, special: "boss" as const, hp: BOSS_OPENINGS, bornAt: game.elapsed - phaseTime, expiresAt: game.elapsed - phaseTime + BOSS_CYCLE_MS * BOSS_OPENINGS}} : cell)};
+    };
+    test("fever arrives with its herald at every tier and bumps the playfield only for a player", () => {
+        const start = [{type: "feverStart"}] as const;
+        expect(kinds(stampMotions(start, newGame(), "full"))).toEqual(["banner", "fieldBounce"]);
+        expect(stampMotions(start, newGame(), "light")).toEqual([{kind: "banner", name: "fever"}]);
+        expect(stampMotions(start, newGame(), "still")).toEqual([{kind: "banner", name: "fever"}]);
+    });
+    test("an auto fever from the eighth stamp heralds itself and chimes once, not on top of the hit", () => {
+        let game = newGame();
+        for (let i = 0; i < FEVER_TARGET - 1; i++) game = stamp(withActor(game, "goblin"), 0);
+        const before = withActor(game, "goblin"), after = stamp(before, 0);
+        const events = stampEvents(before, after, 0);
+        expect(kinds(stampMotions(events, after, "full"))).toContain("banner");
+        expect(kinds(stampMotions(events, after, "full"))).not.toContain("charge");
+        expect(stampSounds(events)).toEqual(["fever"]);
+    });
+    test("each charge thumps the gauge for a player and a watched agent, and stays still under reduced motion", () => {
+        const before = withActor(newGame(), "goblin"), after = stamp(before, 0);
+        const events = stampEvents(before, after, 0);
+        expect(kinds(stampMotions(events, after, "full"))).toContain("charge");
+        expect(kinds(stampMotions(events, after, "light"))).toContain("charge");
+        expect(kinds(stampMotions(events, after, "still"))).not.toContain("charge");
+    });
+    test("fever leaves by fading its glow and ringing down, unless the final bell rings over it", () => {
+        const running = {...newGame(), elapsed: 10_000, feverUntil: 10_050, nextSpawn: 20_000};
+        const ended = advance(running, 100);
+        const events = stampEvents(running, ended);
+        expect(events).toContainEqual({type: "feverEnd"});
+        for (const tier of ["full", "light", "still"] as const) expect(kinds(stampMotions(events, ended, tier))).toEqual(["glowOut"]);
+        expect(stampSounds(events)).toEqual(["feverEnd"]);
+        const last = {...newGame(), elapsed: ROUND_MS - 500, feverUntil: ROUND_MS, nextSpawn: ROUND_MS};
+        expect(stampSounds(stampEvents(last, advance(last, 600)))).toEqual(["end"]);
+    });
+    test("the gauge reads charge, then the share of fever left, and wanes for the last two seconds", () => {
+        expect(feverGauge({...newGame(), feverCharge: 2})).toEqual({fever: false, left: 0, ratio: 2 / FEVER_TARGET, waning: false});
+        expect(feverGauge({...newGame(), elapsed: 1_000, feverUntil: 1_000 + FEVER_MS})).toEqual({fever: true, left: FEVER_MS, ratio: 1, waning: false});
+        expect(feverGauge({...newGame(), elapsed: 1_000, feverUntil: 1_000 + FEVER_WARNING_MS}).waning).toBe(true);
+        expect(feverGauge({...newGame(), elapsed: 1_000, feverUntil: 1_000 + FEVER_WARNING_MS + 1}).waning).toBe(false);
+        expect(feverGauge({...newGame(), elapsed: 1_000, feverUntil: 1_000, feverCharge: 0})).toMatchObject({fever: false, ratio: 0});
+    });
+    test("nothing jolts the playfield while the chief is open: no fever bump and no field shake", () => {
+        const open = chiefAt(BOSS_GUARD_MS + 100), guard = chiefAt(100);
+        expect(chiefOpen(open)).toBe(true);
+        expect(chiefOpen(guard)).toBe(false);
+        const events = [{type: "feverStart"}, {type: "wrong", index: 0, points: -100}] as const;
+        expect(kinds(stampMotions(events, open, "full"))).toEqual(["strike", "shake", "banner"]);
+        expect(kinds(stampMotions(events, guard, "full"))).toEqual(["strike", "shake", "fieldShake", "banner", "fieldBounce"]);
     });
 });

@@ -12,7 +12,11 @@
 .arc-arena .stamp-boss .arc-window-actor{inset:5% 4% 12%}
 .arc-arena .stamp-armored .arc-window-actor{inset:7% 5% 12%}
 .arc-arena .arc-has-courier{outline:2px solid #9edca9;outline-offset:-3px}
-.arc-arena.stamp-fever .arc-playfield{box-shadow:0 0 0 2px #e7ba60,0 16px 40px #d1973640}
+.arc-arena .arc-playfield::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;box-shadow:0 0 0 2px #e7ba60,0 16px 40px #d1973640,inset 0 0 48px #ffc85a59;background:radial-gradient(circle at 10% 16%,#ffcf6a4d,#ffcf6a00 30%),radial-gradient(circle at 90% 16%,#ffcf6a4d,#ffcf6a00 30%)}
+.arc-arena.stamp-fever .arc-playfield::before{opacity:.7;animation:stamp-lantern 1.6s ease-in-out infinite alternate}.arc-arena.stamp-fever-waning .arc-playfield::before{animation:stamp-lantern-wane .6s ease-in-out infinite}
+@keyframes stamp-lantern{from{opacity:.55}to{opacity:.9}}@keyframes stamp-lantern-wane{0%,100%{opacity:.55}50%{opacity:.95}}
+.arc-arena .stamp-herald{position:absolute;top:70px;left:10%;right:10%;z-index:7;display:flex;align-items:center;justify-content:center;gap:10px;padding:7px 12px;border:1px solid #c8a165;border-radius:8px;background:#f3e3bdf2;color:#4a2416;box-shadow:0 6px 18px #1c101066;pointer-events:none;opacity:0}
+.arc-arena .stamp-herald>i{display:grid;place-items:center;width:42px;height:42px;flex:none;border:2px solid #b0392c;border-radius:8px;background:#b0392c;color:#fff3cd;font:800 15px/1 var(--display);font-style:normal;box-shadow:inset 0 0 0 2px #f3e3bd}.arc-arena .stamp-herald>b{font-size:17px;font-weight:900;letter-spacing:-.02em}
 .arc-arena.stamp-fever .stamp-fever-strip{background:#62442e}
 .stamp-cast{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border-top:1px solid #b59f7444;margin:18px 0 8px;padding-top:13px}
 .stamp-cast>div{display:flex;align-items:center;gap:7px;min-width:0}.stamp-cast .arc-goblin{width:56px;height:56px;flex:none;object-fit:contain;filter:drop-shadow(0 3px 2px #462d211f)}
@@ -78,4 +82,4 @@
 .arc-arena .stamp-combo-chip{position:absolute;left:50%;top:-4px;translate:-50% 0;padding:2px 7px;border-radius:7px;background:#b0392c;color:#fff3cd;font:800 12px var(--mono);font-style:normal;opacity:0;pointer-events:none}
 .arc-arena .stamp-beat{animation:arc-heartbeat var(--arc-dur-base) var(--arc-ease-back)}.arc-arena .stamp-beat.is-final::after{content:"";position:absolute;inset:-6px -12px;border:2px solid #ea6555;border-radius:50%;opacity:0;animation:stamp-final-ring var(--arc-dur-slow) var(--arc-ease-out)}
 @keyframes stamp-final-ring{from{opacity:.9;scale:.8}to{opacity:0;scale:1.3}}
-@media(max-width:480px){.arc-arena .stamp-count>i{width:120px}.arc-arena .stamp-go b,.arc-arena .stamp-end b{font-size:32px;padding:8px 16px}.arc-arena .stamp-combo-chip{font-size:10px;padding:1px 5px}}
+@media(max-width:480px){.arc-arena .stamp-herald{top:44px;left:6%;right:6%;gap:7px;padding:5px 8px}.arc-arena .stamp-herald>i{width:32px;height:32px;font-size:11px}.arc-arena .stamp-herald>b{font-size:13px}.arc-arena .stamp-count>i{width:120px}.arc-arena .stamp-go b,.arc-arena .stamp-end b{font-size:32px;padding:8px 16px}.arc-arena .stamp-combo-chip{font-size:10px;padding:1px 5px}}
