@@ -222,6 +222,7 @@
     .nav .lockup img + img {width: auto; height: 14px}
     .nav .lang-switch svg {display: none}
     .nav-actions > .btn {min-height: 44px; padding: 0 14px; font-size: 13px}
+    .nav-actions > .btn > [aria-hidden] {display: none}
 }
 
 /* Below this the header cannot hold the CTA beside the menu; the menu carries it. */

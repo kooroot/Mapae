@@ -9,6 +9,10 @@
  */
 
 .home {
+    /* Where .home-wrap content starts, for the hero's absolutely placed layers. A
+       percentage here resolves against each user's containing block, which in the
+       hero is the full-width sticky stage. */
+    --home-edge: calc(max(0px, (100% - 1280px) / 2) + 40px);
     overflow: clip;
     color: #f2eee7;
     background: #050505;
@@ -36,9 +40,9 @@ body:has(.home) {
 
 .home-kicker {
     display: block;
-    color: rgba(233, 190, 139, 0.58);
+    color: rgba(233, 190, 139, 0.74);
     font-family: var(--mono);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.17em;
     line-height: 1.5;
@@ -48,7 +52,7 @@ body:has(.home) {
     position: absolute;
     z-index: 8;
     top: 49%;
-    left: max(40px, calc((100vw - 1280px) / 2));
+    left: var(--home-edge);
     width: min(46vw, 600px);
     transform: translateY(-50%);
     transition:
@@ -98,13 +102,13 @@ body:has(.home) {
     position: absolute;
     z-index: 8;
     top: 30px;
-    right: max(40px, calc((100vw - 1280px) / 2));
-    left: max(40px, calc((100vw - 1280px) / 2));
+    right: var(--home-edge);
+    left: var(--home-edge);
     display: flex;
     justify-content: space-between;
-    color: rgba(241, 237, 229, 0.28);
+    color: rgba(241, 237, 229, 0.5);
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 11px;
     letter-spacing: 0.14em;
     pointer-events: none;
     transition: opacity 480ms var(--ease);
@@ -127,11 +131,11 @@ body:has(.home) {
     min-width: 154px;
     height: 48px;
     align-items: center;
-    justify-content: space-between;
-    gap: 22px;
-    padding: 0 18px;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 20px;
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 13px;
     font-weight: 600;
     transition:
@@ -143,6 +147,13 @@ body:has(.home) {
 
 .home-button:hover {
     transform: translateY(-2px);
+}
+
+.home-button:focus-visible,
+.home-security-copy > a:focus-visible,
+.home-evidence-row:focus-visible {
+    outline: 2px solid #edc98e;
+    outline-offset: 3px;
 }
 
 .home-button-primary {
@@ -195,9 +206,9 @@ body:has(.home) {
 .home-standard-grid > p {
     padding-left: 0;
     border-left: 0;
-    color: rgba(241, 237, 229, 0.3);
+    color: var(--on-obsidian-dim);
     font-family: var(--mono);
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.15em;
 }
 
@@ -210,8 +221,8 @@ body:has(.home) {
 
 .home-standard-grid span {
     margin-top: 5px;
-    color: rgba(241, 237, 229, 0.34);
-    font-size: 11px;
+    color: var(--on-obsidian-dim);
+    font-size: 12px;
 }
 
 /* ── Shared section language ──────────────────────────────────────────── */
@@ -270,7 +281,7 @@ body:has(.home) {
 .home-section-head-split > p {
     max-width: 44ch;
     padding-bottom: 5px;
-    color: rgba(241, 237, 229, 0.48);
+    color: var(--on-obsidian-dim);
     font-size: 15px;
     line-height: 1.75;
     word-break: keep-all;
@@ -299,7 +310,7 @@ body:has(.home) {
 }
 
 .home-contrast-before {
-    color: rgba(241, 237, 229, 0.45);
+    color: var(--on-obsidian-dim);
 }
 
 .home-contrast-after {
@@ -310,9 +321,9 @@ body:has(.home) {
 }
 
 .home-panel-index {
-    color: rgba(241, 237, 229, 0.3);
+    color: var(--on-obsidian-dim);
     font-family: var(--mono);
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.15em;
 }
 
@@ -459,9 +470,9 @@ body:has(.home) {
 .home-boundary-core small {
     position: absolute;
     bottom: 2%;
-    color: rgba(241, 237, 229, 0.3);
+    color: var(--on-obsidian-dim);
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 11px;
     letter-spacing: 0.15em;
 }
 
@@ -498,9 +509,9 @@ body:has(.home) {
     position: absolute;
     top: 19px;
     right: 20px;
-    color: rgba(241, 237, 229, 0.24);
+    color: rgba(241, 237, 229, 0.45);
     font-family: var(--mono);
-    font-size: 9px;
+    font-size: 11px;
 }
 
 .home-boundary-symbol,
@@ -522,7 +533,7 @@ body:has(.home) {
 .home-boundary-symbol {
     width: 58px;
     height: 58px;
-    border-radius: 16px;
+    border-radius: var(--radius-tile);
 }
 
 .home-boundary-symbol::after,
@@ -549,9 +560,9 @@ body:has(.home) {
 }
 
 .home-boundary-meta {
-    color: rgba(235, 170, 124, 0.58);
+    color: rgba(235, 170, 124, 0.78);
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 10px;
     letter-spacing: 0.13em;
 }
 
@@ -566,7 +577,7 @@ body:has(.home) {
 .home-boundary-card p {
     max-width: 31ch;
     margin-top: 12px;
-    color: rgba(241, 237, 229, 0.42);
+    color: var(--on-obsidian-dim);
     font-size: 13px;
     line-height: 1.65;
     word-break: keep-all;
@@ -619,20 +630,20 @@ body:has(.home) {
     top: -7px;
     right: -4px;
     display: grid;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     place-items: center;
     border-radius: 50%;
     color: #1b0e09;
     background: #e3a276;
     font-family: var(--mono);
-    font-size: 7px;
+    font-size: 9px;
 }
 
 .home-flow-symbol {
     width: 54px;
     height: 54px;
-    border-radius: 15px;
+    border-radius: var(--radius-tile);
     font-style: normal;
 }
 
@@ -657,7 +668,7 @@ body:has(.home) {
 
 .home-flow-step p {
     margin-top: 13px;
-    color: rgba(241, 237, 229, 0.42);
+    color: var(--on-obsidian-dim);
     font-size: 13px;
     line-height: 1.65;
     word-break: keep-all;
@@ -686,7 +697,7 @@ body:has(.home) {
 .home-security-copy > p {
     max-width: 52ch;
     margin-top: 28px;
-    color: rgba(241, 237, 229, 0.5);
+    color: var(--on-obsidian-dim);
     font-size: 15px;
     line-height: 1.75;
     word-break: keep-all;
@@ -716,9 +727,9 @@ body:has(.home) {
 }
 
 .home-refusal > span {
-    color: rgba(241, 237, 229, 0.25);
+    color: rgba(241, 237, 229, 0.45);
     font-family: var(--mono);
-    font-size: 9px;
+    font-size: 11px;
 }
 
 .home-refusal h3 {
@@ -730,17 +741,19 @@ body:has(.home) {
 .home-refusal code {
     display: block;
     margin-top: 7px;
-    color: rgba(241, 237, 229, 0.35);
+    color: var(--on-obsidian-dim);
     font-family: var(--mono);
-    font-size: 10px;
+    font-size: 11px;
+    overflow-wrap: anywhere;
 }
 
 .home-refusal > strong {
-    padding: 6px 9px;
+    padding: 4px 8px;
     border: 1px solid rgba(232, 99, 94, 0.38);
-    color: #eb8178;
+    color: var(--red-on-dark);
+    background: var(--red-wash-dark);
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.1em;
 }
@@ -766,9 +779,9 @@ body:has(.home) {
 
 .home-evidence-head {
     min-height: 50px;
-    color: rgba(241, 237, 229, 0.28);
+    color: var(--on-obsidian-dim);
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 11px;
     letter-spacing: 0.13em;
 }
 
@@ -790,9 +803,9 @@ body:has(.home) {
 }
 
 .home-evidence-row > span:nth-child(2) {
-    color: rgba(241, 237, 229, 0.34);
+    color: var(--on-obsidian-dim);
     font-family: var(--mono);
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .home-evidence-row strong {
@@ -820,13 +833,13 @@ body:has(.home) {
 .home-testnet-note span {
     color: #e68172;
     font-family: var(--mono);
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.13em;
 }
 
 .home-testnet-note p {
     max-width: 74ch;
-    color: rgba(241, 237, 229, 0.4);
+    color: var(--on-obsidian-dim);
     font-size: 12px;
     line-height: 1.65;
 }
@@ -881,7 +894,7 @@ body:has(.home) {
 
 .home-final p {
     margin-top: 24px;
-    color: rgba(241, 237, 229, 0.48);
+    color: var(--on-obsidian-dim);
 }
 
 .home-final-actions {
@@ -891,12 +904,15 @@ body:has(.home) {
 /* ── Tablet ───────────────────────────────────────────────────────────── */
 
 @media (max-width: 1080px) {
+    .home {
+        --home-edge: 32px;
+    }
+
     .home-wrap {
         padding-inline: 32px;
     }
 
     .home-hero-copy {
-        left: 32px;
         width: 45vw;
     }
 
@@ -940,12 +956,16 @@ body:has(.home) {
 /* ── Mobile ───────────────────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
+    .home {
+        --home-edge: 20px;
+    }
+
     .home-wrap {
         padding-inline: 20px;
     }
 
     .home-kicker {
-        font-size: 8px;
+        font-size: 10px;
     }
 
     .home-hero-copy {
@@ -988,10 +1008,9 @@ body:has(.home) {
 
     .home-button {
         min-width: 0;
-        height: 42px;
-        gap: 16px;
-        padding-inline: 15px;
-        font-size: 11px;
+        height: 46px;
+        padding-inline: 18px;
+        font-size: 13px;
     }
 
     .home-standard-grid {
@@ -1068,6 +1087,11 @@ body:has(.home) {
 
     .home-contrast-divider {
         height: 54px;
+    }
+
+    /* The glyph turns, not the Reveal wrapper, whose own transform wins the cascade. */
+    .home-contrast-divider span {
+        display: inline-block;
         transform: rotate(90deg);
     }
 
@@ -1138,7 +1162,6 @@ body:has(.home) {
     .home-flow-symbol {
         width: 46px;
         height: 46px;
-        border-radius: 13px;
     }
 
 
@@ -1159,12 +1182,8 @@ body:has(.home) {
 
     .home-refusal {
         min-height: 112px;
-        grid-template-columns: 32px minmax(0, 1fr);
+        grid-template-columns: 32px minmax(0, 1fr) auto;
         gap: 14px;
-    }
-
-    .home-refusal > strong {
-        display: none;
     }
 
     .home-evidence-table {
@@ -1177,21 +1196,16 @@ body:has(.home) {
 
     .home-evidence-row {
         min-height: 112px;
-        grid-template-columns: 1fr auto;
-        gap: 8px 18px;
+        grid-template-columns: 1fr;
+        gap: 6px;
         padding-block: 22px;
     }
 
-    .home-evidence-row > span:nth-child(2) {
-        grid-column: 1;
-    }
-
     .home-evidence-row strong {
-        grid-row: 1 / span 2;
-        grid-column: 2;
+        justify-content: flex-start;
         align-items: center;
-        gap: 14px;
-        font-size: 10px;
+        gap: 8px;
+        white-space: nowrap;
     }
 
     .home-evidence-row:hover {
@@ -1238,14 +1252,6 @@ body:has(.home) {
         gap: 7px;
     }
 
-    .home-button {
-        padding-inline: 12px;
-    }
-
-    .home-evidence-row strong {
-        max-width: 104px;
-        overflow: hidden;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1253,4 +1259,17 @@ body:has(.home) {
     .home-evidence-row:hover {
         transform: none;
     }
+}
+
+/* Hangul set in mono with Latin tracking splits syllables apart, so Korean labels
+   switch to the sans face with near-zero tracking. */
+:lang(ko) :is(.home-kicker, .home-hero-meta, .home-standard-grid > p, .home-panel-index, .home-boundary-core small, .home-flow-step h3, .home-evidence-head, .home-testnet-note span, .home-refusal > strong, .ritual-proof dt, .ritual-tap, .ritual-scroll-cue, .ritual-boundaries span, .ritual-readout span) {
+    font-family: var(--sans);
+    letter-spacing: 0.02em;
+    text-transform: none;
+}
+
+:lang(ko) .home-flow-step h3 {
+    font-size: 16px;
+    font-weight: 560;
 }

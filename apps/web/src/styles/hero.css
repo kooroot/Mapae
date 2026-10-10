@@ -278,9 +278,9 @@
     z-index: 5;
     top: calc(50% + 19%);
     left: 50%;
-    color: rgba(237, 231, 218, 0.36);
+    color: rgba(237, 231, 218, 0.62);
     font-family: var(--mono);
-    font-size: 7px;
+    font-size: 10px;
     letter-spacing: 0.15em;
     transform: translateX(-50%);
     transition: opacity 360ms var(--ease);
@@ -294,10 +294,10 @@
 .ritual-proof {
     position: absolute;
     z-index: 7;
-    right: max(40px, calc((100vw - 1280px) / 2));
+    right: calc(var(--home-edge) + 314px);
     bottom: 34px;
     display: grid;
-    width: min(48vw, 650px);
+    width: min(40vw, 560px);
     grid-template-columns: repeat(3, minmax(0, 1fr));
     color: var(--on-obsidian);
     opacity: 1;
@@ -317,9 +317,9 @@
 }
 
 .ritual-proof dt {
-    color: rgba(240, 216, 184, 0.4);
+    color: rgba(240, 216, 184, 0.66);
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 11px;
     letter-spacing: 0.14em;
 }
 
@@ -365,13 +365,13 @@
 
 .ritual-boundaries li:nth-child(1) {
     top: 27%;
-    left: max(40px, calc((100vw - 1280px) / 2));
+    left: var(--home-edge);
     transition-delay: 40ms;
 }
 
 .ritual-boundaries li:nth-child(2) {
     top: 48%;
-    right: max(40px, calc((100vw - 1280px) / 2));
+    right: var(--home-edge);
     transition-delay: 100ms;
 }
 
@@ -398,6 +398,11 @@
         color 220ms var(--ease),
         background 220ms var(--ease),
         transform 220ms var(--ease);
+}
+
+.ritual-boundaries button:focus-visible {
+    outline: 2px solid #edc98e;
+    outline-offset: 3px;
 }
 
 .ritual-boundaries button:hover,
@@ -429,7 +434,7 @@
 
 .ritual-boundaries span {
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 10px;
     letter-spacing: 0.14em;
 }
 
@@ -469,9 +474,9 @@
 }
 
 .ritual-readout span {
-    color: rgba(240, 216, 184, 0.46);
+    color: rgba(240, 216, 184, 0.66);
     font-family: var(--mono);
-    font-size: 7px;
+    font-size: 10px;
     letter-spacing: 0.18em;
 }
 
@@ -487,7 +492,7 @@
 }
 
 .ritual-readout small {
-    color: rgba(237, 231, 218, 0.45);
+    color: var(--on-obsidian-dim);
     font-size: 11px;
     line-height: 1.5;
 }
@@ -496,13 +501,13 @@
     position: absolute;
     z-index: 7;
     bottom: 36px;
-    left: max(40px, calc((100vw - 1280px) / 2));
+    left: var(--home-edge);
     display: flex;
     align-items: center;
     gap: 12px;
-    color: rgba(237, 231, 218, 0.34);
+    color: rgba(237, 231, 218, 0.6);
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 11px;
     letter-spacing: 0.15em;
     transition: opacity 420ms var(--ease);
     pointer-events: none;
@@ -536,7 +541,8 @@
     }
 
     .ritual-proof {
-        width: min(52vw, 560px);
+        right: calc(var(--home-edge) + 64px);
+        width: min(46vw, 560px);
     }
 
     .ritual-boundaries button {
@@ -608,12 +614,12 @@
 
     .ritual-tap {
         top: calc(50% + 22%);
-        font-size: 6px;
     }
 
+    /* Raised above the docked arcade tab in the bottom-right corner. */
     .ritual-proof {
         right: 14px;
-        bottom: 24px;
+        bottom: 96px;
         width: calc(100vw - 28px);
     }
 
@@ -623,12 +629,12 @@
     }
 
     .ritual-proof dt {
-        font-size: 6px;
+        font-size: 10px;
     }
 
     .ritual-proof dd {
         margin-top: 5px;
-        font-size: 10px;
+        font-size: 12px;
     }
 
     .ritual-scroll-cue {
@@ -646,7 +652,7 @@
 
     .ritual-readout small {
         padding-inline: 24px;
-        font-size: 10px;
+        font-size: 11px;
     }
 
     .ritual-boundaries li:nth-child(1) {
@@ -670,11 +676,11 @@
     }
 
     .ritual-boundaries span {
-        font-size: 7px;
+        font-size: 10px;
     }
 
     .ritual-boundaries strong {
-        font-size: 11px;
+        font-size: 12px;
     }
 }
 
@@ -684,7 +690,7 @@
     }
 
     .ritual-proof dd {
-        font-size: 9px;
+        font-size: 11px;
     }
 
     .ritual-boundaries button {

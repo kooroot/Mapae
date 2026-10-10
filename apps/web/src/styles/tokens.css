@@ -83,6 +83,8 @@
     --gutter: 24px;
     --measure: 62ch; /* prose column ceiling */
     --radius: 2px; /* the record is not a rounded card */
+    --radius-tile: 14px; /* icon tiles and floating chips, never cards */
+    --radius-pill: 999px; /* buttons and chips */
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
     /* ── Emblem geometry ───────────────────────────────────────────────────
