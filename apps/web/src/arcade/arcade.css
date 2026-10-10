@@ -35,7 +35,8 @@
 .arc-wordmark b { display: block; font-size: 21px; letter-spacing: .08em; line-height: 1.1; font-weight: 500; }
 .arc-demo-label { margin-left: auto; font-family: var(--mono); color: var(--arc-muted); font-size: 10px; letter-spacing: .04em; display: flex; gap: 7px; align-items: center; }
 .arc-demo-label i, .arc-live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #59785b; }
-.arc-header-actions { display: flex; align-items: center; gap: 13px; }
+.arc-header-actions { display: flex; align-items: center; gap: 13px; margin-left: auto; }
+.arc-demo-label + .arc-header-actions { margin-left: 0; }
 .arc-sound { display: flex; align-items: center; gap: 7px; font-size: 11px; min-height: 36px; }
 .arc-main { max-width: 1152px; padding: 0 28px; margin: 0 auto; }
 .arc-intro { display: flex; justify-content: space-between; align-items: center; padding: 24px 0 20px; gap: 24px; }
@@ -46,6 +47,8 @@
 .arc-section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font: 10px var(--mono); letter-spacing: .06em; padding-bottom: 13px; }
 .arc-section-label > span:last-child { color: var(--arc-muted); }
 .arc-section-label button { font-size: 11px; text-decoration: underline; text-underline-offset: 3px; min-height: 24px; }
+/* Mono labels are tuned for Latin capitals; Hangul in the coding face and its tracking read as gaps between syllables, so Korean labels take the sans face. */
+.arcade:lang(ko) :is(.arc-overline, .arc-section-label, .arc-cabinet-marquee, .arc-game-tags span, .arc-personal-best > span, .arc-receipt-disclaimer, .arc-result-score > small, .arc-footer > span, .arc-postcard-illustration > span, .arc-progress-top > span) { font-family: var(--sans); letter-spacing: .02em; }
 .arc-cabinet { background: #bc4737; border: 2px solid var(--arc-ink); border-radius: 10px 10px 3px 3px; padding: 0 20px 11px; box-shadow: 6px 7px 0 #282b25; }
 .arc-cabinet-marquee { height: 45px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 500 15px var(--mono); letter-spacing: .12em; color: #fcf2d7; text-shadow: 1px 2px #762d24; }
 .arc-bulbs { font-size: 7px; letter-spacing: 8px; color: #eabe63; }
@@ -73,8 +76,9 @@
 .arc-rule-pair > div { display: flex; align-items: center; gap: 11px; }
 .arc-rule-pair .arc-sprite { width: 47px; height: 54px; flex: none; }
 .arc-rule-pair b { display: block; font-size: 13px; }
-.arc-rule-pair small { display: block; font-size: 10px; color: var(--arc-muted); margin-top: 3px; }
-.arc-instructions > p { font-size: 11px; color: var(--arc-muted); }
+.arc-rule-pair small { display: block; font-size: 11px; color: var(--arc-muted); margin-top: 3px; word-break: keep-all; }
+.arc-instructions > p { font-size: 13px; line-height: 1.7; color: var(--arc-dim); word-break: keep-all; overflow-wrap: anywhere; }
+.arc-instructions .game-quick-guide { color: var(--arc-cream); }
 .arc-side { padding-top: 0; }
 .arc-player-pass { background: #f8f4e8; border: 1px solid #b1b09e; padding: 17px 19px 0; position: relative; }
 .arc-player-pass::before { content: ""; position: absolute; width: 66px; height: 19px; background: #d5c99a7a; top: -10px; left: calc(50% - 33px); transform: rotate(-4deg); }
@@ -83,8 +87,7 @@
 .arc-pass-portrait > .arc-sprite { width: 141px; height: 155px; margin: 0 auto; }
 .arc-pass-stamp { position: absolute; right: -4px; top: 30px; color: #8b5949; opacity: .8; border: 2px double currentColor; border-radius: 50%; width: 55px; height: 55px; display: grid; place-content: center; font: 10px/1.3 var(--mono); text-align: center; transform: rotate(14deg); }
 .arc-player-pass h2 { font-size: 23px; font-weight: 800; letter-spacing: -.05em; text-align: center; margin-top: 2px; overflow-wrap: anywhere; }
-.arc-player-pass > p { font-size: 11px; color: var(--arc-muted); text-align: center; margin-top: 3px; }
-.arc-player-pass > p > span { display: block; font-size: 10px; }
+.arc-player-pass > p { font-size: 11px; color: var(--arc-muted); text-align: center; margin-top: 3px; word-break: keep-all; }
 .arc-personal-best { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; border-top: 1px dashed #bcbca9; padding: 12px 0; }
 .arc-personal-best > span { font: 10px var(--mono); }
 .arc-personal-best strong { font: 500 21px var(--mono); }
@@ -92,14 +95,11 @@
 .arc-history { margin-top: 25px; border-top: 1px solid #b7b9a7; padding-top: 17px; }
 .arc-empty { font-size: 11px; color: var(--arc-muted); padding: 23px 0; }
 .arc-history ol { list-style: none; margin: 10px 0; }
-.arc-history li { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 9px 0; border-bottom: 1px dashed #c3c4b4; font-size: 11px; }
-.arc-history li b { font-size: 12px; font-weight: 600; }
-.arc-history li small { display: block; color: var(--arc-muted); font-size: 10px; margin-top: 2px; }
-.arc-history > small { font-size: 9px; color: var(--arc-muted); }
-.arc-footer { border-top: 1px solid #b8baab; padding: 22px 0 28px; margin-top: 45px; display: flex; justify-content: space-between; gap: 30px; align-items: flex-start; font-size: 11px; color: var(--arc-muted); }
-.arc-footer details { max-width: 650px; }
-.arc-footer summary { display: flex; gap: 6px; align-items: center; cursor: pointer; list-style: none; }
-.arc-footer p { margin-top: 10px; line-height: 1.9; }
+.arc-history li { display: flex; align-items: baseline; gap: 10px; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed #c3c4b4; }
+.arc-history li b { font-size: 13px; font-weight: 600; }
+.arc-history li time { color: var(--arc-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.arc-footer { border-top: 1px solid #b8baab; padding: 22px 0 28px; margin-top: 45px; display: flex; justify-content: space-between; gap: 30px; align-items: center; font-size: 11px; color: var(--arc-muted); }
+.arc-footer p { line-height: 1.9; }
 .arc-footer > a { font: 10px var(--mono); flex: none; }
 .arc-text-button { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; text-underline-offset: 4px; }
 .arc-text-button:hover:not(:disabled) { text-decoration: underline; }
@@ -203,27 +203,28 @@
     .arc-arcade-buttons { display: none; }
 }
 @media (max-width: 720px) {
-    .arc-header { min-height: 77px; padding: 14px 18px 25px; position: relative; gap: 10px; }
+    .arcade .arc-header { min-height: 68px; padding-bottom: 12px; gap: 10px; }
     .arc-wordmark { font-size: 11px; gap: 8px; }
     .arc-wordmark b { font-size: 16px; }
-    .arc-header-actions { margin-left: auto; gap: 5px; }
-    .arc-demo-label { position: absolute; bottom: 7px; right: 18px; font-size: 8px; }
+    .arc-header-actions { gap: 5px; }
+    .arc-header .arc-demo-label { position: static; font-size: 10px; }
     .arc-sound { font-size: 10px; padding: 4px; }
     .arc-main { padding: 0 20px; }
     .arc-intro { padding: 27px 0 23px; }
     .arc-intro h1 { font-size: 25px; }
     .arc-intro p:last-child { font-size: 11px; }
-    .arc-intro .arc-overline { font-size: 8px; }
+    .arc-intro .arc-overline { font-size: 10px; }
     .arc-lobby-grid { grid-template-columns: minmax(0, 1fr); gap: 35px; }
-    .arc-side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-    .arc-history { grid-column: 1 / -1; margin-top: 0; }
-    .arc-player-pass { padding: 12px 12px 0; }
-    .arc-player-pass .arc-section-label { font-size: 9px; letter-spacing: 0; }
+    .arc-side { display: grid; gap: 20px; }
+    .arc-history { margin-top: 0; }
+    .arc-player-pass { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: 14px; align-items: center; padding: 12px 14px 0; }
+    .arc-player-pass > :is(.arc-section-label, .mapae-select, .arc-personal-best) { grid-column: 1 / -1; }
+    .arc-player-pass > .arc-pass-portrait { grid-row: span 2; margin-top: 8px; }
+    .arc-player-pass > :is(h2, p) { text-align: left; }
+    .arc-player-pass > h2 { align-self: end; }
+    .arc-player-pass > p { align-self: start; }
     .arc-pass-portrait > .arc-sprite { width: 116px; height: 129px; }
-    .arc-pass-stamp { width: 39px; height: 39px; font-size: 8px; top: 13px; }
-    .arc-player-pass > p > span { display: none; }
-    .arc-personal-best { display: block; margin-top: 12px; }
-    .arc-personal-best strong { display: block; margin-top: 3px; }
+    .arc-pass-stamp { width: 42px; height: 42px; font-size: 10px; top: 8px; }
     .arc-cabinet-screen { padding-top: 17px; }
     .arc-cabinet-screen h2 { font-size: 36px; }
     .arc-cabinet-marquee { font-size: 12px; letter-spacing: .07em; height: 40px; }
@@ -233,8 +234,7 @@
     .arc-rule-pair > div { gap: 5px; }
     .arc-rule-pair .arc-sprite { width: 39px; }
     .arc-rule-pair b { font-size: 11px; }
-    .arc-rule-pair small { font-size: 9px; }
-    .arc-instructions > p { font-size: 10px; }
+    .arc-rule-pair small { font-size: 10px; }
     .arc-arena { margin-top: 10px; }
     .arc-scoreboard { padding: 12px 2px; }
     .arc-scoreboard strong { font-size: 28px; }

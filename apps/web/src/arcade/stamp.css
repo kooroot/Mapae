@@ -12,7 +12,7 @@
 .stamp-fever-trigger:disabled{background:#483c39;color:#d6c3a0;border-color:#9e896655;box-shadow:none;cursor:default}
 .stamp-fever-mode button:disabled{opacity:.55;cursor:default}
 .stamp-fever-controls small,.stamp-fever-strategy{font-size:11px;line-height:1.45;color:#e0ceac;white-space:normal!important}
-.stamp-fever-controls small{text-align:center}.stamp-fever-strategy{grid-column:1/-1}
+.stamp-fever-controls small{text-align:center;word-break:keep-all;text-wrap:balance}.stamp-fever-strategy{grid-column:1/-1}
 .stamp-parade-cue{margin:9px 0 0;padding:7px 10px;min-height:32px;border-radius:7px;background:#18141d;color:#cfbea0;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
 .stamp-parade-cue.is-soon{background:#514128;color:#ffde8f;box-shadow:inset 3px 0 #f4cf70}.stamp-parade-cue.is-active{background:#694723;color:#fff2bf;box-shadow:inset 3px 0 #ffdf7e}
 .stamp-fever-ready .stamp-fever-meter>i{background:#ffe190}.stamp-fever-ready .stamp-fever-meter::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,#fff0 30%,#fffbe3d9 50%,#fff0 70%);translate:-100% 0;animation:stamp-gauge-sweep 2s linear infinite}.stamp-fever-ready .stamp-fever-trigger:not(:disabled){animation:stamp-breathe 1.2s ease-in-out infinite alternate}
