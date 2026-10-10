@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseBuyerAction, parseSellerAction, parseShopConfig, parseShopMemory, shopForecast, shopCampaign, shopReturnLine, type ShopMemory, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOffersRemaining, shopOfferChoices, shopOutcome, shopPatience, shopSellerObservation, simulateShop, SHOP_GOALS, SHOP_STORIES, type ShopGoal, type ShopState, type SellerAction} from "./shop";
+import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseBuyerAction, parseSellerAction, parseShopConfig, parseShopMemory, shopForecast, shopCampaign, shopReturnLine, type ShopMemory, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOffersRemaining, shopOfferChoices, shopEvents, shopOutcome, shopPatience, shopSellerObservation, simulateShop, SHOP_GOALS, SHOP_STORIES, type ShopGoal, type ShopState, type SellerAction} from "./shop";
 
 function ready(): ShopState {
     return applyBuyerAction(createShop(32), {type: "request", wants: ["water"], reason: "need"});
@@ -594,5 +594,89 @@ describe("Matched market economics under the default rules agent", () => {
         expect(loyaltyGoal).toBeGreaterThan(profitGoal);
         expect(returns).toBeGreaterThan(50);
         expect(returnGain).toBeGreaterThan(returns);
+    });
+});
+
+describe("Counter events for presentation", () => {
+    const water = [{id: "water" as const, quantity: 1}];
+    const offer = (state: ShopState, price: number, items: {id: "water" | "snack" | "charm"; quantity: number}[] = water) => applySellerAction(state, {type: "offer", items, price, message: "For you"});
+    const step = (prev: ShopState, next: ShopState) => ({next, events: shopEvents(prev, next)});
+
+    test("the opening and every new customer arrive; a repeated state is silent", () => {
+        const opening = createShop(32);
+        expect(shopEvents(null, opening)).toEqual([{type: "arrive", referral: false, returning: false}]);
+        expect(shopEvents(opening, opening)).toEqual([]);
+        const closed = applySellerAction(ready(), {type: "close", message: "Until next time"});
+        expect(shopEvents(closed, nextShopCustomer(closed))).toEqual([{type: "arrive", referral: false, returning: false}]);
+    });
+
+    test("a returning regular and a referred guest arrive marked as such", () => {
+        const memory: ShopMemory = {npc: "twins", visits: 1, service: "complete", value: 100};
+        const second = {...createShop(22, DEFAULT_SHOP_CONFIG, memory), customer: 1, phase: "transition" as const};
+        expect(shopEvents(second, nextShopCustomer(second))).toEqual([{type: "arrive", referral: false, returning: true}]);
+        const served = {...second, receipts: [{customer: "나그네", items: water, price: 4, cost: 2, saving: 0, value: 100, goalAchievement: 100, revisit: true, tactic: "generous" as const, customerIndex: 0}]};
+        const referred = nextShopCustomer(served);
+        expect(referred.referral).not.toBeNull();
+        expect(shopEvents(served, referred)).toEqual([{type: "arrive", referral: true, returning: true}]);
+    });
+
+    test("seller turns become ask, offer with its tactic and finality, or close", () => {
+        const state = ready();
+        expect(shopEvents(state, applySellerAction(state, {type: "ask", message: "What do you need?"}))).toEqual([{type: "ask"}]);
+        expect(shopEvents(state, offer(state, 3))).toEqual([{type: "offer", tactic: null, final: false}]);
+        expect(shopEvents(state, applySellerAction(state, {type: "serve", tactic: "generous", message: "All of it"}))).toEqual([{type: "offer", tactic: "generous", final: false}]);
+        expect(shopEvents(state, applySellerAction(state, {type: "serve", tactic: "settle", message: "Last one"}))).toEqual([{type: "offer", tactic: "settle", final: true}]);
+        expect(shopEvents(state, applySellerAction(state, {type: "close", message: "Sold out"}))).toEqual([{type: "close"}]);
+    });
+
+    test("every buyer reason reads as its own reject, separate from a counter bid", () => {
+        const opening = createShop(32);
+        expect(shopEvents(opening, ready())).toEqual([{type: "reject", reason: "need"}]);
+        const offered = offer(ready(), 3);
+        for (const reason of ["need", "fit", "done"] as const) expect(step(offered, applyBuyerAction(offered, {type: "decline", reason})).events).toEqual([{type: "reject", reason}]);
+        // A final offer leaves no room to bargain, so a price objection is a plain refusal.
+        const final = applySellerAction(ready(), {type: "serve", tactic: "settle", message: "Last one"});
+        const refused = applyBuyerAction(final, {type: "decline", reason: "price"});
+        expect(refused.counterOffer).toBeNull();
+        expect(shopEvents(final, refused)).toEqual([{type: "reject", reason: "price"}]);
+        const pricey = offer(ready(), 5);
+        const bid = applyBuyerAction(pricey, {type: "decline", reason: "price"});
+        expect(bid.rejected).toBe("price");
+        expect(shopEvents(pricey, bid)).toEqual([{type: "counter", price: bid.counterOffer!.price}]);
+    });
+
+    test("a cap refusal and a completed sale carry what the counter must show", () => {
+        const state = ready(); state.buyers[0]!.cap = 6;
+        const blocked = offer(state, 99);
+        expect(shopEvents(blocked, applyBuyerAction(blocked, {type: "buy", reason: "need"}))).toEqual([{type: "capBlocked"}]);
+        const fair = offer(ready(), 3);
+        const sold = applyBuyerAction(fair, {type: "buy", reason: "need"});
+        expect(shopEvents(fair, sold)).toEqual([{type: "deal", receipt: sold.receipts.at(-1)!, cashDelta: 3}]);
+    });
+
+    test("the market finishes once, after the third customer", () => {
+        const last = {...ready(), customer: 2, phase: "transition" as const};
+        const finished = nextShopCustomer(last);
+        expect(shopEvents(last, finished)).toEqual([{type: "finished"}]);
+        expect(shopEvents(finished, {...finished})).toEqual([]);
+    });
+
+    test("a whole seeded market yields one beat per step that adds up to its receipts", () => {
+        for (const role of ["seller", "buyer"] as const) for (let seed = 0; seed < 40; seed++) {
+            let state = createShop(seed, {...DEFAULT_SHOP_CONFIG, role});
+            const events = [...shopEvents(null, state)];
+            while (state.phase !== "finished") {
+                const next = state.phase === "transition" ? nextShopCustomer(state) : state.phase === "seller"
+                    ? applySellerAction(state, ruleSellerAction(shopSellerObservation(state), "en")) : applyBuyerAction(state, ruleBuyerAction(shopBuyerObservation(state)));
+                const beat = shopEvents(state, next);
+                expect(beat).toHaveLength(1);
+                events.push(...beat);
+                state = next;
+            }
+            expect(events.filter(e => e.type === "arrive")).toHaveLength(3);
+            expect(events.at(-1)).toEqual({type: "finished"});
+            expect(events.flatMap(e => e.type === "deal" ? [e.receipt] : [])).toEqual(state.receipts);
+            expect(simulateShop(seed, {...DEFAULT_SHOP_CONFIG, role})).toEqual(state);
+        }
     });
 });

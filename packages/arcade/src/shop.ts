@@ -416,6 +416,26 @@ export function nextShopCustomer(state: ShopState): ShopState {
     return referral ? line(announced, {speaker: "buyer", text: {ko: `${referral.from}에게 소개받고 왔어요. 주문을 잘 챙겨 준다면서요? 제안도 한 번 더 들어볼게요!`, en: `${referral.from} recommended your shop. They said you filled their whole order! I'll hear one extra offer.`}}) : announced;
 }
 
+/** What one engine step meant to someone watching the counter. Derived, never stored, so live play and replays cue identically. */
+export type ShopEvent = {type: "arrive"; referral: boolean; returning: boolean} | {type: "offer"; tactic: ShopTactic | null; final: boolean} | {type: "ask"} |
+    {type: "counter"; price: number} | {type: "reject"; reason: BuyerAction["reason"]} | {type: "capBlocked"} |
+    {type: "deal"; receipt: ShopReceipt; cashDelta: number} | {type: "close"} | {type: "finished"};
+
+/** The beat between two consecutive states (`prev` null at the opening). One engine step yields at most one event. */
+export function shopEvents(prev: ShopState | null, next: ShopState): ShopEvent[] {
+    if (prev === next) return [];
+    if (next.phase === "finished") return prev?.phase === "finished" ? [] : [{type: "finished"}];
+    if (!prev || prev.customer !== next.customer) return [{type: "arrive", referral: next.referral !== null, returning: next.customer === 2 && next.forecast?.visit === 2}];
+    if (prev.phase === "seller" && next.rounds === prev.rounds + 1) return [next.phase === "transition" ? {type: "close"} : next.offer ? {type: "offer", tactic: next.tactic, final: next.finalOffer} : {type: "ask"}];
+    if (prev.phase !== "buyer" || next.phase === "buyer") return [];
+    if (next.receipts.length > prev.receipts.length) return [{type: "deal", receipt: next.receipts.at(-1)!, cashDelta: next.cash - prev.cash}];
+    if (next.rejected === "CAP_BLOCKED") return [{type: "capBlocked"}];
+    // A bid is the customer's answer to a price objection: the offer stays on the table at a new number.
+    if (next.counterOffer) return [{type: "counter", price: next.counterOffer.price}];
+    const reason = next.rejected;
+    return reason === "price" || reason === "fit" || reason === "need" || reason === "done" ? [{type: "reject", reason}] : [];
+}
+
 export function ruleSellerAction(observation: Record<string, JsonValue>, locale: "ko" | "en"): SellerAction {
     const inventory = observation.inventory as Basket;
     const wanted = Array.isArray(observation.requestedItems) ? observation.requestedItems.filter(product) : [];
