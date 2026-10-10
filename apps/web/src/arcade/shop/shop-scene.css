@@ -41,6 +41,11 @@
 @keyframes shop-speech-pop-again{from{opacity:0;scale:.6}}
 @keyframes shop-number-roll{from{opacity:0;translate:0 70%}}
 @keyframes shop-guest-leaves{to{opacity:0;translate:-48px 0}}
+/* A new line from the other side rises into the bubble (no typewriter: the whole line is readable at once); the log's newest entry does the same. */
+.shop-speech-line{display:block;animation:arc-rise-in 200ms var(--arc-ease-out) both}.shop-bubble{animation:arc-rise-in 200ms var(--arc-ease-out) both}
+/* Paused: CSS animations hold through [data-halted] and hanji paper settles over the counter; resuming lifts it at once. */
+.shop-counter-layout{position:relative}.shop-counter-layout::after{content:"";position:absolute;inset:0;z-index:5;border-radius:18px;pointer-events:none;opacity:0;background:linear-gradient(90deg,#7a5a3229 1px,transparent 1px) 0 0/56px 56px,linear-gradient(#7a5a3229 1px,transparent 1px) 0 0/56px 56px,radial-gradient(circle at 50% 40%,#fffaf0,#eadcbb)}
+.shop-game[data-halted] .shop-counter-layout::after{opacity:.55;transition:opacity var(--arc-dur-quick) var(--arc-ease-out)}
 
 .shop-trading-table{border:1px solid #b0966c;border-radius:16px;background:linear-gradient(#fff9e9,#f5ebd7);box-shadow:0 5px 0 #ac87532b;padding:20px}
 .shop-product-picker{gap:9px;padding:0 0 10px;border-bottom:5px solid #a37743;box-shadow:0 3px 0 #634723;border-radius:0 0 5px 5px}

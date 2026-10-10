@@ -27,7 +27,7 @@ const COPY = {
         buyerHelp: "하나의 지갑으로 시스템 가게 3곳을 방문해요. 가게가 바뀌어도 지출 한도는 그대로예요.", sellerHelp: "시스템이 배정한 손님 3명을 맞아요. 상대의 정확한 잔액·한도는 비공개예요.",
         rules: "규칙 기반 에이전트", llm: "실제 LLM 에이전트", opponent: "상대 · 시스템 규칙 봇", pause: "잠깐 멈춤", resume: "다시 맡기기", exit: "로비로", customer: "손님", store: "가게",
         rounds: "제안", stock: "남은 재고", cash: "가게 현금", net: "순이익", achieved: "목표 달성", remaining: "내 남은 한도", acquired: "구매 목록", waiting: "에이전트가 생각하는 중…",
-        next: "다음 만남을 준비해요…", done: "장터 영업 끝!", chat: "흥정 구경하기", receipt: "거래 영수증", noReceipt: "아직 거래가 없어요. 필요와 가격이 맞아야 도장이 찍혀요.",
+        next: "다음 만남을 준비해요…", final: "마지막 제안", bid: "손님의 역제안", myBid: "나의 역제안", done: "장터 영업 끝!", chat: "흥정 구경하기", receipt: "거래 영수증", noReceipt: "아직 거래가 없어요. 필요와 가격이 맞아야 도장이 찍혀요.",
         value: "구매 가치", thought: "내 에이전트의 판단", stopped: "관전을 멈췄어요. 새 결정과 거래도 멈춰 있어요.", error: "에이전트 결정을 받지 못했어요. 연결 또는 응답을 확인하고 다시 시도해 주세요.",
         retry: "같은 차례 다시 시도", failureNote: "규칙 봇으로 바꾸지 않았고, 실패한 차례의 돈도 쓰지 않았어요.", offer: "현재 제안", paid: "결제", noGoods: "아직 없어요", newCustomer: "시스템이 배정한 만남", result: "결과 보기", capSeparate: "한도를 지키는 것과 잘 사는 것은 달라요. 주문 완수와 구매 가치도 평가해요.",
     },
@@ -39,7 +39,7 @@ const COPY = {
         buyerHelp: "Visit 3 system shops with one wallet. The spending cap carries across every visit.", sellerHelp: "Meet 3 system-assigned customers. Their exact balances and spending limits stay private.",
         rules: "Rule-based agent", llm: "Real LLM agent", opponent: "Opponent · system rules", pause: "Pause", resume: "Resume agent", exit: "Lobby", customer: "Customer", store: "Shop",
         rounds: "Offer", stock: "In stock", cash: "Shop cash", net: "Net profit", achieved: "Goal achieved", remaining: "My remaining cap", acquired: "Shopping bag", waiting: "Your agent is thinking…",
-        next: "Preparing the next meeting…", done: "Market closed!", chat: "Watch the bargaining", receipt: "Trade receipts", noReceipt: "No trade yet. Needs and price must both fit before the stamp lands.",
+        next: "Preparing the next meeting…", final: "Final offer", bid: "Customer's counteroffer", myBid: "My counteroffer", done: "Market closed!", chat: "Watch the bargaining", receipt: "Trade receipts", noReceipt: "No trade yet. Needs and price must both fit before the stamp lands.",
         value: "Purchase value", thought: "My agent's reasoning", stopped: "Paused. No new decisions or purchases will run.", error: "The agent could not make this decision. Check the connection or response, then retry.",
         retry: "Retry this turn", failureNote: "No switch to a rule bot. No money spent for this failed turn.", offer: "Current offer", paid: "Paid", noGoods: "Nothing yet", newCustomer: "SYSTEM MATCH", result: "View result", capSeparate: "Respecting a cap and making a good purchase are different. Errand completion and purchase value count too.",
     },
@@ -91,6 +91,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
     const edge = useRef<HTMLDivElement>(null);
     const coins = useRef<HTMLDivElement>(null);
     const cash = useRef<HTMLSpanElement>(null);
+    const table = useRef<HTMLDivElement>(null);
     const leaving = useRef(false);
     const cued = useRef<ShopState | null>(null);
     const tier = motionTier({still: reducedMotion, watched: autoAdvance});
@@ -120,7 +121,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
     useLayoutEffect(() => {
         if (!state || !stage.current) { cued.current = state; return; }
         const purse = state.buyers[state.customer]!;
-        const scene = {stage: stage.current, guest: guest.current, edge: edge.current, coins: coins.current, cash: cash.current,
+        const scene = {stage: stage.current, guest: guest.current, edge: edge.current, coins: coins.current, cash: cash.current, table: table.current,
             shown: state.config.role === "seller" ? state.cash : purse.cap - purse.spent, seller: state.config.role === "seller", speed};
         for (const event of shopEvents(cued.current, state)) playShopEvent(event, scene, tier, sound);
         cued.current = state;
@@ -232,7 +233,9 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
     const buyerName = shopCustomerName(state, state.customer, locale);
     const humanTurn = human && (state.phase === "seller" || state.phase === "buyer") && (state.phase === "seller") === sellerRole;
     const ownObservation = sellerRole ? shopSellerObservation(state) : shopBuyerObservation(state);
-    const otherLine = state.conversation.filter(line => line.speaker === (sellerRole ? "buyer" : "seller")).at(-1);
+    // Keyed by its own index, the speech bubble re-enters only when the other side speaks, not on every line of the log.
+    const otherIndex = state.conversation.findLastIndex(line => line.speaker === (sellerRole ? "buyer" : "seller"));
+    const otherLine = state.conversation[otherIndex];
     const settled = state.phase === "transition" || state.phase === "finished";
     const traded = settled && state.receipts.some(receipt => receipt.customerIndex === state.customer);
     const reaction = shopReaction(state);
@@ -269,7 +272,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
                     <div><span>{sellerRole ? ko ? "오늘의 손님" : "YOUR CUSTOMER" : ko ? "나의 장보기" : "YOUR SHOPPING TRIP"}</span><strong>{sellerRole ? buyerName : profile.name}</strong></div>
                     {reaction && <span className={`shop-guest-reaction shop-reaction-${reaction}`} role="img" aria-label={REACTIONS[reaction][locale]}>{REACTIONS[reaction].glyph?.[locale] ?? <Hand size={22} aria-hidden="true" />}</span>}
                 </div>
-                <div className="shop-speech" role="status">{state.rejected === "CAP_BLOCKED" && <b className="shop-limit-stamp" aria-hidden="true">{ko ? "한도" : "LIMIT"}</b>}<span>{blocked ? c.stopped : otherLine?.text[locale] || (sellerRole ? ko ? "안녕하세요! 필요한 물건을 살펴보고 있어요." : "Hello! Let me see what you have." : SHOP_GOALS[config.buyerGoal][locale])}</span></div>
+                <div className="shop-speech" role="status">{state.rejected === "CAP_BLOCKED" && <b className="shop-limit-stamp" aria-hidden="true">{ko ? "한도" : "LIMIT"}</b>}<span key={otherIndex} className="shop-speech-line">{blocked ? c.stopped : otherLine?.text[locale] || (sellerRole ? ko ? "안녕하세요! 필요한 물건을 살펴보고 있어요." : "Hello! Let me see what you have." : SHOP_GOALS[config.buyerGoal][locale])}</span></div>
                 <div className="shop-counter-edge arc-flash-host" ref={edge}><span>{settled ? traded ? ko ? "거래 성사!" : "IT'S A DEAL!" : ko ? "다음 기회에 만나요" : "UNTIL NEXT TIME" : humanTurn ? ko ? "내 차례 · 제안해 주세요" : "YOUR TURN" : ko ? "상대의 답변을 기다려요" : "WAITING FOR A REPLY"}</span><b aria-hidden="true">馬牌</b></div>
             </section>
             {sellerRole && state.forecast && <ShopForecastNote forecast={state.forecast} locale={locale} inventory={state.inventory} arrived={state.customer === 2} />}
@@ -294,11 +297,13 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
                     {human && state.phase === "transition" && <button className="arc-button" disabled={blocked} onClick={nextMeeting}>{state.customer === 2 ? c.result : sellerRole ? ko ? "다음 손님 맞이하기" : "Welcome the next customer" : ko ? "다음 가게로" : "Visit the next shop"} →</button>}
                     {state.phase === "finished" && <button className="arc-button" onClick={finish}>{c.result} →</button>}
                     {!human && state.phase === "transition" && <p>{blocked ? c.stopped : c.next}</p>}
-                </div> : <div className="shop-waiting-table">
+                </div> : <div className="shop-waiting-table" ref={table}>
                     <span className="arc-overline">{ko ? "보따리를 살펴보는 중" : "AT THE COUNTER"}</span>
                     <div className="shop-offered-goods">{(state.offer?.items ?? []).map(item => <div key={item.id}><img src={`/arcade/item-${item.id}-512.webp`} width={96} height={96} alt={SHOP_PRODUCTS.find(p => p.id === item.id)!.name[locale]} /><b>×{item.quantity}</b></div>)}</div>
-                    {state.offer && <strong>{state.offer.price} {c.units}</strong>}
-                    <p role="status">{blocked ? c.stopped : c.waiting}</p><span className="shop-waiting-dots" aria-hidden="true">● ● ●</span>
+                    {state.offer && <strong className={`shop-price-tag ${state.finalOffer ? "shop-price-final" : ""}`}>{state.offer.price} {c.units}</strong>}
+                    {state.offer && state.finalOffer && <small className="shop-final-note">{c.final}</small>}
+                    {state.counterOffer && <p className="shop-counter-tag">{sellerRole ? c.bid : c.myBid}<b>{state.counterOffer.price} {c.units}</b></p>}
+                    <p role="status">{blocked ? c.stopped : c.waiting}</p><span className="shop-waiting-dots" aria-hidden="true"><i /><i /><i /></span>
                 </div>}
                 {error && <div className="shop-notice shop-error" role="alert"><p>{c.error}</p><small>{c.failureNote}</small><button type="button" onClick={() => {setError(false); setRetry(v => v + 1);}}>{c.retry}</button></div>}
             </div>

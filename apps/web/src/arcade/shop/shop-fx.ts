@@ -26,6 +26,13 @@ const LIGHT_SEAL_SOUND = 100;
 const DEAL_HOP: Keyframe[] = [{transform: "translateY(0) scale(1)"}, {transform: "translateY(-10px) scale(.98, 1.02)", offset: .2}, {transform: "translateY(0) scale(1.03, .97)", offset: .42},
     {transform: "translateY(-6px) scale(.99, 1.01)", offset: .62}, {transform: "translateY(0) scale(1.03, .97)", offset: .84}, {transform: "translateY(0) scale(1)"}];
 const LEAVE: Keyframe[] = [{opacity: 1, transform: "translateX(0)"}, {opacity: 0, transform: "translateX(-48px)"}];
+/** An offer at 1×: goods set down on the counter one by one, the price tag swings in after them, a final offer is underlined in ink. */
+const OFFER = {gap: 70, item: 300, tagAfter: 120, tag: 200, lineAfter: 160, line: 240};
+/** A watched agent's offer lands at once: everything on the quick token, no stagger. */
+const LIGHT_OFFER_MS = 160;
+const SET_DOWN: Keyframe[] = [{opacity: 0, transform: "translateY(14px) scale(.9)"}, {opacity: 1, transform: "translateY(0) scale(1)"}];
+const TAG_SWING: Keyframe[] = [{opacity: 0, transform: "translateY(-6px) rotate(-8deg)"}, {opacity: 1, transform: "translateY(0) rotate(0deg)"}];
+const INK_LINE: Keyframe[] = [{transform: "scaleX(0)"}, {transform: "scaleX(1)"}];
 
 /** What the customer's face says about the meeting so far. Only price, fit and a cap block read as a refusal. */
 export type ShopReaction = "happy" | "price" | "fit" | "blocked" | "farewell";
@@ -111,6 +118,20 @@ export function shopDealEnd(plan: ShopDealPlan): number {
     return Math.max(plan.hop, plan.sealSound, plan.coins ? plan.coinStart + (plan.coins - 1) * plan.coinGap + plan.coinFlight : 0, landed + plan.count);
 }
 
+/** The offer's timeline in ms for this many goods, or null under reduced motion (the goods are simply there). */
+export type ShopOfferPlan = {gap: number; item: number; tag: number; tagMs: number; line: number; lineMs: number};
+export function shopOfferPlan(tier: MotionTier, speed: number, goods: number): ShopOfferPlan | null {
+    if (tier === "still") return null;
+    if (tier === "light") return {gap: 0, item: LIGHT_OFFER_MS, tag: 0, tagMs: LIGHT_OFFER_MS, line: 0, lineMs: LIGHT_OFFER_MS};
+    const tag = (Math.max(goods - 1, 0) * OFFER.gap + OFFER.tagAfter) / speed;
+    return {gap: OFFER.gap / speed, item: OFFER.item / speed, tag, tagMs: OFFER.tag / speed, line: tag + OFFER.lineAfter / speed, lineMs: OFFER.line / speed};
+}
+
+/** When the offer has fully landed: the last good, the tag, and the underline when it is final. */
+export function shopOfferEnd(plan: ShopOfferPlan, goods: number, final: boolean): number {
+    return Math.max(goods ? (goods - 1) * plan.gap + plan.item : 0, plan.tag + plan.tagMs, final ? plan.line + plan.lineMs : 0);
+}
+
 const round = (n: number) => +n.toFixed(1);
 /** A spinning coin's arc from one point to another, sampled so linear steps between frames trace the parabola. Points are the sprite's top-left corner. */
 export function coinPath(from: {x: number; y: number}, to: {x: number; y: number}, steps = 12): Keyframe[] {
@@ -123,7 +144,7 @@ export function coinPath(from: {x: number; y: number}, to: {x: number; y: number
 }
 
 /** The parts of the scene a beat may move, found once per render by ShopGame. */
-export type ShopScene = {stage: HTMLElement; guest: HTMLElement | null; edge: HTMLElement | null; coins: HTMLElement | null; cash: HTMLElement | null; shown: number; seller: boolean; speed: number};
+export type ShopScene = {stage: HTMLElement; guest: HTMLElement | null; edge: HTMLElement | null; coins: HTMLElement | null; cash: HTMLElement | null; table: HTMLElement | null; shown: number; seller: boolean; speed: number};
 
 /** An end's centre, held inside the viewport: a player's scroll parks the scoreboard just above it, so coins fly off (or drop in) at its edge, toward it. */
 const centre = (rect: DOMRect, y = .5) => ({x: rect.left + rect.width / 2, y: Math.min(Math.max(rect.top + rect.height * y, 0), window.innerHeight)});
@@ -176,6 +197,23 @@ function playDeal(event: Extract<ShopEvent, {type: "deal"}>, scene: ShopScene, t
     }, () => { if (rolls.get(count) === token) count.textContent = String(to); });
 }
 
+/**
+ * An offer handed across the counter. The goods and tag are already rendered at rest; `fill: backwards` hides each until its turn.
+ * Only the table that shows the offer moves: a player who answers it sees it in their own controls, which enter on mount.
+ */
+function playOffer(event: Extract<ShopEvent, {type: "offer"}>, table: HTMLElement, tier: MotionTier, speed: number) {
+    const goods = Array.from(table.querySelectorAll<HTMLElement>(".shop-offered-goods>div")), tag = table.querySelector<HTMLElement>(".shop-price-tag");
+    const plan = shopOfferPlan(tier, speed, goods.length);
+    if (!plan) return;
+    goods.forEach((good, i) => play(good, SET_DOWN, {id: "shop-offer", duration: plan.item, delay: i * plan.gap, easing: "back", fill: "backwards"}, {tier}));
+    if (!tag) return;
+    play(tag, TAG_SWING, {id: "shop-offer", duration: plan.tagMs, delay: plan.tag, easing: "out", fill: "backwards"}, {tier});
+    if (!event.final) return;
+    play(tag, INK_LINE, {id: "shop-offer-line", duration: plan.lineMs, delay: plan.line, easing: "ink", fill: "backwards", pseudoElement: "::after"}, {tier});
+    const note = table.querySelector(".shop-final-note");
+    if (note) play(note, [{opacity: 0}, {opacity: 1}], {id: "shop-offer", duration: plan.lineMs, delay: plan.line, easing: "out", fill: "backwards"}, {tier});
+}
+
 /** Marks the stage with the beat, then plays its sound and body language. A hidden tab gets the mark only. */
 export function playShopEvent(event: ShopEvent, scene: ShopScene, tier: MotionTier, sound: ArcadeSound) {
     const {stage, guest, edge} = scene;
@@ -183,6 +221,7 @@ export function playShopEvent(event: ShopEvent, scene: ShopScene, tier: MotionTi
     stage.dataset.cueSeq = String(Number(stage.dataset.cueSeq ?? 0) + 1);
     if (document.hidden) return;
     if (event.type === "deal") return playDeal(event, scene, tier, sound);
+    if (event.type === "offer" && scene.table) playOffer(event, scene.table, tier, scene.speed);
     const kind = shopSound(event);
     if (kind) sound.play(kind);
     const gesture = shopGesture(event);

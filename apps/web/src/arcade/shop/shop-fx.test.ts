@@ -1,8 +1,8 @@
 import {describe, expect, test} from "bun:test";
 import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopEvents,
     shopSellerObservation, type ShopConfig, type ShopEvent, type ShopState} from "@mapae/arcade/shop";
-import {coinPath, SHOP_COIN_SLOTS, SHOP_GESTURES, SHOP_LEAVE_MS, SHOP_TRANSITION_MS, shopCashSwing, shopCoinCount, shopCue, shopDealEnd, shopDealPlan, shopGesture, shopLeaveMs,
-    shopReaction, shopRefusal, shopSound, tierMs} from "./shop-fx";
+import {coinPath, SHOP_COIN_SLOTS, SHOP_GESTURES, SHOP_LEAVE_MS, SHOP_TRANSITION_MS, SHOP_TURN_MS, shopCashSwing, shopCoinCount, shopCue, shopDealEnd, shopDealPlan, shopGesture, shopLeaveMs,
+    shopOfferEnd, shopOfferPlan, shopReaction, shopRefusal, shopSound, tierMs} from "./shop-fx";
 
 const heard = () => applyBuyerAction(createShop(32), {type: "request", wants: ["water"], reason: "need"});
 const offered = (price = 3) => applySellerAction(heard(), {type: "offer", items: [{id: "water", quantity: 1}], price, message: "For you"});
@@ -117,6 +117,31 @@ describe("shop deal timeline", () => {
     test("the auto walk-out shrinks with speed and fits its transition", () => {
         expect([shopLeaveMs(1), shopLeaveMs(2)]).toEqual([380, 190]);
         for (const speed of [1, 2]) expect(shopLeaveMs(speed)).toBeLessThan(SHOP_TRANSITION_MS / speed);
+    });
+});
+
+describe("offer hand-over", () => {
+    test("goods land one by one, then the tag, then a final offer's underline", () => {
+        const plan = shopOfferPlan("full", 1, 3)!;
+        expect(plan.gap).toBe(70);
+        expect(plan.item).toBe(300);
+        expect(plan.tag).toBeGreaterThan(2 * plan.gap);
+        expect(plan.line).toBeGreaterThan(plan.tag);
+        expect(shopOfferEnd(plan, 3, true)).toBe(plan.line + plan.lineMs);
+    });
+    test("the whole hand-over fits 350ms at 2× and the turn at either speed", () => {
+        for (const goods of [0, 1, 2, 3]) for (const final of [false, true]) {
+            expect(shopOfferEnd(shopOfferPlan("full", 2, goods)!, goods, final)).toBeLessThanOrEqual(350);
+            for (const speed of [1, 2]) expect(shopOfferEnd(shopOfferPlan("full", speed, goods)!, goods, final)).toBeLessThan(SHOP_TURN_MS / speed);
+        }
+    });
+    test("a watched agent's offer lands at once within the light ceiling; reduced motion plans nothing", () => {
+        for (const speed of [1, 2]) {
+            const plan = shopOfferPlan("light", speed, 3)!;
+            expect(plan.gap).toBe(0);
+            expect(shopOfferEnd(plan, 3, true)).toBeLessThanOrEqual(300);
+        }
+        expect(shopOfferPlan("still", 1, 3)).toBeNull();
     });
 });
 
