@@ -30,8 +30,8 @@ export type ArcadeState = {
 export function newCompanion(id: string, character: Character): Companion {
     return {...character, id, configured: true, agent: {mode: "rules", goal: "explore", rounds: 1}, recordVersion: ARCADE_RULESET_VERSION, best: 0, bests: {stamp: 0, race: 0, shop: 0}};
 }
-export function newArcadeState(reducedMotion = false): ArcadeState {
-    return {characters: [], selectedCharacterId: null, runs: [], sound: false, reducedMotion, activities: []};
+export function newArcadeState(): ArcadeState {
+    return {characters: [], selectedCharacterId: null, runs: [], sound: false, reducedMotion: false, activities: []};
 }
 export function selectedCharacter(state: ArcadeState): Companion | undefined {
     return state.characters.find(c => c.id === state.selectedCharacterId);
@@ -59,8 +59,8 @@ function validCompanion(v: unknown): v is Companion {
         validAllowance(v.agent.rounds);
 }
 /** Local game records only. Balances and spending authority come from GIWA. */
-export function parseArcadeState(raw: string | null, reducedMotion = false): ArcadeState {
-    const clean = newArcadeState(reducedMotion);
+export function parseArcadeState(raw: string | null): ArcadeState {
+    const clean = newArcadeState();
     if (!raw) return clean;
     try {
         const v: unknown = JSON.parse(raw);

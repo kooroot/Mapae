@@ -35,7 +35,7 @@ describe("Wallet-first arcade state", () => {
         expect(admitPracticeRun(state, "not-created", 0)).toEqual({ok: false, reason: "character"});
     });
     test("empty roster and preferences round-trip without inserting a character", () => {
-        const state = {...newArcadeState(true), sound: true};
+        const state = {...newArcadeState(), sound: true, reducedMotion: true};
         expect(parseArcadeState(serializeArcadeState(state))).toEqual(state);
     });
     test("wallet identity is required and address casing shares the same records", () => {
@@ -61,7 +61,7 @@ describe("Wallet-first arcade state", () => {
             JSON.stringify({...newArcadeState(), selectedCharacterId: "maru"}),
             JSON.stringify({...created(), runs: [{score: "999"}]}),
             JSON.stringify({...created(), characters: [{...created().characters[0], color: "unknown"}]})]) {
-            expect(parseArcadeState(value, true)).toEqual(newArcadeState(true));
+            expect(parseArcadeState(value)).toEqual(newArcadeState());
         }
     });
     test("repeated human practice has no currency or allowance side effects", () => {

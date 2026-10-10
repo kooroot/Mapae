@@ -43,7 +43,7 @@ export function GuardianArcade({owner,initialGame,onGuest}:{owner:Address;initia
     const detail=nft.detail?.guardian.tokenId===token?.tokenId?nft.detail:null;
     const objective=dailyObjective(detail?.results??[],now);
     const crew=(nft.roster?.guardians??[]).filter(t=>t.revealed).map(t=>nftCompanion(t));
-    const presentation={...newArcadeState(store.demo.reducedMotion),characters:crew,selectedCharacterId:member?.id??null};
+    const presentation={...newArcadeState(),characters:crew,selectedCharacterId:member?.id??null};
     async function disconnect(){setDisconnecting(true);try{await logoutProfile(owner);}finally{giwa.disconnect();setDisconnecting(false);}}
     if(!store.ready)return <><ProfileAccess store={store} ko={ko} onDisconnect={()=>void disconnect()}/>{onGuest&&<div className="nft-unsigned-free"><button className="arc-button" onClick={onGuest}>{ko?'로그인 없이 무료로 한 판':'Play free without signing in'}</button></div>}</>;
     if(practice)return <NftPractice {...practice} ko={ko} reducedMotion={still} onClose={()=>setPractice(null)}/>;
