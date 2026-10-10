@@ -33,7 +33,7 @@ const COPY = {
     },
 } satisfies Record<Locale, Record<string, string>>;
 
-export function Arena({locale, character, reducedMotion, sound, onFinish, autopilot, suspended = false, seed, practice, aptitudes}: {
+export function Arena({locale, character, sound, onFinish, autopilot, suspended = false, seed, practice, aptitudes}: {
     locale: Locale; character: Character; reducedMotion: boolean; sound: ArcadeSound;
     onFinish: (game: Game, early: boolean) => void;
     suspended?: boolean; seed?: number; practice?: "boss";
@@ -187,7 +187,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const stage = warning ? `${ko ? "곧" : "NEXT"}: ${wave.next![locale]}` : wave.current[locale];
     const seconds = Math.ceil((view.durationMs - view.elapsed) / 1_000);
     return (
-        <section className={`arc-arena ${reducedMotion ? "arc-still" : ""} ${fever ? "stamp-fever" : ""}`} aria-label={t.playfield}>
+        <section className={`arc-arena${fever ? " stamp-fever" : ""}`} aria-label={t.playfield}>
             <div className="arc-arena-heading"><span>{drill ? ko ? "대장 10초 연습" : "Ten-second chief drill" : ko ? "도깨비 도장찍기" : "Dokkaebi Stamp"}</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
             <div className="arc-scoreboard">
                 <div><span>{t.score}</span><strong data-testid="score">{view.score.toLocaleString()}</strong></div>

@@ -53,7 +53,6 @@
     .shop-offer-choices>button{padding:12px 7px}.shop-turn-label strong{font-size:14px}
     .shop-agent-line{display:flex;flex-wrap:wrap;gap:5px;font-size:10px}.shop-scoreboard{margin-top:8px}.shop-heading.shop-running{margin-bottom:8px}
 }
-@media(prefers-reduced-motion:reduce){.shop-game *{animation:none!important;transition:none!important}}
 
 .shop-forecast{margin:14px 0;padding:15px;border:1px solid #ba9d67;border-left:4px solid #517258;border-radius:12px;background:#faf2d9;color:#3c432c;min-width:0}
 .shop-forecast-title{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:7px}.shop-forecast-title>span{font-size:10px;letter-spacing:.07em;font-weight:700}.shop-forecast-title>b{font-size:14px}
