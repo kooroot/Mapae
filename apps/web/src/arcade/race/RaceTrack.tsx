@@ -1,7 +1,7 @@
-import {useEffect, useRef, useState, type RefObject} from "react";
+import {useEffect, useLayoutEffect, useRef, useState, type RefObject} from "react";
 import {raceEndTime, raceFrameAt, raceLiveRank, raceTerrain, RACE_HABITS, RACE_BURST_SECONDS, RACE_CHECKPOINTS, RACE_ROUTE_SECONDS, type RaceCommand, type RaceSimulation} from "@mapae/arcade/race";
 import {RaceRunners} from "./RaceRunners";
-import {photoFinish, pickAnnouncement, RaceAnnouncer, START_BEATS} from "./race-fx";
+import {flipRank, photoFinish, pickAnnouncement, RaceAnnouncer, rankShift, START_BEATS} from "./race-fx";
 import type {Color} from "../state";
 import type {MotionTier} from "../motion";
 import type {ArcadeSound} from "../sound";
@@ -29,6 +29,8 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
     const said = useRef<HTMLParagraphElement>(null);
     const [announcer] = useState(() => new RaceAnnouncer(text => {if (said.current) said.current.textContent = text;}));
     useEffect(() => () => announcer.stop(), [announcer]);
+    const board = useRef<HTMLDivElement>(null);
+    const places = useRef(new Map<string, number>());
     const held = useRef<Animation[]>([]);
     const halted = !running && !ended;
     const holding = signal !== null && signal < START_BEATS - 1;
@@ -68,6 +70,19 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
         : terrain === "mud" && call.pace === "push" ? ko ? "진흙에 미끄러져요!" : "Losing traction in the mud!"
         : terrain === "hill" && tired ? ko ? "고개를 넘기엔 체력이 부족해요" : "Too tired for the steep shortcut"
         : ko ? "지름길 · 앞을 향해 가속!" : "Shortcut · Gaining ground!" : owner?.path === "wide" ? ko ? "바깥 추월 · 속도 −6%, 막힘 없이 달려요" : "Outside · Speed −6%, clear running" : ko ? "안쪽 · 앞말이 멀면 따라가기 이득이 없어요" : "Inside · No nearby horse, no draft bonus";
+    const standing = race.entrants.map(runner => ({runner, position: frame.positions.find(item => item.id === runner.id)!, place: raceLiveRank(race, frame, runner.id)}));
+    // The board at the HUD's pace: stamina bars scale (no style attribute: the CSP allows none) and a changed place rolls over.
+    useLayoutEffect(() => {
+        standing.forEach(({runner, position, place}, index) => {
+            const row = board.current?.children[index];
+            const fill = row?.querySelector<HTMLElement>(".race-stamina>span");
+            if (fill) fill.style.transform = `scaleX(${position.stamina / 100})`;
+            const shift = rankShift(places.current.get(runner.id), place);
+            places.current.set(runner.id, place);
+            const number = row?.querySelector("b");
+            if (shift && number) flipRank(number, shift, tier);
+        });
+    });
     const finishGap = (race.finish[1]?.seconds ?? race.finish[0]!.seconds) - race.finish[0]!.seconds;
     const closeFinish = ended && photoFinish(race);
     return <div ref={track} className={`race-world race-weather-${race.course.weather} ${ended || reducedMotion || holding ? "" : "race-world-moving"}`} data-tier={tier} data-halted={halted ? "" : undefined}>
@@ -89,14 +104,13 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
         </div>}
         <p ref={said} className="sr-only" role="status" />
         {rival && <p className="race-habit-strip"><strong>{rival.name} · {ko ? "라이벌" : "RIVAL"}</strong> {RACE_HABITS[rival.strategy][locale]}</p>}
-        <div className="race-runners-board" aria-label={ko ? "실시간 순위와 체력" : "Live positions and stamina"}>
-            {race.entrants.map((runner) => {
-                const position = frame.positions.find(item => item.id === runner.id)!;
+        <div ref={board} className="race-runners-board" aria-label={ko ? "실시간 순위와 체력" : "Live positions and stamina"}>
+            {standing.map(({runner, position, place}) => {
                 const finish = race.finish.find(item => item.id === runner.id)!;
-                const rank = raceLiveRank(race, frame, runner.id);
+                const energy = Math.round(position.stamina);
                 return <div key={runner.id} className={runner.id === "owner" ? "race-runner-you" : ""}>
-                    <b>{rank}<small>{ko ? "위" : ""}</small></b>
-                    <div><strong>{runner.name}{runner.id === rivalId && <small className="race-rival-tag">{ko ? "라이벌" : "RIVAL"}</small>}</strong><label>{ko ? "체력" : "Energy"} <meter min={0} max={100} value={position.stamina} /> {Math.round(position.stamina)}%</label>{!ended && <small>{position.blockedBy ? ko ? "앞말에 막힘" : "Blocked" : position.draftingId ? ko ? "따라가기 · 소모 −40%" : "Draft · −40% drain" : position.path === "wide" ? ko ? "바깥 · 자유 추월" : "Outside · Clear to pass" : ko ? "안쪽 · 앞길 열림" : "Inside · Clear ahead"}</small>}{ended && <small>{finish.seconds <= raceEndTime(race) ? `${finish.seconds.toFixed(2)}s` : ko ? "순위 확정" : "Place confirmed"} · +{finish.points}{ko ? "점" : " pts"}</small>}</div>
+                    <b>{place}<small>{ko ? "위" : ""}</small></b>
+                    <div><strong>{runner.name}{runner.id === rivalId && <small className="race-rival-tag">{ko ? "라이벌" : "RIVAL"}</small>}</strong><span className="race-energy">{ko ? "체력" : "Energy"} <span className={`race-stamina ${position.stamina < 25 ? "race-stamina-low" : ""}`} role="meter" aria-label={`${runner.name} ${ko ? "체력" : "energy"}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={energy} aria-valuetext={`${energy}%`}><span /></span> {energy}%</span>{!ended && <small>{position.blockedBy ? ko ? "앞말에 막힘" : "Blocked" : position.draftingId ? ko ? "따라가기 · 소모 −40%" : "Draft · −40% drain" : position.path === "wide" ? ko ? "바깥 · 자유 추월" : "Outside · Clear to pass" : ko ? "안쪽 · 앞길 열림" : "Inside · Clear ahead"}</small>}{ended && <small>{finish.seconds <= raceEndTime(race) ? `${finish.seconds.toFixed(2)}s` : ko ? "순위 확정" : "Place confirmed"} · +{finish.points}{ko ? "점" : " pts"}</small>}</div>
                 </div>;
             })}
         </div>

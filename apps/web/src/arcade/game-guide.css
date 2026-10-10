@@ -3,7 +3,7 @@
 .game-quick-guide li>span{display:grid;place-items:center;width:24px;height:24px;flex:none;background:#355441;color:#fff1d0;border-radius:50%;font:11px var(--mono)}
 .game-coach{margin:18px 0;padding:16px 18px;border-left:3px solid #5c7952;background:#e9eddd;border-radius:0 12px 12px 0;color:#354732}
 .game-coach strong{font-size:12px;letter-spacing:.05em}.game-coach p{font-size:14px;line-height:1.7;margin:7px 0 0}
-.race-live-callout{display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;padding:13px 16px;background:#f8edcc;color:#4a4429;border-block:1px solid #a1834940}
+.race-live-callout{display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;padding:13px 16px;background:#f8edcc;color:#4a4429;border-block:1px solid #a1834940;transition:background-color var(--arc-dur-base) var(--arc-ease-out),color var(--arc-dur-base) var(--arc-ease-out)}
 .race-live-callout strong{font-size:14px;margin-right:auto}.race-live-callout span,.race-live-callout small{font:11px var(--mono)}
 .race-live-callout.race-gaining{background:#dfebc9;color:#2b5335}
 .stamp-wave-steps{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin:12px 0 8px}

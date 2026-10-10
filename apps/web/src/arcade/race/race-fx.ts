@@ -80,7 +80,7 @@ const LIGHT_MS = 300;
 /** Hanji confetti in the five obangsaek: blue, red, yellow, white, black. */
 const OBANG = ["#2f5d8a", "#b8432f", "#e2b23c", "#f6eedb", "#2b2723"] as const;
 const CONFETTI = 14;
-const PASS_TAG_MS = 900, FLINCH_MS = 180, KICK_MS = 560, FLAG_MS = 420, REIN_MS = 420, CONFETTI_MS = 900, PHOTO_MS = 240, PRESS_MS = 260;
+const PASS_TAG_MS = 900, FLINCH_MS = 180, KICK_MS = 560, FLAG_MS = 420, REIN_MS = 420, CONFETTI_MS = 900, PHOTO_MS = 240, PRESS_MS = 260, RANK_FLIP_MS = 200, RANK_TINT_MS = 600;
 
 /** Whether a race opens with the start signal: only a player's own race at full motion. A watched agent and reduced motion start at once. */
 export function startSignal(human: boolean, tier: MotionTier): boolean {
@@ -151,6 +151,21 @@ export function riseIn(elements: Iterable<Element>, tier: MotionTier, step: numb
 /** The burst button gives under the press and springs back before it turns into its "used" stamp. */
 export function pressBurst(button: Element | null, tier: MotionTier) {
     if (button) play(button, [{transform: "scale(1)"}, {transform: "scale(.92)", offset: .3}, {transform: "scale(1.06)", offset: .7}, {transform: "scale(1)"}], {id: "race-burst-press", duration: PRESS_MS, easing: "out"}, {tier});
+}
+
+/** Which way a board place turned over: "up" to a better (lower) place, "down" to a worse one; null when unchanged or first seen. */
+export function rankShift(previous: number | undefined, next: number): "up" | "down" | null {
+    return previous === undefined || previous === next ? null : next < previous ? "up" : "down";
+}
+
+/**
+ * A board place rolls over in its direction (200ms) and holds its colour a moment (600ms, clipped for a watched agent).
+ * The tint carries the news without moving anything, so reduced motion keeps it while the roll becomes a fade.
+ */
+export function flipRank(place: Element, shift: "up" | "down", tier: MotionTier) {
+    const tint = shift === "up" ? "#3f8f4a" : "#d0603f";
+    play(place, [{opacity: 0, transform: `translateY(${shift === "up" ? 60 : -60}%)`}, {opacity: 1, transform: "translateY(0)"}], {id: "race-rank-flip", duration: RANK_FLIP_MS, easing: "out"}, {tier});
+    play(place, [{color: tint}, {color: tint, offset: .6}], {id: "race-rank-tint", duration: ceremonyMs(tier, RANK_TINT_MS), easing: "out"}, {tier, essential: true});
 }
 
 /** Plays the result seal's thump on the stamp's impact frame. */

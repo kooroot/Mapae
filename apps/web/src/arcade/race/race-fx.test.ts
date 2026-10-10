@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, expect, test} from "bun:test";
 import {makeRaceCourse, RACE_CHECKPOINTS, raceEvents, raceFrameAt, raceWeatherFactor, simulateRace, RACE_BASE_SPEED, type RaceCommand, type RaceEvent, type RaceSimulation} from "@mapae/arcade/race";
 import type {ArcadeSound, SoundKind} from "../sound";
-import {burstGlow, ceremonyMs, confettiPieces, cueStartBeat, dueEvents, gallopRate, groundAt, windRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, pickAnnouncement, raceAnnouncement, RaceAnnouncer, ANNOUNCE_MS, RaceCues, runnerVelocity, sealDelay, staggerTiming, startSignal, START_BEATS} from "./race-fx";
+import {burstGlow, ceremonyMs, confettiPieces, cueStartBeat, dueEvents, gallopRate, groundAt, windRate, MAX_CUE_JUMP, photoFinish, photoFinishEvent, pickAnnouncement, rankShift, raceAnnouncement, RaceAnnouncer, ANNOUNCE_MS, RaceCues, runnerVelocity, sealDelay, staggerTiming, startSignal, START_BEATS} from "./race-fx";
 
 const long = {...makeRaceCourse(0, 0), weather: "clear" as const, course: "long" as const, distance: 1_250};
 const calls: RaceCommand[] = [{at: 12, pace: "save", route: "shortcut"}, {at: 24, pace: "steady", route: "wide"}];
@@ -238,4 +238,11 @@ test("the live region speaks at most once per 1.5s, keeping only the weightiest 
     announcer.stop();
     advance(ANNOUNCE_MS);
     expect(spoken).toEqual(["fork", "pass", "finish"]);
+});
+
+test("a board place rolls up to a better place and down to a worse one, and holds still otherwise", () => {
+    expect(rankShift(3, 2)).toBe("up");
+    expect(rankShift(1, 4)).toBe("down");
+    expect(rankShift(2, 2)).toBeNull();
+    expect(rankShift(undefined, 1)).toBeNull();
 });
