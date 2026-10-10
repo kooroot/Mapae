@@ -27,7 +27,7 @@ type WindowProps = {
  * or perfect band changes, not on each 40ms paint of the arena.
  *
  * Its `stamp-fx` layer is never re-rendered: stamp-fx animates those spans when an event lands, so a score float or a crack
- * keeps playing after the engine's short-lived impact is gone. Afterimages of what just left (a squashed, sinking or flinching
+ * keeps playing after the engine's short-lived impact is gone, and the chief's arrival can dim every other window. Afterimages of what just left (a squashed, sinking or flinching
  * face) belong to the impact instead and play as CSS on mount, resting in their end state so reduced motion shows the outcome.
  * `--life` paces the actor's telegraph (a look back, then sinking) over its stay: decoration only, never the judgement. It is
  * written through the CSSOM because the nonce-only CSP forbids style attributes.
@@ -61,9 +61,10 @@ export const StampWindow = memo(function StampWindow({index, actor, impact, phas
                 {impact.kind !== "miss" && impact.kind !== "guard" && <em>{impact.points > 0 ? "+" : ""}{impact.points}</em>}
             </span>}
             <span className="stamp-fx" aria-hidden="true">
-                <i className="stamp-ink" /><i className="stamp-ring" /><i className="stamp-ring" />
+                <i className="stamp-shade" /><i className="stamp-ink" /><i className="stamp-ring" /><i className="stamp-ring" />
                 {SHARDS.map((_, i) => <i key={i} className="stamp-shard" />)}
                 <i className="stamp-spark">✦</i><span className="stamp-strike"><i /><i /></span><i className="stamp-ripple" />
+                <img className="stamp-deflect" src="/arcade/stamp-impact-512.webp" alt="" />
                 <b className="stamp-float" /><b className="stamp-pass">{t.passed}</b>
             </span>
         </button>

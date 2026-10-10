@@ -1,7 +1,7 @@
 import {bossWindow, multiplier, FEVER_MS, FEVER_TARGET, type Game, type StampEvent} from "@mapae/arcade/stamp";
 import type {ArcadeSound, SoundKind} from "./sound";
 import type {MotionTier} from "./motion";
-import {banner, hitStop, play, pop, shake, type MotionGate} from "./juice";
+import {banner, hitStop, play, pop, shake, shakeFrames, type MotionGate} from "./juice";
 
 /** Where a Dokkaebi Stamp round sends its feedback: the speaker, how much motion it may spend, and the surfaces it moves. */
 export type StampFx = {sound: ArcadeSound; tier: MotionTier; field: HTMLElement | null; windows: HTMLElement | null; board: HTMLElement | null; gauge: HTMLElement | null};
@@ -14,18 +14,21 @@ export type StampTap = {index: number; point?: {x: number; y: number}};
  * which outlives the engine's impact, so a score float or a crack is never cut off when the impact expires.
  */
 export type StampMotion =
-    | {kind: "press" | "ink" | "rings" | "hitStop" | "shards" | "spark" | "strike" | "shake" | "pass"; index: number}
+    | {kind: "press" | "ink" | "rings" | "hitStop" | "shards" | "spark" | "strike" | "pass" | "deflect" | "bossArrive" | "chiefDown"; index: number}
+    | {kind: "shake"; index: number; px: number; color: string}
     | {kind: "seal"; index: number; boost: number}
     | {kind: "float"; index: number; text: string}
     | {kind: "ripple"; index: number; point?: StampTap["point"]}
     | {kind: "fieldShake" | "fieldBounce" | "charge" | "glowOut"}
-    | {kind: "banner"; name: "fever"}
+    | {kind: "banner"; name: "fever" | "chief"}
     | {kind: "score"; scale: number}
     | {kind: "comboUp"; text: string; ms: number}
     | {kind: "comboBreak"; shake: boolean};
 
 /** The peak scale of the shared `arc-seal-slam`; a combo multiplier adds a tenth to it, applied as a factor on top. */
 export const SEAL_PEAK = 1.9;
+/** Felling the chief stamps a third harder than the streak alone would. */
+export const CHIEF_SEAL = 1.3;
 export function sealBoost(combo: number): number {
     return 1 + .1 * (multiplier(combo) - 1) / SEAL_PEAK;
 }
@@ -62,19 +65,24 @@ const COMBO_CHIP_MS = {full: 600, light: 300} as const;
  * What a step looks like at a tier. Full: everything. Light (a watched agent): the hit itself (seal, ink, score float, perfect
  * rings) without hit-stop, shake or shards. Still: the impact already stays on screen with its points, so the planned beats
  * are the short fades the motion gate turns them into, and nothing that only moves (press, float, shards, field shake, combo chip).
+ * Heralds (fever, the chief felled) show at every tier. While the chief is open nothing jolts the playfield.
  * Scoreboard beats come after the windows' and once per step, however many stamps it held.
  */
 export function stampMotions(events: readonly StampEvent[], game: Game, tier: MotionTier, tap?: StampTap): StampMotion[] {
     const full = tier === "full", still = tier === "still";
     const steady = full && !chiefOpen(game);
+    const felled = events.some(event => event.type === "kill" && event.variant === "boss");
     const motions: StampMotion[] = [];
     if (tap && full) motions.push({kind: "press", index: tap.index});
     for (const event of events) {
         if (event.type === "hit") {
-            const {index} = event;
-            motions.push({kind: "seal", index, boost: sealBoost(game.combo)}, {kind: "ink", index});
+            const {index} = event, chief = event.actor.special === "boss";
+            motions.push({kind: "seal", index, boost: sealBoost(game.combo) * (chief ? CHIEF_SEAL : 1)}, {kind: "ink", index});
             if (!still) motions.push({kind: "float", index, text: `+${event.points}`});
-            if (event.actor.golden && full) motions.push({kind: "shards", index});
+            if ((event.actor.golden || chief) && full) motions.push({kind: "shards", index});
+            // The chief's last stamp freezes the yard, then drops it; its own freeze replaces the perfect's.
+            if (chief && full) motions.push({kind: "chiefDown", index});
+            if (chief) motions.push({kind: "banner", name: "chief"});
         } else if (event.type === "crack") {
             const {index} = event, points = game.cells[index]?.impact?.points ?? 0;
             // A perfect crack wears the seal and its bonus; a plain one is the spark of armour giving.
@@ -85,12 +93,17 @@ export function stampMotions(events: readonly StampEvent[], game: Game, tier: Mo
             }
         } else if (event.type === "perfect") {
             motions.push({kind: "rings", index: event.index});
-            if (full) motions.push({kind: "hitStop", index: event.index});
+            if (full && !felled) motions.push({kind: "hitStop", index: event.index});
         } else if (event.type === "wrong") {
             motions.push({kind: "strike", index: event.index});
-            if (tier !== "light") motions.push({kind: "shake", index: event.index});
+            if (tier !== "light") motions.push({kind: "shake", index: event.index, px: 5, color: "#ea6555"});
             if (steady) motions.push({kind: "fieldShake"});
-        } else if (event.type === "pass") motions.push({kind: "pass", index: event.index});
+        } else if (event.type === "guard") {
+            // The seal glances off the guarding chief; the impact keeps saying why.
+            if (!still) motions.push({kind: "deflect", index: event.index});
+            if (tier !== "light") motions.push({kind: "shake", index: event.index, px: 3, color: "#bac5d9"});
+        } else if (event.type === "bossSpawn") {if (full) motions.push({kind: "bossArrive", index: event.index});}
+        else if (event.type === "pass") motions.push({kind: "pass", index: event.index});
         else if (event.type === "dud") motions.push({kind: "ripple", index: event.index, point: tap?.index === event.index ? tap.point : undefined});
     }
     // Fever arrives as a herald for everyone, with a bump of the playfield for a player; it leaves by fading its lantern glow.
@@ -141,6 +154,14 @@ const FEVER_BOUNCE = 1.012;
 const GLOW_OUT: Keyframe[] = [{opacity: .9}, {opacity: 0}];
 /** Each charge thumps the gauge once. */
 const CHARGE: Keyframe[] = [{transform: "scaleY(1)"}, {transform: "scaleY(1.6)", offset: .4}, {transform: "scaleY(1)"}];
+/** A blocked seal glances up and away off the guarding chief. */
+const DEFLECT: Keyframe[] = [{opacity: .9, transform: "translate(0, 0) rotate(-12deg) scale(1.1)"}, {opacity: .8, transform: "translate(14%, -22%) rotate(16deg) scale(.95)", offset: .45}, {opacity: 0, transform: "translate(26%, -40%) rotate(32deg) scale(.85)"}];
+/** The chief's arrival: every other window dims while it drops (CHIEF_DROP_MS, then a 200ms landing) inside its first guard. */
+const CHIEF_ARRIVAL_MS = 700;
+const CHIEF_DROP_MS = 260;
+const CHIEF_FREEZE_MS = 90;
+const SHADE: Keyframe[] = [{opacity: 0}, {opacity: .35, offset: .2}, {opacity: .35, offset: .75}, {opacity: 0}];
+const LAND: Keyframe[] = [{transform: "translateY(0)"}, {transform: "translateY(3px)", offset: .35}, {transform: "translateY(0)"}];
 /** A perfect seal slams in --arc-dur-quick and meets the paper about 40% in: the freeze lands on that contact, not before it. */
 const PERFECT_CONTACT_MS = 60;
 const PERFECT_FREEZE_MS = 70;
@@ -202,7 +223,25 @@ function render(motion: StampMotion, {field, windows, board, gauge}: StampFx, ga
     case "shards": each(".stamp-shard").forEach((shard, i) => play(shard, shardFrames(SHARDS[i]!), {id: "stamp-shard", duration: 420, easing: "out"}, gate)); break;
     case "spark": {const spark = part(".stamp-spark"); if (spark) play(spark, SPARK, {id: "stamp-spark", duration: 200, easing: "out"}, gate); break;}
     case "strike": each(".stamp-strike > i").forEach((stroke, i) => play(stroke, STRIKE, {id: "stamp-strike", duration: 420, delay: i * 60, easing: "out"}, gate)); break;
-    case "shake": shake(cell, gate, {px: 5, color: "#ea6555"}); break;
+    case "shake": shake(cell, gate, {px: motion.px, color: motion.color}); break;
+    case "deflect": {const seal = part(".stamp-deflect"); if (seal) play(seal, DEFLECT, {id: "stamp-deflect", duration: 300, easing: "out"}, gate); break;}
+    case "bossArrive":
+        // The yard holds its breath around the chief, and takes its weight as it lands.
+        [...cell.parentElement?.children ?? []].forEach((other, i) => {
+            const shade = i === motion.index ? null : other.querySelector(".stamp-shade");
+            if (shade) play(shade, SHADE, {id: "stamp-shade", duration: CHIEF_ARRIVAL_MS, easing: "out"}, gate);
+        });
+        if (field) play(field, LAND, {id: "stamp-land", duration: 200, delay: CHIEF_DROP_MS, easing: "out", composite: "add"}, gate);
+        break;
+    case "chiefDown":
+        if (!field) break;
+        window.setTimeout(() => {
+            // A pause inside the wait owns the moment; the freeze and drop would only play against a halted round.
+            if (field.closest("[data-halted]")) return;
+            hitStop(field, CHIEF_FREEZE_MS, gate);
+            play(field, shakeFrames(5, "y"), {id: "arc-shake", duration: 240, delay: CHIEF_FREEZE_MS, easing: "shake", composite: "add"}, gate);
+        }, PERFECT_CONTACT_MS);
+        break;
     case "ripple": {
         const ripple = part(".stamp-ripple");
         if (!ripple) break;

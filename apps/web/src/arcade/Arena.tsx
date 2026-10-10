@@ -271,6 +271,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
                 </div> : go && <div key="go" className="arc-game-overlay stamp-go" aria-hidden="true"><b>{t.go}</b></div>}
                 {ending && <div className="stamp-end" aria-hidden="true"><b>{t.end}</b></div>}
                 <div className="stamp-herald" data-banner="fever" aria-hidden="true"><i>馬牌</i><b>{ko ? "암행어사 출두요!" : "Make way, royal inspector!"}</b></div>
+                <div className="stamp-herald is-chief" data-banner="chief" aria-hidden="true"><i>退治</i><b>{ko ? "대장 퇴치!" : "Chief defeated!"}</b></div>
             </div>
             <div className="arc-play-footer"><span><i className="arc-live-dot" /> {character.name} · {autopilot ? locale === "ko" ? "에이전트 관전 중" : "WATCHING AGENT" : t.human}</span><span>{autopilot ? "AUTO" : t.touch}</span></div>
             <StampChallenges game={view} locale={locale} />

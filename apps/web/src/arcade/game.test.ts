@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test";
 import {advance, newGame, stampEvents, newBossPractice, ROUND_MS, FEVER_TARGET, FEVER_MS, stamp, stampChallenges, stampWave, stampAdvice, STAMP_WAVES, activateFever, setFeverMode, advanceAgent, bossWindow, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_OPENINGS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, BOSS_PRACTICE_MS, goldParade, GOLD_PARADES, GOLD_PARADE_MS, GOLD_WARNING_MS, stampHighlights, type Game} from "@mapae/arcade/stamp";
 import {cellForKey} from "./input";
-import {FEVER_WARNING_MS, PERFECT_POP, SCORE_POP, SEAL_PEAK, SHARDS, chiefOpen, countdownCue, feverGauge, sealBoost, stampEndMs, stampMotions, stampSounds} from "./stamp-fx";
+import {CHIEF_SEAL, FEVER_WARNING_MS, PERFECT_POP, SCORE_POP, SEAL_PEAK, SHARDS, chiefOpen, countdownCue, feverGauge, sealBoost, stampEndMs, stampMotions, stampSounds} from "./stamp-fx";
 
 function withActor(game: Game, kind: "goblin" | "courier", index = 0): Game {
     return {...game, cells: game.cells.map((cell, i) => i === index ? {
@@ -588,3 +588,54 @@ describe("Dokkaebi Stamp fever motion", () => {
         expect(kinds(stampMotions(events, guard, "full"))).toEqual(["strike", "shake", "fieldShake", "banner", "fieldBounce"]);
     });
 });
+
+describe("Dokkaebi Stamp chief motion", () => {
+    const kinds = (motions: ReturnType<typeof stampMotions>) => motions.map(motion => motion.kind);
+    /** A drill chief at `at` ms into its life, with `hp` openings still to land. */
+    const drill = (at: number, hp = BOSS_OPENINGS): Game => {
+        const game = advance(newBossPractice(), 300);
+        const chief = game.cells[4]!.actor!;
+        return advance({...game, cells: game.cells.map((cell, i) => i === 4 ? {...cell, actor: {...chief, hp}} : cell)}, at);
+    };
+    test("the chief drops in for a player only, inside its first guard", () => {
+        const before = newBossPractice(), after = advance(before, 300);
+        const events = stampEvents(before, after);
+        expect(events).toContainEqual({type: "bossSpawn", index: 4});
+        expect(stampMotions(events, after, "full")).toEqual([{kind: "bossArrive", index: 4}]);
+        expect(stampMotions(events, after, "light")).toEqual([]);
+        expect(stampMotions(events, after, "still")).toEqual([]);
+    });
+    test("a guarded tap glances off and shakes its window twice, with no shake for a watched agent and a flash under reduced motion", () => {
+        const before = drill(100), after = stamp(before, 4);
+        const events = stampEvents(before, after, 4);
+        expect(events).toContainEqual({type: "guard", index: 4});
+        expect(stampMotions(events, after, "full", {index: 4})).toEqual([{kind: "press", index: 4}, {kind: "deflect", index: 4}, {kind: "shake", index: 4, px: 3, color: "#bac5d9"}]);
+        expect(stampMotions(events, after, "light")).toEqual([{kind: "deflect", index: 4}]);
+        expect(stampMotions(events, after, "still")).toEqual([{kind: "shake", index: 4, px: 3, color: "#bac5d9"}]);
+    });
+    test("felling the chief stamps harder, scatters coins, freezes and drops the yard once, and heralds it at every tier", () => {
+        const perfectAt = BOSS_PERFECT_START_MS + BOSS_PERFECT_MS / 2;
+        const before = drill(perfectAt, 1), after = stamp(before, 4);
+        const events = stampEvents(before, after, 4);
+        expect(events).toContainEqual({type: "kill", index: 4, variant: "boss"});
+        expect(events).toContainEqual({type: "perfect", index: 4});
+        const full = stampMotions(events, after, "full");
+        expect(full).toContainEqual({kind: "seal", index: 4, boost: sealBoost(after.combo) * CHIEF_SEAL});
+        expect(kinds(full)).toEqual(expect.arrayContaining(["shards", "chiefDown", "banner", "rings"]));
+        expect(kinds(full)).not.toContain("hitStop");
+        expect(full).toContainEqual({kind: "banner", name: "chief"});
+        const light = kinds(stampMotions(events, after, "light"));
+        expect(light).toContain("banner");
+        for (const kind of ["shards", "chiefDown", "hitStop"] as const) expect(light).not.toContain(kind);
+        expect(stampMotions(events, after, "still")).toContainEqual({kind: "banner", name: "chief"});
+    });
+    test("a perfect stamp that leaves the chief standing keeps its own freeze", () => {
+        const perfectAt = BOSS_PERFECT_START_MS + BOSS_PERFECT_MS / 2;
+        const before = drill(perfectAt), after = stamp(before, 4);
+        const motions = kinds(stampMotions(stampEvents(before, after, 4), after, "full"));
+        expect(motions).toContain("hitStop");
+        expect(motions).not.toContain("chiefDown");
+        expect(motions).not.toContain("banner");
+    });
+});
+
