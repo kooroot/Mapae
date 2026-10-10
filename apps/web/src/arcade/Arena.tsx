@@ -225,7 +225,7 @@ export function Arena({locale, character, reducedMotion, sound, onFinish, autopi
     const urgent = seconds > 0 && seconds <= 10;
     const tierUp = multiplier(view.combo);
     return (
-        <section ref={root} className={`arc-arena${fever ? " stamp-fever" : ""}${meter.waning ? " stamp-fever-waning" : ""}`} aria-label={t.playfield} data-halted={frozen ? "true" : countdown > 0 ? "countdown" : undefined}>
+        <section ref={root} className={`arc-arena${fever ? " stamp-fever" : ""}${meter.waning ? " stamp-fever-waning" : ""}${tier === "light" ? " stamp-light" : ""}`} aria-label={t.playfield} data-halted={frozen ? "true" : countdown > 0 ? "countdown" : undefined}>
             <div className="arc-arena-heading"><span>{drill ? ko ? "대장 10초 연습" : "Ten-second chief drill" : ko ? "도깨비 도장찍기" : "Dokkaebi Stamp"}</span><button className="arc-text-button" onClick={() => setPause(true)}>{t.pause} Ⅱ</button></div>
             <div className="arc-scoreboard" ref={board}>
                 <div><span>{t.score}</span><strong data-testid="score"><span className="stamp-pulse" data-fx="score">{view.score.toLocaleString()}</span></strong></div>
