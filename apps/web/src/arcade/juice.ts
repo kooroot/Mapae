@@ -127,7 +127,7 @@ export function pop(el: Element, gate: MotionGate, {scale = 1.14, ms}: {scale?: 
 
 /**
  * A hanji banner: unfurls, holds, lifts away, and stays hidden after (`fill: both`); await `finished` before unmounting it.
- * Under reduced motion it simply shows for the hold and fades. Null (nothing to await) when the tab is hidden.
+ * Under reduced motion it simply shows for the hold and fades. Null (nothing to await) when the tab is hidden or the tokens are not loaded.
  */
 export function banner(el: HTMLElement, gate: MotionGate): Animation | null {
     if (document.hidden) return null;
@@ -136,6 +136,8 @@ export function banner(el: HTMLElement, gate: MotionGate): Animation | null {
     if (tier === "still") return run(el, [{opacity: 1}, {opacity: 1, offset: dur.ceremony / (dur.ceremony + STILL_MS)}, {opacity: 0}], {id: "arc-banner", duration: dur.ceremony + STILL_MS, fill: "both"});
     const {unfurl, hold, exit} = bannerBeats(tier, dur);
     const total = unfurl + hold + exit;
+    // Tokens not applied yet: a zero-length banner would divide by zero into NaN offsets, which `animate()` throws on.
+    if (!total) return null;
     return run(el, [
         {offset: 0, opacity: 1, transform: "translateY(0) scaleX(0)", easing: ease.ink},
         {offset: unfurl / total, opacity: 1, transform: "translateY(0) scaleX(1)"},
@@ -166,7 +168,8 @@ export function countUp(node: Node, to: number, gate: MotionGate, {from = 0, ms,
     const frame = () => {
         if (counters.get(node) !== clock) return;
         write(from + (to - from) * (clock.effect?.getComputedTiming().progress ?? 1));
-        if (clock.playState === "finished") counters.delete(node);
+        // A caller cancelling the returned clock lands on the final value and ends the loop, like finishing does.
+        if (clock.playState === "finished" || clock.playState === "idle") counters.delete(node);
         else requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
