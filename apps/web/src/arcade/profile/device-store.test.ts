@@ -10,7 +10,8 @@ const state=()=>addCharacter(newArcadeState(),newCompanion('mobile',{name:'ëª¨ë°
 function storage(fn:(values:Map<string,string>)=>void){
  const original=Object.getOwnPropertyDescriptors(globalThis), values=new Map<string,string>();
  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>values.set(k,v),removeItem:(k:string)=>values.delete(k)}});
- Object.defineProperty(globalThis,'matchMedia',{configurable:true,value:()=>({matches:false})});
+ // An OS that prefers reduced motion must not seed the player's in-app setting.
+ Object.defineProperty(globalThis,'matchMedia',{configurable:true,value:()=>({matches:true})});
  try{fn(values);}finally{for(const key of ['localStorage','matchMedia']){if(original[key])Object.defineProperty(globalThis,key,original[key]!);else Reflect.deleteProperty(globalThis,key);}}
 }
 describe('reviewed wallet recovery store',()=>{
@@ -27,9 +28,9 @@ describe('reviewed wallet recovery store',()=>{
   writeDeviceDraft(owner,draft);preserveDeviceDraft(owner,s);
   expect([...values.values()].join()).not.toContain(secret);expect([...values.values()].join()).not.toContain('privateKey');
  }));
- test('checksummed wallets share drafts while another owner starts empty',()=>storage(()=>{
+ test('checksummed wallets share drafts while another owner starts empty with motion on',()=>storage(()=>{
   writeDeviceDraft(getAddress(owner),{state:state(),base:{owner:getAddress(owner),generation:PROFILE_GENERATION,revision:2,profile:projectProfile(state())},pending:false,imported:true});
-  expect(readDeviceDraft(owner).base?.revision).toBe(2);expect(readDeviceDraft('0x1111111111111111111111111111111111111111').state.characters).toHaveLength(0);
+  expect(readDeviceDraft(owner).base?.revision).toBe(2);const fresh=readDeviceDraft('0x1111111111111111111111111111111111111111').state;expect(fresh.characters).toHaveLength(0);expect(fresh.reducedMotion).toBe(false);
  }));
  test('failed local persistence never removes the original mobile record',()=>storage(values=>{
   values.set(arcadeStorageKey(owner),serializeArcadeState(state()));

@@ -3,8 +3,8 @@ import {serializeArcadeState} from '../state-store';
 
 export const GUEST_STORAGE_KEY = 'mapae.arcade.guest.v1';
 export const MAX_GUEST_BYTES = 131_072;
-export function newGuestState(reducedMotion = false): ArcadeState {
-    return addCharacter(newArcadeState(reducedMotion), newCompanion('guest', {
+export function newGuestState(): ArcadeState {
+    return addCharacter(newArcadeState(), newCompanion('guest', {
         name: '마루', color: 'jade', temperament: 'calm',
         appearance: {version: 1, seed: '0000000000000001', zodiac: 'dragon', backdrop: 'jade', charm: 'mapae', wardrobe: {hat: 'satgat', outfit: 'scholar', shoes: 'taesahye'}},
     }));
@@ -21,13 +21,13 @@ export function serializeGuestState(state: ArcadeState): string {
     if (new TextEncoder().encode(raw).length > MAX_GUEST_BYTES || parseArcadeState(raw).characters.length !== 1) throw new Error('Invalid guest state');
     return raw;
 }
-export function parseGuestState(raw: string | null, reducedMotion = false): ArcadeState {
-    if (!raw || new TextEncoder().encode(raw).length > MAX_GUEST_BYTES) return newGuestState(reducedMotion);
-    const state = parseArcadeState(raw, reducedMotion);
-    try {return JSON.parse(serializeGuestState(state)) as ArcadeState;} catch {return newGuestState(reducedMotion);}
+export function parseGuestState(raw: string | null): ArcadeState {
+    if (!raw || new TextEncoder().encode(raw).length > MAX_GUEST_BYTES) return newGuestState();
+    const state = parseArcadeState(raw);
+    try {return JSON.parse(serializeGuestState(state)) as ArcadeState;} catch {return newGuestState();}
 }
-export function readGuestState(reducedMotion = false): ArcadeState {
-    try {return parseGuestState(sessionStorage.getItem(GUEST_STORAGE_KEY), reducedMotion);} catch {return newGuestState(reducedMotion);}
+export function readGuestState(): ArcadeState {
+    try {return parseGuestState(sessionStorage.getItem(GUEST_STORAGE_KEY));} catch {return newGuestState();}
 }
 export function writeGuestState(state: ArcadeState): boolean {
     try {sessionStorage.setItem(GUEST_STORAGE_KEY, serializeGuestState(state)); return true;} catch {return false;}

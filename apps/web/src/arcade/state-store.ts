@@ -25,6 +25,6 @@ export function arcadeStorageKey(owner: Address): string {
     if (!isAddress(owner)) throw new Error("A connected wallet is required for arcade records.");
     return `mapae.arcade.wallet.v1.${owner.toLowerCase()}`;
 }
-export function readArcadeState(owner: Address, reducedMotion = false): ArcadeState {
-    return parseArcadeState(localStorage.getItem(arcadeStorageKey(owner)), reducedMotion);
+export function readArcadeState(owner: Address): ArcadeState {
+    return parseArcadeState(localStorage.getItem(arcadeStorageKey(owner)));
 }
