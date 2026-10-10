@@ -1,6 +1,17 @@
 .arc-room { position: relative; isolation: isolate; overflow: hidden; margin: 0 -28px 40px; padding: 36px 32px 30px; min-width: 0; background: #21130c; border: 1px solid #ad895746; }
 .arc-room-background { position: absolute; inset: 0; z-index: -2; }
 .arc-room-background img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
+/* Lantern glow over the painted lanterns: a 3:2 box sized and centred like the cover-fit picture, so the spots track every crop. */
+.arc-room-ambient { position: absolute; inset: 0; z-index: -2; container-type: size; pointer-events: none; }
+.arc-room-lanterns { position: absolute; left: 50%; top: 50%; width: max(100cqw, 150cqh); aspect-ratio: 3 / 2; translate: -50% -50%; }
+.arc-room-lanterns i { position: absolute; width: 11%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; background: radial-gradient(closest-side, #ffcf7a52, #ff9f4220 55%, transparent); opacity: .75; animation: arc-lantern 3.2s ease-in-out infinite; }
+.arc-room-lanterns i:nth-child(1) { left: 5.8%; top: 14.8%; }
+.arc-room-lanterns i:nth-child(2) { left: 20.8%; top: 18.1%; animation-duration: 4.1s; animation-delay: -1.3s; }
+.arc-room-lanterns i:nth-child(3) { left: 78.8%; top: 18%; animation-duration: 5.3s; animation-delay: -2.4s; }
+.arc-room-lanterns i:nth-child(4) { left: 94%; top: 14.7%; animation-delay: -1.9s; }
+.arc-room-lanterns i:nth-child(5) { left: 5.6%; top: 70.4%; width: 14%; animation-duration: 5.3s; animation-delay: -.7s; }
+.arc-room-lanterns i:nth-child(6) { left: 81.6%; top: 59.9%; width: 8%; animation-duration: 4.1s; animation-delay: -3.2s; }
+@keyframes arc-lantern { 0%, 100% { opacity: .75; } 9% { opacity: .58; } 13% { opacity: .82; } 46% { opacity: .7; } 64% { opacity: .92; } 71% { opacity: .66; } 78% { opacity: .8; } }
 .arc-room::before { content: ''; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: linear-gradient(#0c090523, transparent 35%, #0e090642 75%, #100b09b0); }
 .arc-room-sign { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px 18px; width: fit-content; max-width: 90%; margin: 0 auto 20px; padding: 18px 32px; text-align: center; background: #140e09de; border: 1px solid #bd935655; box-shadow: 0 5px 26px #0008, inset 0 0 25px #eab16b0d; }
 .arc-room-sign .arc-brand-lockup { display: contents; }
@@ -11,8 +22,11 @@
 .arc-room-sign h1 { grid-column: 2; margin: 0; color: #f8d59b; font-size: 15px; line-height: 1.5; font-weight: 500; letter-spacing: .02em; text-wrap: balance; }
 .arc-room-viewport { min-width: 0; }
 .arc-room-cabinets { position: relative; display: flex; align-items: end; justify-content: center; max-width: 980px; margin: auto; gap: 14px; padding: 8px 8px 6px; }
-.arc-room-cabinet { flex: 1 1 0; min-width: 0; max-width: clamp(210px, calc((100svh - 430px) * .6667), 300px); container-type: inline-size; position: relative; padding: 0; border: 0; background: transparent; color: #451b0e; cursor: pointer; filter: drop-shadow(0 16px 8px #09050270); transition: filter .2s ease; }
-.arc-room-cabinet img { width: 100%; height: auto; display: block; user-select: none; pointer-events: none; }
+.arc-room-cabinet { flex: 1 1 0; min-width: 0; max-width: clamp(210px, calc((100svh - 430px) * .6667), 300px); container-type: inline-size; position: relative; padding: 0; border: 0; background: transparent; color: #451b0e; cursor: pointer; isolation: isolate; }
+.arc-room-cabinet img { width: 100%; height: auto; display: block; user-select: none; pointer-events: none; filter: drop-shadow(0 16px 8px #09050270); }
+/* The golden halo is a pseudo-element faded by opacity: a filter transition would repaint the whole 640px cabinet every frame. */
+.arc-room-cabinet::before { content: ''; position: absolute; z-index: -1; inset: -3% -14% 4%; pointer-events: none; background: radial-gradient(closest-side, #ffdc8a50, #ffbf5c1f 60%, transparent); opacity: 0; transition: opacity var(--arc-dur-base) var(--arc-ease-out); }
+.arc-room-cabinet[aria-pressed=true]::before { opacity: 1; }
 .arc-room-marquee { position: absolute; top: 10.8%; left: 18%; right: 18%; height: 7%; display: flex; align-items: center; justify-content: center; font-family: var(--sans); font-weight: 850; font-size: 8.4cqw; line-height: 1; letter-spacing: -.055em; white-space: nowrap; text-shadow: 0 1px #fff7c3; }
 .arc-room-cabinet-race .arc-room-marquee { color: #ae3022; }
 .arc-room-cabinet-shop .arc-room-marquee { top: 7.5%; color: #194b3a; }
@@ -40,7 +54,11 @@
 .arc-room-slot::before { left: 1.8cqw; }
 .arc-room-slot::after { right: 1.8cqw; }
 .arc-room-crt { position: absolute; pointer-events: none; inset: 26% 21% 47%; border-radius: 10%; background: repeating-linear-gradient(0deg, transparent 0 3px, #0f120a0c 3px 4px); box-shadow: inset 0 0 24px #ffd99312; }
-.arc-room-cabinet[aria-pressed=true] { filter: drop-shadow(0 0 8px #ffdc8a77) drop-shadow(0 16px 8px #09050270); }
+/* The chosen cabinet's screen is switched on: a warm glow that hums while it waits. */
+.arc-room-crt::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: radial-gradient(ellipse closest-side, #fff0c238, #ffd28f17 65%, transparent); opacity: 0; transition: opacity var(--arc-dur-base) var(--arc-ease-out); }
+.arc-room-cabinet[aria-pressed=true] .arc-room-crt::after { opacity: 1; animation: arc-crt-hum 5.3s ease-in-out infinite; }
+@keyframes arc-crt-hum { 0%, 100% { opacity: 1; } 50% { opacity: .78; } }
+.arc-room-slot > span { display: block; }
 .arc-room-cabinet:focus-visible { outline: 2px solid #ffe0a0; outline-offset: 3px; border-radius: 10px; }
 .arc-room-hint { color: #ecd4af; font-size: 11px; text-align: center; text-shadow: 0 2px 4px #000; margin: 8px 0 18px; }
 .arc-room-selection { display: grid; justify-items: center; gap: 5px; min-height: 46px; padding: 8px 14px 0; text-align: center; color: #f6dfba; text-shadow: 0 2px 5px #000; }
@@ -61,7 +79,7 @@
 .arc-empty-departure a { flex: none; }
 .agent-in-lobby .arc-main, .arc-wallet-gate .arc-main { max-width: 1280px; }
 .arc-room + .arc-roster { scroll-margin-top: 24px; }
-@media (hover: hover) { .arc-room-cabinet:hover { filter: drop-shadow(0 0 12px #ffdb8366) drop-shadow(0 16px 8px #09050270); } }
+@media (hover: hover) { .arc-room-cabinet:hover:not([aria-pressed=true])::before { opacity: .7; } }
 @media (max-width: 900px) and (min-width: 621px) { .arc-room { padding-inline: 20px; } .arc-room-cabinets { gap: 4px; } .arc-room-dock { padding: 20px; } .arc-room-dock .agent-quick-budget { display: none; } }
 @media (max-width: 720px) and (min-width: 621px) { .arc-room { margin-inline: -16px; } }
 @media (max-width: 620px) {
