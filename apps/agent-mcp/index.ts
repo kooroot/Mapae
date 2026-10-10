@@ -8,7 +8,7 @@ import {
     type DelegatedAgentRuntime,
 } from "@mapae/delegation";
 import {GIWA_SEPOLIA_CAIP2, fromTokenAmount, redactForLog} from "@mapae/shared";
-import {z} from "zod";
+import {z} from "zod/v4";
 
 /**
  * The outermost of four stacked timeouts, and therefore the longest.

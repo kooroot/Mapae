@@ -7,6 +7,6 @@
     "@mapae/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "1.31.0",
     "viem": "^2.55.8",
-    "zod": "^3.25.76"
+    "zod": "4.4.3"
   }
 }
