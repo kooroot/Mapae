@@ -6,7 +6,7 @@ import {RaceTrack} from "./RaceTrack";
 const course = {...makeRaceCourse(0, 0), weather: "clear" as const, course: "long" as const, distance: 1250};
 const commands: RaceCommand[] = [{at: 12, pace: "save", route: "shortcut"}, {at: 24, pace: "steady", route: "wide"}];
 const race = simulateRace(course, [{id: "owner", name: "Coach", strategy: "conserve"}, {id: "rival", name: "Rival", strategy: "burst"}], commands, null);
-const render = (time: number, locale: "en" | "ko", reducedMotion = false) => renderToStaticMarkup(<RaceTrack race={race} commands={commands} rivalId="rival" progress={time / race.seconds} ended={false} locale={locale} color="jade" running reducedMotion={reducedMotion} />);
+const render = (time: number, locale: "en" | "ko", reducedMotion = false) => renderToStaticMarkup(<RaceTrack race={race} commands={commands} rivalId="rival" progress={time / race.seconds} clock={{current: time}} ended={false} locale={locale} color="jade" running reducedMotion={reducedMotion} />);
 
 test("track labels and visual draft links use observed traffic rather than predicted finishing order", () => {
     const drafting = race.frames.find(frame => frame.positions[0]!.draftingId)!;
@@ -29,11 +29,11 @@ test("reduced-motion track keeps path feedback and public rival habits without a
 });
 
 test("a halted race keeps its stride classes and freezes in pose instead of snapping to rest", () => {
-    const track = (running: boolean, ended: boolean) => renderToStaticMarkup(<RaceTrack race={race} commands={commands} rivalId="rival" progress={30 / race.seconds} ended={ended} locale="en" color="jade" running={running} reducedMotion={false} />);
+    const track = (running: boolean, ended: boolean) => renderToStaticMarkup(<RaceTrack race={race} commands={commands} rivalId="rival" progress={30 / race.seconds} clock={{current: 30}} ended={ended} locale="en" color="jade" running={running} reducedMotion={false} />);
     expect(render(30, "en")).not.toContain("data-halted");
     expect(track(false, false)).toContain("race-world-moving");
     expect(track(false, false)).toContain("data-halted=\"\"");
     expect(track(false, true)).not.toContain("data-halted");
     expect(track(false, true)).not.toContain("race-world-moving");
-    expect(track(false, false)).toContain("<g class=\"race-field\">");
+    expect(track(false, false)).toContain("<div class=\"race-field\" aria-hidden=\"true\">");
 });

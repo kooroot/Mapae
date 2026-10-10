@@ -47,6 +47,8 @@ const COPY = {
     },
 } as const;
 
+/** HUD text pace (~8Hz): positions move every frame without a React render. */
+const HUD_MS = 120;
 type Phase = "choose" | "brief" | "thinking" | "race" | "checkpoint" | "recap" | "error";
 type Note = {round: number; decision: Omit<AgentDecision, "source"> & {source: "human" | AgentDecision["source"]}; enter: boolean; strategy: RaceStrategy};
 
@@ -65,7 +67,10 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     const [season, setSeason] = useState(() => createRaceSeason(seed, profile.name || t.sample, locale, profile.aptitudes));
     const [phase, setPhase] = useState<Phase>("brief");
     const [notes, setNotes] = useState<Note[]>([]);
+    // The clock advances every frame for the runners; `raceTime` follows it at the HUD rate for everything React renders.
+    const clock = useRef(0);
     const [raceTime, setRaceTime] = useState(0);
+    const seek = (time: number) => {clock.current = time; setRaceTime(time);};
     const [commands, setCommands] = useState<RaceCommand[]>([]);
     const [burstAt, setBurstAt] = useState<number | null>(null);
     const [relaxed, setRelaxed] = useState(false);
@@ -120,7 +125,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         const next = applyRaceRound(season, action, [], human ? null : undefined);
         setRoute(next.rounds.at(-1)!.simulation.calls.find(call => call.id === "owner")?.route ?? "wide");
         setNotes(previous => [...previous, {round: season.round, decision, ...action}]);
-        setSeason(next); setRaceTime(0); setPaused(false); setPhase("race");
+        setSeason(next); seek(0); setPaused(false); setPhase("race");
     }
     function choose(enter: boolean) {
         if (phase !== "choose" || busy.current || suspended) return;
@@ -158,13 +163,12 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         let frame = 0;
         let last: number | null = null;
         let painted = 0;
-        let elapsed = raceTime;
         const checkpoint = human ? raceNextCheckpoint(current.simulation, commands.length) : undefined;
         const tick = (time: number) => {
-            if (last !== null) elapsed += Math.min(200, time - last) / 1000 * 3 * speed;
+            if (last !== null) clock.current = Math.min(endTime, clock.current + Math.min(200, time - last) / 1000 * 3 * speed);
             last = time;
-            if (checkpoint !== undefined && elapsed >= checkpoint) {
-                setRaceTime(checkpoint);
+            if (checkpoint !== undefined && clock.current >= checkpoint) {
+                seek(checkpoint);
                 if (relaxed) setPhase("checkpoint");
                 else {
                     const call = current.simulation.calls.find(call => call.id === "owner" && call.at === checkpoint)!;
@@ -173,14 +177,15 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                 }
                 return;
             }
-            if (time - painted >= 40 || elapsed >= endTime) {
-                setRaceTime(Math.min(endTime, elapsed)); painted = time;
+            if (time - painted >= HUD_MS || clock.current >= endTime) {
+                setRaceTime(clock.current); painted = time;
             }
-            if (elapsed >= endTime) setPhase("recap");
+            if (clock.current >= endTime) setPhase("recap");
             else frame = requestAnimationFrame(tick);
         };
         frame = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(frame);
+        // A halt catches the text up to the exact moment the runners froze on.
+        return () => {cancelAnimationFrame(frame); setRaceTime(clock.current);};
         // Absolute simulation time keeps previously seen positions stable after a new call.
     }, [phase, blocked, speed, current, commands.length, human, endTime, relaxed]);
 
@@ -195,8 +200,8 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
     }
     function triggerBurst() {
         if (!canBurst || !current) return;
-        // The next simulation tick preserves every position already shown.
-        const at = Math.ceil(raceTime * 10) / 10;
+        // The next simulation tick after the clock preserves every position already shown.
+        const at = Math.ceil(clock.current * 10) / 10;
         const next = applyRaceRound(roundStart.current, current.action, commands, at);
         if (!next.rounds.at(-1)!.simulation.bursts.some(burst => burst.id === "owner" && burst.at === at)) return;
         setBurstAt(at); setSeason(next);
@@ -215,7 +220,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
         };
         window.addEventListener("keydown", keydown);
         return () => window.removeEventListener("keydown", keydown);
-    }, [human, phase, blocked, windowOpen, canBurst, route, current, commands, raceTime]);
+    }, [human, phase, blocked, windowOpen, canBurst, route, current, commands]);
 
     useEffect(() => {
         if (phase !== "checkpoint") return;
@@ -289,7 +294,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                     <small>{t.source}: {latest.decision.source === "llm" ? latest.decision.model || "LLM" : t.local}{!human && <> · {t.entry}: {latest.enter ? "−1" : "0"}</>}</small>
                 </div>
                 {!latest.enter && <p className="arc-race-sitout">{t.noEntry}</p>}
-                <RaceTrack rivalId={season.rivalId} commands={current.simulation.calls.filter(call => call.id === "owner")} race={current.simulation} progress={progress} ended={phase === "recap"} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} />
+                <RaceTrack rivalId={season.rivalId} commands={current.simulation.calls.filter(call => call.id === "owner")} race={current.simulation} progress={progress} clock={clock} ended={phase === "recap"} locale={locale} color={profile.color} reducedMotion={reducedMotion} running={phase === "race" && !blocked} />
                 {human && phase !== "recap" && <div className={`race-command-dock ${windowOpen ? "race-awaiting" : ""}`}>
                     <div><span className="arc-overline">{windowOpen ? ko ? `${commands.length + 1}번째 갈림길` : `FORK ${commands.length + 1}` : ko ? `작전 ${commands.length} / 2` : `CALLS ${commands.length} / 2`}</span>
                         <h2>{windowOpen ? phase === "checkpoint" ? ko ? "멈춘 사이, 작전을 골라요" : "Paused — pick your call" : ko ? `${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}초 뒤 갈림길 · 바꿀까요?` : `Fork in ${Math.max(0, Math.ceil((nextCall! - raceTime) / (3 * speed)))}s · Change your plan?` : nextCall === undefined ? ko ? "남은 승부는 결승선에서!" : "All the way to the finish!" : ko ? "말이 작전대로 달리고 있어요" : "Your horse is following the plan"}</h2>
@@ -309,7 +314,7 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                 <div className="arc-race-playback">
                     {phase !== "recap" && <button type="button" className="arc-button arc-button-plain" onClick={() => setPaused(value => !value)}>{paused ? t.resume : t.pause}</button>}
                     {phase !== "recap" && <div className="mapae-speed" role="group" aria-label={ko ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>}
-                    {phase === "race" && !human ? <button type="button" className="arc-race-text-button" onClick={() => {setRaceTime(endTime); setPhase("recap");}}>{t.fast} →</button>
+                    {phase === "race" && !human ? <button type="button" className="arc-race-text-button" onClick={() => {seek(endTime); setPhase("recap");}}>{t.fast} →</button>
                         : phase === "recap" ? <button type="button" ref={recapButton} className="arc-button" onClick={advance}>{season.round < RACE_ROUNDS ? t.next : t.result} →</button> : null}
                 </div>
                 <p className="arc-race-status" role="status">{blocked ? t.held : phase === "checkpoint" ? ko ? "작전을 골라야 다시 달려요." : "Choose a pace to continue." : phase === "recap" ? autoAdvance && season.round < RACE_ROUNDS ? t.auto : t.settled : t.watching}</p>

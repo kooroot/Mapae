@@ -1,13 +1,13 @@
 .race-world{margin-top:20px;border:1px solid #8a6034;border-radius:18px;overflow:hidden;background:#443422;box-shadow:0 6px 0 #9a70452b,0 20px 48px #47321e1c;color:#fff0d0}
 .race-world-hud{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 20px;background:linear-gradient(100deg,#223f34,#35543a);font-size:12px;letter-spacing:.04em}
 .race-world-hud strong{font-size:14px}.race-world-hud>span:last-child{font-family:var(--mono)}
-.race-distance-meter{display:block;appearance:none;width:100%;height:4px;border:0;background:#5d5734}
-.race-distance-meter::-webkit-progress-bar{background:#5d5734}.race-distance-meter::-webkit-progress-value{background:#efca79}.race-distance-meter::-moz-progress-bar{background:#efca79}
+.race-distance-meter{height:4px;background:#5d5734;overflow:hidden}.race-distance-meter>span{display:block;height:100%;background:#efca79;transform:scaleX(0);transform-origin:left}
 .race-world-scene{position:relative;isolation:isolate;overflow:hidden}
 .race-world-art{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:-2}
 .race-world-runners{display:block;width:100%;height:440px;overflow:visible}
-.race-world-runners .race-our-runner image{filter:drop-shadow(0 0 2px #ffe5a0) drop-shadow(0 4px 3px #512e2433)}
-.race-field>g:nth-child(2){--stride-offset:-73ms}.race-field>g:nth-child(3){--stride-offset:-146ms}.race-field>g:nth-child(4){--stride-offset:-219ms}
+.race-field{position:absolute;inset:0;pointer-events:none}.race-sprite{position:absolute;left:0;top:0;will-change:transform}.race-sprite>svg{display:block;overflow:visible}
+.race-field .race-our-runner image{filter:drop-shadow(0 0 2px #ffe5a0) drop-shadow(0 4px 3px #512e2433)}
+.race-field>:nth-child(2){--stride-offset:-73ms}.race-field>:nth-child(3){--stride-offset:-146ms}.race-field>:nth-child(4){--stride-offset:-219ms}
 .race-pony-bounce{transform-box:fill-box;transform-origin:center bottom}.race-world-moving .race-pony-bounce{animation:race-gallop 280ms cubic-bezier(.45,0,.55,1) var(--stride-offset,0ms) infinite}
 .race-dust{opacity:0;transform-box:fill-box;transform-origin:left bottom}.race-world-moving .race-dust{animation:race-dust 560ms ease-out var(--stride-offset,0ms) infinite}
 .race-world-moving .race-arrived .race-pony-bounce,.race-world-moving .race-arrived .race-dust{animation:none}
