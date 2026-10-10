@@ -287,7 +287,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
                     <small>{state.counterOffer ? ko ? `역제안 도착 · ${state.counterOffer.price}냥` : `Counteroffer: ${state.counterOffer.price} coins` : SHOP_TEMPERAMENT_COPY[buyer.temperament].hint[locale]}</small>
                 </div>}
 
-                {humanTurn ? <HumanShopControls key={`${state.customer}:${state.rounds}:${state.phase}`} locale={locale} disabled={blocked}
+                {humanTurn ? <HumanShopControls key={`${state.customer}:${state.rounds}:${state.phase}`} locale={locale} disabled={blocked} tier={tier}
                     {...(sellerRole ? {role: "seller" as const, observation: ownObservation, onAction: (action: Parameters<typeof applySellerAction>[1]) => setState(current => current === state ? applySellerAction(current, action) : current)} :
                         {role: "buyer" as const, observation: ownObservation, onAction: (action: Parameters<typeof applyBuyerAction>[1]) => setState(current => current === state ? applyBuyerAction(current, action) : current)})} /> : settled ? <div className="shop-meeting-result" role="status">
                     <span className={`shop-deal-seal ${traded ? "shop-seal-deal" : ""}`}>{traded ? ko ? "성사" : "DEAL" : ko ? "마감" : "CLOSED"}</span><h2>{traded ? ko ? "좋은 거래였어요!" : "A deal to remember!" : ko ? "이번에는 거래 없이 마쳤어요" : "No deal this time"}</h2>

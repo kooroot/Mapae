@@ -1,15 +1,19 @@
 import {useState} from "react";
 import {SHOP_PRODUCTS, shopOfferChoices, type BuyerAction, type SellerAction, type ProductId} from "@mapae/arcade/shop";
 import type {JsonValue} from "@mapae/arcade";
+import {pop} from "../juice";
+import type {MotionTier} from "../motion";
 
-type Props = {locale: "ko" | "en"; observation: Record<string, JsonValue>; disabled: boolean} & (
+type Props = {locale: "ko" | "en"; observation: Record<string, JsonValue>; disabled: boolean; tier: MotionTier} & (
     {role: "seller"; onAction: (action: SellerAction) => void} | {role: "buyer"; onAction: (action: BuyerAction) => void}
 );
 const image = (id: ProductId) => `/arcade/item-${id}-512.webp`;
+/** The quantity a stepper button changed swells once, so the count visibly answers the press. */
+const QUANTITY_POP = 1.25;
 
 /** Both the counter and the agent use the same public observation, never private buyer state. */
 export function HumanShopControls(props: Props) {
-    const {locale, observation: o, disabled} = props, ko = locale === "ko";
+    const {locale, observation: o, disabled, tier} = props, ko = locale === "ko";
     const inventory = o.inventory as Record<ProductId, number> | undefined;
     const disclosed = Array.isArray(o.requestedItems) ? o.requestedItems : [];
     const requested = (o.requestedQuantities ?? {}) as Partial<Record<ProductId, number>>;
@@ -28,6 +32,11 @@ export function HumanShopControls(props: Props) {
             if (disabled || !items.length || !Number.isInteger(amount) || amount < 1 || amount > 99) return;
             const names = items.map(i => `${SHOP_PRODUCTS.find(p => p.id === i.id)!.name[locale]} ×${i.quantity}`).join(" + ");
             props.onAction({type: "offer", items, price: amount, message: ko ? `${names}, ${amount}냥에 드릴게요!` : `${names} for ${amount} coins!`});
+        };
+        const step = (button: HTMLButtonElement, id: ProductId, delta: number) => {
+            setQuantities(q => ({...q, [id]: q[id] + delta}));
+            const count = button.parentElement?.querySelector("output");
+            if (count) pop(count, {tier}, {scale: QUANTITY_POP});
         };
         const choices = shopOfferChoices(o, locale);
         const serve = (choice: typeof choices[number]) => {
@@ -50,7 +59,7 @@ export function HumanShopControls(props: Props) {
             <details className="shop-custom-price shop-custom-bundle"><summary>{ko ? "보따리와 가격 직접 조합" : "Build your own bundle and price"}</summary>
             <div className="shop-product-picker">{SHOP_PRODUCTS.map(p => <div className={quantities[p.id] ? "shop-picked" : ""} key={p.id}>
                 <img src={image(p.id)} alt="" width={100} height={100} draggable={false} /><strong>{p.name[locale]}</strong><small>{ko ? "재고" : "Stock"} {inventory?.[p.id] ?? 0} · {ko ? "원가" : "Cost"} {p.cost}</small>
-                <div className="shop-stepper"><button disabled={disabled || quantities[p.id] === 0} aria-label={`${p.name[locale]} ${ko ? "빼기" : "remove"}`} onClick={() => setQuantities(q => ({...q, [p.id]: q[p.id] - 1}))}>−</button><output aria-label={`${p.name[locale]} ${ko ? "수량" : "quantity"}`}>{quantities[p.id]}</output><button disabled={disabled || quantities[p.id] >= Math.min(3, inventory?.[p.id] ?? 0)} aria-label={`${p.name[locale]} ${ko ? "담기" : "add"}`} onClick={() => setQuantities(q => ({...q, [p.id]: q[p.id] + 1}))}>+</button></div>
+                <div className="shop-stepper"><button disabled={disabled || quantities[p.id] === 0} aria-label={`${p.name[locale]} ${ko ? "빼기" : "remove"}`} onClick={event => step(event.currentTarget, p.id, -1)}>−</button><output aria-label={`${p.name[locale]} ${ko ? "수량" : "quantity"}`}>{quantities[p.id]}</output><button disabled={disabled || quantities[p.id] >= Math.min(3, inventory?.[p.id] ?? 0)} aria-label={`${p.name[locale]} ${ko ? "담기" : "add"}`} onClick={event => step(event.currentTarget, p.id, 1)}>+</button></div>
             </div>)}</div>
             <form onSubmit={e => {e.preventDefault(); offer(price);}}><label>{ko ? "전체 가격" : "Total price"}<input type="number" min={1} max={99} step={1} inputMode="numeric" required disabled={disabled} value={price} onChange={e => setPrice(Number(e.target.value))} /></label><button className="arc-button" disabled={disabled || !items.length}>{ko ? "직접 제안" : "Offer"}</button></form><p className="shop-custom-margin">{ko ? "원가" : "Cost"} {cost} · {ko ? "기본가" : "Retail"} {retail} · {ko ? "거래 이익" : "Trade profit"} {Number.isFinite(price) ? price - cost : "—"} {unit}</p></details>
             <div className="shop-turn-links"><button disabled={disabled} onClick={() => props.onAction({type: "ask", message: ko ? "어떤 물건이 필요한가요?" : "What do you need?"})}>{ko ? "필요한 것 물어보기 · 제안 1회" : "Ask their needs · 1 offer"}</button><button disabled={disabled} onClick={() => props.onAction({type: "close", message: ko ? "다음에 또 들러 주세요!" : "Come back another time!"})}>{ko ? "손님 보내기" : "End meeting"}</button></div>
