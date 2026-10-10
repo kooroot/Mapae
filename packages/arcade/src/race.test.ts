@@ -1,6 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import {applyRaceRound, chooseRaceAction, createRaceSeason, makeRaceCourse, parseRaceAction, raceFrameAt, raceObservation,
-    raceMotorCall, raceTraffic, raceHighlights, RACE_DRAFT_DISTANCE, type RaceCommand, RACE_BURST_COST, RACE_BURST_SECONDS, raceEndTime, raceNextCheckpoint, raceLiveRank, RACE_CHECKPOINTS, RACE_ROUNDS, RACE_STRATEGIES, SEASON_TOKENS, seasonRanking, simulateRace, type RaceCourse, type Racer} from "./race";
+    raceEvents, raceTerrain, raceWeatherFactor, RACE_BASE_SPEED, type RaceEvent, raceMotorCall, raceTraffic, raceHighlights, RACE_DRAFT_DISTANCE, type RaceCommand, RACE_BURST_COST, RACE_BURST_SECONDS, raceEndTime, raceNextCheckpoint, raceLiveRank, RACE_CHECKPOINTS, RACE_ROUNDS, RACE_STRATEGIES, SEASON_TOKENS, seasonRanking, simulateRace, type RaceCourse, type Racer} from "./race";
 import type {AgentProfile} from "./contracts";
 
 const profile: AgentProfile = {name: "말랑", color: "jade", temperament: "curious", goal: "score"};
@@ -441,5 +441,90 @@ describe("Drafting and outside passes", () => {
         const before = automatic.frames.find(frame => frame.time === 24)!;
         const own = before.positions.find(position => position.id === "owner")!;
         expect(raceMotorCall(long, "surge", 1, own.stamina, raceTraffic(before.positions, "owner"))).toEqual(commands[1]!);
+    });
+});
+
+describe("Race events and weather for the screen", () => {
+    const long: RaceCourse = {...clearShort, distance: 1_250, course: "long"};
+    const pair: Racer[] = [{id: "owner", name: "Coach", strategy: "conserve"}, {id: "rival", name: "Rival", strategy: "burst"}];
+    const calls = (route: "shortcut" | "wide"): RaceCommand[] => [{at: 12, pace: "save", route: "shortcut"}, {at: 24, pace: "steady", route}];
+    const pick = (events: RaceEvent[], type: RaceEvent["type"], id?: string) => events.filter(event => event.type === type && (id === undefined || event.id === id));
+
+    test("an outside pass, the burst and every visible finish arrive in time order at the frame that shows them", () => {
+        const race = simulateRace(long, pair, calls("wide"), 30);
+        const events = raceEvents(race);
+        expect(events.map(event => event.time)).toEqual(events.map(event => event.time).toSorted((a, b) => a - b));
+        expect(events.every(event => event.time <= raceEndTime(race) + 1e-7)).toBe(true);
+        // The engine marks the same frame as an outside overtake; the passer leads from it.
+        const overtake = race.frames.find(frame => frame.positions[0]!.overtakingId === "rival")!;
+        expect(pick(events, "pass")).toEqual([{time: overtake.time, type: "pass", id: "owner", otherId: "rival", rank: 1}]);
+        expect(pick(events, "lead", "owner")).toEqual([{time: overtake.time, type: "lead", id: "owner", rank: 1}]);
+        expect(pick(events, "lead")[0]!.id).toBe("rival");
+        expect(pick(events, "burst-start", "owner")).toEqual([{time: 30, type: "burst-start", id: "owner"}]);
+        expect(pick(events, "burst-end", "owner")).toEqual([{time: 30 + RACE_BURST_SECONDS, type: "burst-end", id: "owner"}]);
+        expect(pick(events, "finish")).toEqual(race.finish.map(finish => ({time: finish.seconds, type: "finish", id: finish.id, rank: finish.rank})));
+        expect(pick(events, "call", "owner")).toEqual(RACE_CHECKPOINTS.map((at, index) => ({time: at, type: "call", id: "owner", terrain: raceTerrain(long, index)})));
+        // Drafts open and close in turn, each against the horse actually followed in that frame.
+        for (const runner of pair) {
+            const drafts = events.filter(event => event.id === runner.id && event.type.startsWith("draft-"));
+            drafts.forEach((event, index) => {
+                expect(event.type).toBe(index % 2 ? "draft-end" : "draft-start");
+                const frame = race.frames.find(item => item.time === event.time)!.positions.find(position => position.id === runner.id)!;
+                expect(frame.draftingId).toBe(event.type === "draft-start" ? event.otherId! : null);
+            });
+        }
+        expect(raceEvents(race)).toEqual(events);
+    });
+
+    test("blocking is reported once per stretch, and a race held to the inside has no pass", () => {
+        const race = simulateRace(long, pair, calls("shortcut"), null);
+        const events = raceEvents(race);
+        const blocked = pick(events, "blocked", "owner");
+        expect(blocked.length).toBeGreaterThan(0);
+        expect(blocked.every(event => event.otherId === "rival")).toBe(true);
+        for (const event of blocked) {
+            const index = race.frames.findIndex(frame => frame.time === event.time);
+            expect(race.frames[index - 1]!.positions[0]!.blockedBy).toBeNull();
+            expect(race.frames[index]!.positions[0]!.blockedBy).toBe("rival");
+        }
+        expect(pick(events, "pass")).toEqual([]);
+        expect(pick(events, "lead").map(event => event.id)).toEqual(["rival"]);
+    });
+
+    test("ties never pass or lead, the unseen fourth arrival is not an event, and deriving events leaves the race untouched", () => {
+        const tied = simulateRace(clearShort, [{id: "owner", name: "Coach", strategy: "conserve"}, {id: "rival", name: "Steady", strategy: "conserve"}]);
+        expect(raceEvents(tied).filter(event => event.type === "pass" || event.type === "lead")).toEqual([]);
+        expect(pick(raceEvents(tied), "finish").map(event => event.rank)).toEqual([1, 1]);
+        const field = simulateRace(makeRaceCourse(3, 1), [{id: "owner", name: "Coach", strategy: "conserve", aptitude: 6}, ...entrants]);
+        expect(field.finish[3]!.seconds).toBeGreaterThan(raceEndTime(field));
+        const before = JSON.stringify(field);
+        const finishes = pick(raceEvents(field), "finish");
+        expect(finishes).toHaveLength(3);
+        expect(finishes.map(event => event.id)).toEqual(field.finish.slice(0, 3).map(finish => finish.id));
+        expect(JSON.stringify(field)).toBe(before);
+        for (let seed = 0; seed < 20; seed++) {
+            const race = simulateRace(makeRaceCourse(seed, seed % 3), entrants);
+            for (const event of pick(raceEvents(race), "pass")) {
+                const frame = race.frames.find(item => item.time === event.time)!;
+                expect(raceLiveRank(race, frame, event.id)).toBeLessThan(raceLiveRank(race, frame, event.otherId!));
+                expect(event.rank).toBe(raceLiveRank(race, frame, event.id));
+            }
+        }
+    });
+
+    test("the weather factor is the wind's gust curve the engine runs on, flat in rain and clear", () => {
+        const wind: RaceCourse = {...long, weather: "wind", gust: 1.3};
+        for (let distance = 0; distance <= wind.distance; distance += 37) {
+            expect(raceWeatherFactor(wind, distance)).toBe(.96 + Math.sin(distance / 80 + wind.gust) * .07);
+            expect(raceWeatherFactor(wind, distance)).toBeGreaterThanOrEqual(.89);
+            expect(raceWeatherFactor(wind, distance)).toBeLessThanOrEqual(1.03);
+        }
+        expect(raceWeatherFactor({...wind, weather: "rain"}, 500)).toBe(.91);
+        expect(raceWeatherFactor({...wind, weather: "clear"}, 500)).toBe(1);
+        // A lone conserve runner's first step is base speed × opening effort (.97) × the factor at the gate.
+        const solo = simulateRace(wind, [{id: "solo", name: "Solo", strategy: "conserve"}]);
+        expect(solo.frames[1]!.positions[0]!.distance).toBeCloseTo(.1 * RACE_BASE_SPEED * .97 * raceWeatherFactor(wind, 0), 10);
+        const calm = simulateRace({...wind, weather: "clear"}, [{id: "solo", name: "Solo", strategy: "conserve"}]);
+        expect(calm.frames[1]!.positions[0]!.distance).toBeCloseTo(.1 * RACE_BASE_SPEED * .97, 10);
     });
 });

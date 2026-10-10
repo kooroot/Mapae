@@ -20,6 +20,8 @@ export const RACE_DRAFT_DISTANCE = 22;
 export const RACE_DRAFT_DRAIN = .6;
 export const RACE_FOLLOW_GAP = 3;
 export const RACE_OUTSIDE_SPEED = .94;
+/** Metres per simulation second at aptitude 5, before pace, weather, fatigue, route and burst. */
+export const RACE_BASE_SPEED = 19;
 export const RACE_HABITS = {
     burst: {ko: "앞말이 가까우면 첫 갈림길부터 바깥으로 나가요. 바깥 경쟁자가 붙으면 속도를 올려요.", en: "Takes the outside at either fork when close behind. Raises the pace when challenged outside."},
     conserve: {ko: "앞말 뒤에서 힘을 아끼다가, 두 번째 갈림길 앞에 지친 말이 보이면 바깥으로 나가요.", en: "Follows to save energy, then goes outside at the second fork if a horse ahead is tired."},
@@ -156,6 +158,11 @@ export function raceMotorCall(course: RaceCourse, strategy: RaceStrategy, checkp
     return {at, pace, route};
 }
 
+/** The weather's speed multiplier where a runner stands: rain is flat, wind gusts along the course, so scenery can follow the same curve. */
+export function raceWeatherFactor(course: RaceCourse, distance: number): number {
+    return course.weather === "rain" ? .91 : course.weather === "wind" ? .96 + Math.sin(distance / 80 + course.gust) * .07 : 1;
+}
+
 /** Fixed steps keep replay, pause, frame rate and reduced motion irrelevant to results.
  * An omitted burst time uses the strategy motor; null reserves it for a human.
  * Owner overrides replace only future legal calls. Every opponent has the same bounds. */
@@ -211,11 +218,11 @@ export function simulateRace(course: RaceCourse, entrants: Racer[], commands: re
             const command = calls.findLast(change => change.id === runner.id);
             const activeCall = command && now < command.at + RACE_ROUTE_SECONDS ? command : undefined;
             const pace = activeCall ? {save: .88, steady: 1.12, push: 1.55}[activeCall.pace] : effort(runner.strategy, position.distance / course.distance);
-            const weather = course.weather === "rain" ? .91 : course.weather === "wind" ? .96 + Math.sin(position.distance / 80 + course.gust) * .07 : 1;
+            const weather = raceWeatherFactor(course, position.distance);
             const fatigue = .4 + .6 * Math.min(1, stamina / 25);
             const route = activeCall ? raceRouteEffect(raceTerrain(course, RACE_CHECKPOINTS.indexOf(activeCall.at as typeof RACE_CHECKPOINTS[number])), activeCall.route, activeCall.pace, stamina) : {speed: position.path === "wide" ? RACE_OUTSIDE_SPEED : 1, drain: 1};
             const burstSpeed = burst && now < burst.at + RACE_BURST_SECONDS ? RACE_BURST_SPEED : 1;
-            const speed = 19 * (1 + ((runner.aptitude ?? 5) - 5) * .02) * pace * weather * fatigue * route.speed * burstSpeed;
+            const speed = RACE_BASE_SPEED * (1 + ((runner.aptitude ?? 5) - 5) * .02) * pace * weather * fatigue * route.speed * burstSpeed;
             const efficiency = activeCall ? 1 : runner.strategy === "conserve" ? .65 : runner.strategy === "burst" ? 1.1 : .92;
             const drain = ((pace ** 3 * 1.55 - .8) + (course.weather === "rain" ? .48 : course.weather === "wind" ? .22 : 0)) * efficiency;
             return {...position, distance: position.distance + speed * step,
@@ -343,4 +350,59 @@ export function raceFrameAt(race: RaceSimulation, progress: number): RaceFrame {
             : position.distance + (upper.positions[index]!.distance - position.distance) * weight,
         stamina: position.stamina + (upper.positions[index]!.stamina - position.stamina) * weight,
     }))};
+}
+
+export type RaceEventType = "call" | "burst-start" | "burst-end" | "draft-start" | "draft-end" | "blocked" | "pass" | "lead" | "finish";
+/** `otherId` is the horse followed, blocking or passed; `rank` is a place (the passer's new place, 1 for a lead, the final place); `terrain` is a call's fork. */
+export type RaceEvent = {time: number; type: RaceEventType; id: string; otherId?: string; rank?: number; terrain?: RaceTerrain};
+
+/**
+ * The moments of the visible race (through the third arrival) in time order, derived once from a finished simulation.
+ * Traffic changes take the time of the frame that first shows them, where `raceFrameAt` switches its labels too.
+ * Order follows `raceLiveRank`: distance, then finish time once both arrived. A pass is a strict reversal of two horses'
+ * order on either path; a tie (the start, a shared line) never passes, and a lead is a single horse strictly in front.
+ */
+export function raceEvents(race: RaceSimulation): RaceEvent[] {
+    const end = raceEndTime(race), line = race.course.distance;
+    const seconds = new Map(race.finish.map(finish => [finish.id, finish.seconds]));
+    const events: RaceEvent[] = race.calls.map(call => ({time: call.at, type: "call", id: call.id,
+        terrain: raceTerrain(race.course, RACE_CHECKPOINTS.indexOf(call.at as typeof RACE_CHECKPOINTS[number]))}));
+    for (const burst of race.bursts) events.push({time: burst.at, type: "burst-start", id: burst.id},
+        {time: Math.min(burst.at + RACE_BURST_SECONDS, seconds.get(burst.id)!), type: "burst-end", id: burst.id});
+    /** 1 when `a` is in front of `b`, -1 behind, 0 for a tie, within the same 1e-7 as `raceLiveRank`. */
+    const ahead = (a: RacePosition, b: RacePosition) => {
+        const lead = a.distance >= line && b.distance >= line ? seconds.get(b.id)! - seconds.get(a.id)! : a.distance - b.distance;
+        return lead > 1e-7 ? 1 : lead < -1e-7 ? -1 : 0;
+    };
+    // The last strict order of each pair, so a reversal through an intermediate tie still counts once.
+    const order = new Map<string, number>();
+    let leader: string | null = null;
+    for (let k = 1; k < race.frames.length && race.frames[k]!.time <= end + 1e-7; k++) {
+        const frame = race.frames[k]!, before = race.frames[k - 1]!.positions;
+        frame.positions.forEach((position, index) => {
+            const previous = before[index]!;
+            if (previous.draftingId !== position.draftingId) {
+                if (previous.draftingId) events.push({time: frame.time, type: "draft-end", id: position.id, otherId: previous.draftingId});
+                if (position.draftingId) events.push({time: frame.time, type: "draft-start", id: position.id, otherId: position.draftingId});
+            }
+            if (position.blockedBy && position.blockedBy !== previous.blockedBy) events.push({time: frame.time, type: "blocked", id: position.id, otherId: position.blockedBy});
+        });
+        frame.positions.forEach((a, i) => frame.positions.slice(i + 1).forEach(b => {
+            const sign = ahead(a, b), key = `${a.id}\n${b.id}`, last = order.get(key);
+            if (!sign) return;
+            if (last !== undefined && last !== sign) {
+                const [passer, passed] = sign > 0 ? [a, b] : [b, a];
+                events.push({time: frame.time, type: "pass", id: passer.id, otherId: passed.id, rank: raceLiveRank(race, frame, passer.id)});
+            }
+            order.set(key, sign);
+        }));
+        const front = frame.positions.filter(a => frame.positions.every(b => b === a || ahead(a, b) > 0));
+        if (frame.positions.length > 1 && front.length === 1 && front[0]!.id !== leader) {
+            leader = front[0]!.id;
+            events.push({time: frame.time, type: "lead", id: leader, rank: 1});
+        }
+    }
+    for (const finish of race.finish) events.push({time: finish.seconds, type: "finish", id: finish.id, rank: finish.rank});
+    // A stable sort keeps same-moment events in cause order: call, burst, traffic, pass, lead, finish.
+    return events.filter(event => event.time <= end + 1e-7).sort((a, b) => a.time - b.time);
 }
