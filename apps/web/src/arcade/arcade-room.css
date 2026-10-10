@@ -69,9 +69,10 @@
 .arc-room-dock { max-width: 880px; margin: 0 auto; padding: 22px 28px; border: 1px solid #d6b06a8c; border-radius: 16px; background: #17120eea; box-shadow: 0 12px 30px #0006, inset 0 0 0 4px #b68b4910; }
 .arc-entry-dock { text-align: center; }
 .arc-entry-dock h2 { color: #f8eee0; font-size: 22px; font-weight: 550; letter-spacing: -.045em; }
-.arc-entry-dock p { color: #ccbaa0; font-size: 12px; margin: 5px 0 16px; }
-.arc-entry-dock .arc-button { min-width: min(100%, 360px); }
-.arc-entry-dock > small { display: block; font-size: 10px; color: #c2b39d; margin-top: 10px; }
+.arc-entry-dock p { color: #ccbaa0; font-size: 13px; line-height: 1.6; margin: 6px 0 16px; word-break: keep-all; overflow-wrap: anywhere; }
+.arc-entry-dock small { display: block; font-size: 12px; line-height: 1.6; color: #c2b39d; word-break: keep-all; overflow-wrap: anywhere; }
+.arc-entry-guardian { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--arc-hair); }
+.arc-entry-dock .arc-entry-guardian > p { margin: 0 0 12px; }
 .arc-entry-dock .arc-notice { margin-top: 16px; }
 .arc-room-dock .arc-empty-departure { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .arc-empty-departure h2 { font-size: 21px; font-weight: 550; letter-spacing: -.035em; }
@@ -109,7 +110,6 @@
     .arc-room-hint { font-size: 10px; margin: 8px 0 16px; }
     .arc-room-dock { margin: 0 14px; padding: 19px 18px; border-radius: 14px; }
     .arc-entry-dock h2 { font-size: 19px; }
-    .arc-entry-dock p { font-size: 11px; margin-bottom: 14px; }
     .arc-entry-dock .arc-button { width: 100%; min-width: 0; font-size: 13px; padding-inline: 16px; gap: 16px; }
     .arc-room-dock .arc-empty-departure { flex-direction: column; text-align: center; gap: 16px; }
     .arc-empty-departure h2 { font-size: 20px; }

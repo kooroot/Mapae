@@ -1,6 +1,6 @@
 import {useState, type ReactNode} from "react";
 import {useAccount, useConnect} from "wagmi";
-import {Sparkles, Ticket, Gamepad2} from "lucide-react";
+import {ArrowRight, Sparkles, Ticket, Gamepad2} from "lucide-react";
 import type {Address} from "viem";
 import type {GameId} from "@mapae/arcade";
 import {ArcadeRoom} from "./ArcadeRoom";
@@ -40,10 +40,13 @@ export function WalletGate({reducedMotion, children}: {reducedMotion: boolean; c
                 <div className="arc-entry-dock">
                     <h2>{ko ? "먼저 한 판, 가볍게 놀아보세요" : "Try a round. Make yourself at home."}</h2>
                     <p>{ko ? "지갑 없이 직접 플레이하고, 마음에 들면 나의 전령을 만나보세요." : "Play without a wallet, then meet your own guardian."}</p>
-                    <div className="arc-entry-free"><button className="arc-button" onClick={() => {const game = selected === 'auto' ? 'stamp' : selected; trackEngagement({event: 'arcade_entered', game, locale}); enter(game);}}>{ko ? "지갑 없이 무료 체험" : "Play free without a wallet"} →</button><small>{ko ? "연습 기록은 이 탭에만 저장돼요" : "Practice records stay in this tab"}</small></div>
-                    <ol className="arc-entry-steps"><li><Sparkles size={17} />{ko ? "나만의 친구" : "Your own guardian"}</li><li><Ticket size={17} />{ko ? "한도 있는 용돈" : "A bounded allowance"}</li><li><Gamepad2 size={17} />{ko ? "작은 모험 시작" : "A little adventure"}</li></ol>
-                    <p>{ko ? "내 전령과 이어서 모험하려면" : "To continue with your own guardian"}</p><WalletPicker reconnecting={waiting} />
-                    <small>{ko ? "같은 지갑으로 로그인하면 캐릭터와 기록이 이어져요" : "Sign in with the same wallet to continue with your characters and records"}</small>
+                    <div className="arc-entry-free"><button className="arc-button" onClick={() => {const game = selected === 'auto' ? 'stamp' : selected; trackEngagement({event: 'arcade_entered', game, locale}); enter(game);}}>{ko ? "지갑 없이 무료 체험" : "Play free without a wallet"}<ArrowRight size={19} /></button><small>{ko ? "연습 기록은 이 탭에만 저장돼요" : "Practice records stay in this tab"}</small></div>
+                    <div className="arc-entry-guardian">
+                        <p>{ko ? "내 전령과 이어서 모험하려면" : "To continue with your own guardian"}</p>
+                        <ol className="arc-entry-steps"><li><Sparkles size={17} />{ko ? "나만의 전령" : "Your own guardian"}</li><li><Ticket size={17} />{ko ? "한도 있는 용돈" : "A bounded allowance"}</li><li><Gamepad2 size={17} />{ko ? "작은 모험 시작" : "A little adventure"}</li></ol>
+                        <WalletPicker reconnecting={waiting} />
+                        <small>{ko ? "같은 지갑으로 로그인하면 전령과 기록이 이어져요" : "Sign in with the same wallet to continue with your guardians and records"}</small>
+                    </div>
                 </div>
             </ArcadeRoom>
             <footer className="arc-footer"><p>{ko ? "작은 자유, 분명한 한도." : "A little freedom. A clear limit."}</p><span>GIWA SEPOLIA · {ko ? "테스트 토큰 사용" : "TEST TOKENS"}</span></footer>
