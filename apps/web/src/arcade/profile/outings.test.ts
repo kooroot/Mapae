@@ -28,7 +28,7 @@ const request = (method = "GET", path = "", input?: unknown, headers: Record<str
 const start = () => ({generation: PROFILE_GENERATION, id: "outing-one", tokenId: "1", goal:"explore", choice: "race", admissions: 2, permissionContext: "0x1234", locale: "ko"});
 function outcome(seed = 123, score = 80): ActivityOutcome {return {game: "race", score, achievement:{victory:false}, replay: {version: ARCADE_RULESET_VERSION, seed}, summary: {ko: "도착!", en: "Finished!"}, metrics: [], ranking: [], transcript: []};}
 function job(index = 1, count = 1): OutingView {
-    return {id: `outing-${index.toString().padStart(4, "0")}`, characterId: "nft-1", guardian, profile: {name: "#1", color: traits.color, temperament: traits.temperament, goal: "explore", aptitudes:traits.aptitudes}, locale: "ko", choice: "race", status: "complete", admissions: count, spent: count,
+    return {id: `outing-${index.toString().padStart(4, "0")}`, characterId: "nft-1", guardian, profile: {name: "#1", color: traits.color, temperament: traits.temperament, goal: "explore", aptitudes:traits.aptitudes}, locale: "ko", choice: "race", status: "complete", admissions: count, spent: count, reservedAdmissions: 0,
         createdAt: now - 1000, updatedAt: now, expiresAt: now + 1000, error: null,
         results: Array.from({length: count}, (_, i) => ({id: `result-${index}-${i}`, game: "race" as const, seed: index + i, at: now - 1000 + index * 40 + i, transaction: `0x${(index * 100 + i).toString(16).padStart(64, "0")}`, outcome: outcome(index + i, index + i)}))};
 }

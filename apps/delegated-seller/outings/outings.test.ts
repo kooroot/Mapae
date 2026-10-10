@@ -231,21 +231,58 @@ describe('reviewed stop, progress and owner visibility',()=>{
     });
 });
 
-describe('one outing per NFT and expiry capacity',()=>{
-    test('two devices cannot use different grants for one token, even after transfer',()=>{
+describe('one outing per NFT ownership epoch and expiry capacity',()=>{
+    test('two devices cannot use different grants for the same token epoch',()=>{
         const path=file(),a=store(path),b=store(path),first=insert(a);
         const second={...start('second-device-job'),tokenId:first.guardian.tokenId};
         expect(()=>b.insert(owner.address,second,{payer,expiresAt:now+7200_000,contextHash:tx},agent.address,now,first.guardian)).toThrow('busy');
-        first.pending={game:'stamp',seed:1,header:'uncertain',transaction:null};a.save(first);
-        expect(()=>b.insert(stranger.address,second,{payer,expiresAt:now+7200_000,contextHash:tx},agent.address,now,{...first.guardian,owner:stranger.address,ownershipEpoch:'2'})).toThrow('busy');
-        first.pending=null;a.save(first);
         new OutingRunner(a,agent.address,paid,reader,()=>now).control(owner.address,first.id,'stop');
         expect(b.insert(owner.address,second,{payer,expiresAt:now+7200_000,contextHash:tx},agent.address,now,first.guardian).status).toBe('queued');
+    });
+    test('new epoch can operate while old lost-response payment remains privately recoverable once',async()=>{
+        const path=file(),db=store(path),prior=insert(db,undefined,3);let dispatches=0;
+        await new OutingRunner(db,agent.address,{async pay(_j,_p,persist){persist('old-exact-header');dispatches++;throw Error('lost response');}},reader,()=>now).tick();
+        expect(db.get(prior.id)?.status).toBe('paused');
+        const nextGuardian={...prior.guardian,owner:stranger.address,ownershipEpoch:'2'};
+        const request={...start('new-owner-after-loss',1),tokenId:prior.guardian.tokenId};
+        const next=db.insert(stranger.address,request,{payer,expiresAt:now+7200_000,contextHash:tx},agent.address,now+1,nextGuardian);
+        const second=store(path);
+        expect(()=>second.insert(stranger.address,{...request,id:'second-new-owner-device'},{payer,expiresAt:now+7200_000,contextHash:`0x${'55'.repeat(32)}`},agent.address,now+2,nextGuardian)).toThrow('busy');
+        expect(db.list(stranger.address).map(j=>j.id)).toEqual([next.id]);
+        expect(db.get(prior.id)?.pending?.header).toBe('old-exact-header');expect(db.get(prior.id)?.stopRequested).toBe(true);
+        expect(publicJob(db.get(prior.id)!).reservedAdmissions).toBe(1);expect(publicJob(next).reservedAdmissions).toBe(1);
+        const nextTx=`0x${'66'.repeat(32)}` as Hex;
+        const runner=new OutingRunner(db,agent.address,{async pay(j,p,persist){
+            if(j.id===prior.id){expect(p.header).toBe('old-exact-header');return tx;}
+            expect(j.owner).toBe(stranger.address);expect(p.header).toBeNull();persist('buyer-own-header');dispatches++;return nextTx;
+        }},{inspect:async()=>nextGuardian},()=>now+3);
+        expect(()=>runner.control(stranger.address,prior.id,'resume')).toThrow('not_found');
+        await runner.tick();expect(db.get(next.id)?.status).toBe('complete');
+        runner.control(owner.address,prior.id,'resume');await runner.tick();await runner.tick();
+        expect(db.get(prior.id)?.status).toBe('stopped');expect(db.get(prior.id)?.spent).toBe(1);expect(db.get(prior.id)?.context).toBe('0x');
+        expect(publicJob(db.get(prior.id)!).reservedAdmissions).toBe(0);
+        expect(dispatches).toBe(2);expect(db.guardians.progress(collection,prior.guardian.tokenId).plays).toBe(2);
+        expect(db.guardians.list(collection,prior.guardian.tokenId).map(r=>r.result.actor).sort()).toEqual([owner.address,stranger.address].sort());
     });
     test('new owner retires unsigned prior plans without taking their authority',()=>{
         const db=store(),prior=insert(db);prior.status='paused';db.save(prior);
         const next=db.insert(stranger.address,{...start('new-owner-plan'),tokenId:prior.guardian.tokenId},{payer,expiresAt:now+7200_000,contextHash:tx},agent.address,now,{...prior.guardian,owner:stranger.address,ownershipEpoch:'2'});
         expect(next.owner).toBe(stranger.address);expect(db.get(prior.id)?.status).toBe('stopped');expect(db.get(prior.id)?.context).toBe('0x');
+    });
+    test('transfer-back separates current operating capacity from retained financial recovery',()=>{
+        const db=store();const old=[1,2,3].map(i=>insert(db,`returned-token-${i}`));
+        for(const job of old){job.status='paused';job.pending={game:'stamp',seed:1,header:`old-header-${job.id}`,transaction:null};db.save(job);}
+        const prior=old[0]!,snapshot={...prior.guardian,ownershipEpoch:'3'};
+        const next=db.insert(owner.address,{...start('returned-epoch-three'),tokenId:prior.guardian.tokenId},{payer,expiresAt:now+7200_000,contextHash:tx},agent.address,now+1,snapshot);
+        expect(next.guardian.ownershipEpoch).toBe('3');expect(db.get(prior.id)?.stopRequested).toBe(true);
+        expect(db.list(owner.address)).toHaveLength(4);expect(db.get(prior.id)?.pending?.header).toBe(`old-header-${prior.id}`);
+        expect(()=>insert(db,'fourth-current-operation')).toThrow('busy');
+    });
+    test('delayed pre-transfer chain read cannot retire a newer owner operation',()=>{
+        const db=store(),stale=guardian('1');
+        const next=db.insert(stranger.address,{...start('newer-owner-snapshot'),tokenId:'1'},{payer,expiresAt:now+7200_000,contextHash:tx},agent.address,now,{...stale,owner:stranger.address,ownershipEpoch:'2'});
+        expect(()=>db.insert(owner.address,{...start('delayed-old-snapshot'),tokenId:'1'},{payer,expiresAt:now+7200_000,contextHash:`0x${'55'.repeat(32)}`},agent.address,now+1,stale)).toThrow('owner_changed');
+        expect(db.get(next.id)?.stopRequested).toBe(false);expect(db.get(next.id)?.status).toBe('queued');expect(db.get('delayed-old-snapshot')).toBeNull();
     });
     test('expired unsigned jobs release capacity but signed intents remain',async()=>{
         const db=store(),paused=insert(db,'expired-paused');paused.status='paused';db.save(paused);

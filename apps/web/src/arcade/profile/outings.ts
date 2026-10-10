@@ -42,6 +42,7 @@ export function parseOutingStatus(v: unknown): OutingStatus | null {
             typeof j.characterId !== "string" || !CHARACTER_ID.test(j.characterId) || !choice(j.choice) ||
             (j.locale !== "ko" && j.locale !== "en") || !["queued", "running", "paused", "stopped", "complete"].includes(String(j.status)) ||
             !natural(j.admissions) || j.admissions < 1 || j.admissions > MAX_OUTING_ADMISSIONS || !natural(j.spent) || j.spent > j.admissions ||
+            !natural(j.reservedAdmissions) || j.reservedAdmissions > j.admissions - j.spent || ((j.status === 'complete' || j.status === 'stopped') && j.reservedAdmissions !== 0) ||
             !time(j.createdAt) || !time(j.updatedAt) || !time(j.expiresAt) || j.updatedAt < j.createdAt || j.expiresAt < j.createdAt ||
             !(j.error === null || typeof j.error === "string" && JOB_ERRORS.has(j.error)) ||
             !Array.isArray(j.results) || j.results.length > j.spent) return null;
@@ -65,7 +66,7 @@ export function parseOutingStatus(v: unknown): OutingStatus | null {
             resultIds.add(r.id); transactions.add(r.transaction.toLowerCase());
         }
         jobs.push({id: j.id, characterId: j.characterId, guardian: {chainId: guardian.chainId, collection: guardian.collection, tokenId: guardian.tokenId, owner: guardian.owner, ownershipEpoch: guardian.ownershipEpoch, seed: guardian.seed, traitsHash: guardian.traitsHash, ruleset: guardian.ruleset}, profile, locale: j.locale, choice: j.choice, status: j.status as OutingView["status"],
-            admissions: j.admissions, spent: j.spent, createdAt: j.createdAt, updatedAt: j.updatedAt, expiresAt: j.expiresAt, error: j.error as string | null, results});
+            admissions: j.admissions, spent: j.spent, reservedAdmissions: j.reservedAdmissions, createdAt: j.createdAt, updatedAt: j.updatedAt, expiresAt: j.expiresAt, error: j.error as string | null, results});
         ids.add(j.id);
     }
     return {enabled: v.enabled, agent: v.agent as Address | null, jobs};

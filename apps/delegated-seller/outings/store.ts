@@ -10,10 +10,13 @@ import type {OutingStart, OutingView, OutingResult} from '@mapae/arcade/outings'
 import {OutingError, type ValidatedPermission} from './validation';
 
 export type Pending = {game: GameId; seed: number; header: string | null; transaction: Hex | null};
-export type Job = OutingView & {owner: Address; payer: Address; agent: Address; context: Hex; fingerprint: string; contextHash: Hex; stopRequested: boolean; pending: Pending | null; shopMemory?: ShopMemory};
+export type Job = Omit<OutingView, 'reservedAdmissions'> & {owner: Address; payer: Address; agent: Address; context: Hex; fingerprint: string; contextHash: Hex; stopRequested: boolean; pending: Pending | null; shopMemory?: ShopMemory};
 export function publicJob(job: Job): OutingView {
     const {id, characterId, guardian, profile, locale, choice, status, admissions, spent, createdAt, updatedAt, expiresAt, error, results} = job;
-    return {id, characterId, guardian, profile, locale, choice, status, admissions, spent: spent + (job.pending?.transaction ? 1 : 0), createdAt, updatedAt, expiresAt, error, results};
+    const charged = spent + (job.pending?.transaction ? 1 : 0);
+    const reservedAdmissions = status === 'complete' || status === 'stopped' ? 0 : job.stopRequested
+        ? (job.pending?.header && !job.pending.transaction ? 1 : 0) : admissions - charged;
+    return {id, characterId, guardian, profile, locale, choice, status, admissions, spent: charged, reservedAdmissions, createdAt, updatedAt, expiresAt, error, results};
 }
 // Canonical field order avoids a JSON property order becoming a second idempotency key.
 export function fingerprint(owner: Address, start: OutingStart): string {
@@ -46,17 +49,22 @@ export class OutingStore {
             const characterId = `nft-${start.tokenId}`;
             const profile = {name: `#${start.tokenId}`, color: traits.color, temperament: traits.temperament, goal: start.goal, aptitudes: traits.aptitudes};
             this.expireUnsubmitted(now);
-            const characterActive = this.db.query<{data: string}, [string, string]>("SELECT data FROM arcade_outings WHERE lower(json_extract(data, '$.guardian.collection'))=? AND json_extract(data, '$.guardian.tokenId')=? AND state IN ('queued','running','paused') LIMIT 1").get(guardian.collection.toLowerCase(), guardian.tokenId);
-            if (characterActive) {
-                const previous = JSON.parse(characterActive.data) as Job;
-                const transferred = previous.guardian.ownershipEpoch !== guardian.ownershipEpoch || previous.owner.toLowerCase() !== owner.toLowerCase();
-                if (!transferred || previous.pending?.header || previous.pending?.transaction) throw new OutingError('busy');
-                // A new owner can retire an unsigned stale plan. An in-flight financial
-                // intent must instead be reconciled by its original actor first.
-                previous.stopRequested = true; previous.status = 'stopped'; previous.context = '0x'; previous.pending = null;
+            const tokenJobs = this.db.query<{data: string}, [string, string]>("SELECT data FROM arcade_outings WHERE lower(json_extract(data, '$.guardian.collection'))=? AND json_extract(data, '$.guardian.tokenId')=? AND state IN ('queued','running','paused')").all(guardian.collection.toLowerCase(), guardian.tokenId).map(row => JSON.parse(row.data) as Job);
+            // Check every row first: an older recovery row must not hide the current
+            // epoch's active operation from a second device.
+            if (tokenJobs.some(previous => BigInt(previous.guardian.ownershipEpoch) > BigInt(guardian.ownershipEpoch))) throw new OutingError('owner_changed');
+            if (tokenJobs.some(previous => previous.guardian.ownershipEpoch === guardian.ownershipEpoch)) throw new OutingError('busy');
+            for (const previous of tokenJobs) {
+                // Transfer never makes the buyer depend on an unavailable old owner.
+                // Retain exact submitted payments with their actor; they may finish once,
+                // but cannot create another admission or acquire the buyer's authority.
+                previous.stopRequested = true;
+                if (!previous.pending?.header && !previous.pending?.transaction) {
+                    previous.status = 'stopped'; previous.context = '0x'; previous.pending = null;
+                }
                 previous.error = 'owner_changed'; previous.updatedAt = now; this.save(previous);
             }
-            const active = this.db.query<{n: number}, [string]>("SELECT COUNT(*) n FROM arcade_outings WHERE owner=? AND state IN ('queued','running','paused')").get(owner.toLowerCase())!.n;
+            const active = this.db.query<{n: number}, [string]>("SELECT COUNT(*) n FROM arcade_outings WHERE owner=? AND state IN ('queued','running','paused') AND json_extract(data,'$.stopRequested')=0").get(owner.toLowerCase())!.n;
             const total = this.db.query<{n: number}, []>("SELECT COUNT(*) n FROM arcade_outings WHERE state IN ('queued','running','paused')").get()!.n;
             if (active >= 3 || total >= 256) throw new OutingError('busy');
             if (this.db.query('SELECT id FROM arcade_outings WHERE context_hash=?').get(permission.contextHash)) throw new OutingError('conflict');

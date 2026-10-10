@@ -11,7 +11,7 @@ export type OutingResult = {id: string; game: GameId; seed: number; at: number; 
 export type OutingView = {
     id: string; characterId: string; guardian: GuardianSnapshot; profile: AgentProfile; locale: 'ko' | 'en'; choice: GameId | 'auto';
     status: 'queued' | 'running' | 'paused' | 'stopped' | 'complete'; admissions: number;
-    spent: number; createdAt: number; updatedAt: number; expiresAt: number;
+    spent: number; reservedAdmissions: number; createdAt: number; updatedAt: number; expiresAt: number;
     error: string | null; results: OutingResult[];
 };
 export type OutingStatus = {enabled: boolean; agent: `0x${string}` | null; jobs: OutingView[]};
