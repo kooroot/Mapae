@@ -488,8 +488,8 @@ function StudioBody() {
                             <i aria-hidden="true" />
                             <span>{chain.name}</span>
                         </div>
-                        <LocaleSwitch />
                         <AccountChip />
+                        <LocaleSwitch />
                     </div>
                 </header>
 

@@ -310,7 +310,7 @@
 }
 
 /* Phone-only row for the open grant's three screens; the sidebar carries them on desktop. */
-.studio-detail-tabs {
+.studio-segmented.studio-detail-tabs {
     display: none;
 }
 
@@ -2492,7 +2492,7 @@ a.studio-metric:hover {
 .studio-step-heading { scroll-margin-top: 88px; }
 
 /* Phones: the account chip keeps its icon at a full tap target, the open grant's screens move from the tab bar into the page. */
-@media(max-width:860px){.studio-nav-group{display:none}.studio-detail-tabs{display:grid;width:100%;margin:0 0 22px;grid-template-columns:repeat(3,minmax(0,1fr))}.studio-detail-tabs button{min-height:var(--ui-touch)}}
+@media(max-width:860px){.studio-nav-group{display:none}.studio-segmented.studio-detail-tabs{display:grid;width:100%;margin:0 0 22px;grid-template-columns:repeat(3,minmax(0,1fr))}.studio-detail-tabs button{min-height:var(--ui-touch)}}
 @media(max-width:720px){.studio-account{height:var(--ui-touch)}.studio-account>span{padding:0 8px 0 11px;font-size:12px}.studio-account>button{width:var(--ui-touch);justify-content:center;padding:0 2px 0 0}.studio-account>button>span{display:none}}
 @media(max-width:480px){.studio-topbar{gap:8px}.studio-topbar-meta{gap:6px}.studio-topbar:has(.studio-account) .studio-mobile-brand>img{display:none}}
 

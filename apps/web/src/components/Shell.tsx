@@ -110,9 +110,9 @@ function outboundLinks(locale: Locale): {arcade: NavLink; docs: NavLink; github:
     };
 }
 
-/** Same-origin pages (the arcade) open in place; other origins open in a new tab. */
+/** Mapae's own surfaces (the arcade, Studio) open in place; other origins open in a new tab. */
 function targetProps(href: string) {
-    return href.startsWith("/") ? {} : {target: "_blank", rel: "noreferrer noopener"};
+    return href.startsWith("/") || href.startsWith(appUrl.replace(/\/$/, "")) ? {} : {target: "_blank", rel: "noreferrer noopener"};
 }
 
 function GitHubMark() {
