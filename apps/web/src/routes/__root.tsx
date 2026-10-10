@@ -43,7 +43,7 @@ export const Route = createRootRoute({
             en: "Mapae Arcade — Send your agent out",
             ko: "Mapae Arcade — 에이전트의 자유 시간",
         }) : isApp
-            ? "Mapae Studio — Delegated payment control"
+            ? pick(locale, {en: "Mapae Studio — Delegated payment control", ko: "Mapae Studio — 위임 결제 권한 관리"})
             : pick(locale, {
                   en: "Mapae — Limit the authority. Let the agent act.",
                   ko: "Mapae — 권한은 좁게, 행동은 에이전트에게.",

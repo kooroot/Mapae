@@ -120,12 +120,6 @@
     gap: 10px;
 }
 
-.nav .lang-switch {
-    min-width: 44px;
-    min-height: 44px;
-    justify-content: center;
-}
-
 .nav-github,
 .nav-menu-toggle {
     display: inline-flex;
