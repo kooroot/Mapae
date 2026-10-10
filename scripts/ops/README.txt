@@ -62,30 +62,22 @@ shops: missing local orders for those shops are not automatically incidents.
 Compare payee/resource provenance before taking any repair action.
 A 404, timeout, or empty mempool is NOT proof that a payment failed.
 
-PROFILE RESTORE / ROLLOUT
-Before reopening traffic after any D1 restore, rotate PROFILE_GENERATION in
-apps/web/src/arcade/profile/model.ts and deploy BOTH web Workers while writes
-remain closed. Clear restored session/challenge tables so an earlier logout is
-not undone by the database rewind. Old open tabs keep their drafts; choosing the
-server copy preserves the old draft separately without merging it into restored
-data. Never use a recovered snapshot's smaller revision as a new starting point
-while old-generation Workers still accept writes. Restore-generation rotation
-is a runbook step, not an automatic consequence of Cloudflare Time Travel.
+NFT ARCADE SESSION RESTORE / ROLLOUT
+Mutable character profile sync and standalone browser checkout are retired.
+The current Workers authenticate /api/arcade/profile/session and proxy only NFT
+roster, growth and server outings. Old arcade_profiles and arcade_checkouts rows
+are historical evidence, never a source of playable characters or NFT growth.
+The --profiles reconciliation option above is for those historical exports only.
 
-This release adds arcade_checkouts to apps/web/schema/arcade.sql. Rollout order:
-1. Back up mini databases and export/bookmark D1; keep the previous source SHA.
-2. Configure the same new 32+ character ARCADE_RECEIPT_TOKEN on the mini seller
-   and as a secret on BOTH web Workers: wrangler secret put ARCADE_RECEIPT_TOKEN
-   --env landing, then --env app. Enter through the prompt, never a VITE_* variable,
-   command argument, public file or log. Keep it distinct from metrics tokens.
-   Anonymous receipt lookup returns 401; missing configuration blocks checkout.
-3. Install/restart updated mini seller + facilitator using discovered labels,
-   with the new seller secret loaded. Confirm /health reports arcadeRecovery:true.
-4. Apply the additive D1 schema. Do not drop existing profile/auth tables.
-5. Deploy BOTH web Workers, then test an authenticated ticket recovery.
-New checkout code refuses fresh payments if the seller's health lacks the new
-arcadeRecovery capability. Old unsigned POST proxy paths are removed.
-Already open pages from the old release must refresh; no compatibility payment
-path is retained. Old pre-release payments without a cloud checkout still need
-seller/chain support reconciliation. No production action is performed by reading
-this file or running the inventory/check/drill commands.
+Before reopening traffic after a D1 restore, clear restored session/challenge
+rows so an earlier logout is not undone. Reconcile seller payment journals and
+NFT ownership independently of D1. Do not republish old character-sync Workers.
+
+For the NFT-only web cutover, deploy BOTH Workers and refresh old open tabs:
+  bun run deploy:landing
+  bun run deploy:app
+No seller restart, NFT redeployment or database deletion is needed for this web
+cleanup. Finish any earlier standalone payment reconciliation before updating;
+the removed browser checkout is not a compatibility recovery path. Current NFT
+outing retries and transaction recovery remain available. The full first-time
+NFT deployment steps are in docs/arcade-guardians-release.md.

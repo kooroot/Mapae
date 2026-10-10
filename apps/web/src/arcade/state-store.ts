@@ -1,5 +1,4 @@
-import {isAddress, type Address} from "viem";
-import {parseArcadeState, type ArcadeState} from "./state";
+import type {ArcadeState} from "./state";
 import {projectGuardian} from "./guardian";
 import {projectActivity} from "./activity";
 
@@ -19,12 +18,4 @@ export function serializeArcadeState(demo: ArcadeState): string {
             ...(run.aptitudes ? {aptitudes: {stamp: run.aptitudes.stamp, race: run.aptitudes.race, shop: run.aptitudes.shop}} : {}),
         })),
     });
-}
-
-export function arcadeStorageKey(owner: Address): string {
-    if (!isAddress(owner)) throw new Error("A connected wallet is required for arcade records.");
-    return `mapae.arcade.wallet.v1.${owner.toLowerCase()}`;
-}
-export function readArcadeState(owner: Address, reducedMotion = false): ArcadeState {
-    return parseArcadeState(localStorage.getItem(arcadeStorageKey(owner)), reducedMotion);
 }

@@ -2,7 +2,7 @@ import {afterEach, expect, test} from 'bun:test';
 import {clearSubmission, parseSubmission, readSubmission, saveSubmission, type OutingSubmission} from './outing-submission';
 
 const owner = '0x1111111111111111111111111111111111111111', other = '0x2222222222222222222222222222222222222222';
-const input: OutingSubmission = {generation: 'g1', id: '12345678-1234-1234-1234-123456789012', tokenId: '1', goal: 'score', choice: 'auto', admissions: 5, permissionContext: '0xabcd', locale: 'ko'};
+const input: OutingSubmission = {id: '12345678-1234-1234-1234-123456789012', tokenId: '1', goal: 'score', choice: 'auto', admissions: 5, permissionContext: '0xabcd', locale: 'ko'};
 const prior = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
 afterEach(() => {if (prior) Object.defineProperty(globalThis, 'localStorage', prior); else Reflect.deleteProperty(globalThis, 'localStorage');});
 function storage() {

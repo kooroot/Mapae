@@ -16,10 +16,9 @@ import {LocaleSwitch, useLocale} from "../lib/locale";
 import {localizePath, type Locale} from "../lib/i18n";
 import {ArcadeBrand} from "./ArcadeBrand";
 import {Arena} from "./Arena";
-import {CharacterEditor} from "./CharacterRoster";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {Goblin, GameArt} from "./Characters";
-import {admitPracticeRun, selectCharacter, updateCharacter, finishPracticeRun, type Companion, type ArcadeState, type Run} from "./state";
+import {admitPracticeRun, selectCharacter, finishPracticeRun, type Companion, type ArcadeState, type Run} from "./state";
 import {stampHighlights, type Game} from "@mapae/arcade/stamp";
 import {TurningPoints} from "./TurningPoints";
 import {gameSeed, withReplay} from "./replay";
@@ -79,7 +78,7 @@ const COPY = {
         loading: "오락실 문 여는 중…",
     },
 } satisfies Record<Locale, Record<string, string>>;
-type Screen = "lobby" | "setup" | "play" | "result";
+type Screen = "lobby" | "play" | "result";
 
 export type PracticeStore = {demo: ArcadeState; ready: boolean; update: (transform: (value: ArcadeState) => ArcadeState) => ArcadeState};
 export function PracticeArcade({onBack, store, character, initialGame, initialReplay, syncStatus, resultAction, onPracticeEvent}: {initialGame: GameId; initialReplay?: {seed: number; name: string; score: number; daily?: boolean} & Pick<NonNullable<ActivityOutcome["replay"]>, "shop" | "shopMemory" | "aptitudes">; onBack: () => void; store: PracticeStore; character: Companion; syncStatus?: ReactNode; resultAction?: (game: GameId) => ReactNode; onPracticeEvent?: (event: PracticeEvent) => void}) {
@@ -111,7 +110,6 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
     const [record, setRecord] = useState(false);
     const [notice, setNotice] = useState("");
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [editing, setEditing] = useState(false);
     const entryLock = useRef(false);
     const startedChallenge = useRef(false);
     const trackedRun = useRef<{game: GameId; runId: string} | null>(null);
@@ -229,7 +227,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
 
                                 </div>
                                 <div className="arc-control-deck"><div className="arc-joystick" aria-hidden="true"><i /><b /></div><button className="arc-button" disabled={!ready} onClick={() => {
-                                    if (!character.configured) {setEditing(false); setScreen("setup");} else begin();
+                                    begin();
                                 }}>{!ready ? t.loading : t.play}<span>→</span></button><div className="arc-arcade-buttons" aria-hidden="true"><i /><i /></div></div>
                                 <p className="arc-cabinet-caption">{t.oneTicket}</p>
                                 {selectedGame === "stamp" && <button className="practice-drill-button" disabled={!ready} onClick={() => beginDrill()}>{ko ? "대장만 10초 연습 →" : "Practice the chief · 10 seconds →"}</button>}
@@ -238,7 +236,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
 
                         </div>
                         <aside className="arc-side">
-                            <section className="arc-player-pass"><div className="arc-section-label"><span>{t.player}</span><button onClick={() => {setEditing(true); setScreen("setup");}}>{t.edit} ↗</button></div>
+                            <section className="arc-player-pass"><div className="arc-section-label"><span>{t.player}</span></div>
                                 <BrandSelect className="arc-practice-character-select" tone="paper" label={locale === "ko" ? "플레이할 캐릭터" : "Playing as"} value={character.id} onValueChange={id => update(v => selectCharacter(v, id))} options={demo.characters.map(c => ({value: c.id, label: c.name}))} /><div className="arc-pass-portrait"><GuardianAvatar appearance={character.appearance} color={character.color} /><span className="arc-pass-stamp">PLAYER<br />01</span></div><h2>{character.name}</h2><p>{t[character.temperament]} <span>· {t.newPlayer}</span></p>
                                 <div className="arc-personal-best"><span>{selectedGame === "stamp" ? t.best : ko ? "최근 연습 최고 기록" : "Best recent practice"}</span><strong>{best.toLocaleString()}<small>{t.points}</small></strong></div>
                             </section>
@@ -246,10 +244,6 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                         </aside>
                     </div>
                 </>}
-                {screen === "setup" && <CharacterEditor member={character} creating={false} ko={locale === "ko"} onClose={lobby} onSave={draft => {
-                    const next = update(v => updateCharacter(v, character.id, {name: draft.name, color: draft.color, appearance: draft.appearance, temperament: draft.temperament, agent: draft.agent, configured: true}));
-                    if (editing) lobby(); else begin(next);
-                }} />}
                 {screen === "play" && initialReplay && initialGame === selectedGame && (manual?.source === "practice" ? manual.replaySeed : ticket?.replaySeed) === initialReplay.seed && <p className="arc-replay-invite">{initialReplay.daily ? ko ? "오늘의 도전 · 모두 같은 출발 조건 · 무료" : "Daily challenge · Same scenario for everyone · Free" : ko ? `${initialReplay.name}의 ${initialReplay.score.toLocaleString()}점에 도전 · 같은 출발 조건 · 무료` : `Challenge ${initialReplay.name}'s ${initialReplay.score.toLocaleString()} points · Same starting scenario · Free`}</p>}
                 {screen === "play" && drillSeed !== null && <Arena key={`drill-${drillSeed}`} practice="boss" seed={drillSeed} suspended={settingsOpen || exitOpen} locale={locale} character={character} reducedMotion={demo.reducedMotion} sound={sound} onFinish={finish} />}
                 {screen === "play" && ticket && <Arena aptitudes={ticket.aptitudes} seed={gameSeed(ticket)} suspended={settingsOpen || exitOpen} key={ticket.id} locale={locale} character={{...character, name: ticket.name, color: ticket.color, appearance: ticket.appearance}} reducedMotion={demo.reducedMotion} sound={sound} onFinish={finish} />}

@@ -1,10 +1,7 @@
 import {describe, expect, test} from "bun:test";
-import {getAddress} from "viem";
 import {admitPracticeRun, addCharacter, newCompanion, selectedCharacter, selectCharacter, updateCharacter, MAX_CHARACTERS, finishPracticeRun, newArcadeState, parseArcadeState, type ArcadeState} from "./state";
-import {arcadeStorageKey, readArcadeState, serializeArcadeState} from "./state-store";
+import {serializeArcadeState} from "./state-store";
 
-const owner = "0x1111111111111111111111111111111111111111";
-const other = "0x2222222222222222222222222222222222222222";
 const friend = () => newCompanion("cloud", {name: "구름", color: "jade", temperament: "calm"});
 const created = () => addCharacter(newArcadeState(), newCompanion("maru", {name: "마루", color: "red", temperament: "curious"}));
 function enter(state: ArcadeState, id: string) {
@@ -12,20 +9,7 @@ function enter(state: ArcadeState, id: string) {
     if (!result.ok) throw new Error(result.reason);
     return result;
 }
-function withStorage(run: (data: Map<string, string>) => void) {
-    const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-    const data = new Map<string, string>();
-    Object.defineProperty(globalThis, "localStorage", {configurable: true, value: {
-        getItem: (key: string) => data.get(key) ?? null,
-        setItem: (key: string, value: string) => {data.set(key, value);},
-    }});
-    try {run(data);} finally {
-        if (original) Object.defineProperty(globalThis, "localStorage", original);
-        else Reflect.deleteProperty(globalThis, "localStorage");
-    }
-}
-
-describe("Wallet-first arcade state", () => {
+describe("In-memory practice state", () => {
     test("first visit has no characters, selection, records or local funds", () => {
         const state = newArcadeState();
         expect(state.characters).toEqual([]); expect(state.selectedCharacterId).toBeNull();
@@ -38,32 +22,8 @@ describe("Wallet-first arcade state", () => {
         const state = {...newArcadeState(true), sound: true};
         expect(parseArcadeState(serializeArcadeState(state))).toEqual(state);
     });
-    test("wallet identity is required and address casing shares the same records", () => {
-        const lower = "0x5ea109edc7e89b6a752032aa2b6f1092e081e7ec";
-        expect(arcadeStorageKey(lower)).toBe(arcadeStorageKey(getAddress(lower)));
-        expect(arcadeStorageKey(owner)).not.toBe(arcadeStorageKey(other));
-        expect(() => arcadeStorageKey("0x123")).toThrow();
-    });
-    test("old anonymous demo data is never loaded into a newly connected wallet", () => withStorage(data => {
-        data.set("mapae.arcade.demo.v3", JSON.stringify({...created(), balance: 20, allowance: 3, freeUsed: false}));
-        expect(readArcadeState(owner)).toEqual(newArcadeState());
-        expect(data.size).toBe(1);
-    }));
-    test("wallet switches isolate rosters and reconnect restores only that wallet", () => withStorage(data => {
-        data.set(arcadeStorageKey(owner), serializeArcadeState(created()));
-        expect(readArcadeState(other)).toEqual(newArcadeState());
-        data.set(arcadeStorageKey(other), serializeArcadeState(addCharacter(newArcadeState(), friend())));
-        expect(readArcadeState(owner)).toEqual(created());
-        expect(readArcadeState(other).characters.map(c => c.name)).toEqual(["구름"]);
-    }));
-    test("corrupt or unavailable data never seeds a replacement character", () => {
-        for (const value of [null, "{broken", "null", "[]", JSON.stringify({...created(), selectedCharacterId: null}),
-            JSON.stringify({...newArcadeState(), selectedCharacterId: "maru"}),
-            JSON.stringify({...created(), runs: [{score: "999"}]}),
-            JSON.stringify({...created(), characters: [{...created().characters[0], color: "unknown"}]})]) {
-            expect(parseArcadeState(value, true)).toEqual(newArcadeState(true));
-        }
-    });
+
+
     test("repeated human practice has no currency or allowance side effects", () => {
         const first = enter(created(), "first");
         const second = enter(first.demo, "second");

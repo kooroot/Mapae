@@ -1,7 +1,6 @@
 import {describe, expect, test} from "bun:test";
 import {ARCADE_RULESET_VERSION, type ActivityOutcome, type AgentDecisionRequest} from "@mapae/arcade";
 import {admitActivity, admitHumanActivity, completeActivity, isOutcome, parseActivities, practiceBest} from "./activity";
-import {mergeProfiles, parseProfile, projectProfile, profileState} from "./profile/model";
 import {addCharacter, newCompanion, selectCharacter, selectedCharacter, updateCharacter, newArcadeState, parseArcadeState} from "./state";
 import {serializeArcadeState} from "./state-store";
 import {parseOutingDecision, parseTicket, ruleDecision} from "./agents";
@@ -103,7 +102,7 @@ describe("Multiple character admissions", () => {
 });
 
 describe("Human practice records", () => {
-    test("free race and shop records sync without tickets and never change agent best scores", () => {
+    test("free race and shop records reload without tickets and never change agent best scores", () => {
         const base = created(); let state = base;
         for (const game of ["race", "shop"] as const) {
             const admitted = admitHumanActivity(state, game, "maru", game, 10);
@@ -111,8 +110,7 @@ describe("Human practice records", () => {
             state = completeActivity(admitted.demo, game, {...result, game, score: game === "shop" ? -2 : 15});
         }
         expect(state.characters[0]?.bests).toEqual({stamp: 0, race: 0, shop: 0});
-        const profile = parseProfile(projectProfile(state)); expect(profile).not.toBeNull();
-        const synced = profileState(mergeProfiles(projectProfile(base), profile!, projectProfile(base)));
+        const synced = parseArcadeState(serializeArcadeState(state));
         expect(practiceBest(synced, "maru", "race")).toBe(15);
         expect(practiceBest(synced, "maru", "shop")).toBe(-2);
         expect(synced.activities.every(a => a.source === "practice" && a.mode === "human" && a.ticketId === null && a.giwa === null)).toBe(true);
