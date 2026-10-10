@@ -44,7 +44,7 @@ describe("document security policy", () => {
         expect(first).not.toBe(second);
     });
 
-    test("the Studio names no third-party script or connect origin at all", () => {
+    test("scripts stay first-party and connections name only the required payment and entropy services", () => {
         // The page whose custody model is "the key never leaves this tab" cannot hand a
         // script-src entry to anyone: that is full-page code execution on the origin
         // that holds the agent key. It shipped with the landing's telemetry origin for
@@ -56,6 +56,7 @@ describe("document security policy", () => {
             "'self'",
             "https://sepolia-rpc.giwa.io",
             "https://facilitator.mapae.io",
+            "https://fortuna-staging.dourolabs.app",
         ]);
         expect(policy).not.toContain("cloudflareinsights");
         expect(policy).not.toContain("'unsafe-eval'");

@@ -87,6 +87,7 @@ export function createContentSecurityPolicy(nonce: string, _surface: SiteSurface
             "connect-src 'self'",
             "https://sepolia-rpc.giwa.io",
             "https://facilitator.mapae.io",
+            "https://fortuna-staging.dourolabs.app",
         ].join(" "),
         "frame-ancestors 'none'",
         "base-uri 'none'",

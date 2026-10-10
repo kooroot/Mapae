@@ -3,8 +3,13 @@ import {outingsApi} from "./arcade/profile/outings";
 import {checkoutApi, checkoutRepository} from "./arcade/profile/checkout";
 import {derivePayerAccount} from "./lib/grant";
 import {deployment} from "./lib/config";
-import {profileApi} from "./arcade/profile/api";
+import {profileApi, profileSessionOwner} from "./arcade/profile/api";
 import {profileRepository} from "./arcade/profile/repository";
+import {engagementApi, recordAuthenticatedEngagement} from "./arcade/engagement/api";
+import {engagementRepository} from "./arcade/engagement/repository";
+import {guardiansApi} from "./arcade/profile/guardians";
+import {guardianArtApi} from "./arcade/guardian-art/api";
+import type {ExecutionContext, ScheduledController} from "@cloudflare/workers-types";
 import {
     createStartHandler,
     defaultStreamHandler,
@@ -35,12 +40,18 @@ const streamWithSecurityHeaders = defineHandlerCallback((context) => {
 
 const start = createStartHandler(streamWithSecurityHeaders);
 
-export default createServerEntry({fetch: (request, options) => {
+const entry = createServerEntry({fetch: (request, options) => {
     const path = new URL(request.url).pathname;
+    if (path.startsWith("/api/arcade/guardians/")) return guardianArtApi(request, {collection: env.ARCADE_GUARDIAN_ADDRESS, assets: env.ASSETS});
+    if (path === "/api/arcade/engagement") return engagementApi(request, engagementRepository(env.ARCADE_DB), {
+        development: import.meta.env.DEV, resolveOwner: r => profileSessionOwner(r, profileRepository(env.ARCADE_DB)),
+    });
     if (path.startsWith("/api/arcade/profile")) {
         const profiles = profileRepository(env.ARCADE_DB);
         return profileApi(request, profiles, {
             development: import.meta.env.DEV,
+            guardians: (r, owner, input) => guardiansApi(r, owner, input, {receiptToken: env.ARCADE_RECEIPT_TOKEN}),
+            onAuthenticated: (r, owner, now) => recordAuthenticatedEngagement(r, engagementRepository(env.ARCADE_DB), owner, now),
             outings: (r, owner, input) => outingsApi(r, owner, input, {profiles, receiptToken: env.ARCADE_RECEIPT_TOKEN}),
             checkout: (r, owner, input) => checkoutApi(r, owner, input, {
                 repo: checkoutRepository(env.ARCADE_DB), profiles, payer: derivePayerAccount,
@@ -50,3 +61,7 @@ export default createServerEntry({fetch: (request, options) => {
     }
     return path.startsWith("/api/arcade/") ? arcadeProductionApi(request) : start(request, options);
 }});
+
+export default {...entry, scheduled(_event: ScheduledController, _bindings: unknown, context: ExecutionContext) {
+    context.waitUntil(engagementRepository(env.ARCADE_DB).cleanup(Date.now()));
+}};

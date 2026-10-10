@@ -6,6 +6,7 @@
         "nodejs_compat"
     ],
     "main": "src/server.ts",
+    "assets": {"binding": "ASSETS"},
     "observability": {
         "enabled": true
     },
@@ -14,6 +15,8 @@
     "env": {
         "landing": {
             "name": "mapae",
+            "assets": {"binding": "ASSETS"},
+            "triggers": {"crons": ["17 15 * * *"]},
             "workers_dev": false,
             "preview_urls": false,
             "routes": [
@@ -32,6 +35,7 @@
         },
         "app": {
             "name": "mapae-app",
+            "assets": {"binding": "ASSETS"},
             "workers_dev": false,
             "preview_urls": false,
             "routes": [
