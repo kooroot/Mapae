@@ -1,5 +1,19 @@
 .arc-sprite { display: block; object-fit: contain; width: 150px; height: auto; user-select: none; pointer-events: none; }
 .arc-scene { display: block; width: 100%; height: auto; object-fit: cover; user-select: none; }
+:root {
+    /* Motion tokens live on :root so portaled popups and juice.ts (one cached getComputedStyle read) see them. */
+    --arc-dur-tap: 90ms;
+    --arc-dur-quick: 160ms;
+    --arc-dur-base: 240ms;
+    --arc-dur-slow: 420ms;
+    --arc-dur-ceremony: 900ms;
+    --arc-ease-out: var(--ease);
+    --arc-ease-in: cubic-bezier(.55, 0, 1, .45);
+    --arc-ease-stamp: cubic-bezier(.2, .9, .3, 1.25);
+    --arc-ease-back: cubic-bezier(.34, 1.56, .64, 1);
+    --arc-ease-ink: cubic-bezier(.65, 0, .35, 1);
+    --arc-ease-shake: cubic-bezier(.36, .07, .19, .97);
+}
 .arcade {
     --arc-paper: #f5f0e2;
     --arc-ink: #282b25;
@@ -154,7 +168,15 @@
 .arc-image-export img { width: 100%; height: auto; margin-top: 12px; border: 1px solid #b5b39e; }
 .arc-image-export p { font-size: 10px; color: var(--arc-muted); margin-top: 8px; }
 @keyframes arc-stamp { from { transform: scale(1.5) rotate(-18deg); opacity: .4; } to { transform: scale(1) rotate(-12deg); opacity: 1; } }
+@keyframes arc-seal-slam { 0% { opacity: 0; scale: 1.9; rotate: -22deg; } 40% { opacity: 1; scale: .92; rotate: -5deg; } 68% { scale: 1.04; } 100% { opacity: 1; scale: 1; rotate: var(--seal-rest, -7deg); } }
+@keyframes arc-ink-bloom { from { opacity: .55; scale: .4; } to { opacity: 0; scale: 1.15; } }
+@keyframes arc-float-up { 0% { opacity: 1; translate: 0 0; } 60% { opacity: 1; } 100% { opacity: 0; translate: 0 -38%; } }
+@keyframes arc-count-in { 0% { opacity: 0; scale: 1.8; rotate: -6deg; } 22% { opacity: 1; scale: .94; rotate: 0deg; } 34% { scale: 1; } 80% { opacity: 1; scale: 1; } 100% { opacity: 0; scale: .9; } }
+@keyframes arc-heartbeat { 0%, 100% { scale: 1; } 50% { scale: 1.1; } }
+@keyframes arc-unfurl { from { scale: 0 1; } to { scale: 1 1; } }
+@keyframes arc-rise-in { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
 .arc-still *, .arc-still *::before, .arc-still *::after { animation: none !important; transition: none !important; }
+[data-halted] *, [data-halted] *::before, [data-halted] *::after { animation-play-state: paused !important; }
 @media (max-width: 950px) {
     .arc-lobby-grid { grid-template-columns: minmax(0, 1fr) 245px; gap: 24px; }
     .arc-cabinet { padding-left: 13px; padding-right: 13px; }
