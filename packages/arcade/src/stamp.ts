@@ -39,7 +39,9 @@ export function stampWave(elapsed: number) {
 }
 
 export type Actor = {kind: "goblin" | "courier"; expiresAt: number; bornAt: number; golden?: boolean; special?: "armored" | "boss"; hp?: number; lastHitAt?: number; lastOpeningHit?: number; lastGuardedOpening?: number};
-export type Impact = {kind: "stamp" | "wrong" | "miss" | "crack" | "guard"; until: number; points: number; golden?: boolean; perfect?: boolean};
+/** Who the impact landed on, so its afterimage and effects can show that face after the actor itself is gone. */
+export type ImpactActor = Pick<Actor, "kind" | "special" | "golden">;
+export type Impact = {kind: "stamp" | "wrong" | "miss" | "crack" | "guard"; until: number; points: number; actor: ImpactActor; perfect?: boolean};
 export type Cell = {actor: Actor | null; impact: Impact | null};
 export type Game = {
     seed: number;
@@ -92,6 +94,10 @@ export function newBossPractice(seed = 0): Game {
     return {...newGame(seed), practice: "boss", durationMs: BOSS_PRACTICE_MS};
 }
 
+function face({kind, special, golden}: Actor): ImpactActor {
+    return {kind, special, golden};
+}
+
 function expire(game: Game, at: number) {
     for (const cell of game.cells) {
         if (cell.impact && (cell.impact.until <= at || cell.impact.kind === "guard" && cell.actor?.special === "boss" && bossWindow(cell.actor, at).phase === "open")) cell.impact = null;
@@ -101,7 +107,7 @@ function expire(game: Game, at: number) {
             game.feverCharge = 0;
             game.missed++;
             const until = cell.actor.expiresAt + 300;
-            cell.impact = until > at ? {kind: "miss", until, points: 0} : null;
+            cell.impact = until > at ? {kind: "miss", until, points: 0, actor: face(cell.actor)} : null;
         }
         cell.actor = null;
     }
@@ -176,7 +182,7 @@ export function stamp(game: Game, index: number): Game {
             if (cell.impact?.kind === "guard" && cell.impact.until > game.elapsed) return game;
             // Early tapping spends this cycle's precision chance, never its broad success window.
             cell.actor = {...actor, lastGuardedOpening: window.opening};
-            cell.impact = {kind: "guard", until: game.elapsed + 240, points: 0};
+            cell.impact = {kind: "guard", until: game.elapsed + 240, points: 0, actor: face(actor)};
             next.guardedHits++;
             return next;
         }
@@ -190,7 +196,7 @@ export function stamp(game: Game, index: number): Game {
     }
     if (actor.kind === "goblin" && (actor.hp ?? 1) > 1) {
         cell.actor = {...cell.actor!, hp: actor.hp! - 1, lastHitAt: game.elapsed};
-        cell.impact = {kind: "crack", until: game.elapsed + (precisionPoints ? 650 : 100), points: precisionPoints, perfect: precisionPoints > 0};
+        cell.impact = {kind: "crack", until: game.elapsed + (precisionPoints ? 650 : 100), points: precisionPoints, actor: face(actor), perfect: precisionPoints > 0};
         return next;
     }
     cell.actor = null;
@@ -200,7 +206,7 @@ export function stamp(game: Game, index: number): Game {
         next.combo = 0;
         next.feverCharge = 0;
         next.mistakes++;
-        cell.impact = {kind: "wrong", until: game.elapsed + 420, points: -lost};
+        cell.impact = {kind: "wrong", until: game.elapsed + 420, points: -lost, actor: face(actor)};
     } else {
         next.combo++;
         next.bestCombo = Math.max(next.bestCombo, next.combo);
@@ -221,7 +227,7 @@ export function stamp(game: Game, index: number): Game {
             }
         }
         next.score += points;
-        cell.impact = {kind: "stamp", until: game.elapsed + (precisionPoints ? 650 : 380), points: points + precisionPoints, golden: actor.golden, perfect: precisionPoints > 0};
+        cell.impact = {kind: "stamp", until: game.elapsed + (precisionPoints ? 650 : 380), points: points + precisionPoints, actor: face(actor), perfect: precisionPoints > 0};
     }
     return next;
 }
@@ -236,6 +242,80 @@ export function bossWindow(actor: Actor, elapsed: number) {
     const perfectPassed = phaseTime >= BOSS_PERFECT_START_MS + BOSS_PERFECT_MS;
     const perfect = phase === "open" && !perfectBlocked && phaseTime >= BOSS_PERFECT_START_MS && phaseTime < BOSS_PERFECT_START_MS + BOSS_PERFECT_MS;
     return {phase, opening, perfect, perfectBlocked, perfectPassed, progress: phaseTime / BOSS_CYCLE_MS, remaining: phase === "guard" ? BOSS_GUARD_MS - phaseTime : BOSS_CYCLE_MS - phaseTime} as const;
+}
+
+/**
+ * What one step changed, as a pure diff of two states, so sound and motion follow the same facts for a person and an agent.
+ * Cells are shallow-copied every step, so a new `impact` or `actor` reference is a new event; a stamp that changed nothing
+ * returns the same game, which `tapped` turns into a `dud`. The diff is as fine as the steps it is given.
+ */
+export type StampEvent =
+    | {type: "hit"; index: number; actor: ImpactActor; points: number}
+    | {type: "perfect"; index: number}
+    | {type: "crack"; index: number; actor: ImpactActor}
+    | {type: "wrong"; index: number; points: number}
+    | {type: "guard"; index: number}
+    | {type: "miss"; index: number; actor: ImpactActor}
+    | {type: "pass"; index: number}
+    | {type: "dud"; index: number}
+    | {type: "kill"; index: number; variant: NonNullable<Actor["special"]>}
+    | {type: "comboTier"; multiplier: number}
+    | {type: "comboBreak"; from: number}
+    | {type: "feverStart"}
+    | {type: "feverEnd"}
+    | {type: "feverCharge"; charge: number}
+    | {type: "wave"; index: number}
+    | {type: "parade"; phase: "soon" | "active"}
+    | {type: "bossSpawn"; index: number}
+    | {type: "bossPhase"; index: number; phase: "guard" | "open" | "recover"; opening: number}
+    | {type: "challenge"; id: string}
+    | {type: "urgentSecond"; seconds: number}
+    | {type: "finished"};
+
+/** The scoreboard marks the last ten seconds as urgent. */
+const URGENT_SECONDS = 10;
+const secondsLeft = (game: Game) => Math.ceil((game.durationMs - game.elapsed) / 1_000);
+
+export function stampEvents(prev: Game, next: Game, tapped?: number): StampEvent[] {
+    if (next === prev) return tapped === undefined ? [] : [{type: "dud", index: tapped}];
+    const events: StampEvent[] = [];
+    next.cells.forEach((cell, index) => {
+        const before = prev.cells[index]!;
+        const impact = cell.impact !== before.impact ? cell.impact : null;
+        if (impact?.kind === "stamp") {
+            events.push({type: "hit", index, actor: impact.actor, points: impact.points});
+            if (impact.actor.special) events.push({type: "kill", index, variant: impact.actor.special});
+        } else if (impact?.kind === "crack") events.push({type: "crack", index, actor: impact.actor});
+        else if (impact?.kind === "wrong") events.push({type: "wrong", index, points: impact.points});
+        else if (impact?.kind === "guard") events.push({type: "guard", index});
+        if (impact?.perfect) events.push({type: "perfect", index});
+        const arrived = cell.actor && cell.actor.bornAt !== before.actor?.bornAt ? cell.actor : null;
+        const left = before.actor && before.actor.bornAt !== cell.actor?.bornAt ? before.actor : null;
+        // A stamped actor was reported above, and one cleared by the final bell never ran out its time.
+        if (left && impact?.kind !== "stamp" && impact?.kind !== "wrong" && left.expiresAt <= next.elapsed) events.push(left.kind === "goblin" ? {type: "miss", index, actor: face(left)} : {type: "pass", index});
+        if (arrived?.special === "boss") events.push({type: "bossSpawn", index});
+        else if (cell.actor?.special === "boss" && before.actor) {
+            const was = bossWindow(before.actor, prev.elapsed), now = bossWindow(cell.actor, next.elapsed);
+            if (now.phase !== was.phase || now.opening !== was.opening) events.push({type: "bossPhase", index, phase: now.phase, opening: now.opening});
+        }
+    });
+    const tier = multiplier(next.combo);
+    if (tier > multiplier(prev.combo)) events.push({type: "comboTier", multiplier: tier});
+    // A miss or a stamped courier always resets the streak, even if new hits rebuilt some of it within the same step.
+    if (prev.combo > 0 && (next.combo < prev.combo || next.missed > prev.missed || next.mistakes > prev.mistakes)) events.push({type: "comboBreak", from: prev.combo});
+    if (prev.feverUntil > prev.elapsed && next.feverUntil <= next.elapsed) events.push({type: "feverEnd"});
+    if (next.feverActivations > prev.feverActivations) events.push({type: "feverStart"});
+    if (next.feverCharge > prev.feverCharge) events.push({type: "feverCharge", charge: next.feverCharge});
+    const wave = stampWave(next.elapsed).index;
+    if (wave > stampWave(prev.elapsed).index) events.push({type: "wave", index: wave});
+    const parade = goldParade(next.elapsed)?.phase;
+    if (parade && parade !== goldParade(prev.elapsed)?.phase) events.push({type: "parade", phase: parade});
+    const reached = new Set(stampChallenges(prev).filter(goal => goal.done).map(goal => goal.id));
+    for (const goal of stampChallenges(next)) if (goal.done && !reached.has(goal.id)) events.push({type: "challenge", id: goal.id});
+    const seconds = secondsLeft(next);
+    if (seconds > 0 && seconds <= URGENT_SECONDS && seconds < secondsLeft(prev)) events.push({type: "urgentSecond", seconds});
+    if (next.finished && !prev.finished) events.push({type: "finished"});
+    return events;
 }
 
 export function activateFever(game: Game): Game {

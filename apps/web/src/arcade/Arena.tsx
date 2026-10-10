@@ -4,12 +4,13 @@ import type {Locale} from "../lib/i18n";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {guardianLayers} from "./guardian-layers";
 import {Goblin} from "./Characters";
-import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldParade, stampWave, multiplier, newGame, newBossPractice, FEVER_TARGET, FEVER_MS, BOSS_OPENINGS, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, stamp, type Game, type FeverMode, type Actor} from "@mapae/arcade/stamp";
+import {advance, advanceAgent, activateFever, setFeverMode, bossWindow, goldParade, stampWave, multiplier, newGame, newBossPractice, FEVER_TARGET, FEVER_MS, BOSS_OPENINGS, BOSS_CYCLE_MS, BOSS_GUARD_MS, BOSS_PERFECT_START_MS, BOSS_PERFECT_MS, BOSS_PERFECT_POINTS, stamp, stampEvents, type Game, type FeverMode, type Actor} from "@mapae/arcade/stamp";
 import {cellForKey, isControlTarget} from "./input";
 import type {Character} from "./state";
 import type {ArcadeSound} from "./sound";
 import type {GuardianAptitudes} from "@mapae/arcade/guardians";
 import {StampChallenges} from "./StampChallenges";
+import {stampFx, stampStartFx} from "./stamp-fx";
 import "./stamp.css";
 import "./game-guide.css";
 import "./stamp-scene.css";
@@ -64,6 +65,14 @@ export function Arena({locale, character, sound, onFinish, autopilot, suspended 
     const soundRef = useRef(sound);
     soundRef.current = sound;
 
+    /** Every state change passes through here, so a person and an agent get feedback from the same events. True when any occurred. */
+    const commit = (next: Game, tapped?: number) => {
+        const events = stampEvents(state.current, next, tapped);
+        state.current = next;
+        if (events.length) stampFx(events, next, {sound: soundRef.current});
+        return events.length > 0;
+    };
+
     const setPause = (value: boolean) => {
         if (done.current) return;
         pauseRef.current = value;
@@ -86,22 +95,16 @@ export function Arena({locale, character, sound, onFinish, autopilot, suspended 
                 if (countdownRef.current > 0) {
                     countdownRef.current = Math.max(0, countdownRef.current - delta);
                     setCountdown(Math.ceil(countdownRef.current / 1_000));
-                    if (countdownRef.current === 0) soundRef.current.play("start");
+                    if (countdownRef.current === 0) stampStartFx({sound: soundRef.current});
                 } else {
-                    const previous = state.current;
-                    state.current = autopilot ? advanceAgent(previous, delta, autopilot) : advance(previous, delta);
-                    if (autopilot && state.current !== previous) {
-                        if (state.current.perfectHits > previous.perfectHits) soundRef.current.play("perfect");
-                        else if (state.current.feverActivations > previous.feverActivations) soundRef.current.play("fever");
-                        else if (state.current.hits > previous.hits) soundRef.current.play(state.current.goldHits > previous.goldHits ? "golden" : "hit", state.current.combo);
-                    }
-                    if (time - painted >= 40 || state.current.finished) {
+                    // Detect events on every frame, before the paint throttle, and paint an event frame at once so sound and picture land together.
+                    const evented = commit(autopilot ? advanceAgent(state.current, delta, autopilot) : advance(state.current, delta));
+                    if (evented || time - painted >= 40) {
                         setView(state.current);
                         painted = time;
                     }
                     if (state.current.finished) {
                         done.current = true;
-                        soundRef.current.play("end");
                         finishRef.current(state.current, false);
                         return;
                     }
@@ -126,33 +129,23 @@ export function Arena({locale, character, sound, onFinish, autopilot, suspended 
         if (autopilot || pauseRef.current || suspendedRef.current || countdownRef.current > 0 || done.current) return;
         // Account for time since the last frame before accepting an input at expiry.
         flushInputTime();
-        const before = state.current;
-        const after = stamp(before, index);
-        if (after !== before) {
-            soundRef.current.play(after.perfectHits > before.perfectHits ? "perfect" : after.feverUntil > before.feverUntil ? "fever" : after.cells[index]?.impact?.kind === "guard" ? "guard" : after.cells[index]?.impact?.kind === "crack" ? "hit" : after.hits > before.hits ? before.cells[index]?.actor?.golden ? "golden" : "hit" : "wrong", after.combo);
-            state.current = after;
-            setView(after);
-        }
+        if (commit(stamp(state.current, index), index)) setView(state.current);
     }
     function changeFeverMode(mode: FeverMode) {
         if (autopilot || pauseRef.current || suspendedRef.current || done.current) return;
         if (countdownRef.current <= 0) flushInputTime();
-        const before = state.current;
-        state.current = setFeverMode(before, mode);
-        if (state.current.feverActivations > before.feverActivations) soundRef.current.play("fever");
+        commit(setFeverMode(state.current, mode));
         setView(state.current);
     }
     function flushInputTime() {
         const now = performance.now();
-        if (last.current !== null) state.current = advance(state.current, now - last.current);
+        if (last.current !== null) commit(advance(state.current, now - last.current));
         last.current = now;
     }
     function fireFever() {
         if (autopilot || pauseRef.current || suspendedRef.current || countdownRef.current > 0 || done.current || state.current.feverMode !== "manual") return;
         flushInputTime();
-        const before = state.current;
-        state.current = activateFever(before);
-        if (state.current !== before) soundRef.current.play("fever");
+        commit(activateFever(state.current));
         setView(state.current);
     }
     const feverRef = useRef(fireFever); feverRef.current = fireFever;
@@ -234,7 +227,7 @@ export function Arena({locale, character, sound, onFinish, autopilot, suspended 
                             </span>}
                             {cell.actor?.special && <progress className="stamp-enemy-hp" aria-label={ko ? "남은 타격" : "Hits remaining"} max={cell.actor.special === "boss" ? BOSS_OPENINGS : 2} value={cell.actor.hp} />}
                             {cell.impact && (cell.impact.kind !== "crack" || cell.impact.perfect) && cell.impact.until > view.elapsed && <span className="arc-impact" key={cell.impact.until} role={cell.impact.perfect ? "status" : undefined}>
-                                {cell.impact.kind === "stamp" && <Goblin className="stamp-squash" />}
+                                {cell.impact.kind === "stamp" && <Goblin variant={cell.impact.actor.special} className={`stamp-squash${cell.impact.actor.golden ? " stamp-gold-art" : ""}`} />}
                                 {(cell.impact.kind === "stamp" || cell.impact.perfect) && <img className="arc-impact-art" src="/arcade/stamp-impact-512.webp" alt="" />}
                                 <b>{cell.impact.perfect ? ko ? "◆ 정통!" : "◆ PERFECT!" : cell.impact.kind === "stamp" ? t.hit : cell.impact.kind === "wrong" ? t.wrong : cell.impact.kind === "guard" ? ko ? "방어 중!" : "GUARDED!" : t.miss}</b>
                                 {cell.impact.kind !== "miss" && cell.impact.kind !== "guard" && <em>{cell.impact.points > 0 ? "+" : ""}{cell.impact.points}</em>}
