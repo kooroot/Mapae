@@ -1,3 +1,4 @@
+import "./lib/kit-telemetry";
 import {createRouter as createTanStackRouter} from "@tanstack/react-router";
 import {RouteError} from "./components/RouteError";
 import {createSsrNonce} from "./lib/security";
