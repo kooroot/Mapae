@@ -2,7 +2,7 @@ import {Dialog} from "@base-ui/react/dialog";
 import {Menu, X} from "lucide-react";
 import "./brand-controls.css";
 import {Lockup, PassEmblem, Tagline, Wordmark} from "../brand/marks";
-import {appUrl, docsUrl, githubUrl} from "../lib/config";
+import {appUrl, docsUrl, githubUrl, sellerGuideUrl} from "../lib/config";
 import {localizePath, localizeUrl, type Locale} from "../lib/i18n";
 import {LocaleSwitch, useLocale} from "../lib/locale";
 
@@ -21,12 +21,21 @@ const COPY: Record<
         boundaries: string;
         security: string;
         evidence: string;
+        arcade: string;
         docs: string;
+        sellerGuide: string;
         githubAria: string;
         openStudio: string;
+        menuOpen: string;
+        menuClose: string;
+        menuTitle: string;
+        menuDescription: string;
+        menuAria: string;
+        footNavAria: string;
         mottoLead: string;
         mottoMark: string;
         mottoTail: string;
+        network: string;
         testnetOnly: string;
     }
 > = {
@@ -36,12 +45,21 @@ const COPY: Record<
         boundaries: "Boundaries",
         security: "Security",
         evidence: "Evidence",
+        arcade: "Arcade",
         docs: "Docs",
+        sellerGuide: "Seller guide",
         githubAria: "Open the Mapae GitHub repository",
         openStudio: "Open Studio",
+        menuOpen: "Open menu",
+        menuClose: "Close menu",
+        menuTitle: "Explore Mapae",
+        menuDescription: "Product, security, arcade and documentation",
+        menuAria: "Mobile navigation",
+        footNavAria: "Footer navigation",
         mottoLead: "The Mapae was not a token of privilege — it was ",
         mottoMark: "a token of limits",
         mottoTail: ". The engraved horse count was where the authority ended.",
+        network: "GIWA Sepolia testnet",
         testnetOnly: "Operates on testnet assets only.",
     },
     ko: {
@@ -50,15 +68,52 @@ const COPY: Record<
         boundaries: "권한 경계",
         security: "보안",
         evidence: "증거",
+        arcade: "오락실",
         docs: "문서",
+        sellerGuide: "셀러 가이드",
         githubAria: "Mapae GitHub 저장소 열기",
         openStudio: "Studio 열기",
+        menuOpen: "메뉴 열기",
+        menuClose: "메뉴 닫기",
+        menuTitle: "어디로 갈까요?",
+        menuDescription: "제품, 보안, 오락실과 문서로 이동",
+        menuAria: "모바일 메뉴",
+        footNavAria: "바닥글 메뉴",
         mottoLead: "마패는 특권의 증표가 아니라 ",
         mottoMark: "한계의 증표다",
         mottoTail: ". 새겨진 말의 수는 권한이 끝나는 지점이었다.",
+        network: "GIWA Sepolia 테스트넷",
         testnetOnly: "테스트넷 자산으로만 동작합니다.",
     },
 };
+
+type NavLink = {href: string; label: string; external?: boolean};
+
+/** Links that leave the landing carry the ↗ mark; in-page anchors do not. */
+function sectionLinks(locale: Locale): NavLink[] {
+    const t = COPY[locale];
+    const home = localizePath("/", locale);
+    return [
+        {href: `${home}#authority`, label: t.product},
+        {href: `${home}#boundaries`, label: t.boundaries},
+        {href: `${home}#security`, label: t.security},
+        {href: `${home}#evidence`, label: t.evidence},
+    ];
+}
+
+function outboundLinks(locale: Locale): {arcade: NavLink; docs: NavLink; github: NavLink} {
+    const t = COPY[locale];
+    return {
+        arcade: {href: localizePath("/arcade", locale), label: t.arcade, external: true},
+        docs: {href: locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl, label: t.docs, external: true},
+        github: {href: githubUrl, label: "GitHub", external: true},
+    };
+}
+
+/** Same-origin pages (the arcade) open in place; other origins open in a new tab. */
+function targetProps(href: string) {
+    return href.startsWith("/") ? {} : {target: "_blank", rel: "noreferrer noopener"};
+}
 
 function GitHubMark() {
     return (
@@ -77,30 +132,49 @@ function GitHubMark() {
     );
 }
 
-export function Nav({variant = "paper"}: {variant?: "paper" | "dark"}) {
+export function Nav() {
     const {locale} = useLocale();
     const t = COPY[locale];
+    const {arcade, docs, github} = outboundLinks(locale);
+    const menu = [...sectionLinks(locale), arcade, docs, github];
     return (
-        <header className={`nav nav-${variant}`}>
+        <header className="nav">
             <div className="wrap nav-inner">
-                <a href={localizePath("/", locale)} aria-label={t.homeAria}>
+                <a className="nav-home" href={localizePath("/", locale)} aria-label={t.homeAria}>
                     <Lockup />
                 </a>
                 <nav className="nav-links">
-                    <a href={`${localizePath("/", locale)}#authority`}>{t.product}</a>
-                    <a href={`${localizePath("/", locale)}#boundaries`}>{t.boundaries}</a>
-                    <a href={`${localizePath("/", locale)}#security`}>{t.security}</a>
-                    <a href={`${localizePath("/", locale)}#evidence`}>{t.evidence}</a>
-                    <a className="nav-arcade" href={locale === "ko" ? "/ko/arcade" : "/arcade"}>{locale === "ko" ? "오락실" : "Arcade"}<span aria-hidden="true">↗</span></a>
-                    <a href={locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl} target="_blank" rel="noreferrer noopener">
-                        {t.docs}
-                    </a>
+                    {sectionLinks(locale).map(link => <a key={link.href} href={link.href}>{link.label}</a>)}
+                    <a className="nav-arcade" href={arcade.href}>{arcade.label}<span aria-hidden="true">↗</span></a>
+                    <a href={docs.href} {...targetProps(docs.href)}>{docs.label}</a>
                 </nav>
                 <div className="nav-actions">
                     <LocaleSwitch />
-                    <Dialog.Root><Dialog.Trigger className="nav-menu-toggle" aria-label={locale === "ko" ? "메뉴 열기" : "Open menu"}><Menu size={21} /></Dialog.Trigger><Dialog.Portal><Dialog.Backdrop className="mapae-dialog-backdrop" /><Dialog.Popup className="mapae-confirm nav-menu-popup"><div className="nav-menu-top"><Dialog.Title>{locale === "ko" ? "어디로 갈까요?" : "Explore Mapae"}</Dialog.Title><Dialog.Close className="mapae-icon-button" aria-label={locale === "ko" ? "메뉴 닫기" : "Close menu"}><X size={22} /></Dialog.Close></div><Dialog.Description className="sr-only">{locale === "ko" ? "제품, 보안, 오락실과 문서로 이동" : "Product, security, arcade and documentation"}</Dialog.Description><nav aria-label={locale === "ko" ? "모바일 메뉴" : "Mobile navigation"}>
-                    {[{href: `${localizePath("/", locale)}#authority`, label:t.product}, {href:`${localizePath("/",locale)}#boundaries`,label:t.boundaries}, {href:`${localizePath("/",locale)}#security`,label:t.security}, {href:`${localizePath("/",locale)}#evidence`,label:t.evidence}, {href:localizePath("/arcade",locale),label:locale === "ko" ? "마패 오락실" : "Mapae Arcade"}, {href:locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl,label:t.docs}].map(link => <Dialog.Close key={link.href} render={<a href={link.href} />}>{link.label}<span aria-hidden="true">↗</span></Dialog.Close>)}
-                    </nav></Dialog.Popup></Dialog.Portal></Dialog.Root>
+                    <Dialog.Root>
+                        <Dialog.Trigger className="nav-menu-toggle" aria-label={t.menuOpen}><Menu size={21} aria-hidden="true" /></Dialog.Trigger>
+                        <Dialog.Portal>
+                            <Dialog.Backdrop className="mapae-dialog-backdrop" />
+                            <Dialog.Popup className="mapae-confirm nav-menu-popup">
+                                <div className="nav-menu-top">
+                                    <Dialog.Title>{t.menuTitle}</Dialog.Title>
+                                    <Dialog.Close className="mapae-icon-button" aria-label={t.menuClose}><X size={22} aria-hidden="true" /></Dialog.Close>
+                                </div>
+                                <Dialog.Description className="sr-only">{t.menuDescription}</Dialog.Description>
+                                <nav aria-label={t.menuAria}>
+                                    {menu.map(link => (
+                                        <Dialog.Close key={link.href} nativeButton={false} render={<a href={link.href} {...targetProps(link.href)} />}>
+                                            {link.label}
+                                            {link.external && <span aria-hidden="true">↗</span>}
+                                        </Dialog.Close>
+                                    ))}
+                                </nav>
+                                <a className="nav-menu-cta" href={localizeUrl(appUrl, locale)}>
+                                    {t.openStudio}
+                                    <span aria-hidden="true">↗</span>
+                                </a>
+                            </Dialog.Popup>
+                        </Dialog.Portal>
+                    </Dialog.Root>
                     <a
                         href={githubUrl}
                         className="nav-github"
@@ -121,11 +195,19 @@ export function Nav({variant = "paper"}: {variant?: "paper" | "dark"}) {
     );
 }
 
-export function Footer({variant = "paper"}: {variant?: "paper" | "dark"}) {
+export function Footer() {
     const {locale} = useLocale();
     const t = COPY[locale];
+    const {arcade, docs, github} = outboundLinks(locale);
+    const links: NavLink[] = [
+        {href: localizeUrl(appUrl, locale), label: "Studio"},
+        {href: sellerGuideUrl, label: t.sellerGuide, external: true},
+        docs,
+        arcade,
+        github,
+    ];
     return (
-        <footer className={`foot foot-${variant}`}>
+        <footer className="foot">
             <div className="wrap foot-inner">
                 <div>
                     <span className="lockup">
@@ -139,9 +221,18 @@ export function Footer({variant = "paper"}: {variant?: "paper" | "dark"}) {
                         {t.mottoTail}
                     </p>
                 </div>
+                <nav className="foot-links" aria-label={t.footNavAria}>
+                    {links.map(link => (
+                        <a key={link.href} href={link.href} {...targetProps(link.href)}>
+                            {link.label}
+                            {link.external && <span aria-hidden="true">↗</span>}
+                        </a>
+                    ))}
+                </nav>
                 <div className="label foot-meta">
-                    <p>GIWA Sepolia · eip155:91342</p>
+                    <p title="eip155:91342">{t.network}</p>
                     <p>{t.testnetOnly}</p>
+                    <LocaleSwitch />
                 </div>
             </div>
         </footer>

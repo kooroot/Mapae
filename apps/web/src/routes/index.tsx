@@ -364,7 +364,7 @@ const FLOW: Record<Locale, Array<{icon: InterfaceIconName; title: string; body: 
 export function Landing() {
     return (
         <>
-            <Nav variant="dark" />
+            <Nav />
             <main className="home">
                 <Hero />
                 <StandardRail />
@@ -375,7 +375,7 @@ export function Landing() {
                 <Evidence />
                 <FinalCall />
             </main>
-            <Footer variant="dark" />
+            <Footer />
             <ArcadeInvitation />
         </>
     );

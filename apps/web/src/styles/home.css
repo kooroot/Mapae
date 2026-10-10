@@ -14,6 +14,12 @@
     background: #050505;
 }
 
+/* The translucent sticky header and overscroll both show the document behind the
+   page, so the landing paints it obsidian instead of the paper default. */
+body:has(.home) {
+    background: #050505;
+}
+
 .home .reveal[data-armed] {
     transform: translateY(22px);
 }
@@ -160,79 +166,6 @@
     border-color: rgba(240, 184, 146, 0.38);
     color: #f4f1eb;
     background: rgba(240, 184, 146, 0.06);
-}
-
-/* ── Header and footer variants ───────────────────────────────────────── */
-
-.nav-dark {
-    color: #f1ede5;
-    border-bottom-color: rgba(241, 237, 229, 0.09);
-    background: rgba(5, 5, 5, 0.82);
-    backdrop-filter: saturate(1.3) blur(18px);
-}
-
-.nav-dark .lang-switch {
-    min-width: 44px;
-    min-height: 44px;
-    justify-content: center;
-}
-
-.nav-dark .lockup img {
-    filter: brightness(0) invert(0.94) sepia(0.08);
-}
-
-.nav-dark .nav-links a {
-    color: rgba(241, 237, 229, 0.55);
-}
-
-.nav-dark .nav-links a:hover {
-    color: #f4f1eb;
-}
-
-.nav-dark .nav-github {
-    border-color: rgba(241, 237, 229, 0.16);
-    color: rgba(241, 237, 229, 0.7);
-    background: rgba(255, 255, 255, 0.025);
-}
-
-.nav-dark .nav-github:hover {
-    border-color: rgba(240, 184, 146, 0.42);
-    color: #f4f1eb;
-    background: rgba(240, 184, 146, 0.07);
-}
-
-.nav-dark .btn {
-    gap: 14px;
-    min-width: 136px;
-    justify-content: space-between;
-    border-radius: 999px;
-    color: #160d09;
-    background: linear-gradient(115deg, #efd0ad, #de8c61);
-    box-shadow: none;
-}
-
-.nav-dark .btn::before {
-    background: #f5dfc5;
-}
-
-.foot-dark {
-    border-top-color: rgba(241, 237, 229, 0.1);
-    color: #f2eee7;
-    background: #050505;
-}
-
-.foot-dark .lockup img {
-    filter: brightness(0) invert(0.94) sepia(0.08);
-}
-
-.foot-dark .tagline,
-.foot-dark .label,
-.foot-dark .foot-meta {
-    color: rgba(241, 237, 229, 0.45);
-}
-
-.foot-dark .foot-motto span {
-    color: #f2eee7;
 }
 
 /* ── Open rails ───────────────────────────────────────────────────────── */
@@ -1061,22 +994,6 @@
         font-size: 11px;
     }
 
-    .nav-inner {
-        height: 60px;
-    }
-
-    .nav-dark .btn {
-        min-width: 0;
-        height: 38px;
-        gap: 9px;
-        padding-inline: 14px;
-        font-size: 11px;
-    }
-
-    .nav-dark .lockup {
-        gap: 8px;
-    }
-
     .home-standard-grid {
         min-height: 0;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1302,10 +1219,6 @@
     .home-final-actions {
         flex-wrap: wrap;
     }
-
-    .foot-dark {
-        padding-top: 50px;
-    }
 }
 
 @media (max-width: 390px) {
@@ -1341,9 +1254,3 @@
         transform: none;
     }
 }
-
-.nav-links .nav-arcade {display: inline-flex; align-items: center; gap: 7px; color: #e6b382}
-.nav-links .nav-arcade>span {font-size: 12px; color: #e6b382}
-.nav-menu-toggle{display:none;width:44px;height:44px;place-items:center;border:1px solid currentColor;border-radius:50%;color:inherit;background:transparent;cursor:pointer}.nav-menu-top{display:flex;align-items:center;justify-content:space-between;gap:20px}.nav-menu-top h2{margin:0}.nav-menu-popup nav{display:grid;margin-top:20px}.nav-menu-popup nav a{display:flex;align-items:center;justify-content:space-between;min-height:54px;color:#ead7b6;text-decoration:none;border-bottom:1px solid #baa07933;font-size:16px}.nav-menu-popup a:focus-visible{outline:2px solid #edc98e;outline-offset:3px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-@media(max-width:1100px){.nav-menu-toggle{display:grid}}
-@media(max-width:620px){.nav-actions{gap:8px}.nav-actions .nav-github{display:none}.nav-inner{gap:10px}.nav-actions>.btn{padding:10px 12px;min-height:44px;font-size:13px}.nav .lockup{gap:8px}.nav-inner>.nav-links{display:none}}
