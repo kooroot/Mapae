@@ -12,9 +12,8 @@
 .shop-speech{position:absolute;top:100px;right:18px;width:55%;margin:0;padding:18px;font-size:15px;line-height:1.7;min-height:0;background:#fff8e7f5;border:1px solid #dcb775;border-radius:16px 16px 16px 3px;box-shadow:0 5px 0 #8f652d20,0 8px 24px #3223101f;overflow-wrap:anywhere}
 .shop-speech::before{top:auto;bottom:-9px;left:22px;border:0;border-bottom:1px solid #dcb775;border-right:1px solid #dcb775;background:#fff8e7;rotate:45deg}
 .shop-counter-edge{position:absolute;left:0;right:0;bottom:0;padding:11px 18px;background:#422a1de6;border-top:1px solid #d5a562;color:#fff1c9;font-size:11px;min-height:43px}
-.shop-counter-edge b{border:0;padding:0;font-size:15px}.shop-deal-done .shop-counter-edge{background:#264838f0}
+.shop-counter-edge b{border:0;padding:0;font-size:15px}
 .shop-guest-reaction{position:absolute;right:-5%;top:12%;display:grid;place-items:center;width:48px;height:48px;background:#fff7df;border:2px solid #bc864d;border-radius:50%;font-size:26px;color:#b8543e;box-shadow:0 5px 0 #65442a20}
-.shop-deal-done .shop-guest>.arc-guardian{animation:shop-happy .5s ease-out 2}
 .shop-deal-rejected .shop-guest-reaction{color:#6b604e}
 /* Reactions per reason: gestures move .shop-guest by transform about its feet; the badge says why. */
 .shop-guest{transform-origin:50% 100%}
@@ -22,6 +21,26 @@
 .shop-reaction-farewell svg{transform-origin:70% 90%;animation:shop-wave var(--arc-dur-slow) var(--arc-ease-out) 2}
 .shop-limit-stamp{position:absolute;z-index:1;top:6px;right:8px;padding:2px 7px;border:2px solid #b8402f;border-radius:6px;background:#fff6dfe6;color:#b8402f;font:700 13px/1.4 var(--display);letter-spacing:.06em;pointer-events:none;rotate:-8deg;--seal-rest:-8deg;animation:arc-seal-slam var(--arc-dur-base) var(--arc-ease-stamp) both}
 @keyframes shop-wave{30%{rotate:16deg}65%{rotate:-10deg}}
+/* Deal and arrival beats. --shop-beat (1/speed) keeps every delay inside the transition; a watched agent (light) keeps only the seal and the count. */
+.shop-counter-edge{isolation:isolate}.shop-counter-edge::before{content:"";position:absolute;inset:0;z-index:-1;background:#264838f0;opacity:0;transition:opacity var(--arc-dur-base) var(--arc-ease-out)}
+.shop-deal-done .shop-counter-edge::before{opacity:1;transition-delay:calc(200ms * var(--shop-beat,1))}.shop-game[data-motion=light] .shop-counter-edge::before{transition:none}
+.shop-reaction-happy{animation:shop-heart-pop var(--arc-dur-base) var(--arc-ease-back) calc(80ms * var(--shop-beat,1)) both}
+.shop-deal-seal.shop-seal-deal{position:relative;--seal-rest:-10deg;animation:arc-seal-slam var(--arc-dur-base) var(--arc-ease-stamp) calc(140ms * var(--shop-beat,1)) both}
+.shop-seal-deal::after{content:"";position:absolute;inset:-8px;border:2px solid #a94b30;border-radius:50%;opacity:0;pointer-events:none;animation:arc-ink-bloom var(--arc-dur-slow) var(--arc-ease-out) calc(320ms * var(--shop-beat,1)) both}
+.shop-game[data-motion=light] .shop-seal-deal{animation-delay:0s}.shop-game[data-motion=light] .shop-seal-deal::after,.shop-game[data-motion=light] .shop-reaction-happy{animation:none}
+.shop-scoreboard>span{position:relative}
+.shop-coin-layer{position:fixed;inset:0;z-index:40;pointer-events:none}.shop-coin-layer>img{position:absolute;left:0;top:0;width:30px;height:30px;opacity:0;filter:drop-shadow(0 3px 2px #3a220f55)}
+.shop-number-roll{display:inline-block;animation:shop-number-roll var(--arc-dur-base) var(--arc-ease-out) 120ms both}
+.shop-speech{transform-origin:22px 100%}.shop-customer-stage[data-guest="0"] .shop-speech{animation:shop-speech-pop var(--arc-dur-quick) var(--arc-ease-back) 220ms both}.shop-customer-stage[data-guest="1"] .shop-speech{animation:shop-speech-pop-again var(--arc-dur-quick) var(--arc-ease-back) 220ms both}
+.shop-game[data-motion=light] .shop-guest{animation-duration:300ms}.shop-game[data-motion=light] .shop-speech{animation-delay:120ms}.shop-game[data-motion=light] .shop-number-roll{animation-delay:0s}
+/* Scroll first, then the entrance: a held stage keeps its arrival at the first frame until the counter is in view. */
+.shop-customer-stage[data-arrival-held] *{animation-play-state:paused}
+.shop-game .shop-guest.shop-guest-leaving{animation:shop-guest-leaves var(--shop-leave,380ms) var(--arc-ease-in) forwards}
+@keyframes shop-heart-pop{from{opacity:0;scale:.3}}
+@keyframes shop-speech-pop{from{opacity:0;scale:.6}}
+@keyframes shop-speech-pop-again{from{opacity:0;scale:.6}}
+@keyframes shop-number-roll{from{opacity:0;translate:0 70%}}
+@keyframes shop-guest-leaves{to{opacity:0;translate:-48px 0}}
 
 .shop-trading-table{border:1px solid #b0966c;border-radius:16px;background:linear-gradient(#fff9e9,#f5ebd7);box-shadow:0 5px 0 #ac87532b;padding:20px}
 .shop-product-picker{gap:9px;padding:0 0 10px;border-bottom:5px solid #a37743;box-shadow:0 3px 0 #634723;border-radius:0 0 5px 5px}
@@ -32,7 +51,6 @@
 .shop-scoreboard{background:#2d4336;color:#ffefc9;border-color:#8f9a67;border-radius:14px;border-bottom:4px solid #ad8e55}
 .shop-scoreboard>span{border-color:#d8c59535}.shop-scoreboard b{font-family:var(--mono);color:#ffe0a0}
 .shop-meeting-result .shop-deal-seal{width:84px;height:84px;background:#fff2c9;box-shadow:inset 0 0 0 5px #fff2c9,inset 0 0 0 6px #aa573750;font-size:21px}
-@keyframes shop-happy{50%{transform:translateY(-9px) rotate(-3deg)}}
 /* Keep the customer readable while the counter stays within one mobile scroll. */
 .shop-order-note{position:sticky;top:8px;z-index:3;margin:-4px -4px 16px;padding:13px 14px;border:1px solid #c6af7c;border-radius:12px;background:#fff5d9;box-shadow:0 4px 12px #5440221a;color:#4a3a22}
 .shop-order-note>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px;font-size:12px}.shop-order-note>div>span{font-size:10px}.shop-order-note p{margin:7px 0;font-size:14px;font-weight:700;line-height:1.5}.shop-order-note small{font-size:11px;line-height:1.5;color:#716042}

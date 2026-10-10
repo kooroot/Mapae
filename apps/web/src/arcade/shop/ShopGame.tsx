@@ -10,7 +10,7 @@ import type {PlayableGameProps} from "../agent-contract";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
 import {motionTier} from "../motion";
-import {haltShopFx, playShopEvent, shopReaction, shopRefusal, type ShopReaction} from "./shop-fx";
+import {haltShopFx, leaveShopGuest, playShopEvent, shopLeaveMs, shopReaction, shopRefusal, SHOP_COIN_SLOTS, SHOP_COIN_SPRITE, SHOP_TRANSITION_MS, SHOP_TURN_MS, type ShopReaction} from "./shop-fx";
 import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer,
     ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOutcome, shopSellerObservation,
     SHOP_BUYER_BALANCE, SHOP_GOALS, SHOP_INITIAL_CAPITAL, SHOP_PRODUCTS, SHOP_STORIES, SHOP_TEMPERAMENT_COPY, shopOffersRemaining, shopForecast, shopCampaign, shopCustomerName, shopEvents, SHOP_AD_COST, type ShopMemory, type ShopConfig, type ShopState} from "@mapae/arcade/shop";
@@ -89,6 +89,9 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
     const stage = useRef<HTMLElement>(null);
     const guest = useRef<HTMLDivElement>(null);
     const edge = useRef<HTMLDivElement>(null);
+    const coins = useRef<HTMLDivElement>(null);
+    const cash = useRef<HTMLSpanElement>(null);
+    const leaving = useRef(false);
     const cued = useRef<ShopState | null>(null);
     const tier = motionTier({still: reducedMotion, watched: autoAdvance});
     const running = state !== null;
@@ -96,20 +99,47 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
     const forecast = shopForecast(seed, props.memory);
     const campaign = shopCampaign(config);
 
-    useEffect(() => {
-        if (!human || state?.customer === undefined) return;
-        counter.current?.focus({preventScroll: true});
-        counter.current?.scrollIntoView({block: "start", behavior: reducedMotion ? "instant" : "smooth"});
+    // Scroll first, then the entrance: the stage holds its arrival animations at the first frame until the smooth scroll settles.
+    useLayoutEffect(() => {
+        const node = counter.current, scene = stage.current;
+        if (!human || state?.customer === undefined || !node || !scene) return;
+        node.focus({preventScroll: true});
+        const top = node.getBoundingClientRect().top;
+        const room = top > 0 ? document.documentElement.scrollHeight - window.innerHeight - window.scrollY : window.scrollY;
+        if (reducedMotion || Math.min(Math.abs(top), room) < 2) { node.scrollIntoView({block: "start", behavior: "instant"}); return; }
+        scene.toggleAttribute("data-arrival-held", true);
+        const release = () => scene.toggleAttribute("data-arrival-held", false);
+        // scrollend never comes when the browser lacks it or nothing moved; the entrance is never held longer than a smooth scroll takes.
+        const timer = window.setTimeout(release, 600);
+        document.addEventListener("scrollend", release, {capture: true, once: true});
+        node.scrollIntoView({block: "start", behavior: "smooth"});
+        return () => { window.clearTimeout(timer); document.removeEventListener("scrollend", release, {capture: true}); release(); };
     }, [state?.customer, human, reducedMotion]);
 
-    // Layout effect: a gesture starts in the same frame that first paints its reaction badge.
+    // Layout effect: a gesture starts in the same frame that first paints its reaction badge, and the cash cell shows its old total before paint.
     useLayoutEffect(() => {
         if (!state || !stage.current) { cued.current = state; return; }
-        const parts = {stage: stage.current, guest: guest.current, edge: edge.current};
-        for (const event of shopEvents(cued.current, state)) playShopEvent(event, parts, tier, sound);
+        const purse = state.buyers[state.customer]!;
+        const scene = {stage: stage.current, guest: guest.current, edge: edge.current, coins: coins.current, cash: cash.current,
+            shown: state.config.role === "seller" ? state.cash : purse.cap - purse.spent, seller: state.config.role === "seller", speed};
+        for (const event of shopEvents(cued.current, state)) playShopEvent(event, scene, tier, sound);
         cued.current = state;
-    }, [state, tier, sound]);
+    }, [state, tier, sound, speed]);
+
+    // An agent's customer walks out in the transition's last beat. Pausing brings them back; the restarted transition walks them out again.
+    useEffect(() => {
+        const node = guest.current;
+        if (human || !state || state.phase !== "transition" || state.customer + 1 >= state.buyers.length || blocked || error || !node) return;
+        const leave = shopLeaveMs(speed);
+        const timer = window.setTimeout(() => node.classList.add("shop-guest-leaving"), SHOP_TRANSITION_MS / speed - leave);
+        return () => { window.clearTimeout(timer); node.classList.remove("shop-guest-leaving"); };
+    }, [state, human, blocked, error, speed]);
     useLayoutEffect(() => { if (root.current) haltShopFx(root.current, blocked); }, [blocked, running]);
+    // Through the CSSOM, not a style attribute (the CSP allows no inline styles): CSS delays scale with playback speed like the engine's beats.
+    useLayoutEffect(() => {
+        root.current?.style.setProperty("--shop-beat", String(1 / speed));
+        root.current?.style.setProperty("--shop-leave", `${shopLeaveMs(speed)}ms`);
+    }, [speed, running]);
 
     useEffect(() => {
         if (state || !autoAdvance || blocked) return;
@@ -153,7 +183,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
             } catch {
                 if (live && !controller.signal.aborted) setError(true);
             } finally { if (live) setBusy(false); }
-        }, (state.phase === "transition" ? 1700 : 1050) / speed);
+        }, (state.phase === "transition" ? SHOP_TRANSITION_MS : SHOP_TURN_MS) / speed);
         return () => { live = false; controller.abort(); window.clearTimeout(timer); };
     }, [state, blocked, error, retry, mode, decide, profile, locale, speed]);
 
@@ -215,19 +245,25 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
         : receipt.price < receipt.cost ? ko ? "만족스러운 주문이지만 원가보다 싸게 팔았어요. 다음엔 거래 이익도 확인해요." : "The order was filled, but below cost. Check your margin next time."
         : ko ? "주문과 가격이 잘 맞았어요. 남은 재고로 다음 손님도 맞아 봐요." : "A good fit for needs and price. Keep an eye on stock for your next guest."
         : ko ? "거래를 마치지 않았어요. 주문에 맞는 구성부터 제안해 보세요." : "No completed trade. Start with a bundle that matches the request.";
-    const nextMeeting = () => {
-        if (blocked || state.phase !== "transition") return;
+    const nextMeeting = async () => {
+        if (blocked || state.phase !== "transition" || leaving.current) return;
+        leaving.current = true;
+        const node = guest.current;
+        await leaveShopGuest(node, tier);
+        leaving.current = false;
+        // Left the game while the customer walked out.
+        if (node && !node.isConnected) return;
         const next = nextShopCustomer(state); setState(next);
         if (next.phase === "finished" && !delivered.current) { delivered.current = true; onComplete(resultFor(next, props, model)); }
     };
-    return <section className="shop-game" aria-labelledby="shop-title" ref={root} data-halted={blocked || undefined}>
+    return <section className="shop-game" aria-labelledby="shop-title" ref={root} data-halted={blocked || undefined} data-motion={tier}>
         <header className="shop-heading shop-running"><span>{c.tag}</span><h1 id="shop-title">{sellerRole ? config.name : ko ? "오늘의 장보기" : "A day at the market"}</h1><div className="shop-controls">{!human && <div className="mapae-speed" role="group" aria-label={ko ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>}<button type="button" onClick={() => {setPaused(p => !p); setBusy(false);}}>{paused ? c.resume : c.pause}</button><button type="button" onClick={onExit}>{c.exit}</button></div></header>
         <div className="shop-agent-line"><b>{profile.name} · {mode === "llm" ? `${c.llm}${model ? ` (${model})` : ""}` : c.rules}</b><span>{c.opponent}</span></div>
-        <div className="shop-scoreboard"><span>{sellerRole ? c.customer : c.store}<b>{state.customer + 1}<small> / 3</small></b></span><span>{ko ? "남은 제안" : "Offers left"}<b>{shopOffersRemaining(state)}</b></span><span>{sellerRole ? c.cash : c.remaining}<b>{sellerRole ? state.cash : buyer.cap - buyer.spent}<small> {c.units}</small></b></span><span>{sellerRole ? c.net : c.achieved}<b>{sellerRole ? stats.profit : stats.goal}<small>{sellerRole ? ` ${c.units}` : "%"}</small></b></span></div>
+        <div className="shop-scoreboard"><span>{sellerRole ? c.customer : c.store}<b><span key={state.customer} className="shop-number-roll">{state.customer + 1}</span><small> / 3</small></b></span><span>{ko ? "남은 제안" : "Offers left"}<b>{shopOffersRemaining(state)}</b></span><span className="arc-flash-host" ref={cash}>{sellerRole ? c.cash : c.remaining}<b><span className="sr-only">{sellerRole ? state.cash : buyer.cap - buyer.spent}</span><span data-roll aria-hidden="true">{sellerRole ? state.cash : buyer.cap - buyer.spent}</span><small> {c.units}</small></b></span><span>{sellerRole ? c.net : c.achieved}<b>{sellerRole ? stats.profit : stats.goal}<small>{sellerRole ? ` ${c.units}` : "%"}</small></b></span></div>
         <div className="shop-counter-layout" ref={counter} tabIndex={-1} aria-label={ko ? "손님과 흥정하기" : "Bargain at the counter"}>
-            <div className="shop-stage-column"><section ref={stage} className={`shop-customer-stage ${traded ? "shop-deal-done" : ""} ${shopRefusal(reaction) ? "shop-deal-rejected" : ""}`} aria-label={ko ? "오늘의 만남" : "Today's meeting"}>
+            <div className="shop-stage-column"><section ref={stage} className={`shop-customer-stage ${traded ? "shop-deal-done" : ""} ${shopRefusal(reaction) ? "shop-deal-rejected" : ""}`} data-guest={state.customer % 2} aria-label={ko ? "오늘의 만남" : "Today's meeting"}>
                 <img src="/arcade/shop-market.webp" width={960} height={960} alt="" className="shop-stall-backdrop" draggable={false} />
-                <div className="shop-meeting-tag">{ko ? "흥정상회" : "TINY SHOP"}<span>{String(state.customer + 1).padStart(2, "0")} / 03</span></div>
+                <div className="shop-meeting-tag">{ko ? "흥정상회" : "TINY SHOP"}<span><span key={state.customer} className="shop-number-roll">{String(state.customer + 1).padStart(2, "0")}</span> / 03</span></div>
                 <div className="shop-guest" key={state.customer} ref={guest}>
                     {sellerRole ? <GuardianAvatar appearance={{version: 1, seed: "0000000000000001", zodiac: state.customer === 2 && state.forecast ? state.forecast.npc === "twins" ? "rabbit" : "tiger" : (["rabbit", "tiger", "pig"] as const)[(state.customer + Math.abs(seed % 3)) % 3]!, backdrop: "jade", charm: "none"}} color="jade" /> : <GuardianAvatar appearance={appearance} color={profile.color} />}
                     <div><span>{sellerRole ? ko ? "오늘의 손님" : "YOUR CUSTOMER" : ko ? "나의 장보기" : "YOUR SHOPPING TRIP"}</span><strong>{sellerRole ? buyerName : profile.name}</strong></div>
@@ -251,7 +287,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
                 {humanTurn ? <HumanShopControls key={`${state.customer}:${state.rounds}:${state.phase}`} locale={locale} disabled={blocked}
                     {...(sellerRole ? {role: "seller" as const, observation: ownObservation, onAction: (action: Parameters<typeof applySellerAction>[1]) => setState(current => current === state ? applySellerAction(current, action) : current)} :
                         {role: "buyer" as const, observation: ownObservation, onAction: (action: Parameters<typeof applyBuyerAction>[1]) => setState(current => current === state ? applyBuyerAction(current, action) : current)})} /> : settled ? <div className="shop-meeting-result" role="status">
-                    <span className="shop-deal-seal">{traded ? ko ? "성사" : "DEAL" : ko ? "마감" : "CLOSED"}</span><h2>{traded ? ko ? "좋은 거래였어요!" : "A deal to remember!" : ko ? "이번에는 거래 없이 마쳤어요" : "No deal this time"}</h2>
+                    <span className={`shop-deal-seal ${traded ? "shop-seal-deal" : ""}`}>{traded ? ko ? "성사" : "DEAL" : ko ? "마감" : "CLOSED"}</span><h2>{traded ? ko ? "좋은 거래였어요!" : "A deal to remember!" : ko ? "이번에는 거래 없이 마쳤어요" : "No deal this time"}</h2>
                     {receipt ? <><p>{receipt.items.map(i => `${SHOP_PRODUCTS.find(p => p.id === i.id)!.name[locale]} ×${i.quantity}`).join(" + ")}</p><div className="shop-deal-totals"><span>{ko ? "거래 금액" : "Trade price"}<b>{receipt.price} {c.units}</b></span><span>{c.value}<b>{receipt.value}%</b></span><span>{ko ? "주문 완수" : "Errand filled"}<b>{receipt.goalAchievement}%</b></span><span>{sellerRole ? ko ? "거래 이익" : "Trade profit" : c.achieved}<b>{sellerRole ? `${receipt.price - receipt.cost} ${c.units}` : `${receipt.goalAchievement}%`}</b></span></div></> : <p>{ko ? "필요한 상품과 가격이 맞아야 거래가 성사돼요. 다음 만남에서 다시 도전해요." : "Needs and price both need to fit. Try a different offer next time."}</p>}
                     <p className="shop-service-note">{receipt ? receipt.revisit ? ko ? "필요한 물건을 전부 좋은 가격에 준비했어요. 소개와 다음 만남의 신뢰로 이어져요." : "A useful complete order at a good price earns a referral and return trust." : ko ? "구매 가치는 산 물건만 평가해요. 주문 완수와 좋은 가격이 함께 있어야 다음 만남의 신뢰가 생겨요." : "Purchase value rates the goods bought. Return trust also needs a complete order and a good price." : ""}</p>
                     <aside className="game-coach"><strong>{ko ? "이번 흥정의 한 수" : "AT THIS COUNTER"}</strong><p>{lesson}</p></aside>
@@ -270,5 +306,6 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
         <details className="shop-ledger"><summary>{c.chat} · {state.conversation.length}</summary><div className="shop-chat" ref={chat} role="log" aria-live="polite">{state.conversation.map((entry, index) => <div key={index} className={`shop-bubble shop-bubble-${entry.speaker}`}><b>{entry.speaker === "seller" ? c.seller : entry.speaker === "buyer" ? c.buyer : "MAPAE"}</b><p>{entry.text[locale]}</p></div>)}</div>{thought && <p className="shop-thought">{thought}</p>}</details>
         <details className="shop-ledger"><summary>{c.receipt} · {state.receipts.length}</summary><div className="shop-receipt-list">{state.receipts.map((receipt, index) => <article key={index}><span className="shop-paid">{ko ? "놀이 거래" : "PLAY TRADE"} ✓</span><strong>{receipt.items.map(item => `${SHOP_PRODUCTS.find(p => p.id === item.id)!.name[locale]} ×${item.quantity}`).join(" + ")}</strong><b>{receipt.price} {c.units}</b><small>{c.value} {receipt.value}% · {c.achieved} {receipt.goalAchievement}%</small></article>)}</div></details>
         <p className="shop-funds">{c.funds}</p>
+        <div className="shop-coin-layer" ref={coins} aria-hidden="true">{Array.from({length: SHOP_COIN_SLOTS}, (_, i) => <img key={i} src={SHOP_COIN_SPRITE} width={30} height={30} alt="" draggable={false} />)}</div>
     </section>;
 }
