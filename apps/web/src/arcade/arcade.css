@@ -178,7 +178,9 @@
 .arc-still *, .arc-still *::before, .arc-still *::after { animation: none !important; transition: none !important; }
 /* Scoped to the arcade: Studio renders data-halted="true|false" for a different meaning, and this sheet outlives client navigation. */
 .arcade [data-halted] *, .arcade [data-halted] *::before, .arcade [data-halted] *::after { animation-play-state: paused !important; }
-.arc-hitstop, .arc-hitstop *, .arc-hitstop *::before, .arc-hitstop *::after { animation-play-state: paused !important; }
+/* An overlay that must keep moving while its game is halted (the start countdown) opts out; it sits under the halt, so it outranks it. */
+.arcade [data-halted] [data-halt-exempt], .arcade [data-halted] [data-halt-exempt]::before, .arcade [data-halted] [data-halt-exempt]::after, .arcade [data-halted] [data-halt-exempt] *, .arcade [data-halted] [data-halt-exempt] *::before, .arcade [data-halted] [data-halt-exempt] *::after { animation-play-state: running !important; }
+[data-hitstop], [data-hitstop] *, [data-hitstop] *::before, [data-hitstop] *::after { animation-play-state: paused !important; }
 .arc-flash-host::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--arc-flash, transparent); opacity: 0; pointer-events: none; }
 @media (max-width: 950px) {
     .arc-lobby-grid { grid-template-columns: minmax(0, 1fr) 245px; gap: 24px; }

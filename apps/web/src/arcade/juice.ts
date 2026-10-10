@@ -7,8 +7,8 @@ import type {MotionTier} from "./motion";
  * Juice owns the `transform` property: games place and rest their sprites with individual `translate`/`scale`/`rotate`.
  */
 export type MotionGate = ({tier: MotionTier} | {still: boolean}) & {essential?: boolean};
-type Ease = "out" | "in" | "stamp" | "back" | "ink" | "shake";
-type Duration = "tap" | "quick" | "base" | "slow" | "ceremony";
+export type Ease = "out" | "in" | "stamp" | "back" | "ink" | "shake";
+export type Duration = "tap" | "quick" | "base" | "slow" | "ceremony";
 type Tokens = {ease: Record<Ease, string>; dur: Record<Duration, number>};
 export type PlayOptions = Omit<KeyframeAnimationOptions, "duration" | "easing"> & {duration: number | Duration; easing?: Ease | "linear"};
 
@@ -17,7 +17,7 @@ const DURATIONS: Duration[] = ["tap", "quick", "base", "slow", "ceremony"];
 /** Reduced motion keeps acknowledgement, never movement: opacity only, at most this long. */
 const STILL_MS = 120;
 /** Longest ceremony a watched agent run may show, so nothing outlasts its auto-advance beat. */
-const LIGHT_MS = 300;
+export const LIGHT_MS = 300;
 const SHAKE_MS = 180;
 /** Past this the target a player is aiming at visibly jumps. */
 const SHAKE_MAX_PX = 6;
@@ -56,6 +56,11 @@ export function shakeFrames(px: number, axis: "x" | "y"): Keyframe[] {
     return [0, -1, .8, -.55, .3, 0].map(f => ({transform: `translate${axis === "x" ? "X" : "Y"}(${+(f * reach).toFixed(2)}px)`}));
 }
 
+/** A ceremony's length for the tier: a watched agent's is clipped to LIGHT_MS, a player's and reduced motion's keep the authored length. */
+export function ceremonyMs(tier: MotionTier, ms: number): number {
+    return tier === "light" ? Math.min(ms, LIGHT_MS) : ms;
+}
+
 /** Unfurl, hold, exit: the full ceremony for a player, the same beats compressed into LIGHT_MS for a watched agent. */
 export function bannerBeats(tier: "full" | "light", dur: Record<Duration, number>) {
     return tier === "full" ? {unfurl: dur.base, hold: dur.ceremony, exit: dur.base} : {unfurl: dur.tap, hold: Math.max(LIGHT_MS - 2 * dur.tap, 0), exit: dur.tap};
@@ -63,7 +68,7 @@ export function bannerBeats(tier: "full" | "light", dur: Record<Duration, number
 
 let tokens: Tokens | undefined;
 /** The motion tokens from arcade.css, read once: WAAPI cannot resolve `var()`, and the numbers must live in CSS only. */
-function motionTokens(): Tokens {
+export function motionTokens(): Tokens {
     if (tokens) return tokens;
     const style = getComputedStyle(document.documentElement);
     const ease = Object.fromEntries(EASES.map(name => [name, style.getPropertyValue(`--arc-ease-${name}`).trim()])) as Record<Ease, string>;
@@ -71,6 +76,20 @@ function motionTokens(): Tokens {
     // Read before the stylesheet applied: degrade this one call instead of caching the miss.
     if (EASES.some(name => !ease[name]) || DURATIONS.some(name => !dur[name])) return {ease: Object.fromEntries(EASES.map(name => [name, ease[name] || "linear"])) as Record<Ease, string>, dur};
     return tokens = {ease, dur};
+}
+
+const curves = new Map<string, Animation>();
+/**
+ * An easing token's output at linear `progress` (0–1), for scripts that place things frame by frame: a paused, target-less
+ * effect evaluates the CSS curve, so it is never restated here. Linear until the stylesheet applies.
+ */
+export function eased(name: Ease, progress: number): number {
+    const easing = motionTokens().ease[name];
+    if (easing === "linear") return progress;
+    let curve = curves.get(easing);
+    if (!curve) curves.set(easing, curve = new Animation(new KeyframeEffect(null, null, {duration: 1000, easing, fill: "both"})));
+    curve.currentTime = progress * 1000;
+    return curve.effect?.getComputedTiming().progress ?? progress;
 }
 
 const running = new WeakMap<Element, Map<string, Animation>>();
@@ -146,14 +165,16 @@ export function banner(el: HTMLElement, gate: MotionGate): Animation | null {
     ], {id: "arc-banner", duration: total, fill: "both"});
 }
 
-const counters = new WeakMap<Node, Animation>();
+/** A rolling number: its clock, and the frame loop that writes it, which only runs while the clock does. */
+type Counter = {node: Node; clock: Animation; resume: () => void};
+const counters = new Map<Node, Counter>();
 /**
  * Rolls a number up by writing `textContent` each frame (no React state). The node should be `aria-hidden`, with the final value
- * already in a visually hidden sibling, so screen readers hear one number. Still or hidden: writes the final value at once.
+ * already in a visually hidden sibling, so screen readers hear one number. It shows `from` at once, before the first frame paints;
+ * still or hidden, it writes the final value at once. `holdEffects` pauses the roll, and cancelling it lands on the final value.
  */
 export function countUp(node: Node, to: number, gate: MotionGate, {from = 0, ms, format = n => Math.round(n).toLocaleString()}: {from?: number; ms?: number; format?: (n: number) => string} = {}): Animation | null {
-    counters.get(node)?.cancel();
-    counters.delete(node);
+    counters.get(node)?.clock.cancel();
     const write = (n: number) => {node.textContent = format(n);};
     const tier = gateTier(gate);
     if (document.hidden || (tier === "still" && !gate.essential)) {
@@ -162,27 +183,64 @@ export function countUp(node: Node, to: number, gate: MotionGate, {from = 0, ms,
     }
     const {ease, dur} = motionTokens();
     // A target-less effect is the clock: its eased progress applies the CSS easing token without restating the curve here.
-    const clock = new Animation(new KeyframeEffect(null, null, {duration: Math.min(ms ?? dur.ceremony, tier === "light" ? LIGHT_MS : Infinity), easing: ease.out, fill: "forwards"}));
-    counters.set(node, clock);
-    clock.play();
+    const clock = new Animation(new KeyframeEffect(null, null, {duration: ceremonyMs(tier, ms ?? dur.ceremony), easing: ease.out, fill: "forwards"}));
+    let looping = false;
     const frame = () => {
-        if (counters.get(node) !== clock) return;
+        if (counters.get(node)?.clock !== clock || clock.playState !== "running" && clock.playState !== "finished") {looping = false; return;}
         write(from + (to - from) * (clock.effect?.getComputedTiming().progress ?? 1));
-        // A caller cancelling the returned clock lands on the final value and ends the loop, like finishing does.
-        if (clock.playState === "finished" || clock.playState === "idle") counters.delete(node);
-        else requestAnimationFrame(frame);
+        if (clock.playState === "finished") {
+            looping = false;
+            counters.delete(node);
+        } else requestAnimationFrame(frame);
     };
-    requestAnimationFrame(frame);
+    const resume = () => {
+        clock.play();
+        if (!looping) {looping = true; requestAnimationFrame(frame);}
+    };
+    clock.addEventListener("cancel", () => {
+        if (counters.get(node)?.clock !== clock) return;
+        counters.delete(node);
+        write(to);
+    });
+    counters.set(node, {node, clock, resume});
+    write(from);
+    resume();
     return clock;
+}
+
+/**
+ * Holds every scripted effect under `root` while it is halted (paused, suspended, counting down) and plays it on release: WAAPI
+ * animations and the rolling numbers, whose target-less clocks `getAnimations` cannot see. CSS animations stop through
+ * `[data-halted]` instead, since pausing one through the API would detach it from `animation-play-state` for good. Release
+ * leaves alone whatever sits under a still-halted element inside `root` (a race held at its checkpoint inside a running game).
+ */
+export function holdEffects(root: Element, halted: boolean) {
+    const inner = (el: Element | null | undefined) => {
+        const held = el?.closest("[data-halted]");
+        return !!held && held !== root && root.contains(held);
+    };
+    for (const animation of root.getAnimations({subtree: true})) {
+        if (animation instanceof CSSAnimation || animation instanceof CSSTransition) continue;
+        if (halted) {if (animation.playState === "running") animation.pause();}
+        else if (animation.playState === "paused" && !inner((animation.effect as KeyframeEffect | null)?.target)) animation.play();
+    }
+    for (const counter of counters.values()) {
+        // A number unmounted mid-roll has nothing left to write: its clock goes now rather than waiting forever, paused.
+        if (!counter.node.isConnected) {counter.clock.cancel(); continue;}
+        if (!root.contains(counter.node)) continue;
+        if (halted) counter.clock.pause();
+        else if (counter.clock.playState === "paused" && !inner(counter.node.parentElement)) counter.resume();
+    }
 }
 
 const stops = new WeakMap<Element, {timer: number; held: Animation[]}>();
 /**
  * Freezes the picture for a beat on a big hit. Visual only: the engine clock keeps running, so judgement windows never move.
- * Scripted effects pause through the API (essential ones keep going); CSS animations pause through `.arc-hitstop`, because
- * calling `pause()` on a CSS animation would detach it from `animation-play-state` and break `[data-halted]` for good.
+ * Scripted effects pause through the API (essential ones keep going); CSS animations pause through `[data-hitstop]`, an attribute
+ * React never writes, so a re-render mid-freeze cannot strip it. Pausing a CSS animation through the API would detach it from
+ * `animation-play-state` and break `[data-halted]` for good.
  */
-export function hitStop(root: Element, ms: number, gate: MotionGate) {
+export function hitStop(root: HTMLElement, ms: number, gate: MotionGate) {
     if (document.hidden || gateTier(gate) !== "full") return;
     const stop = stops.get(root) ?? {timer: 0, held: []};
     clearTimeout(stop.timer);
@@ -191,11 +249,11 @@ export function hitStop(root: Element, ms: number, gate: MotionGate) {
             animation.pause();
             stop.held.push(animation);
         }
-    root.classList.add("arc-hitstop");
+    root.dataset.hitstop = "";
     stop.timer = window.setTimeout(() => {
         stops.delete(root);
-        root.classList.remove("arc-hitstop");
-        // A pause that began meanwhile owns the held effects now; its resume plays every paused one.
+        delete root.dataset.hitstop;
+        // A pause that began meanwhile owns the held effects now; its release plays every paused one.
         if (root.closest("[data-halted]")) return;
         for (const animation of stop.held) if (animation.playState === "paused") animation.play();
     }, Math.min(ms, motionTokens().dur.quick));

@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {bannerBeats, gateTier, opacityOnly, parseTime, shakeFrames} from "./juice";
+import {bannerBeats, ceremonyMs, gateTier, opacityOnly, parseTime, shakeFrames, LIGHT_MS} from "./juice";
 
 const dur = {tap: 90, quick: 160, base: 240, slow: 420, ceremony: 900};
 
@@ -56,5 +56,17 @@ describe("bannerBeats", () => {
         const {unfurl, hold, exit} = bannerBeats("light", dur);
         expect(unfurl + hold + exit).toBeLessThanOrEqual(300);
         expect(hold).toBeGreaterThan(0);
+    });
+});
+
+describe("ceremonyMs", () => {
+    test("a watched agent's ceremony is clipped to LIGHT_MS, inside its 2× auto-advance beat", () => {
+        expect(LIGHT_MS).toBeLessThan(1050 / 2);
+        expect(ceremonyMs("light", 420)).toBe(LIGHT_MS);
+        expect(ceremonyMs("light", 160)).toBe(160);
+    });
+    test("a player and reduced motion keep the authored length", () => {
+        expect(ceremonyMs("full", 420)).toBe(420);
+        expect(ceremonyMs("still", 420)).toBe(420);
     });
 });
