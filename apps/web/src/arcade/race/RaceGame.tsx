@@ -362,7 +362,8 @@ export function RaceGame({appearance, profile, locale, mode, seed, budget, decid
                 </div>}
                 {phase === "recap" && <RaceRecap race={current.simulation} commands={current.simulation.calls.filter(call => call.id === "owner")} locale={locale} tier={tier} sound={sound} />}
                 <div className="arc-race-playback">
-                    {phase !== "recap" && <button type="button" className="arc-button arc-button-plain" onClick={() => setPaused(value => !value)}>{paused ? t.resume : t.pause}</button>}
+                    {/* A blur can pause the result too, which holds its stamps (`data-halted`) and the auto-advance: resuming must stay reachable. */}
+                    {(phase !== "recap" || paused) && <button type="button" className="arc-button arc-button-plain" onClick={() => setPaused(value => !value)}>{paused ? t.resume : t.pause}</button>}
                     {phase !== "recap" && <div className="mapae-speed" role="group" aria-label={ko ? "관전 속도" : "Playback speed"}>{[1, 2].map(value => <button key={value} type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)}>{value}×</button>)}</div>}
                     {phase === "race" && !human ? <button type="button" className="arc-race-text-button" onClick={() => {seek(endTime); setPhase("recap");}}>{t.fast} →</button>
                         : phase === "recap" ? <button type="button" ref={recapButton} className="arc-button" onClick={advance}>{season.round < RACE_ROUNDS ? t.next : t.result} →</button> : null}

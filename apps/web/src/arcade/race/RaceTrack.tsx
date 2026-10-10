@@ -73,6 +73,8 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
     const standing = race.entrants.map(runner => ({runner, position: frame.positions.find(item => item.id === runner.id)!, place: raceLiveRank(race, frame, runner.id)}));
     // The board at the HUD's pace: stamina bars scale (no style attribute: the CSP allows none) and a changed place rolls over.
     useLayoutEffect(() => {
+        // The field leaves the gate sharing first place: spreading out from it is no place change, so it rolls nothing.
+        const gate = [...places.current.values()].every(place => place === 1);
         standing.forEach(({runner, position, place}, index) => {
             const row = board.current?.children[index];
             const fill = row?.querySelector<HTMLElement>(".race-stamina>span");
@@ -80,7 +82,7 @@ export function RaceTrack({race, commands, rivalId, progress, clock, ended, loca
             const shift = rankShift(places.current.get(runner.id), place);
             places.current.set(runner.id, place);
             const number = row?.querySelector("b");
-            if (shift && number) flipRank(number, shift, tier);
+            if (shift && number && !gate) flipRank(number, shift, tier);
         });
     });
     const finishGap = (race.finish[1]?.seconds ?? race.finish[0]!.seconds) - race.finish[0]!.seconds;

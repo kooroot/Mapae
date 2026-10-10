@@ -71,7 +71,7 @@ export function windRate(factor: number): number {
 }
 
 /** A first-to-second gap under this many simulation seconds is a photo finish: one flash at the line, then a banner drops. */
-export const PHOTO_FINISH = .8;
+const PHOTO_FINISH = .8;
 /** The start signal: three beats ("셋·둘·출발!") this long; the clock holds through all but the last, which starts the race. */
 export const START_BEATS = 3;
 export const BEAT_MS = 400;
@@ -236,7 +236,7 @@ function confetti(layer: HTMLElement, at: {x: number; y: number}) {
 }
 
 /** One moment: the owner hears its own race, and the horses it concerns answer on screen. Labels and the draft link already show drafts. */
-export function cueRaceEvent(event: RaceEvent, {tier, sound, sprite, point, layer, flag}: RaceStage, photo = false) {
+function cueRaceEvent(event: RaceEvent, {tier, sound, sprite, point, layer, flag}: RaceStage, photo = false) {
     const own = event.id === "owner";
     const pony = sprite(event.id)?.querySelector(".race-pony-bounce");
     switch (event.type) {
