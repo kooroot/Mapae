@@ -186,10 +186,11 @@ type Counter = {node: Node; clock: Animation; resume: () => void};
 const counters = new Map<Node, Counter>();
 /**
  * Rolls a number up by writing `textContent` each frame (no React state). The node should be `aria-hidden`, with the final value
- * already in a visually hidden sibling, so screen readers hear one number. It shows `from` at once, before the first frame paints;
- * still or hidden, it writes the final value at once. `holdEffects` pauses the roll, and cancelling it lands on the final value.
+ * already in a visually hidden sibling, so screen readers hear one number. It shows `from` at once, before the first frame paints,
+ * and holds it through `delay`; still or hidden, it writes the final value at once. `holdEffects` pauses the roll, `finish()` on the
+ * returned clock jumps to the final value, and cancelling it lands there too.
  */
-export function countUp(node: Node, to: number, gate: MotionGate, {from = 0, ms, format = n => Math.round(n).toLocaleString()}: {from?: number; ms?: number; format?: (n: number) => string} = {}): Animation | null {
+export function countUp(node: Node, to: number, gate: MotionGate, {from = 0, ms, delay = 0, format = n => Math.round(n).toLocaleString()}: {from?: number; ms?: number; delay?: number; format?: (n: number) => string} = {}): Animation | null {
     // Forgotten before it is cancelled, so its cancel event cannot land the old total over this one.
     const previous = counters.get(node);
     counters.delete(node);
@@ -202,25 +203,26 @@ export function countUp(node: Node, to: number, gate: MotionGate, {from = 0, ms,
     }
     const {ease, dur} = motionTokens();
     // A target-less effect is the clock: its eased progress applies the CSS easing token without restating the curve here.
-    const clock = new Animation(new KeyframeEffect(null, null, {duration: ceremonyMs(tier, ms ?? dur.ceremony), easing: ease.out, fill: "forwards"}));
+    // Filled backwards too, so its progress through the delay reads 0 (`from`) instead of null.
+    const clock = new Animation(new KeyframeEffect(null, null, {duration: ceremonyMs(tier, ms ?? dur.ceremony), delay, easing: ease.out, fill: "both"}));
     let looping = false;
     const frame = () => {
-        if (counters.get(node)?.clock !== clock || clock.playState !== "running" && clock.playState !== "finished") {looping = false; return;}
+        if (counters.get(node)?.clock !== clock || clock.playState !== "running") {looping = false; return;}
         write(from + (to - from) * (clock.effect?.getComputedTiming().progress ?? 1));
-        if (clock.playState === "finished") {
-            looping = false;
-            counters.delete(node);
-        } else requestAnimationFrame(frame);
+        requestAnimationFrame(frame);
     };
     const resume = () => {
         clock.play();
         if (!looping) {looping = true; requestAnimationFrame(frame);}
     };
-    clock.addEventListener("cancel", () => {
+    // Finishing (on its own or skipped) and cancelling both land on the final value, the frame loop's last word.
+    const land = () => {
         if (counters.get(node)?.clock !== clock) return;
         counters.delete(node);
         write(to);
-    });
+    };
+    clock.addEventListener("finish", land);
+    clock.addEventListener("cancel", land);
     counters.set(node, {node, clock, resume});
     write(from);
     resume();

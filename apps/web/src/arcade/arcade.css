@@ -146,7 +146,8 @@
 .arc-result-character > .arc-sprite { width: 62px; height: 68px; }
 .arc-result-character > span { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
 .arc-result-character small { display: block; font-size: 9px; font-weight: 400; margin-top: 4px; color: var(--arc-muted); }
-.arc-result-character .arc-result-seal { color: var(--arc-red); border: 2px solid currentColor; border-radius: 50%; width: 52px; height: 52px; display: grid; place-items: center; transform: rotate(12deg); margin-left: auto; font-family: var(--display); flex: none; }
+.arc-result-seal { position: relative; --seal-rest: 12deg; rotate: 12deg; color: var(--arc-red); border: 2px solid currentColor; border-radius: 50%; width: 52px; height: 52px; display: grid; place-items: center; font-family: var(--display); flex: none; }
+.arc-result-character .arc-result-seal { margin-left: auto; }
 .arc-result-paper h1 { font-size: 25px; letter-spacing: -.06em; line-height: 1.3; }
 .arc-result-score { display: flex; flex-direction: column; align-items: center; margin: 22px 0; }
 .arc-result-score > span { color: var(--arc-red); font: 11px var(--mono); }
@@ -181,6 +182,12 @@
 /* An overlay that must keep moving while its game is halted (the start countdown) opts out; it sits under the halt, so it outranks it. */
 .arcade [data-halted] [data-halt-exempt], .arcade [data-halted] [data-halt-exempt]::before, .arcade [data-halted] [data-halt-exempt]::after, .arcade [data-halted] [data-halt-exempt] *, .arcade [data-halted] [data-halt-exempt] *::before, .arcade [data-halted] [data-halt-exempt] *::after { animation-play-state: running !important; }
 [data-hitstop], [data-hitstop] *, [data-hitstop] *::before, [data-hitstop] *::after { animation-play-state: paused !important; }
+/* Result ritual (result-ritual.ts): it sets the beats on the root and the attributes that start the CSS ones; without them everything rests. */
+[data-ritual=seal][data-slam] { animation: arc-seal-slam var(--ritual-seal-ms) var(--arc-ease-stamp) var(--ritual-seal-at) both; }
+[data-ritual=seal][data-burst]::after { content: ""; position: absolute; inset: -9px; border: 2px solid currentColor; border-radius: 50%; opacity: 0; pointer-events: none; animation: arc-ink-bloom var(--ritual-record-ms) var(--arc-ease-out) var(--ritual-record-at) forwards; }
+[data-ritual=record] { position: relative; }
+[data-ritual=record]::after { content: ""; position: absolute; left: -3px; right: -3px; bottom: -2px; height: 3px; border-radius: 3px 1px 2px 1px; background: currentColor; opacity: .75; rotate: -1deg; transform-origin: left; }
+[data-ritual=record][data-slam]::after { animation: arc-unfurl var(--ritual-record-ms) var(--arc-ease-ink) var(--ritual-record-at) both; }
 .arc-flash-host::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--arc-flash, transparent); opacity: 0; pointer-events: none; }
 @media (max-width: 950px) {
     .arc-lobby-grid { grid-template-columns: minmax(0, 1fr) 245px; gap: 24px; }
