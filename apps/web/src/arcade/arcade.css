@@ -189,6 +189,10 @@
 [data-ritual=record]::after { content: ""; position: absolute; left: -3px; right: -3px; bottom: -2px; height: 3px; border-radius: 3px 1px 2px 1px; background: currentColor; opacity: .75; rotate: -1deg; transform-origin: left; }
 [data-ritual=record][data-slam]::after { animation: arc-unfurl var(--ritual-record-ms) var(--arc-ease-ink) var(--ritual-record-at) both; }
 .arc-flash-host::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--arc-flash, transparent); opacity: 0; pointer-events: none; }
+/* Screen swaps (motion.ts swapScreen): the old screen leaves in 220ms, the new one settles in 320ms. A practice shell's game stage and the result that replaces it share one name, so the board morphs into the paper; one stage per screen, or the browser skips the transition. */
+::view-transition-old(root), ::view-transition-old(arc-stage) { animation-duration: 220ms; animation-timing-function: var(--arc-ease-in); }
+::view-transition-new(root), ::view-transition-new(arc-stage), ::view-transition-group(arc-stage) { animation-duration: 320ms; animation-timing-function: var(--arc-ease-out); }
+:is(.arc-practice, .nft-practice) :is(.arc-arena, .arc-race, .shop-game, .arc-result-paper, .agent-receipt-paper, .practice-drill-result, .nft-practice-result) { view-transition-name: arc-stage; }
 @media (max-width: 950px) {
     .arc-lobby-grid { grid-template-columns: minmax(0, 1fr) 245px; gap: 24px; }
     .arc-cabinet { padding-left: 13px; padding-right: 13px; }
