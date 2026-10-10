@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
 import {PassEmblem, Wordmark} from "../brand/marks";
+import {AccountChip} from "./AccountChip";
 import {AgentGrantList} from "./AgentGrantList";
 import {GrantOnboarding, type GrantPlacement} from "./GrantOnboarding";
 import {Web3Providers} from "./Web3Providers";
@@ -96,6 +97,7 @@ const COPY: Record<
         createGrant: string;
         aboutMapae: string;
         techDocs: string;
+        footCaption: string;
         availableNow: string;
         haltRevoked: {label: string; note: string};
         haltExpired: {label: string; note: string};
@@ -173,6 +175,7 @@ const COPY: Record<
         createGrant: "Create a grant",
         aboutMapae: "About Mapae",
         techDocs: "Technical docs",
+        footCaption: "TESTNET · WALLET SIGNING",
         availableNow: "Available now",
         haltRevoked: {
             label: "No longer available",
@@ -267,6 +270,7 @@ const COPY: Record<
         createGrant: "권한 만들기",
         aboutMapae: "Mapae 소개",
         techDocs: "기술 문서",
+        footCaption: "테스트넷 · 지갑 서명",
         availableNow: "현재 사용 가능",
         haltRevoked: {
             label: "더 이상 사용 불가",
@@ -480,12 +484,12 @@ function StudioBody() {
                         <Wordmark height={14} />
                     </a>
                     <div className="studio-topbar-meta">
-                        <LocaleSwitch />
-                        <div className="studio-network">
+                        <div className="studio-network" title={`${chain.name} · chain ${chain.id}`}>
                             <i aria-hidden="true" />
                             <span>{chain.name}</span>
-                            <b>{chain.id}</b>
                         </div>
+                        <LocaleSwitch />
+                        <AccountChip />
                     </div>
                 </header>
 
@@ -506,6 +510,21 @@ function StudioBody() {
                     />
                 ) : (
                     <div className="studio-workspace">
+                        {/* The sidebar's grant sub-nav does not fit the phone tab bar, so the
+                            three detail screens get their own row at the top of the page. */}
+                        <nav className="studio-segmented studio-detail-tabs" aria-label={t.grantNavAria}>
+                            {(Object.keys(SECTION_META) as DetailSection[]).map((key) => (
+                                <button
+                                    type="button"
+                                    key={key}
+                                    data-active={section === key}
+                                    aria-current={section === key ? "page" : undefined}
+                                    onClick={() => setSection(key)}
+                                >
+                                    {STUDIO_SECTIONS[locale][key].label}
+                                </button>
+                            ))}
+                        </nav>
                         <header className="studio-page-head">
                             <div>
                                 <span className="studio-kicker">{locale === "ko" ? section === "overview" ? "사용 가능한 권한" : section === "activity" ? "결제 내역" : "소유자 관리" : meta.eyebrow}</span>
@@ -663,10 +682,10 @@ function StudioSidebar({
                     <span>{t.aboutMapae}</span>
                 </a>
                 <a href={locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl} target="_blank" rel="noreferrer noopener">
-                    <span>{t.techDocs}</span>
                     <ArrowUpRight size={15} />
+                    <span>{t.techDocs}</span>
                 </a>
-                <p>TESTNET · WALLET SIGNING</p>
+                <p>{t.footCaption}</p>
             </div>
         </aside>
     );

@@ -4,6 +4,7 @@ import {buildRevocationSubmissionBody} from "@mapae/delegation/revocation-submis
 import type {Address, Hex, PublicClient} from "viem";
 import type {PackedUserOperation} from "viem/account-abstraction";
 import {deployment, publicClient} from "./config";
+import {shortAddress} from "./dial";
 import {FAUCET_COPY} from "./faucet";
 import type {Locale} from "./i18n";
 import {STUDIO_SECTIONS} from "./studio-sections";
@@ -213,10 +214,6 @@ export function studioRevokeGateNote(
         case "owner-unknown":
             return undefined;
     }
-}
-
-function shortAddress(value: string): string {
-    return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
 /**

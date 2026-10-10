@@ -21,6 +21,7 @@
     --studio-metal-wash: rgba(232, 184, 143, 0.1);
     --studio-red: #e36b62;
     --studio-red-wash: rgba(227, 107, 98, 0.1);
+    --studio-coral: #e6a17e;
     position: relative;
     display: grid;
     min-height: 100svh;
@@ -178,7 +179,6 @@
     display: flex;
     min-height: 34px;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
     padding: 0 8px;
     color: var(--studio-text-3);
@@ -192,10 +192,10 @@
 .studio-sidebar-foot p {
     margin-top: 13px;
     padding-inline: 8px;
-    color: rgba(242, 238, 231, 0.25);
+    color: var(--studio-text-3);
     font-family: var(--mono);
-    font-size: 7px;
-    letter-spacing: 0.18em;
+    font-size: 10px;
+    letter-spacing: 0.12em;
 }
 
 .studio-main {
@@ -215,13 +215,14 @@
     backdrop-filter: blur(18px);
 }
 
-/* Groups the language setting with the network chip on the topbar's right edge.
+/* Network status, language, then the account — the order every Mapae header uses.
    A dedicated class on purpose: reusing .lang-switch as the wrapper composited its
    container opacity onto the network chip. */
 .studio-topbar-meta {
     display: inline-flex;
+    min-width: 0;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
 }
 
 .studio-mobile-brand {
@@ -230,31 +231,87 @@
 
 .studio-network {
     display: inline-flex;
-    height: 30px;
+    height: 32px;
     align-items: center;
-    gap: 8px;
-    padding: 0 10px;
+    gap: 7px;
+    padding: 0 11px;
     border: 1px solid var(--studio-line);
     border-radius: 999px;
     color: var(--studio-text-2);
     background: rgba(255, 255, 255, 0.025);
     font-family: var(--mono);
-    font-size: 8px;
-    letter-spacing: 0.08em;
+    font-size: 11px;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
+    white-space: nowrap;
 }
 
-.studio-network i {
+.studio-network i,
+.studio-account > span > i {
     width: 6px;
     height: 6px;
+    flex: none;
     border-radius: 50%;
-    background: var(--studio-metal);
-    box-shadow: 0 0 12px rgba(232, 184, 143, 0.72);
+    background: var(--studio-coral);
+    box-shadow: 0 0 10px rgba(230, 161, 126, 0.7);
 }
 
-.studio-network b {
-    color: var(--studio-text-3);
-    font-weight: 400;
+/* The account chip: who is signing, and the way out, on every Studio screen. */
+.studio-account {
+    display: inline-flex;
+    height: 36px;
+    align-items: center;
+    border: 1px solid var(--studio-line-strong);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.studio-account > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 11px 0 12px;
+    color: var(--studio-text);
+    font-family: var(--mono);
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.studio-account[data-tone="warning"] > span > i {
+    background: var(--studio-red);
+    box-shadow: 0 0 10px rgba(227, 107, 98, 0.7);
+}
+
+.studio-account > button {
+    display: inline-flex;
+    height: 100%;
+    align-items: center;
+    gap: 6px;
+    padding: 0 13px 0 10px;
+    border-left: 1px solid var(--studio-line-strong);
+    border-radius: 0 999px 999px 0;
+    color: var(--studio-text-2);
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        color 160ms ease,
+        background 160ms ease;
+}
+
+.studio-account > button:hover:not(:disabled) {
+    color: var(--studio-red);
+    background: var(--studio-red-wash);
+}
+
+.studio-account > button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+/* Phone-only row for the open grant's three screens; the sidebar carries them on desktop. */
+.studio-detail-tabs {
+    display: none;
 }
 
 .studio-workspace {
@@ -2077,12 +2134,11 @@ a.studio-metric:hover {
     }
 
     .studio-network {
-        height: 28px;
-        font-size: 7px;
-    }
-
-    .studio-network b {
-        display: none;
+        height: 32px;
+        gap: 6px;
+        padding: 0 9px;
+        font-size: 10px;
+        letter-spacing: 0.04em;
     }
 
     .studio-workspace {
@@ -2698,3 +2754,8 @@ a.studio-metric:hover {
 .studio-wizard .studio-grant-form{padding:28px;border:1px solid #b2976950;border-radius:20px;background:linear-gradient(145deg,#211d1740,#10100e)}.studio-wizard .studio-connect-intro{padding:8px 0 24px}.studio-wizard .studio-form-section{border:0;padding:0 0 26px}.studio-wizard .studio-form-section-head{margin-bottom:24px}.studio-wizard .studio-grant-preview{background:#191711;border-radius:16px}.studio-wizard .studio-step-actions{border-radius:0 0 16px 16px}@media(max-width:620px){.studio-wizard .studio-grant-form{padding:20px 16px}.studio-wizard .studio-form-section-head{gap:10px}.studio-wizard .studio-form-section-head>i{display:none}.studio-wizard .studio-form-section-head h2{font-size:21px}.studio-wizard .studio-create-head h1{font-size:30px;line-height:1.35}}
 
 .studio-step-heading { scroll-margin-top: 88px; }
+
+/* Phones: the account chip keeps its icon at a full tap target, the open grant's screens move from the tab bar into the page. */
+@media(max-width:860px){.studio-nav-group{display:none}.studio-detail-tabs{display:grid;width:100%;margin:0 0 22px;grid-template-columns:repeat(3,minmax(0,1fr))}.studio-detail-tabs button{min-height:var(--ui-touch)}}
+@media(max-width:720px){.studio-account{height:var(--ui-touch)}.studio-account>span{padding:0 8px 0 11px;font-size:12px}.studio-account>button{width:var(--ui-touch);justify-content:center;padding:0 2px 0 0}.studio-account>button>span{display:none}}
+@media(max-width:480px){.studio-topbar{gap:8px}.studio-topbar-meta{gap:6px}.studio-mobile-brand>img{display:none}}

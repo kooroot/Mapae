@@ -2,10 +2,10 @@
  * The dial's surviving arithmetic.
  *
  * This module once computed the whole period dial — phase, ticks, countdown —
- * for the retired D6 console. Studio kept exactly two pieces: the struck
- * percentage its scope bar renders, and the address shortener its evidence
- * rows use. The rest went with the console; the enforcer's own period
- * numbering notes live on in `packages/delegation`'s status reader.
+ * for the retired D6 console. Studio kept the struck percentage its scope bar
+ * renders and the shorteners its evidence rows and wallet chips use. The rest
+ * went with the console; the enforcer's own period numbering notes live on in
+ * `packages/delegation`'s status reader.
  */
 
 /**
@@ -21,14 +21,12 @@ export function struckPercent(periodAmount: bigint, remaining: bigint): number {
     return Math.min(Math.max(permille, 0), 100);
 }
 
-/**
- * One major tick per whole token, the way the tally marked its horses.
- *
- * Capped at 24 because past that the ticks stop being countable and become a
- * texture — and a cap you cannot count is not an engraving.
- */
-
-/** Address and hash shortening, kept uniform so evidence reads alike everywhere. */
+/** Hash and evidence shortening, kept uniform so evidence reads alike everywhere. */
 export function short(value: string): string {
     return value.length <= 20 ? value : `${value.slice(0, 10)}…${value.slice(-8)}`;
+}
+
+/** A wallet identity as every surface shows it: `0x1234…5678`. */
+export function shortAddress(value: string): string {
+    return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
