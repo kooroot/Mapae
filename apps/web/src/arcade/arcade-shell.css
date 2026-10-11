@@ -4,14 +4,19 @@
 .arc-nav{display:flex;gap:2px;margin-right:auto;padding:4px;border:1px solid var(--arc-hair);border-radius:999px;background:#e9d8bc08}
 .arc-nav a{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:0 14px;border-radius:999px;color:var(--arc-dim);font:600 13px var(--sans);white-space:nowrap;word-break:keep-all;text-decoration:none;transition:color var(--arc-dur-base) var(--arc-ease-out),background-color var(--arc-dur-base) var(--arc-ease-out)}
 .arc-nav a:hover{color:var(--arc-cream)}
+.arc-shell-header svg{flex:none}
 .arc-nav a[aria-current=page]{background:#e9c99f1f;color:var(--arc-gold);box-shadow:inset 0 0 0 1px #e9c99f40}
 .arcade .arc-nav a:focus-visible{outline-offset:2px}
 .arc-header-title{display:none}
 .arc-shell-header .arc-wordmark{min-height:44px}
 .arc-menu-toggle{display:none}
-/* Wide but not roomy: the disconnect control keeps its icon and its accessible name, and gives up the visible label. */
-@media(min-width:1100px) and (max-width:1279px){.arc-shell-header{gap:16px}.arc-nav a{gap:5px;padding:0 10px}}
-@media(min-width:1100px) and (max-width:1439px){.arc-shell-header .arc-account-disconnect{justify-content:center;width:44px;min-height:44px;margin-left:8px;padding:0}.arc-shell-header .arc-account-disconnect>span{display:none}}
+/* Wide but not roomy: the nav tightens its padding so badges never squeeze the icons. */
+@media(min-width:1100px) and (max-width:1279px){.arc-shell-header{gap:12px}.arc-nav{gap:0}.arc-nav a{gap:5px;padding:0 8px}}
+/* English labels run longer: the nav tightens at every wide width, and below 1280px its labels carry the meaning without icons. */
+@media(min-width:1280px){.arc-shell-header .arc-nav:lang(en){gap:0}.arc-shell-header .arc-nav:lang(en) a{gap:5px;padding:0 10px}}
+@media(min-width:1100px) and (max-width:1279px){.arc-shell-header .arc-nav:lang(en) a>svg{display:none}}
+/* Signed in, the nav carries three count badges and fills the 1280px shell, so the disconnect control keeps its icon and accessible name and gives up the visible label. */
+@media(min-width:1100px){.arc-shell-header .arc-account-disconnect{justify-content:center;width:44px;min-height:44px;margin-left:8px;padding:0}.arc-shell-header .arc-account-disconnect>span{display:none}}
 /* Below 1100px the sections, wallet and language move into the drawer; the header keeps the menu, the brand and where you are. */
 @media(max-width:1099px){
 .arc-shell-header{gap:12px}
