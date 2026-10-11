@@ -1,5 +1,5 @@
 import {isAddress, type Address} from "viem";
-import {guardianTokenId,guardianTraits,type GuardianSnapshot} from "@mapae/arcade/guardians";
+import {GUARDIAN_MAX_SUPPLY,guardianName,guardianTokenId,guardianTraits,type GuardianSnapshot} from "@mapae/arcade/guardians";
 import {validGuardianSnapshot} from "./guardians";
 import type {AgentProfile, GameId} from "@mapae/arcade";
 import {MAX_OUTING_ADMISSIONS, type OutingResult, type OutingStart, type OutingStatus, type OutingView} from "@mapae/arcade/outings";
@@ -46,10 +46,10 @@ export function parseOutingStatus(v: unknown): OutingStatus | null {
             !Array.isArray(j.results) || j.results.length > j.spent) return null;
         if (!validGuardianSnapshot(j.guardian)) return null;
         const guardian = j.guardian as GuardianSnapshot;
-        if (j.characterId !== `nft-${guardian.tokenId}`) return null;
+        if (j.characterId !== `nft-${guardian.tokenId}` || BigInt(guardian.tokenId) > BigInt(GUARDIAN_MAX_SUPPLY)) return null;
         const profile = agentProfile(j.profile); if (!profile) return null;
         const traits = guardianTraits(guardian.seed);
-        if (profile.color !== traits.color || profile.temperament !== traits.temperament || profile.name !== `#${guardian.tokenId}`) return null;
+        if (profile.color !== traits.color || profile.temperament !== traits.temperament || profile.name !== guardianName(guardian.tokenId, "ko")) return null;
         profile.aptitudes = traits.aptitudes;
         const results: OutingResult[] = [];
         for (const r of j.results) {
