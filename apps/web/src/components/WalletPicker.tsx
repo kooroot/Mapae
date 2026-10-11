@@ -9,8 +9,11 @@ import "./brand-controls.css";
 import {useLocale} from "../lib/locale";
 
 /** A single entry point; discovered wallets belong inside the chooser. */
-/** In the arcade it is always the primary action: a full button in cards and the drawer, a compact one in the wide header. */
-export function WalletPicker({reconnecting = false, context = "arcade", placement = "card"}: {reconnecting?: boolean; context?: "arcade" | "studio"; placement?: "card" | "header"}) {
+/**
+ * In the arcade: `primary` where connecting is the next step, `secondary` beside a free-play primary, and `header` as the
+ * compact primary in the wide header.
+ */
+export function WalletPicker({reconnecting = false, context = "arcade", variant = "primary"}: {reconnecting?: boolean; context?: "arcade" | "studio"; variant?: "primary" | "secondary" | "header"}) {
     const {locale} = useLocale(); const ko = locale === "ko";
     const {connectors, connectAsync, isPending} = useConnect();
     const [open, setOpen] = useState(false);
@@ -29,9 +32,9 @@ export function WalletPicker({reconnecting = false, context = "arcade", placemen
     const destination = context === "arcade" ? `https://mapae.io${localizePath("/arcade", locale)}` : localizeUrl(appUrl, locale);
     const mobileDestination = destination.startsWith("https://") ? destination.slice(8) : `app.mapae.io${localizePath("/", locale)}`;
     return <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Trigger className={context === "studio" ? "mapae-action mapae-action-primary" : placement === "header" ? "arc-button arc-header-connect" : "arc-button arc-entry-connect"} disabled={busy}>
-            {busy ? <LoaderCircle size={placement === "header" ? 17 : 19} className="mapae-spinner" /> : <Wallet size={placement === "header" ? 17 : 19} />}
-            {busy ? ko ? "지갑 연결 확인 중…" : "Connecting…" : ko ? "지갑 연결" : "Connect wallet"}{placement === "card" && <ArrowRight size={19} />}
+        <Dialog.Trigger className={context === "studio" ? "mapae-action mapae-action-primary" : variant === "header" ? "arc-button arc-header-connect" : `arc-button arc-entry-connect${variant === "secondary" ? " arc-button-paper" : ""}`} disabled={busy}>
+            {busy ? <LoaderCircle size={variant === "header" ? 17 : 19} className="mapae-spinner" /> : <Wallet size={variant === "header" ? 17 : 19} />}
+            {busy ? ko ? "지갑 연결 확인 중…" : "Connecting…" : ko ? "지갑 연결" : "Connect wallet"}{variant !== "header" && <ArrowRight size={19} />}
         </Dialog.Trigger>
         <Dialog.Portal className="arc-ui-theme"><Dialog.Backdrop className="mapae-dialog-backdrop" />
             <Dialog.Popup className="arc-wallet-dialog">

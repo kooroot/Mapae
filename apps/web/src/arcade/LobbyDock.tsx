@@ -52,7 +52,7 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
     const guardian: Record<DeskStage, ReactNode> = {
         ready: null,
         guest: <><p>{ko ? "내 전령과 이어서 모험하려면" : "To continue with your own guardian"}</p>
-            <ConnectInvite ko={ko} walletWaiting={walletWaiting} /></>,
+            <ConnectInvite ko={ko} walletWaiting={walletWaiting} secondary /></>,
         pending: <p className="arc-dock-pending" role="status"><LoaderCircle size={18} className="arc-loading-icon" aria-hidden="true" />{ko ? "지갑과 전령단을 확인하고 있어요…" : "Checking your wallet and guardians…"}</p>,
         signin: desk.owner ? <SignInCard owner={desk.owner} session={desk.session} ko={ko} /> : null,
         unavailable: <div className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true" /><p>{nft.error}</p><button type="button" className="arc-text-button" disabled={nft.loading} onClick={() => void nft.refresh()}><RefreshCw size={16} aria-hidden="true" />{ko ? "다시 불러오기" : "Retry"}</button></div>,

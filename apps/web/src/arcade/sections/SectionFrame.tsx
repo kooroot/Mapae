@@ -16,11 +16,11 @@ export function SectionHeading({section, desk, children}: {section: ArcadeSubsec
     return <div className="nft-page-heading"><div><span className="arc-overline">{ko ? 'Mapae 오락실' : 'MAPAE ARCADE'}</span><h1 id="arc-section-title" tabIndex={-1}>{copy.label}</h1><p>{copy.description}</p></div>{children}</div>;
 }
 
-/** The three promises and the wallet picker, wherever a guest is asked to connect. */
-export function ConnectInvite({ko, walletWaiting}: {ko: boolean; walletWaiting: boolean}) {
+/** The three promises and the wallet picker, wherever a guest is asked to connect; secondary when free play leads the card. */
+export function ConnectInvite({ko, walletWaiting, secondary = false}: {ko: boolean; walletWaiting: boolean; secondary?: boolean}) {
     return <>
         <ol className="arc-entry-steps"><li><Sparkles size={17} aria-hidden="true" />{ko ? '나만의 전령' : 'Your own guardian'}</li><li><Ticket size={17} aria-hidden="true" />{ko ? '한도 있는 용돈' : 'A bounded allowance'}</li><li><Gamepad2 size={17} aria-hidden="true" />{ko ? '작은 모험 시작' : 'A little adventure'}</li></ol>
-        <WalletPicker reconnecting={walletWaiting} />
+        <WalletPicker reconnecting={walletWaiting} variant={secondary ? "secondary" : "primary"} />
         <small>{ko ? '같은 지갑으로 로그인하면 전령과 기록이 이어져요' : 'Sign in with the same wallet to continue with your guardians and records'}</small>
     </>;
 }

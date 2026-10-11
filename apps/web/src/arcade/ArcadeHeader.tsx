@@ -28,7 +28,7 @@ export function ArcadeHeader({section, locale, menu, owner, walletWaiting, badge
             {ARCADE_SECTIONS.map(id => {const Icon = SECTION_ICONS[id]; return <Link key={id} {...arcadeSectionLink(id, locale)} activeOptions={{exact: true, includeHash: false}}><Icon size={17} aria-hidden="true" /><span>{copy[id].label}</span>{hydrated && badges[id] && <em>{badges[id]}</em>}</Link>;})}
         </nav>
         <div className="arc-header-actions">
-            {owner ? <AccountChip owner={owner} ko={ko} disconnecting={disconnecting} blocked={blocked} onDisconnect={onDisconnect} /> : <WalletPicker reconnecting={walletWaiting} placement="header" />}
+            {owner ? <AccountChip owner={owner} ko={ko} disconnecting={disconnecting} blocked={blocked} onDisconnect={onDisconnect} /> : <WalletPicker reconnecting={walletWaiting} variant="header" />}
             <LocaleSwitch />
         </div>
     </header>;
