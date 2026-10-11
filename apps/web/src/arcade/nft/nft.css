@@ -8,7 +8,6 @@
 @media(max-width:700px){.nft-page-heading{padding-top:20px}}
 /* Section heading: a guardian switcher sits beside the title on outings and the journal. */
 .nft-page-heading>.arc-dock-switcher{margin-bottom:4px}
-.nft-arcade>.nft-panel .arc-button{gap:10px}
 /* Wallet & approvals: the account facts as a two-column list on the dark panel. */
 .arc-wallet-account h2,.arcade-revocations h2{margin:0 0 14px;color:#f8eee0;font-size:20px;letter-spacing:-.025em;word-break:keep-all}
 .arc-wallet-account dl{display:grid;gap:0;margin:0}
