@@ -30,7 +30,7 @@
 .arc-sound { display: flex; align-items: center; gap: 7px; font-size: 11px; min-height: 36px; }
 .arc-main { max-width: 1152px; padding: 0 28px; margin: 0 auto; }
 .arc-intro { display: flex; justify-content: space-between; align-items: center; padding: 24px 0 20px; gap: 24px; }
-.arc-overline { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: .12em; color: var(--arc-muted); }
+.arc-overline { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .12em; color: var(--arc-muted); }
 .arc-intro h1 { font-size: 31px; font-weight: 800; letter-spacing: -.065em; line-height: 1.35; margin: 9px 0 9px; }
 .arc-intro p:last-child { font-size: 13px; color: var(--arc-muted); }
 .arc-lobby-grid { display: grid; grid-template-columns: minmax(0, 1fr) 282px; gap: 32px; align-items: start; }
@@ -203,7 +203,6 @@
     .arc-intro { padding: 27px 0 23px; }
     .arc-intro h1 { font-size: 25px; }
     .arc-intro p:last-child { font-size: 11px; }
-    .arc-intro .arc-overline { font-size: 10px; }
     .arc-lobby-grid { grid-template-columns: minmax(0, 1fr); gap: 35px; }
     .arc-side { display: grid; gap: 20px; }
     .arc-history { margin-top: 0; }

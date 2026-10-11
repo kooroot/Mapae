@@ -36,7 +36,7 @@
 .rank-pulse{width:8px;height:8px;border-radius:50%;background:var(--vermilion);animation:rank-pulse 1.2s ease-in-out infinite}
 @keyframes rank-pulse{50%{opacity:.25;transform:scale(.7)}}
 .rank-periods{display:inline-flex;gap:2px;margin:16px 0 0;padding:4px;border-radius:var(--r-pill);background:var(--card-2)}
-.rank-periods button{min-height:40px;padding:0 16px;border:0;border-radius:var(--r-pill);background:none;color:var(--card-muted);font:600 14px var(--sans);cursor:pointer;word-break:keep-all;white-space:nowrap}
+.rank-periods button{min-height:44px;padding:0 16px;border:0;border-radius:var(--r-pill);background:none;color:var(--card-muted);font:600 14px var(--sans);cursor:pointer;word-break:keep-all;white-space:nowrap}
 .rank-periods button[aria-pressed=true]{background:var(--card);color:var(--card-ink);box-shadow:0 1px 3px #3a2a1426}
 .rank-periods button:hover:not([aria-pressed=true]){color:var(--card-ink)}
 
