@@ -24,7 +24,6 @@
 .stamp-cast span{display:grid;gap:4px}.stamp-cast strong{font-size:11px;color:var(--arc-ink)}.stamp-cast small{font-size:10px;color:var(--arc-muted)}
 .arc-arena .arc-game-overlay{background:#1c1a2bed;color:#ffebbd;z-index:8;border:1px solid #c8a16550}
 .arc-arena .arc-game-overlay .arc-overline,.arc-arena .arc-game-overlay p,.arc-arena .arc-game-overlay small{color:#e7d8b9}
-.arc-arena .arc-game-overlay .arc-button{background:linear-gradient(120deg,#f2d599,#d99463);color:#332619;border-radius:28px;border:1px solid #ffe4ac;box-shadow:none}
 .arc-arena .arc-countdown{color:#ffdc87;text-shadow:0 4px 0 #b9723740,0 0 25px #d69c5740}
 @media(max-width:480px){.arc-arena .arc-playfield{padding:80px 7% 23px}.arc-arena .arc-field-caption{top:47px;left:8%;right:8%;font-size:10px;padding:5px 4px}.arc-arena .arc-windows{height:clamp(280px,calc(100dvh - 420px),360px);gap:8px}.arc-arena .arc-scoreboard{padding:13px 6px 10px}.arc-arena .arc-scoreboard strong{font-size:28px}.arc-arena .arc-scoreboard small{font-size:12px}.arc-arena .stamp-fever-strip{padding:9px 12px}.arc-arena .arc-target-label{font-size:10px;padding:2px 4px}.stamp-cast{gap:6px}.stamp-cast>div{flex-direction:column;text-align:center;gap:4px}.stamp-cast .arc-goblin{width:46px;height:46px}.stamp-cast strong{font-size:10px}.stamp-cast small{font-size:10px}.arc-arena .arc-play-footer{font-size:10px;gap:8px}}
 

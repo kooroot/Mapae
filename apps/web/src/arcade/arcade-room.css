@@ -80,7 +80,6 @@
 .arc-entry-dock .arc-entry-guardian > .arc-dock-pending { margin: 0; }
 .arc-dock-next { display: grid; justify-items: center; gap: 12px; }
 .arc-entry-dock .arc-dock-next p { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; }
-.arc-dock-next .arc-button { gap: 10px; }
 .arc-dock-ready { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 18px 32px; text-align: left; }
 .arc-dock-side, .arc-dock-play { display: grid; gap: 14px; min-width: 0; }
 .arc-dock-guardian { display: flex; align-items: center; gap: 20px; }
@@ -100,7 +99,7 @@
 .arc-dock-switcher .arc-guardian-portrait { width: 100%; height: 100%; margin: 0; filter: none; border-radius: 9px; }
 .arc-dock-switcher button:focus-visible { outline-offset: 2px; }
 .arc-dock-actions { display: grid; gap: 10px; }
-.arc-entry-dock .arc-dock-actions .arc-button { width: 100%; justify-content: center; gap: 10px; }
+.arc-entry-dock .arc-dock-actions .arc-button { width: 100%; }
 .arc-entry-dock .arc-dock-play > small { text-align: center; }
 .arc-entry-dock .arc-dock-free { justify-self: center; display: inline-flex; align-items: center; gap: 6px; color: var(--arc-gold); font-size: 13px; }
 @media (hover: hover) { .arc-room-cabinet:hover:not([aria-pressed=true])::before { opacity: .7; } }
@@ -134,7 +133,7 @@
     .arc-room-hint { font-size: 10px; margin: 8px 0 16px; }
     .arc-room-dock { margin: 0 14px; padding: 19px 18px; border-radius: 14px; }
     .arc-entry-dock h2 { font-size: 19px; }
-    .arc-entry-dock .arc-button { width: 100%; min-width: 0; font-size: 13px; padding-inline: 16px; gap: 16px; }
+    .arc-entry-dock .arc-button { width: 100%; min-width: 0; padding-inline: 16px; }
     .arc-dock-guardian { gap: 14px; }
     .arc-dock-guardian .arc-guardian-portrait { width: 76px; height: 76px; }
     .arc-entry-dock .arc-dock-guardian h2 { font-size: 20px; }
