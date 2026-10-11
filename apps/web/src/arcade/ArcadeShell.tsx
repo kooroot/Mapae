@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "@tanstack/react-router";
 import {useAccount, useConnect} from "wagmi";
 import type {GameId} from "@mapae/arcade";
@@ -72,6 +72,9 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
         // Back from a game at the same address: the page under it was gone, so bring the place itself back into view.
         if (previous === place) {if (hash) target.scrollIntoView({block: "center"}); else window.scrollTo({top: 0});}
     }, [place, screen.kind]);
+
+    // A game replaces the whole page, so it starts at its own top, not where the section was scrolled to before it was opened.
+    useLayoutEffect(() => {if (screen.kind !== "section") window.scrollTo({top: 0});}, [screen.kind]);
 
     const go = (change: () => void) => swapScreen(reducedMotion, change);
     const visit = (next: ArcadeSection, target?: string) => void navigate(arcadeSectionLink(next, locale, target));
