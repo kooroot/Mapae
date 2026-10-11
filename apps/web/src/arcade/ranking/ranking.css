@@ -87,8 +87,9 @@
 .rank-games>li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:0 16px;min-height:52px;padding:4px 0;border-top:1px dashed #e0d3bc}
 .rank-games>li:first-child{border-top:0}
 .rank-games .rank-line{margin:0}
-.rank-games .arc-text-button{justify-self:end;gap:6px;color:#326f61;white-space:nowrap}
-.rank-games .arc-text-button[aria-pressed=true]{padding:0 14px;border-radius:999px;background:var(--jade-wash)}
+.rank-games .arc-text-button{justify-self:end;gap:6px;padding:0 14px;border:1px solid #9cc3b6;border-radius:var(--r-pill);color:var(--jade-ink);white-space:nowrap}
+.rank-games .arc-text-button[aria-pressed=true]{border-color:var(--jade);background:var(--jade-wash)}
+.rank-games .arc-text-button:hover:not(:disabled){text-decoration:none;background:var(--jade-wash)}
 .rank-nearby{grid-column:1/-1;display:grid;gap:2px;margin:2px 0 6px 23px;padding:8px 12px;border-radius:10px;background:var(--card-2);list-style:none;font-size:13px;font-variant-numeric:tabular-nums}
 .rank-nearby li{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;align-items:center;min-height:26px}
 .rank-nearby b{font:600 13px var(--mono);color:#5d4c36}
