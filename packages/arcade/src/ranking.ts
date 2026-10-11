@@ -1,0 +1,139 @@
+import type {Hex} from "viem";
+import {ARCADE_RULESET_VERSION, type GameId} from "./contracts";
+import {GUARDIAN_MAX_SUPPLY} from "./guardians";
+
+/**
+ * Ranked play: the first RANKED_ATTEMPTS settled outing rounds of each game per guardian and Korean calendar day count toward the
+ * public boards. Later rounds still grow the guardian; only the board is capped, so spending more never buys a higher rank.
+ */
+export const RANKED_ATTEMPTS = 3;
+/** A week's total adds a guardian's best WEEKLY_COUNTED_DAYS daily bests, so two days off cost nothing. */
+export const WEEKLY_COUNTED_DAYS = 5;
+export const DEVOTION_DAYS = 28;
+/** One rest day (쉼표) is earned for every STREAK_FREEZE_EVERY played days in a run, held up to STREAK_FREEZE_MAX. */
+export const STREAK_FREEZE_EVERY = 7;
+export const STREAK_FREEZE_MAX = 2;
+export const STREAK_MILESTONES = [3, 7, 14, 30, 100] as const;
+export const BOARD_ROWS = 10;
+/** How many places either side of a guardian its standing lists. */
+export const NEARBY_SPAN = 2;
+export const RANKED_GAMES = ["stamp", "race", "shop"] as const satisfies readonly GameId[];
+
+export type RankedAttempt = {day: string; attempt: number};
+export type RankingBoardId = GameId | "devotion";
+export type GamePeriod = "today" | "yesterday" | "week" | "lastweek";
+/** Game boards read the four day/week windows; the devotion board reads only the last 28 days. */
+export type RankingPeriod = GamePeriod | "28d";
+export const GAME_PERIODS = ["today", "week", "yesterday", "lastweek"] as const satisfies readonly GamePeriod[];
+/** `seed` is the guardian's public birth seed: enough to draw its portrait, nothing about its owner. */
+export type RankingRow = {rank: number; tokenId: string; seed: Hex; score: number};
+export type RankingBoard = {
+    board: RankingBoardId; period: RankingPeriod; from: string; to: string;
+    /** When the window closes (epoch ms); null once it has. */
+    closesAt: number | null; entrants: number; rows: RankingRow[];
+};
+export type RankingStanding = {rank: number; score: number; entrants: number; leader: number; above: RankingRow | null; nearby: RankingRow[]};
+export type GuardianStreak = {current: number; best: number; freezes: number; playedToday: boolean};
+export type GuardianStanding = {
+    tokenId: string; streak: GuardianStreak; devotion: {rank: number | null; days: number};
+    /** Last week's places 1–10, per game. */
+    titles: {game: GameId; place: number}[];
+    games: Record<GameId, {attemptsUsed: number; today: RankingStanding | null; week: RankingStanding | null}>;
+};
+export type RankingStandings = {
+    day: string; week: string; closesAt: {day: number; week: number};
+    /** Today's #1 score per game, so a guardian with no record yet still sees the mark to beat. */
+    leaders: Record<GameId, number | null>;
+    guardians: GuardianStanding[];
+};
+
+const KST_OFFSET = 9 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isRankingDay(value: unknown): value is string {
+    return typeof value === "string" && DAY.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+}
+function dayStart(day: string): number {
+    if (!isRankingDay(day)) throw new Error("Invalid ranking day");
+    return Date.parse(`${day}T00:00:00Z`);
+}
+/** The Korean calendar day of an instant: every board, challenge and streak turns over at 00:00 KST. */
+export function kstDay(at: number): string {
+    if (!Number.isFinite(at)) throw new Error("Invalid ranking time");
+    return new Date(at + KST_OFFSET).toISOString().slice(0, 10);
+}
+export function addDays(day: string, n: number): string {
+    return new Date(dayStart(day) + n * DAY_MS).toISOString().slice(0, 10);
+}
+/** The Monday that starts the KST week holding `day`. */
+export function kstWeek(day: string): string {
+    return addDays(day, -((new Date(dayStart(day)).getUTCDay() + 6) % 7));
+}
+/** Epoch ms of the next 00:00 KST, or of the next Monday 00:00 KST. */
+export function nextReset(at: number, period: "day" | "week"): number {
+    const today = kstDay(at);
+    return dayStart(period === "day" ? addDays(today, 1) : addDays(kstWeek(today), 7)) - KST_OFFSET;
+}
+/** 32-bit FNV-1a: the stable scenario hash behind daily challenges and ranked seeds. */
+export function fnv1a(key: string): number {
+    let seed = 2166136261;
+    for (const char of key) seed = Math.imul(seed ^ char.charCodeAt(0), 16777619) >>> 0;
+    return seed;
+}
+/**
+ * The seed of a guardian's ranked attempt. Fixed per guardian, game, day and attempt, so nobody can reroll a ranked course, and
+ * different per guardian, so a board does not collapse into ties between guardians with the same aptitudes. The ruleset is part
+ * of the key: a ruleset change starts every ranked course afresh.
+ */
+export function rankedSeed(game: GameId, day: string, attempt: number, tokenId: string): number {
+    if (!RANKED_GAMES.includes(game) || !isRankingDay(day) || !Number.isInteger(attempt) || attempt < 1 || attempt > RANKED_ATTEMPTS || !validRankingTokenId(tokenId)) {
+        throw new Error("Invalid ranked attempt");
+    }
+    return fnv1a(`${ARCADE_RULESET_VERSION}:ranked:${day}:${game}:${attempt}:${tokenId}`);
+}
+export function validRankedAttempt(value: unknown): value is RankedAttempt {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const v = value as Record<string, unknown>;
+    return Object.keys(v).length === 2 && isRankingDay(v.day) && typeof v.attempt === "number" && Number.isInteger(v.attempt) && v.attempt >= 1 && v.attempt <= RANKED_ATTEMPTS;
+}
+export function validRankingTokenId(value: unknown): value is string {
+    return typeof value === "string" && /^[1-9]\d{0,4}$/.test(value) && Number(value) <= GUARDIAN_MAX_SUPPLY;
+}
+/** The board/period pairs that exist. */
+export function validRankingBoard(board: string, period: string): board is RankingBoardId {
+    return board === "devotion" ? period === "28d" : (RANKED_GAMES as readonly string[]).includes(board) && (GAME_PERIODS as readonly string[]).includes(period);
+}
+/** A standings request names one to three guardians, ascending and unique, like a roster does. */
+export function parseRankingIds(value: string): string[] | null {
+    if (!/^[1-9]\d{0,4}(,[1-9]\d{0,4}){0,2}$/.test(value)) return null;
+    const ids = value.split(",");
+    return ids.every(validRankingTokenId) && ids.every((id, i) => i === 0 || Number(ids[i - 1]) < Number(id)) ? ids : null;
+}
+
+/**
+ * A guardian's attendance streak (출석 도장) from the KST days it played a ranked round. Each played day adds one; a missed day
+ * spends a held rest day (keeping the run without adding to it) or ends the run. Today never breaks a run before it is over.
+ */
+export function guardianStreak(days: readonly string[], today: string): GuardianStreak {
+    const played = new Set(days.filter(day => isRankingDay(day) && day <= today));
+    const first = [...played].sort()[0];
+    let current = 0, best = 0, freezes = 0;
+    if (first) {
+        for (let day = first; day <= today; day = addDays(day, 1)) {
+            if (played.has(day)) {
+                current++;
+                best = Math.max(best, current);
+                if (current % STREAK_FREEZE_EVERY === 0) freezes = Math.min(STREAK_FREEZE_MAX, freezes + 1);
+            } else if (day === today) break;
+            else if (freezes > 0) freezes--;
+            else {current = 0; freezes = 0;}
+        }
+    }
+    return {current, best, freezes, playedToday: played.has(today)};
+}
+/** Last week's cosmetic titles: 장원 (#1), 급제 (#2–3), 입격 (#4–10). */
+export function titlePlace(place: number): "champion" | "podium" | "top10" | null {
+    if (!Number.isInteger(place) || place < 1 || place > BOARD_ROWS) return null;
+    return place === 1 ? "champion" : place <= 3 ? "podium" : "top10";
+}
