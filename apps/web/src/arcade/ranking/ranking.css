@@ -1,0 +1,55 @@
+/* Rank line: a paper-toned strip under a guardian, tabular numbers so gaps line up as they change. */
+.rank-line{display:flex;align-items:flex-start;flex-wrap:wrap;gap:4px 8px;margin:8px 0 0;font-size:13px;line-height:1.6;font-variant-numeric:tabular-nums;word-break:keep-all;overflow-wrap:anywhere}
+.rank-line>svg{flex:none;margin-top:3px;color:#ad3a30}
+.rank-line>b{font-weight:650}
+.rank-line>span{flex:1;min-width:min(200px,100%)}
+.rank-titles{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+.rank-titles li{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:0 10px;border:1px solid #d8cab1;border-radius:999px;background:#f3ead8;color:#5d4c36;font-size:12px;font-weight:600}
+.rank-titles li.is-champion{border-color:#c79a52;background:#f8e6c2;color:#6b4513}
+
+/* The ranking section: game tabs and period chips on the dark shell, the board and my guardians on paper. */
+.rank-tabs,.rank-periods{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 0}
+.rank-tabs button,.rank-periods button{min-height:44px;padding:0 18px;border:1px solid var(--arc-hair);border-radius:999px;background:none;color:var(--arc-cream);font:600 14px var(--sans);cursor:pointer;word-break:keep-all}
+.rank-periods button{padding:0 14px;font-size:13px;color:var(--arc-dim)}
+.rank-tabs button[aria-pressed=true]{border-color:var(--arc-gold);background:#e9c99f1f;color:#f8eee0}
+.rank-periods button[aria-pressed=true]{border-color:var(--arc-gold);color:#f8eee0}
+.rank-tabs button:hover:not([aria-pressed=true]),.rank-periods button:hover:not([aria-pressed=true]){border-color:#e9d8bc66}
+.rank-board-head{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:6px 16px}
+.rank-board-head h2{margin:4px 0 0}
+.rank-board-head p{margin:0;font-size:13px;color:#76654e;font-variant-numeric:tabular-nums}
+.rank-podium{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:12px;margin:20px 0 8px;padding:0;list-style:none}
+.rank-podium li{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;padding:14px 10px;border:1px solid #d8cab1;border-radius:16px;background:#fffcf5;text-align:center}
+.rank-podium li.is-first{order:2;padding-top:20px;border-color:#c79a52;background:#fbf0d9}
+.rank-podium li.is-second{order:1}.rank-podium li.is-third{order:3}
+.rank-podium .arc-guardian-portrait{width:72px;height:72px;margin:0}
+.rank-podium li.is-first .arc-guardian-portrait{width:92px;height:92px}
+.rank-podium b{font:700 13px var(--mono);color:#ad3a30}
+.rank-podium strong{font-size:14px;line-height:1.35;word-break:keep-all;overflow-wrap:anywhere}
+.rank-podium span{font:500 13px var(--mono);font-variant-numeric:tabular-nums}
+.rank-list{margin:8px 0 0;padding:0;list-style:none}
+.rank-row{display:grid;grid-template-columns:44px 40px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:52px;padding:4px 0;border-top:1px solid #ded2bd;font-variant-numeric:tabular-nums}
+.rank-row>b{font:700 14px var(--mono);text-align:center;color:#5d4c36}
+.rank-row .arc-guardian-portrait{width:40px;height:40px;margin:0}
+.rank-row>span{min-width:0;font-size:14px;word-break:keep-all;overflow-wrap:anywhere}
+.rank-row>strong{font:600 14px var(--mono)}
+.rank-row.is-mine,.rank-podium li.is-mine{box-shadow:inset 3px 0 0 #347c6e;background:#eef5f1}
+.rank-mine-tag{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:#347c6e;color:#fff;font-size:11px;font-weight:700;vertical-align:1px}
+.rank-empty{padding:28px 0 12px;text-align:center}
+.rank-empty p{margin:6px 0;color:#76654e;font-size:14px;line-height:1.7}
+.rank-guardians{display:grid;gap:14px;margin:0;padding:0;list-style:none}
+.rank-guardian{display:grid;grid-template-columns:64px minmax(0,1fr);gap:4px 14px;padding:14px 0;border-top:1px solid #ded2bd}
+.rank-guardian:first-child{border-top:0;padding-top:0}
+.rank-guardian .arc-guardian-portrait{width:64px;height:64px;margin:0}
+.rank-guardian h3{margin:0;font-size:17px}
+.rank-guardian>div>small{margin-top:2px}
+.rank-guardian-games{grid-column:1/-1;display:grid;gap:4px}
+.rank-guardian-games>div{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}
+.rank-guardian-games .rank-line{flex:1;margin:0}
+.rank-guardian-games .arc-text-button{color:#326f61}
+.rank-rules{margin:22px 0;color:var(--arc-cream)}
+.rank-rules summary{min-height:44px;align-content:center;cursor:pointer;font-weight:600}
+.rank-rules ul{margin:4px 0 0;padding-left:20px;color:var(--arc-dim);font-size:14px;line-height:1.8}
+@media(max-width:700px){
+    .rank-podium{gap:6px}.rank-podium li{padding:10px 4px}.rank-podium .arc-guardian-portrait{width:52px;height:52px}.rank-podium li.is-first .arc-guardian-portrait{width:64px;height:64px}
+    .rank-row{grid-template-columns:36px 36px minmax(0,1fr) auto;gap:8px}.rank-row .arc-guardian-portrait{width:36px;height:36px}
+}
