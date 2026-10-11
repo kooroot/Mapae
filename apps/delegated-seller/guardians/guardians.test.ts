@@ -7,6 +7,7 @@ import {recoverTypedDataAddress,type Address,type Hex,type Log} from 'viem';
 import {guardianTraitsHash,guardianResultFromJson,guardianResultDomain,GUARDIAN_RESULT_TYPES,type GuardianSnapshot} from '@mapae/arcade/guardians';
 import {runArcadeSimulation} from '@mapae/arcade/simulation';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
+import {kstDay,kstWeek,rankedSeed} from '@mapae/arcade/ranking';
 import {MOCK_USDC} from '@mapae/shared';
 import {TRANSFER_EVENT_TOPIC} from '@mapae/delegation';
 import {ARCADE_PAY_TO} from '@mapae/arcade/tickets';
@@ -164,5 +165,36 @@ describe('guardian chain runtime and routes',()=>{
         expect((await app.request('/1',{headers:{...headers,'X-Mapae-Owner':receiver}})).status).toBe(404);
         expect((await app.request(`/results/${row.result.resultId}/claim`,{method:'POST',headers})).status).toBe(200);
         expect((await app.request('/1?before=-1',{headers})).status).toBe(400);
+    });
+});
+describe('ranked rows ride the settled-result transaction',()=>{
+    const day=kstDay(now);
+    test('a ranked result writes its board row and the detail view carries the attempt',async()=>{
+        const s=store(),row=await complete(s);
+        expect(row.outcome.ranked).toEqual({day,attempt:1});expect(row.outcome.seed).toBe(rankedSeed('stamp',day,1,'1'));
+        const ranked=s.db.query<Record<string,unknown>,[]>('SELECT * FROM arcade_guardian_ranked').all();
+        expect(ranked).toEqual([{result_id:row.result.resultId.toLowerCase(),collection:collection.toLowerCase(),token_id:'1',guardian_seed:seed,ruleset:ARCADE_RULESET_VERSION,
+            game:'stamp',day,week:kstWeek(day),attempt:1,score:row.result.score,victory:Number(row.result.victory),created_at:now}]);
+        const bridge='private-bridge-token'.repeat(3),app=createGuardianApp({token:bridge,reader,ledger:s.guardians});
+        const detail=await (await app.request('/1',{headers:{Authorization:`Bearer ${bridge}`,'X-Mapae-Owner':owner}})).json() as {results:{ranked?:unknown}[]};
+        expect(detail.results[0]!.ranked).toEqual({day,attempt:1});
+    });
+    test('a result whose attempt or seed disagrees with the pending admission is refused with nothing written',async()=>{
+        for(const change of [{ranked:{day,attempt:2}},{ranked:undefined},{seed:rankedSeed('stamp',day,2,'1')}]){
+            const s=store(),j=insert(s);
+            const runner=new OutingRunner(s,agent,{async pay(_j,_p,persist){persist('mismatch');return tx;}},reader,()=>now);
+            const original=s.result.bind(s);
+            s.result=(id,result,at)=>original(id,{...result,...change},at);
+            await runner.tick();
+            expect(s.get(j.id)?.error).toBe('simulation_failed');expect(s.guardians.progress(collection,'1').plays).toBe(0);
+            expect(s.db.query('SELECT 1 FROM arcade_guardian_ranked').all()).toHaveLength(0);
+        }
+    });
+    test('a pending admission settled without ranking (an older deploy, or a fourth round) lists without a board row',async()=>{
+        const s=store(),j=insert(s);j.pending={game:'stamp',seed:5,header:'legacy-pending',transaction:tx};s.save(j);
+        await new OutingRunner(s,agent,{async pay(){throw Error('must not pay again');}},reader,()=>now).tick();
+        const listed=s.guardians.list(collection,'1');expect(listed).toHaveLength(1);expect(listed[0]!.outcome.ranked).toBeUndefined();
+        expect(resultView(listed[0]!,owner,false)).not.toHaveProperty('ranked');
+        expect(s.db.query('SELECT 1 FROM arcade_guardian_ranked').all()).toHaveLength(0);
     });
 });

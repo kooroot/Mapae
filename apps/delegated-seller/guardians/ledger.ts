@@ -1,6 +1,7 @@
 import type {Database} from 'bun:sqlite';
 import {keccak256, stringToHex, type Address, type Hex} from 'viem';
 import type {OutingResult} from '@mapae/arcade/outings';
+import {kstWeek, rankedSeed} from '@mapae/arcade/ranking';
 import type {Job} from '../outings/store';
 import {OutingError} from '../outings/validation';
 import {emptyProgress, type Progress, type ReceiptEvidence, type ResultJson, type VerifiedResult} from './types';
@@ -21,15 +22,26 @@ export class GuardianLedger {
             outing_id TEXT NOT NULL, admission INTEGER NOT NULL, payment_tx TEXT NOT NULL UNIQUE,
             created_at INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(outing_id, admission));
             CREATE INDEX IF NOT EXISTS guardian_results_token ON arcade_guardian_results(collection,token_id,created_at);
-            CREATE INDEX IF NOT EXISTS guardian_results_actor ON arcade_guardian_results(actor,created_at);`);
+            CREATE INDEX IF NOT EXISTS guardian_results_actor ON arcade_guardian_results(actor,created_at);
+            CREATE TABLE IF NOT EXISTS arcade_guardian_ranked(
+                result_id TEXT PRIMARY KEY, collection TEXT NOT NULL, token_id TEXT NOT NULL, guardian_seed TEXT NOT NULL,
+                ruleset INTEGER NOT NULL, game TEXT NOT NULL, day TEXT NOT NULL, week TEXT NOT NULL, attempt INTEGER NOT NULL,
+                score INTEGER NOT NULL, victory INTEGER NOT NULL, created_at INTEGER NOT NULL,
+                UNIQUE(collection, token_id, game, day, attempt));
+            CREATE INDEX IF NOT EXISTS ranked_game_day ON arcade_guardian_ranked(collection, ruleset, game, day);
+            CREATE INDEX IF NOT EXISTS ranked_game_week ON arcade_guardian_ranked(collection, ruleset, game, week);
+            CREATE INDEX IF NOT EXISTS ranked_token_day ON arcade_guardian_ranked(collection, token_id, day);`);
     }
     get(id: string): StoredResult | null {
         const row = this.db.query<{data: string}, [string]>('SELECT data FROM arcade_guardian_results WHERE result_id=?').get(id.toLowerCase());
         return row ? JSON.parse(row.data) : null;
     }
-    /** Called INSIDE the outing advancement transaction, never as a separate commit. */
+    /** Called INSIDE the outing advancement transaction, never as a separate commit. A ranked round enters the board in the same commit. */
     insert(job: Job, outcome: OutingResult): void {
+        const ranked = outcome.ranked;
         if (!job.pending || outcome.transaction !== job.pending.transaction || outcome.seed !== job.pending.seed ||
+            JSON.stringify(ranked ?? null) !== JSON.stringify(job.pending.ranked ?? null) ||
+            (ranked && outcome.seed !== rankedSeed(outcome.game, ranked.day, ranked.attempt, job.guardian.tokenId)) ||
             outcome.game !== job.pending.game || outcome.id !== resultId(job) ||
             outcome.outcome.game !== outcome.game || outcome.outcome.replay?.version !== job.guardian.ruleset ||
             outcome.outcome.replay?.seed !== outcome.seed || typeof outcome.outcome.achievement?.victory !== 'boolean' ||
@@ -44,6 +56,9 @@ export class GuardianLedger {
         const data: StoredResult = {result, outcome, collection: job.guardian.collection, payer: job.payer, inputs, evidence: null, signature: null, signer: null};
         this.db.query('INSERT INTO arcade_guardian_results VALUES (?,?,?,?,?,?,?,?,?)')
             .run(result.resultId.toLowerCase(), result.tokenId, data.collection.toLowerCase(), result.actor.toLowerCase(), job.id, job.spent + 1, result.paymentTx, outcome.at, JSON.stringify(data));
+        if (ranked) this.db.query('INSERT INTO arcade_guardian_ranked VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+            .run(result.resultId.toLowerCase(), data.collection.toLowerCase(), result.tokenId, job.guardian.seed.toLowerCase(), job.guardian.ruleset,
+                outcome.game, ranked.day, kstWeek(ranked.day), ranked.attempt, result.score, result.victory ? 1 : 0, outcome.at);
     }
     attest(id: string, evidence: ReceiptEvidence, signer: Address, signature: Hex): void {
         const row = this.get(id); if (!row) throw new OutingError('not_found');

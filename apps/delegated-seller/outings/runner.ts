@@ -6,6 +6,7 @@ import {OutingError} from './validation';
 import {resultId} from '../guardians/ledger';
 import type {GuardianReader} from '../guardians/types';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
+import {kstDay, RANKED_ATTEMPTS, rankedSeed} from '@mapae/arcade/ranking';
 
 export interface OutingPayment {
     /** persist(header) must complete synchronously before any signed request leaves. */
@@ -69,7 +70,7 @@ export class OutingRunner {
             }
             if (!job.pending?.header && !job.pending?.transaction && this.store.get(job.id)?.stopRequested) return;
             if (job.guardian.ruleset !== ARCADE_RULESET_VERSION) {this.pause(job, 'ruleset_changed'); return;}
-            job.pending ??= {game: chooseOutingGame(job.profile, job.choice, job.results.map(r => r.game)), seed: crypto.getRandomValues(new Uint32Array(1))[0]!, header: null, transaction: null};
+            job.pending ??= this.admission(job);
             job.status = 'running'; job.updatedAt = this.now(); this.store.save(job);
             try {
                 if (!job.pending.transaction) {
@@ -87,8 +88,9 @@ export class OutingRunner {
                 const outcome: ActivityOutcome = this.simulate({game: latest.pending!.game, seed: latest.pending!.seed,
                     profile: latest.profile, locale: latest.locale, shopMemory: latest.shopMemory});
                 if (Buffer.byteLength(JSON.stringify(outcome), 'utf8') > 16_384) throw new Error('outcome_too_large');
+                const {ranked} = latest.pending!;
                 this.store.result(job.id, {id: resultId(latest), game: latest.pending!.game, seed: latest.pending!.seed,
-                    at: this.now(), transaction: latest.pending!.transaction!, outcome}, this.now());
+                    at: this.now(), transaction: latest.pending!.transaction!, outcome, ...(ranked ? {ranked} : {})}, this.now());
             } catch {
                 const current = this.store.get(job.id)!;
                 if (current.status === 'complete' || current.status === 'stopped') return;
@@ -98,6 +100,16 @@ export class OutingRunner {
                 } else this.pause(current, current.pending?.transaction ? 'simulation_failed' : 'payment_unresolved');
             }
         } finally {if (heartbeat) clearInterval(heartbeat); try {this.store.release();} finally {this.busy = false;}}
+    }
+    /** The next admission: one of the guardian's ranked attempts for today while any remain, otherwise an unranked random round. */
+    private admission(job: Job): Pending {
+        const game = chooseOutingGame(job.profile, job.choice, job.results.map(r => r.game)), day = kstDay(this.now());
+        const used = this.store.rankedAttemptsUsed(job.guardian.collection, job.guardian.tokenId, day, job.id)[game];
+        if (used < RANKED_ATTEMPTS) {
+            const attempt = used + 1;
+            return {game, seed: rankedSeed(game, day, attempt, job.guardian.tokenId), header: null, transaction: null, ranked: {day, attempt}};
+        }
+        return {game, seed: crypto.getRandomValues(new Uint32Array(1))[0]!, header: null, transaction: null};
     }
     private pause(job: Job, error: string): void {
         const current = this.store.get(job.id);

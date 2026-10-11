@@ -11,6 +11,7 @@ import {TRANSFER_EVENT_TOPIC} from '@mapae/delegation';
 import {guardianName,guardianTraitsHash,type GuardianSnapshot} from '@mapae/arcade/guardians';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
 import type {OutingStart, OutingStatus} from '@mapae/arcade/outings';
+import {kstDay, kstWeek, rankedSeed} from '@mapae/arcade/ranking';
 import {deployment, parseStart, validatePermission} from './validation';
 import {OutingStore, publicJob, type Job} from './store';
 import {OutingRunner, type OutingPayment} from './runner';
@@ -331,4 +332,65 @@ test('a stop during an ownership RPC failure cannot resurrect the stopped author
     let payments=0;const runner=new OutingRunner(db,agent.address,{async pay(){payments++;return tx;}},guard,()=>now);
     const pending=runner.tick();await started;runner.control(owner.address,job.id,'stop');reject(Error('rpc timeout'));await pending;
     expect(payments).toBe(0);expect(db.get(job.id)?.status).toBe('stopped');expect(db.get(job.id)?.context).toBe('0x');
+});
+
+describe('ranked attempts',()=>{
+    let paidCount=0;
+    const counting:OutingPayment={async pay(_j,p,persist){if(!p.header)persist(`ranked-header-${++paidCount}`);return `0x${(0xa000+paidCount).toString(16).padStart(64,'0')}` as Hex;}};
+    function plan(db:OutingStore,id:string,choice:OutingStart['choice'],admissions:number,tokenId='1',holder:Address=owner.address,epoch='1',at=now):Job{
+        const g={...guardian(tokenId,holder),ownershipEpoch:epoch};
+        return db.insert(holder,{...start(id,admissions),tokenId,choice},{payer,expiresAt:at+7200_000,contextHash:`0x${Buffer.from(id).toString('hex').padEnd(64,'0')}`},agent.address,at,g);
+    }
+    async function drain(db:OutingStore,clock:()=>number,ticks:number,inspect=reader){const runner=new OutingRunner(db,agent.address,counting,inspect,clock);for(let i=0;i<ticks;i++)await runner.tick();}
+    const day=kstDay(now);
+    test('the first three rounds of a game each KST day are ranked with fixed seeds; the fourth is random and unranked',async()=>{
+        const db=store(),job=plan(db,'ranked-race-four','race',4);await drain(db,()=>now,5);
+        const results=db.get(job.id)!.results;
+        expect(results.map(r=>r.ranked)).toEqual([{day,attempt:1},{day,attempt:2},{day,attempt:3},undefined]);
+        expect(results.slice(0,3).map(r=>r.seed)).toEqual([1,2,3].map(n=>rankedSeed('race',day,n,'1')));
+        expect([1,2,3].map(n=>rankedSeed('race',day,n,'1'))).not.toContain(results[3]!.seed);
+        expect(db.rankedAttemptsUsed(collection,'1',day)).toEqual({stamp:0,race:3,shop:0});
+        const rows=db.db.query<{attempt:number;week:string;score:number},[]>('SELECT attempt, week, score FROM arcade_guardian_ranked ORDER BY attempt').all();
+        expect(rows.map(r=>r.attempt)).toEqual([1,2,3]);expect(rows[0]!.week).toBe(kstWeek(day));
+        expect(rows.map(r=>r.score)).toEqual(results.slice(0,3).map(r=>r.outcome.score));
+    });
+    test('each game keeps its own three attempts',async()=>{
+        const db=store(),job=plan(db,'ranked-auto-three','auto',3);await drain(db,()=>now,4);
+        expect(db.get(job.id)!.results.map(r=>[r.game,r.ranked?.attempt])).toEqual([['race',1],['shop',1],['stamp',1]]);
+    });
+    test('a round drawn before midnight keeps its day when it settles after',async()=>{
+        const db=store(),before=Date.parse('2033-05-18T14:59:59.000Z');let t=before;
+        const job=plan(db,'ranked-midnight-cross','race',1,'1',owner.address,'1',before);
+        const runner=new OutingRunner(db,agent.address,{async pay(_j,_p,persist){persist('midnight-header');t=before+2000;return tx;}},reader,()=>t);
+        await runner.tick();
+        const result=db.get(job.id)!.results[0]!;expect(kstDay(result.at)).toBe('2033-05-19');
+        expect(result.ranked).toEqual({day:'2033-05-18',attempt:1});expect(result.seed).toBe(rankedSeed('race','2033-05-18',1,'1'));
+        expect(db.rankedAttemptsUsed(collection,'1','2033-05-18').race).toBe(1);expect(db.rankedAttemptsUsed(collection,'1','2033-05-19').race).toBe(0);
+    });
+    test('a previous owner\'s pending ranked admission still counts for the token',async()=>{
+        const db=store(),prior=plan(db,'ranked-prior-epoch','race',2);
+        prior.status='paused';prior.pending={game:'race',seed:rankedSeed('race',day,1,'1'),header:'old-header',transaction:null,ranked:{day,attempt:1}};db.save(prior);
+        const next=plan(db,'ranked-next-epoch','race',1,'1',stranger.address,'2');
+        expect(db.rankedAttemptsUsed(collection,'1',day,next.id).race).toBe(1);
+        const runner=new OutingRunner(db,agent.address,{async pay(j,_p,persist){if(j.id===prior.id)throw Error('old payment unresolved');persist('new-owner-header');return tx;}},{inspect:async()=>({...guardian('1',stranger.address),ownershipEpoch:'2'})},()=>now);
+        await runner.tick();await runner.tick();
+        expect(db.get(next.id)!.results[0]!.ranked).toEqual({day,attempt:2});
+    });
+    test('a stopped admission that was never paid frees its attempt',async()=>{
+        const db=store(),first=plan(db,'ranked-stopped-free','race',2);
+        first.pending={game:'race',seed:rankedSeed('race',day,1,'1'),header:null,transaction:null,ranked:{day,attempt:1}};db.save(first);
+        expect(db.rankedAttemptsUsed(collection,'1',day,'other-job').race).toBe(1);
+        new OutingRunner(db,agent.address,counting,reader,()=>now).control(owner.address,first.id,'stop');
+        expect(db.get(first.id)!.status).toBe('stopped');expect(db.rankedAttemptsUsed(collection,'1',day).race).toBe(0);
+        const next=plan(db,'ranked-after-stop','race',1);await drain(db,()=>now,2);
+        expect(db.get(next.id)!.results[0]!.ranked).toEqual({day,attempt:1});
+    });
+    test('a transfer does not reset the count, and the next KST day does',async()=>{
+        const db=store();plan(db,'ranked-before-sale','race',3);await drain(db,()=>now,4);
+        const bought={...guardian('1',stranger.address),ownershipEpoch:'2'};
+        const sale=plan(db,'ranked-after-sale','race',1,'1',stranger.address,'2');await drain(db,()=>now,2,{inspect:async()=>bought});
+        expect(db.get(sale.id)!.results[0]!.ranked).toBeUndefined();
+        const tomorrow=now+24*3600_000,next=plan(db,'ranked-next-day','race',1,'1',stranger.address,'2',tomorrow);await drain(db,()=>tomorrow,2,{inspect:async()=>bought});
+        expect(db.get(next.id)!.results[0]!.ranked).toEqual({day:kstDay(tomorrow),attempt:1});
+    });
 });

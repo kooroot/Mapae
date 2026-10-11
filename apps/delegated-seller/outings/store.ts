@@ -7,9 +7,11 @@ import {GuardianLedger} from '../guardians/ledger';
 import type {GameId} from '@mapae/arcade';
 import type {ShopMemory} from '@mapae/arcade/shop';
 import type {OutingStart, OutingView, OutingResult} from '@mapae/arcade/outings';
+import {RANKED_GAMES, type RankedAttempt} from '@mapae/arcade/ranking';
 import {OutingError, type ValidatedPermission} from './validation';
 
-export type Pending = {game: GameId; seed: number; header: string | null; transaction: Hex | null};
+/** `ranked` is fixed when the admission is created, so a round that crosses midnight keeps the day it was drawn for. */
+export type Pending = {game: GameId; seed: number; header: string | null; transaction: Hex | null; ranked?: RankedAttempt};
 export type Job = Omit<OutingView, 'reservedAdmissions'> & {owner: Address; payer: Address; agent: Address; context: Hex; fingerprint: string; contextHash: Hex; stopRequested: boolean; pending: Pending | null; shopMemory?: ShopMemory};
 export function publicJob(job: Job): OutingView {
     const {id, characterId, guardian, profile, locale, choice, status, admissions, spent, createdAt, updatedAt, expiresAt, error, results} = job;
@@ -76,6 +78,21 @@ export class OutingStore {
             this.db.query('INSERT INTO arcade_outings VALUES (?,?,?,?,?,?)').run(job.id, owner.toLowerCase(), permission.contextHash, now, job.status, JSON.stringify(job));
             return job;
         }).immediate();
+    }
+    /**
+     * Ranked attempts a guardian has used per game on a KST day: settled ranked rounds, plus admissions still pending in any
+     * other active outing of the token (an earlier owner's recovery included). Counted per token, so a transfer resets nothing;
+     * a pending admission cleared without payment frees its attempt. The runner is serial under the lease, so this cannot race.
+     */
+    rankedAttemptsUsed(collection: Address, tokenId: string, day: string, excludeJobId = ''): Record<GameId, number> {
+        const used = Object.fromEntries(RANKED_GAMES.map(game => [game, 0])) as Record<GameId, number>;
+        for (const row of this.db.query<{game: GameId; n: number}, [string, string, string]>(
+            'SELECT game, COUNT(*) AS n FROM arcade_guardian_ranked WHERE collection=? AND token_id=? AND day=? GROUP BY game').all(collection.toLowerCase(), tokenId, day)) used[row.game] += row.n;
+        for (const row of this.db.query<{game: GameId; n: number}, [string, string, string, string]>(
+            `SELECT json_extract(data,'$.pending.game') AS game, COUNT(*) AS n FROM arcade_outings
+                WHERE state IN ('queued','running','paused') AND lower(json_extract(data,'$.guardian.collection'))=? AND json_extract(data,'$.guardian.tokenId')=?
+                AND id<>? AND json_extract(data,'$.pending.ranked.day')=? GROUP BY game`).all(collection.toLowerCase(), tokenId, excludeJobId, day)) used[row.game] += row.n;
+        return used;
     }
     /** A bounded cleanup only retires expired work that never acquired a payment header.
      * Running senders are excluded; the lease-holding runner handles interrupted ones. */
