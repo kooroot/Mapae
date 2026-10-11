@@ -66,3 +66,4 @@
     .rank-games>li{grid-template-columns:minmax(0,1fr);padding:6px 0}.rank-games .arc-text-button{justify-self:start;margin-left:15px}
     .rank-nearby{margin-left:0}
 }
+.rank-aptitude{display:inline-flex;align-self:center;align-items:center;min-height:20px;padding:0 7px;border:1px solid #d8cab1;border-radius:999px;font:600 11px/1 var(--sans);color:#76654e;white-space:nowrap;font-variant-numeric:tabular-nums}.rank-aptitude.is-best{border-color:#9cc3b6;background:#e4efe9;color:#2d6457}

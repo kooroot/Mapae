@@ -33,16 +33,17 @@ export function OutingsSection({desk, walletWaiting}: {desk: GuardianDesk; walle
 }
 
 function Plan({desk}: {desk: GuardianDesk}) {
-    const {ko, locale, session, giwa, nft, token, member, activeJob, identity} = desk, op = desk.operation, update = desk.setOperation;
+    const {ko, locale, session, giwa, nft, token, member, traits, activeJob, identity} = desk, op = desk.operation, update = desk.setOperation;
     const allowance = useRef<HTMLElement>(null), names = GAME_NAMES[locale], active = !!activeJob;
     if (!member || !token) return null;
-    const locked = active || giwa.busy;
+    const locked = active || giwa.busy, best = traits ? Math.max(...GAMES.map(g => traits.aptitudes[g])) : 0;
+    const aptitude = (g: GameId) => traits ? (ko ? `적성 ${traits.aptitudes[g]}/6` : `Aptitude ${traits.aptitudes[g]}/6`) + (traits.aptitudes[g] === best ? ko ? ' · 가장 잘해요' : ' · Strongest' : '') : undefined;
     return <div className="nft-operations">
         <div className="nft-operations-main">
             <RankedToday desk={desk} locked={locked} allowance={allowance} />
             <section className="nft-panel nft-strategy"><span className="arc-overline">{ko ? '작전' : 'STRATEGY'}</span><h2>{ko ? `${member.name}의 이번 작전` : `${member.name}’s plan`}</h2>
-                <div className="nft-controls"><label>{ko ? '이번 목표' : 'Objective'}<BrandSelect<AgentGoal> tone="paper" label={ko ? '이번 목표' : 'Objective'} value={op.goal} disabled={locked} onValueChange={goal => update({goal})} options={[{value: 'explore', label: ko ? '새 경험 쌓기' : 'Explore'}, {value: 'score', label: ko ? '최고 기록 도전' : 'Chase a record'}, {value: 'save', label: ko ? '차분하게 운영' : 'Play carefully'}]} /></label><label>{ko ? '보낼 놀이' : 'Destination'}<BrandSelect<GameId | 'auto'> tone="paper" label={ko ? '보낼 놀이' : 'Destination'} value={op.game} disabled={locked} onValueChange={game => update({game})} options={[{value: 'auto', label: ko ? '전령이 선택' : 'Agent chooses'}, ...GAMES.map(g => ({value: g, label: names[g]}))]} /></label></div>
-                <p className="nft-small">{active ? (ko ? '외출 중에는 작전을 바꿀 수 없어요.' : 'The plan is fixed while an outing runs.') : (ko ? '타고난 적성은 나의 전령단에서 볼 수 있어요.' : 'Born aptitudes are listed under My guardians.')}</p>
+                <div className="nft-controls"><label>{ko ? '이번 목표' : 'Objective'}<BrandSelect<AgentGoal> tone="paper" label={ko ? '이번 목표' : 'Objective'} value={op.goal} disabled={locked} onValueChange={goal => update({goal})} options={[{value: 'explore', label: ko ? '새 경험 쌓기' : 'Explore'}, {value: 'score', label: ko ? '최고 기록 도전' : 'Chase a record'}, {value: 'save', label: ko ? '차분하게 운영' : 'Play carefully'}]} /></label><label>{ko ? '보낼 놀이' : 'Destination'}<BrandSelect<GameId | 'auto'> tone="paper" label={ko ? '보낼 놀이' : 'Destination'} value={op.game} disabled={locked} onValueChange={game => update({game})} options={[{value: 'auto', label: ko ? '전령이 선택' : 'Agent chooses'}, ...GAMES.map(g => ({value: g, label: names[g], description: aptitude(g)}))]} /></label></div>
+                {active && <p className="nft-small">{ko ? '외출 중에는 작전을 바꿀 수 없어요.' : 'The plan is fixed while an outing runs.'}</p>}
             </section>
         </div>
         <GiwaAllowance ref={allowance} giwa={giwa} members={identity ? [{...member, nft: identity}] : []} onAmountChange={(_, admissions) => update({admissions})} editable={!nft.busy && !active} authenticated={session.ready} ko={ko} choice={op.game} canLaunch={!nft.busy && !giwa.busy && (!!giwa.submission || giwa.available && !active)} onLaunch={() => void giwa.recoverSubmission()} />
@@ -54,7 +55,8 @@ function Plan({desk}: {desk: GuardianDesk}) {
  * rounds of the planned outing will count. Rounds past the daily three still grow the guardian; they just stay off the boards.
  */
 function RankedToday({desk, locked, allowance}: {desk: GuardianDesk; locked: boolean; allowance: RefObject<HTMLElement | null>}) {
-    const {ko, locale, token, ranking, now, operation: op} = desk, standings = ranking.standings;
+    const {ko, locale, token, traits, ranking, now, operation: op} = desk, standings = ranking.standings;
+    const best = traits ? Math.max(...RANKED_GAMES.map(g => traits.aptitudes[g])) : 0;
     // The visitor's clock is read after hydration, so the server and the first client render agree on KST.
     const [offset, setOffset] = useState(9 * 60);
     useEffect(() => setOffset(-new Date().getTimezoneOffset()), []);
@@ -76,7 +78,7 @@ function RankedToday({desk, locked, allowance}: {desk: GuardianDesk; locked: boo
         <h2 id="ranked-today-title">{ko ? '오늘의 랭크 도전' : 'Today’s ranked rounds'}</h2>
         <p>{ko ? `놀이마다 하루 처음 ${RANKED_ATTEMPTS}판이 순위에 올라가요.` : `The first ${RANKED_ATTEMPTS} rounds of each game a day go on the boards.`}{standings && ` ${countdown({now, closesAt: standings.closesAt.day, period: 'day', locale, offsetMinutes: offset})}`}</p>
         {standing ? <ul className="rank-games">{RANKED_GAMES.map(game => <li key={game}>
-            <RankLine locale={locale} game={game} guardian={standing} leader={standings!.leaders[game]} />
+            <RankLine locale={locale} game={game} guardian={standing} leader={standings!.leaders[game]} aptitude={traits ? {value: traits.aptitudes[game], best: traits.aptitudes[game] === best} : undefined} />
             {(left(game) ?? 0) > 0 && <button type="button" className="arc-text-button" disabled={locked} aria-pressed={op.game === game} onClick={() => aim(game)}>{op.game === game && <Check size={16} aria-hidden="true" />}{ko ? '이 놀이로 준비' : 'Plan this game'}</button>}
         </li>)}</ul> : <p className="nft-small" role="status">{ranking.error ? (ko ? '순위를 불러오지 못했어요. 외출은 그대로 보낼 수 있어요.' : 'Standings could not load. Outings still work as usual.') : (ko ? '순위를 확인하고 있어요…' : 'Checking standings…')}</p>}
         {hint && <p className="nft-small">{hint}</p>}

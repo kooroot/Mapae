@@ -7,13 +7,16 @@ import {rankLine, titleName} from './format';
 import './ranking.css';
 
 /** One game's rank line for a guardian: today's place, the gap above, and the ranked tries left. Nothing until standings load. */
-export function RankLine({locale, game, guardian, leader, named = true}: {
+export function RankLine({locale, game, guardian, leader, named = true, aptitude}: {
     locale: Locale; game: GameId; guardian: GuardianStanding | undefined; leader: number | null; named?: boolean;
+    /** The guardian's born aptitude for this game, marked when it is their strongest. */
+    aptitude?: {value: number; best: boolean};
 }) {
     if (!guardian) return null;
     const {attemptsUsed, today} = guardian.games[game];
     return <p className="rank-line"><Trophy size={15} aria-hidden="true" />
         {named && <b>{GAME_NAMES[locale][game]}</b>}
+        {aptitude && <small className={`rank-aptitude${aptitude.best ? ' is-best' : ''}`}>{locale === 'ko' ? '적성' : 'Aptitude'} {aptitude.value}/6</small>}
         <span>{rankLine({locale, attemptsUsed, standing: today, leader})}</span>
     </p>;
 }
