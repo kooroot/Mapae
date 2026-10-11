@@ -1,4 +1,5 @@
-import {useEffect,useRef} from 'react';
+import {useRef} from 'react';
+import {Link} from '@tanstack/react-router';
 import {Check,CircleAlert,Clock,ExternalLink,Gamepad2,LoaderCircle,Pause,RefreshCw,Sparkles,Ticket} from 'lucide-react';
 import {formatEther} from 'viem';
 import type {AgentGoal,GameId} from '@mapae/arcade';
@@ -19,10 +20,11 @@ import {BrandSelect} from '../../components/BrandSelect';
 import type {GuardianToken} from '../profile/guardians';
 import {ArcadeRevocations} from '../ArcadeRevocations';
 import {TransactionRecovery} from './TransactionRecovery';
+import {arcadeSectionLink} from '../sections';
 import './nft.css';
 
 /** The guardians tab: roster and draws, talents and strategy, the daily outing, allowance, growth and the away journal. */
-export function GuardianArcade({desk,walletWaiting,focusAllowance,onAllowanceFocused,onPractice,onLobby}:{desk:GuardianDesk;walletWaiting:boolean;focusAllowance:boolean;onAllowanceFocused:()=>void;onPractice:(token:GuardianToken,game:GameId)=>void;onLobby:()=>void}){
+export function GuardianArcade({desk,walletWaiting,onPractice}:{desk:GuardianDesk;walletWaiting:boolean;onPractice:(token:GuardianToken,game:GameId)=>void}){
     const {locale}=useLocale();
     const {ko,session,giwa,nft,token,member,traits,activeJob,crew,now,stage}=desk,nftIdentity=desk.identity,active=!!activeJob,op=desk.operation,updateOp=desk.setOperation;
     const allowance=useRef<HTMLElement>(null),names=GAME_NAMES[locale];
@@ -32,14 +34,7 @@ export function GuardianArcade({desk,walletWaiting,focusAllowance,onAllowanceFoc
     const refreshButton=(label:string)=><button className="arc-text-button" disabled={refreshing} onClick={()=>void nft.refresh()}><RefreshCw size={16} className={nft.loading?'arc-loading-icon':undefined} aria-hidden="true"/>{nft.loading?(ko?'불러오는 중…':'Refreshing…'):label}</button>;
     const drawStatus=nft.roster&&nft.roster.minted>=3?{icon:<Check size={15}/>,label:ko?'이번 지갑의 뽑기 완료':'Wallet draw limit reached'}:nft.roster?.pendingTokenId?{icon:<Clock size={15}/>,label:ko?'진행 중인 뽑기 확인':'Draw in progress'}:nft.paused?{icon:<Pause size={15}/>,label:ko?'뽑기 잠시 준비 중':'Draws currently paused'}:null;
     const presentation={...newArcadeState(),characters:crew,selectedCharacterId:member?.id??null};
-    // "Send on an outing" from the lobby lands here: bring the allowance (or the running outing) into view and hand it focus.
-    useEffect(()=>{
-        if(!focusAllowance)return;
-        const board=activeJob?document.getElementById('outings-title'):null,target=board??allowance.current;
-        if(target){if(board)board.tabIndex=-1;target.scrollIntoView({block:'center'});target.focus({preventScroll:true});}
-        onAllowanceFocused();
-    },[focusAllowance]);
-    const heading=<div className="nft-page-heading"><div><span className="arc-overline">{ko?'마패 전령단':'MY MAPAE GUARDIANS'}</span><h1>{ko?'나의 전령단':'My guardians'}</h1><p>{ko?'전령을 뽑고 작전과 용돈을 정해요. 다녀온 모험은 전령의 이력이 돼요.':'Draw a guardian, then choose a strategy and an allowance. Every verified outing becomes part of their story.'}</p></div><button type="button" className="arc-button arc-button-paper" onClick={onLobby}><Gamepad2 size={18} aria-hidden="true"/>{ko?'게임 고르러 가기':'Choose a game'}</button></div>;
+    const heading=<div className="nft-page-heading"><div><span className="arc-overline">{ko?'마패 전령단':'MY MAPAE GUARDIANS'}</span><h1 id="arc-section-title" tabIndex={-1}>{ko?'나의 전령단':'My guardians'}</h1><p>{ko?'전령을 뽑고 작전과 용돈을 정해요. 다녀온 모험은 전령의 이력이 돼요.':'Draw a guardian, then choose a strategy and an allowance. Every verified outing becomes part of their story.'}</p></div></div>;
     if(!desk.owner)return <div className="nft-arcade">{heading}<section className="nft-panel nft-connect"><h2>{ko?'지갑을 연결하고 나의 전령을 만나요':'Connect a wallet to meet your guardian'}</h2><ol className="arc-entry-steps"><li><Sparkles size={17} aria-hidden="true"/>{ko?'나만의 전령':'Your own guardian'}</li><li><Ticket size={17} aria-hidden="true"/>{ko?'한도 있는 용돈':'A bounded allowance'}</li><li><Gamepad2 size={17} aria-hidden="true"/>{ko?'작은 모험 시작':'A little adventure'}</li></ol><WalletPicker reconnecting={walletWaiting}/><small>{ko?'같은 지갑으로 로그인하면 전령과 기록이 이어져요':'Sign in with the same wallet to continue with your guardians and records'}</small></section></div>;
     if(stage==='pending')return <div className="nft-arcade">{heading}<p role="status" className="arc-notice nft-notice is-info"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true"/>{ko?'전령단을 불러오고 있어요…':'Loading your guardians…'}</p></div>;
     if(stage==='signin')return <div className="nft-arcade">{heading}<SignInCard owner={desk.owner} session={session} ko={ko}/></div>;
@@ -48,7 +43,7 @@ export function GuardianArcade({desk,walletWaiting,focusAllowance,onAllowanceFoc
         {nft.error&&<div className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true"/><p>{nft.error}</p>{refreshButton(ko?'다시 불러오기':'Retry')}</div>}
         {nft.busy&&<p role="status" className="arc-notice nft-notice is-info"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true"/>{nft.phase}</p>}
         {nft.transaction&&<TransactionRecovery transaction={nft.transaction} busy={nft.busy} ko={ko} onCheck={nft.checkTransaction}/>}
-        {!nft.roster?null:!nft.roster.enabled?<section className="nft-panel"><h2>{ko?'전령단이 곧 문을 열어요':'Guardians are preparing to arrive'}</h2><p>{ko?'지금은 무료 게임을 즐길 수 있어요. NFT 뽑기는 준비가 끝나면 열립니다.':'Play the free games while NFT draws are being prepared.'}</p><button type="button" className="arc-button" onClick={onLobby}>{ko?'무료 게임 하러 가기':'Play the free games'}</button></section>:<>
+        {!nft.roster?null:!nft.roster.enabled?<section className="nft-panel"><h2>{ko?'전령단이 곧 문을 열어요':'Guardians are preparing to arrive'}</h2><p>{ko?'지금은 무료 게임을 즐길 수 있어요. NFT 뽑기는 준비가 끝나면 열립니다.':'Play the free games while NFT draws are being prepared.'}</p><Link className="arc-button" {...arcadeSectionLink('lobby',locale)}>{ko?'무료 게임 하러 가기':'Play the free games'}</Link></section>:<>
         <section className="nft-roster" aria-labelledby="nft-roster-title"><div className="nft-section-heading"><div><span className="arc-overline">01 / {ko?'나의 전령단':'MY GUARDIANS'}</span><h2 id="nft-roster-title">{ko?'함께할 친구를 골라요':'Choose your companion'}</h2></div><div className="nft-section-tools"><span>{nft.roster?.guardians.length??0} / 3 {ko?'보유':'owned'}</span>{refreshButton(ko?'새로고침':'Refresh')}</div></div>
             <div className="nft-roster-grid">{nft.roster?.guardians.map(t=>{const c=t.revealed?nftCompanion(t,locale):null;return <button key={t.tokenId} className={`nft-token ${t.tokenId===nft.selected?'is-selected':''}`} aria-pressed={t.tokenId===nft.selected} onClick={()=>void nft.select(t.tokenId)}>{c?<GuardianAvatar appearance={c.appearance} color={c.color} portrait/>:<div className="nft-pending-art" aria-hidden="true">封</div>}<strong>{guardianName(t.tokenId,locale)}</strong><span>{c?.appearance?`${GUARDIAN_NAMES[locale][c.appearance.zodiac]} · ${ko?'레벨':'Level'} ${t.progress.level} · ${t.progress.plays}${ko?'회 모험':' outings'}`:ko?'탄생을 기다리는 중':'Waiting to reveal'}</span></button>;})}
             {(nft.roster?.guardians.length??0)<3&&<div className="nft-draw"><span className="nft-draw-symbol" aria-hidden="true">✦</span><h3>{ko?'새 전령 만나기':'Meet a new guardian'}</h3><p>{ko?'외형·성향·적성이 함께 정해져요. 적성의 총합은 모두 같아요.':'Appearance, temperament and aptitudes are drawn together. Every aptitude total is equal.'}</p>{drawStatus?<p className="nft-draw-status" role="status">{drawStatus.icon}{drawStatus.label}</p>:<button className="arc-button" disabled={!nft.roster?.enabled||nft.busy||giwa.busy||!!nft.transaction} onClick={()=>void nft.mint()}>{ko?'온체인으로 전령 뽑기':'Draw a guardian onchain'}</button>}<small>{nft.roster?.mintFee?`${formatEther(BigInt(nft.roster.mintFee))} test ETH + ${ko?'네트워크 수수료':'network fee'}`:'—'}<br/>{ko?`지갑당 평생 3회 · ${nft.roster?.minted??0}/3회 사용`:`3 lifetime draws per wallet · ${nft.roster?.minted??0}/3 used`}</small></div>}</div>

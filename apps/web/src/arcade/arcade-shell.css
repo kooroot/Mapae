@@ -1,11 +1,12 @@
-/* The one arcade shell: header with the two places, a lobby-wide main, and sign-in as a card wherever it is needed. */
+/* The one arcade shell: header with the five sections, a lobby-wide main, and sign-in as a card wherever it is needed. */
 .arc-shell .arc-main{max-width:1280px;padding-top:0}
-.arc-panel:focus{outline:none}
-.arc-tabs{display:flex;gap:4px;margin-right:auto;padding:4px;border:1px solid var(--arc-hair);border-radius:999px;background:#e9d8bc08}
-.arc-tab{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:999px;background:none;color:var(--arc-dim);font:600 14px var(--sans);white-space:nowrap;word-break:keep-all;cursor:pointer;transition:color var(--arc-dur-base) var(--arc-ease-out),background-color var(--arc-dur-base) var(--arc-ease-out)}
-.arc-tab:hover{color:var(--arc-cream)}
-.arc-tab[aria-current=page]{background:#e9c99f1f;color:var(--arc-gold);box-shadow:inset 0 0 0 1px #e9c99f40}
-.arcade .arc-tab:focus-visible{outline-offset:2px}
+:is(#arc-section-title,#arc-room-title):focus{outline:none}
+.arc-nav{display:flex;gap:2px;margin-right:auto;padding:4px;border:1px solid var(--arc-hair);border-radius:999px;background:#e9d8bc08}
+.arc-nav a{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:0 14px;border-radius:999px;color:var(--arc-dim);font:600 13px var(--sans);white-space:nowrap;word-break:keep-all;text-decoration:none;transition:color var(--arc-dur-base) var(--arc-ease-out),background-color var(--arc-dur-base) var(--arc-ease-out)}
+.arc-nav a:hover{color:var(--arc-cream)}
+.arc-nav a[aria-current=page]{background:#e9c99f1f;color:var(--arc-gold);box-shadow:inset 0 0 0 1px #e9c99f40}
+.arcade .arc-nav a:focus-visible{outline-offset:2px}
+.arc-header-title{display:none}
 
 .arc-signin{text-align:center}
 .arc-signin>h2:first-child{display:flex;align-items:center;justify-content:center;gap:10px;margin:0;color:#f8eee0;font-size:19px;font-weight:550;letter-spacing:-.03em;line-height:1.45;word-break:keep-all}
@@ -21,10 +22,8 @@
 .nft-arcade>.arc-signin{max-width:560px;margin:22px auto;padding:28px 24px;border:1px solid #c4a46b44;border-radius:20px;background:#231c14b3}
 
 @media(max-width:720px){.arc-shell .arc-footer{gap:14px;flex-wrap:wrap}}
-/* Phones: the tabs take a full-width second row so brand, wallet and language never crowd them. */
-@media(max-width:620px){
+@media(max-width:1099px){
 .arc-shell-header{flex-wrap:wrap;row-gap:10px}
-.arc-shell-header .arc-tabs{order:3;flex:1 0 100%;margin:0}
-.arc-shell-header .arc-tab{flex:1;padding:0 10px;font-size:13px;gap:6px}
-.nft-arcade>.arc-signin{padding:22px 16px}
+.arc-shell-header .arc-nav{order:3;flex:1 0 100%;margin:0;overflow-x:auto}
 }
+@media(max-width:620px){.nft-arcade>.arc-signin{padding:22px 16px}}

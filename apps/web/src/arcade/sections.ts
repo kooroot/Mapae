@@ -61,3 +61,9 @@ export const OUTING_STATUS: Record<Locale, Record<"queued" | "running" | "paused
 export function outingStatusLabel(status: string, locale: Locale): string | null {
     return Object.hasOwn(OUTING_STATUS[locale], status) ? OUTING_STATUS[locale][status as keyof (typeof OUTING_STATUS)["ko"]] : null;
 }
+
+/** Typed router options for a section, so `<Link>` and `navigate` keep back/forward, deep links and the locale prefix. */
+export function arcadeSectionLink(section: ArcadeSection, locale: Locale, hash?: string) {
+    const params = {section: section === "lobby" ? undefined : section};
+    return {to: locale === "ko" ? "/ko/arcade/{-$section}" as const : "/arcade/{-$section}" as const, params, ...(hash ? {hash} : {})};
+}
