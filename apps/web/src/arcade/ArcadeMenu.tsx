@@ -13,7 +13,8 @@ export type SectionBadges = Partial<Record<ArcadeSection, string>>;
 
 /**
  * The narrow-screen menu: a left drawer with the five sections, the wallet and the language. Base UI's drawer brings the focus
- * trap, Esc, outside-click dismissal, scroll lock and swipe-to-close; any route change (a link here, or back/forward) closes it.
+ * trap, Esc, outside-click dismissal, scroll lock and swipe-to-close. Any route change (a link here, or back/forward) or a
+ * wallet change closes it. Section links stay plain links rather than close buttons, so they are announced as navigation.
  */
 export function ArcadeMenu({locale, owner, walletWaiting, badges, disconnecting, blocked, onDisconnect}: {
     locale: Locale; owner?: Address; walletWaiting: boolean; badges: SectionBadges;
@@ -22,8 +23,8 @@ export function ArcadeMenu({locale, owner, walletWaiting, badges, disconnecting,
     const ko = locale === 'ko', copy = SECTION_COPY[locale];
     const [open, setOpen] = useState(false);
     const pathname = useLocation({select: location => location.pathname});
-    const [at, setAt] = useState(pathname);
-    if (at !== pathname) {setAt(pathname); setOpen(false);}
+    const [at, setAt] = useState({pathname, owner});
+    if (at.pathname !== pathname || at.owner !== owner) {setAt({pathname, owner}); setOpen(false);}
     return <Drawer.Root open={open} onOpenChange={setOpen} swipeDirection="left">
         <Drawer.Trigger className="arc-menu-toggle" aria-label={ko ? '메뉴 열기' : 'Open menu'}><Menu size={22} aria-hidden="true" /></Drawer.Trigger>
         <Drawer.Portal className="arc-ui-theme">
@@ -36,9 +37,9 @@ export function ArcadeMenu({locale, owner, walletWaiting, badges, disconnecting,
                     </div>
                     <Drawer.Description className="sr-only">{ko ? '오락실 구역과 지갑, 언어를 고를 수 있어요.' : 'Arcade sections, your wallet and language.'}</Drawer.Description>
                     <nav className="arc-menu-nav" aria-label={ko ? '오락실 메뉴' : 'Arcade sections'}>
-                        {ARCADE_SECTIONS.map(id => {const Icon = SECTION_ICONS[id]; return <Drawer.Close key={id} nativeButton={false} render={<Link {...arcadeSectionLink(id, locale)} activeOptions={{exact: true, includeHash: false}} />}>
+                        {ARCADE_SECTIONS.map(id => {const Icon = SECTION_ICONS[id]; return <Link key={id} {...arcadeSectionLink(id, locale)} activeOptions={{exact: true, includeHash: false}} onClick={() => setOpen(false)}>
                             <Icon size={20} aria-hidden="true" /><span><b>{copy[id].label}</b><small>{copy[id].description}</small></span>{badges[id] && <em>{badges[id]}</em>}
-                        </Drawer.Close>;})}
+                        </Link>;})}
                     </nav>
                     <div className="arc-menu-account">
                         {owner ? <AccountChip owner={owner} ko={ko} disconnecting={disconnecting} blocked={blocked} onDisconnect={onDisconnect} />
