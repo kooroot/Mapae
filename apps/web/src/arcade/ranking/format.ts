@@ -67,6 +67,20 @@ export function countdown({now, closesAt, period, locale, offsetMinutes}: {
     if (ko) return `${period === "day" ? "한국 시간 자정까지" : "월요일 0시까지"} ${span}${local}`;
     return `Resets in ${span} (${period === "day" ? "midnight KST" : "Monday 00:00 KST"})${local}`;
 }
+/** The reset chip: a ticking clock to the window's close, flagged under an hour and pulsing in the last ten minutes. */
+export function resetClock({now, closesAt, period, locale}: {now: number; closesAt: number; period: "day" | "week"; locale: Locale}): {label: string; soon: boolean; final: boolean} {
+    const left = Math.max(0, closesAt - now), seconds = Math.floor(left / 1000) % 60, minutes = Math.floor(left / MINUTE) % 60;
+    const hours = Math.floor(left / (60 * MINUTE)) % 24, days = Math.floor(left / (24 * 60 * MINUTE)), ko = locale === "ko";
+    const time = `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    const span = days ? ko ? `${days}일 ${time}` : `${days}d ${time}` : time;
+    const label = ko ? `${period === "day" ? "자정까지" : "월요일 0시까지"} ${span}` : `Resets in ${span}`;
+    return {label, soon: left < 60 * MINUTE, final: left < 10 * MINUTE};
+}
+/** Medal names for places 1–3, which always travel with the numeral; colour alone never carries the rank. */
+export function medalName(rank: number, locale: Locale): string | null {
+    if (rank < 1 || rank > 3) return null;
+    return (locale === "ko" ? ["금메달", "은메달", "동메달"] : ["Gold medal", "Silver medal", "Bronze medal"])[rank - 1]!;
+}
 function clock(at: number, offsetMinutes: number, period: "day" | "week", locale: Locale): string {
     const local = new Date(at + offsetMinutes * MINUTE), hour = local.getUTCHours(), minute = String(local.getUTCMinutes()).padStart(2, "0");
     const twelve = hour % 12 || 12, ko = locale === "ko";

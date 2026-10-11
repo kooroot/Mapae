@@ -1,10 +1,10 @@
 import {useId, useState} from 'react';
 import {Check, LoaderCircle, ReceiptText, RefreshCw, Stamp} from 'lucide-react';
-import type {GameId} from '@mapae/arcade';
 import {GUARDIAN_CLAIM_BATCH} from '@mapae/arcade/guardians';
 import {kstDay} from '@mapae/arcade/ranking';
 import {explorerTxUrl} from '../../lib/config';
 import type {Locale} from '../../lib/i18n';
+import {GameThumb} from '../Characters';
 import {GAME_NAMES} from '../game-names';
 import {GuardianAvatar} from '../GuardianAvatar';
 import {pendingGrowth} from '../nft/model';
@@ -106,10 +106,6 @@ function XpBar({recorded, waiting, total, label}: {recorded: number; waiting: nu
         <defs><pattern id={id} width="6" height="12" patternUnits="userSpaceOnUse" patternTransform="skewX(-35)"><rect width="6" height="12" fill="#e2b24a33" /><rect width="3" height="12" fill="#e2b24a99" /></pattern></defs>
         <rect width="100" height="12" fill="#e9dfcb" /><rect width={a} height="12" fill="#e2b24a" /><rect x={a} width={b} height="12" fill={`url(#${id})`} />
     </svg>;
-}
-
-export function GameThumb({game}: {game: GameId}) {
-    return <img className="arc-game-thumb" src={`/arcade/${game}-scene-640.webp`} width={40} height={40} alt="" loading="lazy" decoding="async" draggable={false} />;
 }
 
 const TIME = {

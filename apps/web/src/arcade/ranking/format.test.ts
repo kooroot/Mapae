@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test";
 import {guardianName} from "@mapae/arcade/guardians";
 import type {RankingStanding, RankingStandings} from "@mapae/arcade/ranking";
-import {attemptsBadge, attemptsLeft, boardScore, countdown, freshestGame, rankLine, streakCopy, titleName} from "./format";
+import {attemptsBadge, attemptsLeft, boardScore, countdown, freshestGame, medalName, rankLine, resetClock, streakCopy, titleName} from "./format";
 
 const seed = `0x${"1".padStart(64, "0")}` as const;
 const row = (rank: number, tokenId: string, score: number) => ({rank, tokenId, seed, score});
@@ -64,5 +64,20 @@ describe("streak, titles, scores", () => {
         expect(attemptsLeft(standings)).toBe(8); expect(attemptsLeft(null)).toBe(0);
         expect(attemptsBadge(8, "ko")).toBe("도전 8"); expect(attemptsBadge(0, "en")).toBeUndefined();
         expect(freshestGame(g)).toBe("race"); expect(freshestGame(undefined)).toBe("stamp");
+    });
+});
+describe("reset clock and medals", () => {
+    test("ticks to the second, adds days for weekly boards, and flags the last hour and ten minutes", () => {
+        const closesAt = Date.UTC(2026, 9, 11, 15);
+        expect(resetClock({now: closesAt - (3 * 3600 + 12 * 60 + 45) * 1000, closesAt, period: "day", locale: "ko"})).toEqual({label: "자정까지 3:12:45", soon: false, final: false});
+        expect(resetClock({now: closesAt - (2 * 86400 + 5) * 1000, closesAt, period: "week", locale: "ko"}).label).toBe("월요일 0시까지 2일 0:00:05");
+        expect(resetClock({now: closesAt - 59 * 60_000, closesAt, period: "day", locale: "en"})).toEqual({label: "Resets in 0:59:00", soon: true, final: false});
+        expect(resetClock({now: closesAt - 9 * 60_000, closesAt, period: "day", locale: "en"})).toMatchObject({soon: true, final: true});
+        expect(resetClock({now: closesAt + 5000, closesAt, period: "day", locale: "ko"}).label).toBe("자정까지 0:00:00");
+    });
+    test("only places 1 to 3 have a medal name", () => {
+        expect([1, 2, 3].map(r => medalName(r, "ko"))).toEqual(["금메달", "은메달", "동메달"]);
+        expect(medalName(1, "en")).toBe("Gold medal");
+        expect(medalName(4, "ko")).toBeNull(); expect(medalName(0, "en")).toBeNull();
     });
 });

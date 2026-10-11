@@ -2,6 +2,11 @@ import type {GameId} from "@mapae/arcade";
 
 export const gameArt = (game: GameId) => `/arcade/${game}-scene.webp`;
 
+/** A game's scene as a small rounded thumbnail, for rows and tabs that name a game. */
+export function GameThumb({game}: {game: GameId}) {
+    return <img className="arc-game-thumb" src={`/arcade/${game}-scene-640.webp`} width={40} height={40} alt="" loading="lazy" decoding="async" draggable={false} />;
+}
+
 /** Shared production sprites keep the same identity in portraits and playfields. */
 export function Goblin({className = "", variant}: {className?: string; variant?: "armored" | "boss"}) {
     const asset = variant === "boss" ? "goblin-chief" : variant === "armored" ? "goblin-armored" : "goblin";
