@@ -2,8 +2,8 @@ import {afterEach,expect,test} from 'bun:test';
 import {privateKeyToAccount} from 'viem/accounts';
 import {encodePacked,keccak256,toHex,type Address,type Hex} from 'viem';
 import {guardianName,guardianResultDomain,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash} from '@mapae/arcade/guardians';
-import type {GuardianClaim,GuardianToken,VerifiedResult} from '../profile/guardians';
-import {nftCompanion,verifiedClaim,guardianPortrait,refreshedDetail,verifyReplacement} from './model';
+import type {GuardianClaimBatch,GuardianToken,VerifiedResult} from '../profile/guardians';
+import {nftCompanion,verifiedClaims,pendingGrowth,guardianPortrait,refreshedDetail,verifyReplacement} from './model';
 import {assertNftTransactionStorage,saveNftTransaction,readNftTransaction,clearNftTransaction} from './transaction-store';
 import {verifyRevelation} from './recovery';
 import {activeGuardianOuting} from './outing-model';
@@ -14,13 +14,13 @@ const account=privateKeyToAccount(toHex(123456n,{size:32}));
 const word=(n:number)=>toHex(n,{size:32});
 const token:GuardianToken={tokenId:'7',owner,ownershipEpoch:'3',revealed:true,seed:word(42),sequence:'12',progress:{plays:2,victories:1,experience:25,level:1,games:[{plays:1,victories:1,bestScore:200},{plays:1,victories:0,bestScore:50},{plays:0,victories:0,bestScore:0}]}};
 const result:VerifiedResult={id:word(1),tokenId:'7',actor:owner,ownershipEpoch:'1',transaction:word(2),game:'race',seed:123,ruleset:3,score:42,victory:true,claimed:false,at:Date.parse('2026-10-10T03:00:00Z'),outcome:{game:'race',score:42,summary:{ko:'우승',en:'Victory'},metrics:[],transcript:[],ranking:[],achievement:{victory:true},replay:{seed:123,version:3}}};
-async function signed():Promise<GuardianClaim>{
-    const r={resultId:result.id as Hex,tokenId:'7',actor:owner,ownershipEpoch:'1',paymentTx:word(2),traitsHash:guardianTraitsHash(token.seed),inputsHash:word(3),ruleset:3,seed:123,game:1,score:42,victory:true};
-    const signature=await account.signTypedData({domain:guardianResultDomain(collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:guardianResultFromJson(r)});
-    return {collection,signer:account.address,result:r,signature,claimed:false};
+const claimJson=(patch:Record<string,unknown>={})=>({resultId:result.id as Hex,tokenId:'7',actor:owner,ownershipEpoch:'1',paymentTx:word(2),traitsHash:guardianTraitsHash(token.seed),inputsHash:word(3),ruleset:3,seed:123,game:1,score:42,victory:true,...patch});
+const sign=(r:ReturnType<typeof claimJson>)=>account.signTypedData({domain:guardianResultDomain(collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:guardianResultFromJson(r)});
+async function signed(...patches:Record<string,unknown>[]):Promise<GuardianClaimBatch>{
+    const claims=await Promise.all((patches.length?patches:[{}]).map(async p=>{const r=claimJson(p);return {result:r,signature:await sign(r)};}));
+    return {collection,signer:account.address,claims};
 }
-const expected={collection,signer:account.address,token,result};
-
+const expected={collection,signer:account.address,token,known:[result]};
 test('NFT render traits only follow chain birth; objectives and allowances never reroll them',()=>{
     const a=nftCompanion(token,'ko','explore',1),b=nftCompanion(token,'en','score',8);
     expect(a.id).toBe('nft-7');expect(a.name).toBe(guardianName(7,'ko'));expect(b.name).toBe(guardianName(7,'en'));expect(a.name).not.toContain('#');expect(a.appearance).toEqual(b.appearance);expect(a.color).toBe(b.color);expect(a.temperament).toBe(b.temperament);
@@ -28,24 +28,31 @@ test('NFT render traits only follow chain birth; objectives and allowances never
     expect(b.agent).toEqual({mode:'rules',goal:'score',rounds:8});
     expect(()=>nftCompanion({...token,revealed:false},'ko')).toThrow('pending_reveal');
 });
-test('signed historical result remains claimable after transfer; display and live signer are checked',async()=>{
-    const claim=await signed();const verified=await verifiedClaim(claim,expected);
-    expect(verified?.result.ownershipEpoch).toBe(1n);expect(verified?.result.tokenId).toBe(7n);
-    expect(await verifiedClaim({...claim,claimed:true,signature:null},expected)).toBeNull();
-    await expect(verifiedClaim(claim,{...expected,signer:owner})).rejects.toThrow();
-    await expect(verifiedClaim(claim,{...expected,collection:owner})).rejects.toThrow();
-    await expect(verifiedClaim(claim,{...expected,token:{...token,seed:word(43)}})).rejects.toThrow();
+test('a signed batch, including results earned before a transfer, becomes contract arguments; live signer and token are checked',async()=>{
+    // The second result is past the loaded page: only its token binding and signature can be checked.
+    const batch=await signed({},{resultId:word(5),paymentTx:word(6),ownershipEpoch:'3',game:0,score:7,victory:false});
+    const verified=await verifiedClaims(batch,expected);
+    expect(verified.results.map(r=>r.ownershipEpoch)).toEqual([1n,3n]);expect(verified.results[0]!.tokenId).toBe(7n);expect(verified.signatures).toEqual(batch.claims.map(c=>c.signature));
+    expect(await verifiedClaims({...batch,claims:[]},expected)).toEqual({results:[],signatures:[]});
+    await expect(verifiedClaims(batch,{...expected,signer:owner})).rejects.toThrow();
+    await expect(verifiedClaims(batch,{...expected,collection:owner})).rejects.toThrow();
+    await expect(verifiedClaims(batch,{...expected,token:{...token,seed:word(43)}})).rejects.toThrow();
+    await expect(verifiedClaims({...batch,claims:[batch.claims[0]!,batch.claims[0]!]},expected)).rejects.toThrow();
+    await expect(verifiedClaims({...batch,claims:Array.from({length:33},()=>batch.claims[0]!)},expected)).rejects.toThrow();
 });
 test('tampered signed claim fields and wrong displayed results never reach transaction construction',async()=>{
-    const claim=await signed();
+    const [claim]=(await signed()).claims;
     for(const patch of [{tokenId:'8'},{resultId:word(4)},{paymentTx:word(4)},{actor:collection},{ownershipEpoch:'4'},{ownershipEpoch:'0'},
         {traitsHash:word(9)},{inputsHash:word(9)},{inputsHash:word(0)},{seed:124},{ruleset:4},{game:0},{score:43},{victory:false}]){
-        await expect(verifiedClaim({...claim,result:{...claim.result,...patch}},expected)).rejects.toThrow();
+        await expect(verifiedClaims({collection,signer:account.address,claims:[{...claim!,result:{...claim!.result,...patch}}]},expected)).rejects.toThrow();
     }
-    await expect(verifiedClaim({...claim,signature:word(1)},expected)).rejects.toThrow();
-    await expect(verifiedClaim(claim,{...expected,result:{...result,score:99}})).rejects.toThrow();
-    await expect(verifiedClaim(claim,{...expected,result:{...result,ownershipEpoch:'2'}})).rejects.toThrow();
-    await expect(verifiedClaim(claim,{...expected,result:{...result,tokenId:'8'}})).rejects.toThrow();
+    const batch=await signed();
+    await expect(verifiedClaims({...batch,claims:[{...claim!,signature:word(1)}]},expected)).rejects.toThrow();
+    for(const patch of [{score:99},{ownershipEpoch:'2'},{tokenId:'8'},{claimed:true}])await expect(verifiedClaims(batch,{...expected,known:[{...result,...patch}]})).rejects.toThrow();
+});
+test('pending growth counts the whole verified history against the NFT, never below zero',()=>{
+    expect(pendingGrowth(token.progress,{...token.progress,plays:28,experience:405})).toEqual({plays:26,experience:380});
+    expect(pendingGrowth({...token.progress,plays:30,experience:500},token.progress)).toEqual({plays:0,experience:0});
 });
 test('manual recovery verifies original Pyth request commitment without new entropy',()=>{
     const user=word(11),reveal=word(99);let committed=reveal;

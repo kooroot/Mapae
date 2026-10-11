@@ -1,7 +1,7 @@
-import {guardianName, guardianTraits, guardianTraitsHash, guardianResultDomain, GUARDIAN_RESULT_TYPES, guardianResultFromJson} from '@mapae/arcade/guardians';
+import {guardianName, guardianTraits, guardianTraitsHash, guardianResultDomain, GUARDIAN_CLAIM_BATCH, GUARDIAN_RESULT_TYPES, guardianResultFromJson, type GuardianResult} from '@mapae/arcade/guardians';
 import type {AgentGoal} from '@mapae/arcade';
 import {isAddress,isHash,recoverTypedDataAddress,type Address,type Hex} from 'viem';
-import type {GuardianClaim,GuardianToken,VerifiedResult} from '../profile/guardians';
+import type {GuardianClaimBatch,GuardianToken,Progress,VerifiedResult} from '../profile/guardians';
 import type {Color,Companion} from '../state';
 import type {Guardian} from '../guardian';
 
@@ -32,17 +32,28 @@ export function refreshedDetail(previous:import('../profile/guardians').Guardian
     const older=previous.results.filter(r=>!incomingIds.has(r.id));
     return {...incoming,results:[...incoming.results,...older],nextCursor:older.length?previous.nextCursor:incoming.nextCursor};
 }
-export async function verifiedClaim(claim:GuardianClaim,expected:{collection:Address;signer:Address;token:GuardianToken;result:VerifiedResult}) {
-    const r=claim.result,e=expected.result;
-    if(!sameAddress(claim.collection,expected.collection)||!sameAddress(claim.signer,expected.signer)||
-        r.tokenId!==expected.token.tokenId||e.tokenId!==expected.token.tokenId||r.ownershipEpoch!==e.ownershipEpoch||r.resultId.toLowerCase()!==e.id.toLowerCase()||r.traitsHash!==guardianTraitsHash(expected.token.seed)||
-        r.paymentTx===`0x${'0'.repeat(64)}`||r.inputsHash===`0x${'0'.repeat(64)}`||!isHash(r.paymentTx)||!isHash(r.inputsHash)||
-        !isAddress(r.actor)||r.actor===`0x${'0'.repeat(40)}`||BigInt(r.ownershipEpoch)<1n||BigInt(r.ownershipEpoch)>BigInt(expected.token.ownershipEpoch)||
-        r.seed!==e.seed||r.ruleset!==e.ruleset||r.score!==e.score||r.victory!==e.victory||['stamp','race','shop'][r.game]!==e.game||
-        (e.transaction!==null&&r.paymentTx.toLowerCase()!==e.transaction.toLowerCase())||
-        (e.actor!==null&&!sameAddress(r.actor,e.actor)))throw Error('claim_mismatch');
-    const result=guardianResultFromJson(r);
-    if(claim.claimed)return null;
-    if(!claim.signature||!sameAddress(await recoverTypedDataAddress({domain:guardianResultDomain(expected.collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:result,signature:claim.signature}),expected.signer))throw Error('claim_signature');
-    return {result,signature:claim.signature};
+/**
+ * Verifies a signed batch before any wallet request: every entry is this token's, signed by the live result signer, and agrees
+ * with the journal row whenever that row is loaded. The contract re-checks all of it; this only refuses to ask for a doomed signature.
+ */
+export async function verifiedClaims(batch:GuardianClaimBatch,expected:{collection:Address;signer:Address;token:GuardianToken;known:readonly VerifiedResult[]}) {
+    if(!sameAddress(batch.collection,expected.collection)||!sameAddress(batch.signer,expected.signer)||batch.claims.length>GUARDIAN_CLAIM_BATCH)throw Error('claim_mismatch');
+    const results:GuardianResult[]=[],signatures:Hex[]=[],seen=new Set<string>();
+    for(const {result:r,signature} of batch.claims){
+        const e=expected.known.find(k=>k.id.toLowerCase()===r.resultId.toLowerCase());
+        if(seen.has(r.resultId.toLowerCase())||r.tokenId!==expected.token.tokenId||r.traitsHash!==guardianTraitsHash(expected.token.seed)||
+            r.paymentTx===`0x${'0'.repeat(64)}`||r.inputsHash===`0x${'0'.repeat(64)}`||!isHash(r.paymentTx)||!isHash(r.inputsHash)||
+            !isAddress(r.actor)||r.actor===`0x${'0'.repeat(40)}`||BigInt(r.ownershipEpoch)<1n||BigInt(r.ownershipEpoch)>BigInt(expected.token.ownershipEpoch)||
+            (e&&(e.claimed||e.tokenId!==expected.token.tokenId||r.ownershipEpoch!==e.ownershipEpoch||r.seed!==e.seed||r.ruleset!==e.ruleset||r.score!==e.score||r.victory!==e.victory||['stamp','race','shop'][r.game]!==e.game||
+                (e.transaction!==null&&r.paymentTx.toLowerCase()!==e.transaction.toLowerCase())||(e.actor!==null&&!sameAddress(r.actor,e.actor)))))throw Error('claim_mismatch');
+        seen.add(r.resultId.toLowerCase());
+        const result=guardianResultFromJson(r);
+        if(!sameAddress(await recoverTypedDataAddress({domain:guardianResultDomain(expected.collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:result,signature}),expected.signer))throw Error('claim_signature');
+        results.push(result);signatures.push(signature);
+    }
+    return {results,signatures};
+}
+/** Growth the seller verified but the NFT does not carry yet: the whole history, not just the loaded page. */
+export function pendingGrowth(onChain:Progress,earned:Progress){
+    return {plays:Math.max(0,earned.plays-onChain.plays),experience:Math.max(0,earned.experience-onChain.experience)};
 }

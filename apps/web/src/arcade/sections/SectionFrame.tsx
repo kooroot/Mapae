@@ -57,12 +57,12 @@ export function GuardianSwitcher({desk}: {desk: GuardianDesk}) {
     </div>;
 }
 
-/** The roster's own progress: load errors, a running transaction and a transaction to recover, shared by draws and growth records. */
-export function NftStatus({desk}: {desk: GuardianDesk}) {
+/** The roster's own progress: load errors, a running transaction and a transaction to recover. `phase={false}` when the page shows progress in place. */
+export function NftStatus({desk, phase = true}: {desk: GuardianDesk; phase?: boolean}) {
     const {ko, nft} = desk;
     return <>
         {nft.error && <div className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true" /><p>{nft.error}</p><button type="button" className="arc-text-button" disabled={nft.loading || nft.busy} onClick={() => void nft.refresh()}><RefreshCw size={16} className={nft.loading ? 'arc-loading-icon' : undefined} aria-hidden="true" />{nft.loading ? (ko ? '불러오는 중…' : 'Refreshing…') : (ko ? '다시 불러오기' : 'Retry')}</button></div>}
-        {nft.busy && <p role="status" className="arc-notice nft-notice is-info"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true" />{nft.phase}</p>}
+        {phase && nft.busy && <p role="status" className="arc-notice nft-notice is-info"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true" />{nft.phase}</p>}
         {nft.transaction && <TransactionRecovery transaction={nft.transaction} busy={nft.busy} ko={ko} onCheck={nft.checkTransaction} />}
     </>;
 }
