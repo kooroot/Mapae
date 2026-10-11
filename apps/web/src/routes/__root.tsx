@@ -2,6 +2,7 @@ import {HeadContent, Scripts, createRootRoute, useRouter} from "@tanstack/react-
 import type {ReactNode} from "react";
 import {appUrl, landingUrl, siteSurface} from "../lib/config";
 import {LOCALE_PATH_PREFIX, pick} from "../lib/i18n";
+import {arcadeSectionFromPath, arcadeSectionPath, SECTION_COPY} from "../arcade/sections";
 import {LocaleProvider, resolveLocale, useLocale} from "../lib/locale";
 import {DOCUMENT_SECURITY_HEADERS} from "../lib/security";
 
@@ -28,7 +29,9 @@ export const Route = createRootRoute({
     headers: () => DOCUMENT_SECURITY_HEADERS,
     head: ({matches}) => {
         const isApp = siteSurface === "app";
-        const isArcade = /\/(?:ko\/)?arcade\/?$/.test(matches.at(-1)?.pathname ?? "");
+        // Every arcade section is its own page, so each names its own address in both locales.
+        const section = arcadeSectionFromPath(matches.at(-1)?.pathname ?? "");
+        const isArcade = section !== null;
         const locale = resolveLocale();
         // Each surface publishes the same page at two addresses, so every response has
         // to say which one it is (`canonical`) and where the other lives (`alternate`).
@@ -37,9 +40,9 @@ export const Route = createRootRoute({
         // English base because that is what an unprefixed request renders for a visitor
         // carrying no cookie — which is every crawler.
         const origin = (isApp ? appUrl : landingUrl).replace(/\/$/, "");
-        const enHref = `${origin}${isArcade ? "/arcade" : "/"}`;
-        const koHref = `${origin}${LOCALE_PATH_PREFIX}${isArcade ? "/arcade" : ""}`;
-        const title = isArcade ? pick(locale, {
+        const enHref = `${origin}${section ? arcadeSectionPath(section, "en") : "/"}`;
+        const koHref = `${origin}${section ? arcadeSectionPath(section, "ko") : LOCALE_PATH_PREFIX}`;
+        const title = section && section !== "lobby" ? `${SECTION_COPY[locale][section].label} · Mapae Arcade` : isArcade ? pick(locale, {
             en: "Mapae Arcade — Send your agent out",
             ko: "Mapae Arcade — 에이전트의 자유 시간",
         }) : isApp
@@ -48,7 +51,7 @@ export const Route = createRootRoute({
                   en: "Mapae — Limit the authority. Let the agent act.",
                   ko: "Mapae — 권한은 좁게, 행동은 에이전트에게.",
               });
-        const description = isArcade
+        const description = section && section !== "lobby" ? SECTION_COPY[locale][section].description : isArcade
             ? pick(locale, {
                   en: "Connect your wallet, create a guardian and send them racing, trading or stamping with a bounded GIWA Sepolia test-token allowance. Free manual practice is available.",
                   ko: "지갑을 연결하고 나만의 십이지신 친구를 만드세요. GIWA 테스트 용돈 안에서 경주와 흥정, 도장찍기를 즐겨요. 직접 하는 연습은 무료예요.",
