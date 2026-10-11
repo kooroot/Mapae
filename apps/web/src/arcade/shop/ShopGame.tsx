@@ -15,7 +15,7 @@ import {motionTier} from "../motion";
 import {leaveShopGuest, playShopEvent, shopLeaveMs, shopReaction, shopRefusal, SHOP_COIN_SLOTS, SHOP_COIN_SPRITE, SHOP_TRANSITION_MS, SHOP_TURN_MS, type ShopReaction} from "./shop-fx";
 import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer,
     ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOutcome, shopSellerObservation,
-    SHOP_BUYER_BALANCE, SHOP_GOALS, SHOP_INITIAL_CAPITAL, SHOP_PRODUCTS, SHOP_STORIES, SHOP_TEMPERAMENT_COPY, shopOffersRemaining, shopForecast, shopCampaign, shopCustomerName, shopEvents, SHOP_AD_COST, type ShopMemory, type ShopConfig, type ShopState} from "@mapae/arcade/shop";
+    SHOP_BUYER_BALANCE, defaultShopName, SHOP_GOALS, SHOP_INITIAL_CAPITAL, SHOP_PRODUCTS, SHOP_STORIES, SHOP_TEMPERAMENT_COPY, shopOffersRemaining, shopForecast, shopCampaign, shopCustomerName, shopEvents, SHOP_AD_COST, type ShopMemory, type ShopConfig, type ShopState} from "@mapae/arcade/shop";
 import "./shop.css";
 import "./counter.css";
 import "./shop-scene.css";
@@ -74,7 +74,7 @@ export function ShopGame(props: PlayableGameProps & {initialConfig?: ShopConfig;
         waiting: ko ? "상대가 고르는 중…" : "Opponent is choosing…", stopped: ko ? "잠시 멈췄어요. 계속하기를 누르면 이어져요." : "Paused. Choose Continue to resume.",
         resume: ko ? "계속하기" : "Continue", chat: ko ? "우리의 흥정" : "Your negotiation", thought: ko ? "나의 선택" : "Your choice",
     } : {})};
-    const [config, setConfig] = useState<ShopConfig>(() => props.initialConfig ? {...props.initialConfig} : ({...DEFAULT_SHOP_CONFIG, name: locale === "ko" ? `${profile.name.slice(0, 10)} 잡화점` : `${profile.name.slice(0, 10)}'s shop`}));
+    const [config, setConfig] = useState<ShopConfig>(() => props.initialConfig ? {...props.initialConfig} : ({...DEFAULT_SHOP_CONFIG, name: defaultShopName(profile.name, locale)}));
     const [state, setState] = useState<ShopState | null>(null);
     const [paused, setPaused] = useState(false);
     const [speed, setSpeed] = useState(1);

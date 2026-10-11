@@ -8,7 +8,7 @@ import {toMapaeOwnerSmartAccount, prepareRootPermissionSigningRequest, assembleR
 import {buildErc7710PaymentRequirements, encodePaymentRequiredHeader, decodePaymentHeader, giwaSepolia, MOCK_USDC} from '@mapae/shared';
 import {ARCADE_PAY_TO, ARCADE_REDEEMER, ARCADE_TICKET_AMOUNT} from '@mapae/arcade/tickets';
 import {TRANSFER_EVENT_TOPIC} from '@mapae/delegation';
-import {guardianTraitsHash,type GuardianSnapshot} from '@mapae/arcade/guardians';
+import {guardianName,guardianTraitsHash,type GuardianSnapshot} from '@mapae/arcade/guardians';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
 import type {OutingStart, OutingStatus} from '@mapae/arcade/outings';
 import {deployment, parseStart, validatePermission} from './validation';
@@ -33,7 +33,7 @@ const dirs: string[] = [], stores: OutingStore[] = [];
 afterEach(() => {for (const store of stores.splice(0)) {try {store.close();} catch {}} for (const dir of dirs.splice(0)) rmSync(dir, {recursive:true,force:true});});
 function file() {const dir = mkdtempSync(join(tmpdir(), 'mapae-outings-')); dirs.push(dir); return join(dir, 'seller.sqlite');}
 function store(path = file()) {const value = new OutingStore(path); stores.push(value); return value;}
-function start(id = 'outing-test-0001', admissions = 2): OutingStart {return {id, tokenId: String([...id].reduce((n,c)=>n*31n+BigInt(c.charCodeAt(0)),0n)%1000000n+1n), goal:'explore', locale: 'ko', choice: 'auto', admissions, permissionContext: '0xabcd'};}
+function start(id = 'outing-test-0001', admissions = 2): OutingStart {return {id, tokenId: String([...id].reduce((n,c)=>n*31n+BigInt(c.charCodeAt(0)),0n)%10000n+1n), goal:'explore', locale: 'ko', choice: 'auto', admissions, permissionContext: '0xabcd'};}
 function insert(db: OutingStore, id = 'outing-test-0001', admissions = 2): Job {
     return db.insert(owner.address, start(id, admissions), {payer, expiresAt: now + 7200_000, contextHash: `0x${Buffer.from(id).toString('hex').padEnd(64,'0')}`}, agent.address, now, guardian(start(id, admissions).tokenId));
 }
@@ -67,6 +67,7 @@ describe('restricted ownership and permission', () => {
     test('actual payment provider persists its signed leaf before fixed seller dispatch', async () => {
         const request = await signed(), permission = await validatePermission(owner.address, request, agent.address, now);
         const db = store(), job = db.insert(owner.address, request, permission, agent.address, now, guardian(request.tokenId));
+        expect(job.profile.name).toBe(guardianName(request.tokenId, 'ko'));
         const pending = {game: 'stamp' as const, seed: 1, header: null, transaction: null};
         const config = readOutingConfig({ARCADE_OUTINGS_ENABLED:'true',ARCADE_RECEIPT_TOKEN:token,ARCADE_AGENT_PRIVATE_KEY:`0x${'22'.repeat(32)}`})!;
         let persisted: string | null = null, dispatches = 0;

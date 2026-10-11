@@ -4,6 +4,7 @@ import {decodeTimestampTerms} from '@mapae/delegation/delegation-status';
 import {buildRootDelegationTypedData} from '@mapae/delegation/signing';
 import {preparePeriodDelegation} from '@mapae/delegation/policy';
 import {ARCADE_PAY_TO, ARCADE_TICKET_AMOUNT} from '@mapae/arcade/tickets';
+import {GUARDIAN_MAX_SUPPLY} from '@mapae/arcade/guardians';
 import {MAX_OUTING_ADMISSIONS, OUTING_PERMISSION_SECONDS, type OutingStart} from '@mapae/arcade/outings';
 import {MOCK_USDC} from '@mapae/shared';
 import {getAddress, isHex, hashTypedData, type Address, type Hex} from 'viem';
@@ -16,9 +17,10 @@ export class OutingError extends Error {
     constructor(readonly code: 'disabled' | 'unauthorized' | 'invalid_request' | 'invalid_permission' | 'conflict' | 'not_found' | 'busy' | 'storage_unavailable' | 'owner_changed' | 'guardian_unavailable' | 'result_unavailable' | 'receipt_unconfirmed') {super(code);}
 }
 const member = (v: unknown, items: readonly string[]) => typeof v === 'string' && items.includes(v);
-export const TOKEN_ID = /^[1-9][0-9]{0,77}$/;
+const TOKEN_ID = /^[1-9][0-9]{0,4}$/;
+/** Guardian IDs are drawn from 1..GUARDIAN_MAX_SUPPLY, and every name is derived from one. */
 export function validTokenId(value: unknown): value is string {
-    return typeof value === 'string' && TOKEN_ID.test(value) && BigInt(value) < (1n << 256n);
+    return typeof value === 'string' && TOKEN_ID.test(value) && Number(value) <= GUARDIAN_MAX_SUPPLY;
 }
 export function parseStart(input: unknown): OutingStart {
     if (!object(input) || Object.keys(input).some(k => !['id','tokenId','goal','locale','choice','admissions','permissionContext'].includes(k)) ||

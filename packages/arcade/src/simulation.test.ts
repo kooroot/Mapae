@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test";
 import {ARCADE_RULESET_VERSION, type AgentProfile, type ActivityOutcome, type GameId} from "./contracts";
 import {applyRaceRound, chooseRaceAction, createRaceSeason, makeRaceCourse, RACE_ROUNDS} from "./race";
-import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopOutcome, shopSellerObservation, type ShopMemory} from "./shop";
+import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, defaultShopName, nextShopCustomer, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopOutcome, shopSellerObservation, type ShopMemory} from "./shop";
 import {advanceAgent, newBossPractice, newGame, ROUND_MS} from "./stamp";
 import {chooseOutingGame, raceOutcome, runArcadeSimulation, stampOutcome, stampStrategy, type RaceNote} from "./simulation";
 
@@ -96,7 +96,7 @@ describe("Existing engine parity", () => {
 
     test("shop follows the same role-limited decisions and localized conversation as browser play", () => {
         for (const seed of seeds) for (const locale of locales) {
-            const config = {...DEFAULT_SHOP_CONFIG, name: locale === "ko" ? `${profile.name.slice(0, 10)} 잡화점` : `${profile.name.slice(0, 10)}'s shop`};
+            const config = {...DEFAULT_SHOP_CONFIG, name: defaultShopName(profile.name, locale)};
             let state = createShop(seed, config), turns = 0;
             while (state.phase !== "finished") {
                 if (++turns > 40) throw new Error("Browser loop did not terminate");

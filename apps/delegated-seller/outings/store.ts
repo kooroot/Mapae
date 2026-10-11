@@ -2,7 +2,7 @@ import {Database} from 'bun:sqlite';
 import {createHash, randomUUID} from 'node:crypto';
 import type {Address, Hex} from 'viem';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
-import {guardianTraits, guardianTraitsHash, type GuardianSnapshot} from '@mapae/arcade/guardians';
+import {guardianName, guardianTraits, guardianTraitsHash, type GuardianSnapshot} from '@mapae/arcade/guardians';
 import {GuardianLedger} from '../guardians/ledger';
 import type {GameId} from '@mapae/arcade';
 import type {ShopMemory} from '@mapae/arcade/shop';
@@ -47,7 +47,8 @@ export class OutingStore {
             if (guardian.ruleset !== ARCADE_RULESET_VERSION || guardian.traitsHash !== guardianTraitsHash(guardian.seed)) throw new OutingError('guardian_unavailable');
             const traits = guardianTraits(guardian.seed);
             const characterId = `nft-${start.tokenId}`;
-            const profile = {name: `#${start.tokenId}`, color: traits.color, temperament: traits.temperament, goal: start.goal, aptitudes: traits.aptitudes};
+            // The Korean name is canonical for every stored profile: locale-independent and within the 12-character agent profile bound.
+            const profile = {name: guardianName(start.tokenId, 'ko'), color: traits.color, temperament: traits.temperament, goal: start.goal, aptitudes: traits.aptitudes};
             this.expireUnsubmitted(now);
             const tokenJobs = this.db.query<{data: string}, [string, string]>("SELECT data FROM arcade_outings WHERE lower(json_extract(data, '$.guardian.collection'))=? AND json_extract(data, '$.guardian.tokenId')=? AND state IN ('queued','running','paused')").all(guardian.collection.toLowerCase(), guardian.tokenId).map(row => JSON.parse(row.data) as Job);
             // Check every row first: an older recovery row must not hide the current
