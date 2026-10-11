@@ -17,8 +17,7 @@
 .arc-wallet-account dd .arc-inline-link{margin-top:0}.arc-wallet-account .arc-wallet-address{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .arc-wallet-account dd strong{font:500 18px var(--mono);font-variant-numeric:tabular-nums;color:#f8eee0}
 .arc-wallet-account dd small{color:#c4b69d;font-size:12px}
-.arc-wallet-account>div:last-child{align-items:center}.arc-wallet-account>div:last-child>p{margin:0;font-size:12px}
-@media(max-width:620px){.arc-wallet-account dl>div{grid-template-columns:1fr}.arc-wallet-account>div:last-child .arc-button{width:100%}}
+@media(max-width:620px){.arc-wallet-account dl>div{grid-template-columns:1fr}}
 .arcade-revocations>div:last-child{display:block;margin-top:0}
 /* Journal: one summary that records everything at once, then the outings grouped by Korean-time day. */
 .jr-summary{display:grid;grid-template-columns:88px minmax(0,1fr) minmax(260px,auto);grid-template-areas:"art who action" "art xp action";align-items:center;gap:6px 22px;padding-bottom:22px;border-bottom:1px solid var(--card-hair)}
@@ -62,3 +61,5 @@
 .nft-slot>span{display:grid;place-items:center;width:48px;height:48px;border:1px dashed #e9d8bc40;border-radius:50%;color:var(--arc-dim);font:600 18px var(--display)}
 .nft-draw .arc-button{margin-top:16px}
 @media(max-width:700px){.nft-slot{display:none}}
+.arc-count{display:inline-grid;place-items:center;min-width:26px;height:26px;margin-left:10px;padding:0 8px;border-radius:var(--r-pill);background:#e9c99f26;color:var(--arc-gold);font:700 14px var(--sans);vertical-align:3px;font-variant-numeric:tabular-nums}
+.arc-allowance-short{display:flex;align-items:flex-start;gap:8px;font-size:13px}.arc-allowance-short>svg{flex:none;margin-top:3px}

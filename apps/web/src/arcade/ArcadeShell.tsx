@@ -127,7 +127,7 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
             {section === "lobby" ? <ArcadeRoom locale={locale} selected={selected} onSelect={setSelected} reducedMotion={reducedMotion}>
                 <LobbyDock desk={desk} game={selected} walletWaiting={walletWaiting} onPlayGuest={playGuest} onPractice={practice} onSendOuting={sendOuting} />
             </ArcadeRoom> : section === "guardians" ? <GuardiansSection desk={desk} walletWaiting={walletWaiting} onPractice={practice} />
-                : section === "wallet" ? <WalletSection desk={desk} walletWaiting={walletWaiting} blocked={blocked} onDisconnect={leave} />
+                : section === "wallet" ? <WalletSection desk={desk} walletWaiting={walletWaiting} />
                 : section === "outings" ? <OutingsSection desk={desk} walletWaiting={walletWaiting} />
                 : section === "ranking" ? <RankingSection desk={desk} walletWaiting={walletWaiting} onSendOuting={sendOuting} />
                 : <JournalSection desk={desk} walletWaiting={walletWaiting} />}
