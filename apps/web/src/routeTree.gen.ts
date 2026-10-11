@@ -11,10 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
-import { Route as ArcadeRouteImport } from './routes/arcade'
+import { Route as ArcadeChar123SectionChar125RouteImport } from './routes/arcade/{-$section}'
 import { Route as KoIndexRouteImport } from './routes/ko/index'
 import { Route as KoAppRouteImport } from './routes/ko/app'
-import { Route as KoArcadeRouteImport } from './routes/ko/arcade'
+import { Route as KoArcadeChar123SectionChar125RouteImport } from './routes/ko/arcade/{-$section}'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -26,11 +26,12 @@ const AppRoute = AppRouteImport.update({
   path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ArcadeRoute = ArcadeRouteImport.update({
-  id: '/arcade',
-  path: '/arcade',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const ArcadeChar123SectionChar125Route =
+  ArcadeChar123SectionChar125RouteImport.update({
+    id: '/arcade/{-$section}',
+    path: '/arcade/{-$section}',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const KoIndexRoute = KoIndexRouteImport.update({
   id: '/ko/',
   path: '/ko/',
@@ -41,52 +42,72 @@ const KoAppRoute = KoAppRouteImport.update({
   path: '/ko/app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const KoArcadeRoute = KoArcadeRouteImport.update({
-  id: '/ko/arcade',
-  path: '/ko/arcade',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const KoArcadeChar123SectionChar125Route =
+  KoArcadeChar123SectionChar125RouteImport.update({
+    id: '/ko/arcade/{-$section}',
+    path: '/ko/arcade/{-$section}',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
-  '/arcade': typeof ArcadeRoute
+  '/arcade/{-$section}': typeof ArcadeChar123SectionChar125Route
   '/ko/app': typeof KoAppRoute
-  '/ko/arcade': typeof KoArcadeRoute
   '/ko/': typeof KoIndexRoute
+  '/ko/arcade/{-$section}': typeof KoArcadeChar123SectionChar125Route
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
-  '/arcade': typeof ArcadeRoute
+  '/arcade/{-$section}': typeof ArcadeChar123SectionChar125Route
   '/ko/app': typeof KoAppRoute
-  '/ko/arcade': typeof KoArcadeRoute
   '/ko': typeof KoIndexRoute
+  '/ko/arcade/{-$section}': typeof KoArcadeChar123SectionChar125Route
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRoute
-  '/arcade': typeof ArcadeRoute
+  '/arcade/{-$section}': typeof ArcadeChar123SectionChar125Route
   '/ko/app': typeof KoAppRoute
-  '/ko/arcade': typeof KoArcadeRoute
   '/ko/': typeof KoIndexRoute
+  '/ko/arcade/{-$section}': typeof KoArcadeChar123SectionChar125Route
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app' | '/arcade' | '/ko/app' | '/ko/arcade' | '/ko/'
+  fullPaths:
+    | '/'
+    | '/app'
+    | '/arcade/{-$section}'
+    | '/ko/app'
+    | '/ko/'
+    | '/ko/arcade/{-$section}'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/arcade' | '/ko/app' | '/ko/arcade' | '/ko'
-  id: '__root__' | '/' | '/app' | '/arcade' | '/ko/app' | '/ko/arcade' | '/ko/'
+  to:
+    | '/'
+    | '/app'
+    | '/arcade/{-$section}'
+    | '/ko/app'
+    | '/ko'
+    | '/ko/arcade/{-$section}'
+  id:
+    | '__root__'
+    | '/'
+    | '/app'
+    | '/arcade/{-$section}'
+    | '/ko/app'
+    | '/ko/'
+    | '/ko/arcade/{-$section}'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
-  ArcadeRoute: typeof ArcadeRoute
+  ArcadeChar123SectionChar125Route: typeof ArcadeChar123SectionChar125Route
   KoAppRoute: typeof KoAppRoute
-  KoArcadeRoute: typeof KoArcadeRoute
   KoIndexRoute: typeof KoIndexRoute
+  KoArcadeChar123SectionChar125Route: typeof KoArcadeChar123SectionChar125Route
 }
 
 declare module '@tanstack/react-router' {
@@ -105,11 +126,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/arcade': {
-      id: '/arcade'
-      path: '/arcade'
-      fullPath: '/arcade'
-      preLoaderRoute: typeof ArcadeRouteImport
+    '/arcade/{-$section}': {
+      id: '/arcade/{-$section}'
+      path: '/arcade/{-$section}'
+      fullPath: '/arcade/{-$section}'
+      preLoaderRoute: typeof ArcadeChar123SectionChar125RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ko/': {
@@ -126,11 +147,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KoAppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ko/arcade': {
-      id: '/ko/arcade'
-      path: '/ko/arcade'
-      fullPath: '/ko/arcade'
-      preLoaderRoute: typeof KoArcadeRouteImport
+    '/ko/arcade/{-$section}': {
+      id: '/ko/arcade/{-$section}'
+      path: '/ko/arcade/{-$section}'
+      fullPath: '/ko/arcade/{-$section}'
+      preLoaderRoute: typeof KoArcadeChar123SectionChar125RouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -139,10 +160,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
-  ArcadeRoute: ArcadeRoute,
+  ArcadeChar123SectionChar125Route: ArcadeChar123SectionChar125Route,
   KoAppRoute: KoAppRoute,
-  KoArcadeRoute: KoArcadeRoute,
   KoIndexRoute: KoIndexRoute,
+  KoArcadeChar123SectionChar125Route: KoArcadeChar123SectionChar125Route,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
