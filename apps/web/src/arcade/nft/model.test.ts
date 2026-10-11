@@ -1,7 +1,7 @@
 import {afterEach,expect,test} from 'bun:test';
 import {privateKeyToAccount} from 'viem/accounts';
 import {encodePacked,keccak256,toHex,type Address,type Hex} from 'viem';
-import {guardianResultDomain,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash} from '@mapae/arcade/guardians';
+import {guardianName,guardianResultDomain,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash} from '@mapae/arcade/guardians';
 import type {GuardianClaim,GuardianToken,VerifiedResult} from '../profile/guardians';
 import {nftCompanion,verifiedClaim,dailyObjective,refreshedDetail,verifyReplacement} from './model';
 import {assertNftTransactionStorage,saveNftTransaction,readNftTransaction,clearNftTransaction} from './transaction-store';
@@ -22,11 +22,11 @@ async function signed():Promise<GuardianClaim>{
 const expected={collection,signer:account.address,token,result};
 
 test('NFT render traits only follow chain birth; objectives and allowances never reroll them',()=>{
-    const a=nftCompanion(token,'explore',1),b=nftCompanion(token,'score',8);
-    expect(a.id).toBe('nft-7');expect(a.appearance).toEqual(b.appearance);expect(a.color).toBe(b.color);expect(a.temperament).toBe(b.temperament);
+    const a=nftCompanion(token,'ko','explore',1),b=nftCompanion(token,'en','score',8);
+    expect(a.id).toBe('nft-7');expect(a.name).toBe(guardianName(7,'ko'));expect(b.name).toBe(guardianName(7,'en'));expect(a.name).not.toContain('#');expect(a.appearance).toEqual(b.appearance);expect(a.color).toBe(b.color);expect(a.temperament).toBe(b.temperament);
     expect(a.appearance?.zodiac).toBe('horse');expect(a.appearance?.wardrobe).toEqual({hat:'gat',outfit:'performer',shoes:'taesahye'});
     expect(b.agent).toEqual({mode:'rules',goal:'score',rounds:8});
-    expect(()=>nftCompanion({...token,revealed:false})).toThrow('pending_reveal');
+    expect(()=>nftCompanion({...token,revealed:false},'ko')).toThrow('pending_reveal');
 });
 test('signed historical result remains claimable after transfer; display and live signer are checked',async()=>{
     const claim=await signed();const verified=await verifiedClaim(claim,expected);

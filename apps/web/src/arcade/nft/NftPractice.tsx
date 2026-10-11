@@ -13,7 +13,7 @@ import {useResultRitual} from '../result-ritual';
 import {swapScreen} from '../motion';
 export function NftPractice({token,game,seed,ko,reducedMotion,onClose}:{token:GuardianToken;game:GameId;seed:number;ko:boolean;reducedMotion:boolean;onClose:()=>void}){
     const [result,setResult]=useState<ActivityOutcome|null>(null),[sound]=useState(()=>new ArcadeSound()),[runId]=useState(()=>crypto.randomUUID());
-    const member=nftCompanion(token),locale=ko?'ko' as const:'en' as const,ritual=useRef<HTMLElement>(null);
+    const locale=ko?'ko' as const:'en' as const,member=nftCompanion(token,locale),ritual=useRef<HTMLElement>(null);
     useResultRitual(ritual,result?runId:null,{tier:reducedMotion?'still':'full',sound});
     useEffect(()=>{trackEngagement({event:'practice_opened',game,runId,locale});return()=>sound.dispose();},[]);
     function complete(outcome:ActivityOutcome){swapScreen(reducedMotion,()=>setResult(outcome));trackEngagement({event:'practice_finished',game,runId,locale,result:'completed'});}

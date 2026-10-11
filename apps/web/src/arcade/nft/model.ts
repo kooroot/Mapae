@@ -1,13 +1,14 @@
-import {guardianTraits, guardianTraitsHash, guardianResultDomain, GUARDIAN_RESULT_TYPES, guardianResultFromJson} from '@mapae/arcade/guardians';
+import {guardianName, guardianTraits, guardianTraitsHash, guardianResultDomain, GUARDIAN_RESULT_TYPES, guardianResultFromJson} from '@mapae/arcade/guardians';
 import type {AgentGoal,GameId} from '@mapae/arcade';
 import {isAddress,isHash,recoverTypedDataAddress,type Address} from 'viem';
 import type {GuardianClaim,GuardianToken,VerifiedResult} from '../profile/guardians';
 import type {Companion} from '../state';
 
-export function nftCompanion(token:GuardianToken,goal:AgentGoal='explore',rounds=1):Companion {
+/** In-memory companion for display and play; the name follows the UI locale. Stored and server-validated names use guardianName(tokenId,'ko'). */
+export function nftCompanion(token:GuardianToken,locale:'ko'|'en',goal:AgentGoal='explore',rounds=1):Companion {
     if(!token.revealed)throw Error('pending_reveal');
     const t=guardianTraits(token.seed);
-    return {id:`nft-${token.tokenId}`,name:`#${token.tokenId}`,configured:true,color:t.color,temperament:t.temperament,
+    return {id:`nft-${token.tokenId}`,name:guardianName(token.tokenId,locale),configured:true,color:t.color,temperament:t.temperament,
         appearance:{version:1,seed:token.seed.slice(2,18),zodiac:t.zodiac,backdrop:t.backdrop,charm:t.charm,wardrobe:{hat:t.hat,outfit:t.outfit,shoes:t.shoes}},
         agent:{mode:'rules',goal,rounds},best:Math.max(...token.progress.games.map(g=>g.bestScore)),
         bests:{stamp:token.progress.games[0]!.bestScore,race:token.progress.games[1]!.bestScore,shop:token.progress.games[2]!.bestScore}};
