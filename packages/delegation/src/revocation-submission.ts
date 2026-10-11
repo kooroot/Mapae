@@ -1,3 +1,4 @@
+import "./kit-telemetry.js";
 import {DeleGatorCore} from "@metamask/smart-accounts-kit/contracts";
 import {decodeDelegations, hashDelegation} from "@metamask/smart-accounts-kit/utils";
 import type {Delegation} from "@metamask/smart-accounts-kit";
