@@ -12,7 +12,7 @@ import {ARCADE_SECTIONS, arcadeSectionLink, SECTION_COPY, type ArcadeSection} fr
 export type SectionBadges = Partial<Record<ArcadeSection, string>>;
 
 /**
- * The narrow-screen menu: a left drawer with the five sections, the wallet and the language. Base UI's drawer brings the focus
+ * The narrow-screen menu: a left drawer with every section, the wallet and the language. Base UI's drawer brings the focus
  * trap, Esc, outside-click dismissal, scroll lock and swipe-to-close. Any route change (a link here, or back/forward) or a
  * wallet change closes it. Section links stay plain links rather than close buttons, so they are announced as navigation.
  */
