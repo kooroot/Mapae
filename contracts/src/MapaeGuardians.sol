@@ -73,6 +73,10 @@ contract MapaeGuardians is ERC721Enumerable, Ownable2Step, ReentrancyGuard, EIP7
     mapping(uint256 => Birth) private _births;
     mapping(uint64 => uint256) private _sequenceToken;
     mapping(uint256 => Progress) private _progress;
+    /// @dev Never decreases (the collection has no burn), so it is the draw counter, not totalSupply().
+    uint256 internal _drawn;
+    /// @dev Lazy Fisher-Yates pool over token IDs. A zero slot holds its default ID `slot + 1`.
+    mapping(uint256 => uint256) private _idPool;
 
     error InvalidConfiguration();
     error MintPaused();
@@ -125,13 +129,12 @@ contract MapaeGuardians is ERC721Enumerable, Ownable2Step, ReentrancyGuard, EIP7
     {
         if (mintPaused) revert MintPaused();
         if (pendingMint[msg.sender] != 0) revert PendingDraw();
-        if (
-            totalSupply() >= MAX_SUPPLY || mintedBy[msg.sender] >= MAX_LIFETIME_MINTS
-                || balanceOf(msg.sender) >= MAX_OWNED
-        ) revert MintLimit();
+        if (_drawn >= MAX_SUPPLY || mintedBy[msg.sender] >= MAX_LIFETIME_MINTS || balanceOf(msg.sender) >= MAX_OWNED) {
+            revert MintLimit();
+        }
         uint256 fee = mintFee();
         if (fee > maxFee || msg.value != fee) revert WrongFee(fee, msg.value, maxFee);
-        tokenId = totalSupply() + 1;
+        tokenId = _drawTokenId(userContribution);
         pendingMint[msg.sender] = tokenId;
         ++mintedBy[msg.sender];
         // Receiver acceptance happens before randomness is requested, so it cannot reject a known draw.
@@ -141,6 +144,25 @@ contract MapaeGuardians is ERC721Enumerable, Ownable2Step, ReentrancyGuard, EIP7
         _sequenceToken[sequence] = tokenId;
         _births[tokenId].sequence = sequence;
         emit MintRequested(msg.sender, tokenId, sequence, userContribution);
+    }
+
+    /// @dev Draws an unused ID from 1..MAX_SUPPLY without replacement. The ID is cosmetic (it only picks the
+    /// display name) and its mint-time entropy is grindable; every trait still comes from the later Pyth reveal.
+    function _drawTokenId(bytes32 userContribution) private returns (uint256 tokenId) {
+        uint256 remaining = MAX_SUPPLY - _drawn;
+        uint256 slot = uint256(
+            keccak256(abi.encode(block.prevrandao, msg.sender, userContribution, remaining, address(this)))
+        ) % remaining;
+        uint256 last = remaining - 1;
+        tokenId = _poolAt(slot);
+        if (slot != last) _idPool[slot] = _poolAt(last);
+        delete _idPool[last];
+        ++_drawn;
+    }
+
+    function _poolAt(uint256 slot) private view returns (uint256 id) {
+        id = _idPool[slot];
+        if (id == 0) id = slot + 1;
     }
 
     function birth(uint256 tokenId) external view returns (bytes32 seed, uint64 sequence, bool revealed) {

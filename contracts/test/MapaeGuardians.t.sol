@@ -90,13 +90,13 @@ contract GuardianReceiver is IERC721Receiver {
     }
 }
 
-contract FullGuardianCollection is MapaeGuardians {
+contract DrainedGuardianCollection is MapaeGuardians {
     constructor(address admin, address signer, address e, address p)
         MapaeGuardians(admin, signer, e, p, "https://mapae.io/api/arcade/guardians/")
     {}
 
-    function totalSupply() public pure override returns (uint256) {
-        return MAX_SUPPLY;
+    function setDrawn(uint256 value) external {
+        _drawn = value;
     }
 }
 
@@ -173,7 +173,8 @@ contract MapaeGuardiansTest is Test {
 
     function test_mintReservesIdentityAndHonestCallbackWithinBudget() public {
         (uint256 id, uint64 sequence) = _mint(ALICE);
-        assertEq(id, 1);
+        assertGe(id, 1);
+        assertLe(id, nft.MAX_SUPPLY());
         assertEq(sequence, 1);
         assertEq(nft.ownerOf(id), ALICE);
         assertEq(nft.pendingMint(ALICE), id);
@@ -201,7 +202,7 @@ contract MapaeGuardiansTest is Test {
     }
 
     function test_callbackRejectsSpoofWrongProviderUnknownAndDuplicate() public {
-        (, uint64 sequence) = _mint(ALICE);
+        (uint256 id, uint64 sequence) = _mint(ALICE);
         vm.expectRevert("Only Entropy can call this function");
         nft._entropyCallback(sequence, PROVIDER, bytes32(uint256(7)));
         vm.prank(address(entropy));
@@ -212,10 +213,10 @@ contract MapaeGuardiansTest is Test {
         nft._entropyCallback(sequence + 1, PROVIDER, bytes32(uint256(7)));
         (bool success,) = entropy.deliver(sequence, bytes32(uint256(7)));
         assertTrue(success);
-        (bytes32 fixedSeed,,) = nft.birth(1);
+        (bytes32 fixedSeed,,) = nft.birth(id);
         (success,) = entropy.deliver(sequence, bytes32(uint256(8)));
         assertFalse(success);
-        (bytes32 seed,,) = nft.birth(1);
+        (bytes32 seed,,) = nft.birth(id);
         assertEq(seed, fixedSeed);
     }
 
@@ -290,9 +291,9 @@ contract MapaeGuardiansTest is Test {
     }
 
     function test_lifetimeAndOwnedCapacityIncludingIncomingTransfers() public {
-        for (uint256 i; i < 3; ++i) {
-            _ready(ALICE);
-        }
+        uint256 first = _ready(ALICE);
+        _ready(ALICE);
+        _ready(ALICE);
         vm.prank(ALICE);
         vm.expectRevert(MapaeGuardians.MintLimit.selector);
         nft.mint{value: FEE}(bytes32(0), FEE);
@@ -301,7 +302,7 @@ contract MapaeGuardiansTest is Test {
         vm.expectRevert(MapaeGuardians.MintLimit.selector);
         nft.transferFrom(BOB, ALICE, bob);
         vm.prank(ALICE);
-        nft.transferFrom(ALICE, BOB, 1);
+        nft.transferFrom(ALICE, BOB, first);
         vm.prank(ALICE);
         vm.expectRevert(MapaeGuardians.MintLimit.selector);
         nft.mint{value: FEE}(bytes32(0), FEE);
@@ -309,7 +310,7 @@ contract MapaeGuardiansTest is Test {
         nft.transferFrom(BOB, ALICE, bob);
         assertEq(nft.balanceOf(ALICE), 3);
         assertEq(nft.mintedBy(ALICE), 3);
-        assertEq(nft.ownershipEpoch(1), 2);
+        assertEq(nft.ownershipEpoch(first), 2);
     }
 
     function test_ownedCapCountsPendingTokens() public {
@@ -323,12 +324,69 @@ contract MapaeGuardiansTest is Test {
     }
 
     function test_supplyCapBoundary() public {
-        FullGuardianCollection full =
-            new FullGuardianCollection(address(this), vm.addr(SIGNER_KEY), address(entropy), PROVIDER);
+        DrainedGuardianCollection full =
+            new DrainedGuardianCollection(address(this), vm.addr(SIGNER_KEY), address(entropy), PROVIDER);
         full.setMintPaused(false);
+        full.setDrawn(full.MAX_SUPPLY() - 1);
+        // One slot left and it was never swapped, so the last draw must be its default ID.
         vm.prank(ALICE);
+        (uint256 id,) = full.mint{value: FEE}(bytes32(0), FEE);
+        assertEq(id, 1);
+        assertEq(full.ownerOf(1), ALICE);
+        vm.prank(BOB);
         vm.expectRevert(MapaeGuardians.MintLimit.selector);
         full.mint{value: FEE}(bytes32(0), FEE);
+    }
+
+    function test_randomIdsAreInRangeDistinctAndNotSequential() public {
+        uint256 count = 60;
+        uint256[] memory ids = new uint256[](count);
+        bool sequential = true;
+        for (uint256 i; i < count; ++i) {
+            address who = address(uint160(0x10000 + i));
+            vm.deal(who, 1 ether);
+            vm.prevrandao(bytes32(i * 31 + 7));
+            (uint256 id, uint64 sequence) = _mint(who);
+            assertGe(id, 1);
+            assertLe(id, nft.MAX_SUPPLY());
+            for (uint256 j; j < i; ++j) {
+                assertTrue(ids[j] != id);
+            }
+            if (id != i + 1) sequential = false;
+            ids[i] = id;
+            assertEq(nft.pendingMint(who), id);
+            assertEq(nft.ownerOf(id), who);
+            (bool success,) = entropy.deliver(sequence, bytes32(i + 1));
+            assertTrue(success);
+            assertEq(nft.pendingMint(who), 0);
+            assertEq(
+                vm.parseJsonString(_json(id), ".image"),
+                string.concat("https://mapae.io/api/arcade/guardians/", vm.toString(id), "/image.svg")
+            );
+        }
+        assertFalse(sequential);
+        assertEq(nft.totalSupply(), count);
+    }
+
+    function testFuzz_finalDrawsPermuteRemainingIds(uint256 salt) public {
+        DrainedGuardianCollection small =
+            new DrainedGuardianCollection(address(this), vm.addr(SIGNER_KEY), address(entropy), PROVIDER);
+        small.setMintPaused(false);
+        uint256 max = small.MAX_SUPPLY();
+        small.setDrawn(max - 12);
+        // The last 12 draws come from untouched slots 0..11, so they must be a permutation of IDs 1..12.
+        bool[13] memory seen;
+        for (uint256 i; i < 12; ++i) {
+            address who = address(uint160(0x20000 + i));
+            vm.deal(who, 1 ether);
+            vm.prevrandao(bytes32(uint256(keccak256(abi.encode(salt, i)))));
+            vm.prank(who);
+            (uint256 id,) = small.mint{value: FEE}(bytes32(salt), FEE);
+            assertGe(id, 1);
+            assertLe(id, 12);
+            assertFalse(seen[id]);
+            seen[id] = true;
+        }
     }
 
     function test_growthAtomicCountersBestScoresAndGlobalReplay() public {
@@ -358,7 +416,7 @@ contract MapaeGuardiansTest is Test {
         vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
         nft.claimResult(duplicatePayment, duplicateSignature);
         assertFalse(nft.claimedResults(duplicatePayment.resultId));
-        assertEq(nft.progress(2).plays, 0);
+        assertEq(nft.progress(duplicatePayment.tokenId).plays, 0);
     }
 
     function test_historicalClaimsRemainValidAfterTransferAndReturn() public {
@@ -477,7 +535,10 @@ contract MapaeGuardiansTest is Test {
         uint256 id = _ready(ALICE);
         (bytes32 seed,,) = nft.birth(id);
         string memory before = _json(id);
-        assertEq(vm.parseJsonString(before, ".image"), "https://mapae.io/api/arcade/guardians/1/image.svg");
+        assertEq(
+            vm.parseJsonString(before, ".image"),
+            string.concat("https://mapae.io/api/arcade/guardians/", vm.toString(id), "/image.svg")
+        );
         assertEq(vm.parseJsonString(before, ".attributes[0].value"), GuardianTraits.zodiac(seed));
         assertEq(vm.parseJsonString(before, ".attributes[1].value"), GuardianTraits.hat(seed));
         assertEq(vm.parseJsonString(before, ".attributes[2].value"), GuardianTraits.outfit(seed));
