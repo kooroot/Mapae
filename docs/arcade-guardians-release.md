@@ -47,7 +47,9 @@ bun --no-env-file scripts/arcade-guardians-preflight.ts
 | 결제 에이전트 | `SESSION_ACCOUNT`, seller의 `ARCADE_AGENT_PRIVATE_KEY` | 사용자별 제한된 외출 권한. 결과 서명자와 다른 키 |
 | 이미지 주소 | `GUARDIAN_IMAGE_BASE_URI` | `https://mapae.io/api/arcade/guardians/` |
 
-결과 서명자는 배포자·관리자·결제 에이전트·facilitator 등 자금 역할과 다른 주소여야 한다. 배포자는 테스트 ETH가 필요하며, 결과 서명자와 결제 에이전트에 가스를 넣을 필요는 없다. 이미지 base URI는 배포 후 변경할 수 없으므로 위 서비스 도메인을 먼저 확인한다.
+결과 서명자는 배포자·관리자·결제 에이전트·facilitator 등 자금 역할과 다른 주소여야 하고, 코드가 없는 EOA여야 한다(EIP-7702 위임이 걸린 주소도 거절된다). 배포자는 테스트 ETH가 필요하며, 결과 서명자와 결제 에이전트에 가스를 넣을 필요는 없다. 이미지 base URI는 setter가 없어 업그레이드 없이는 바꿀 수 없으므로 위 서비스 도메인을 먼저 확인한다.
+
+컬렉션은 OpenZeppelin UUPS 프록시다. 스크립트는 세 개를 만든다. 메타데이터 라이브러리 `GuardianMetadata`(CREATE2 결정적 배포자 `0x4e59…956C`로 배포되며 같은 바이트코드면 주소가 같다), 구현 계약 `MapaeGuardians`(생성자 인수는 Pyth Entropy·provider 주소뿐이고 둘 다 immutable), 그리고 `initialize(admin, signer, imageBase)`를 생성자 안에서 원자적으로 실행하는 `ERC1967Proxy`다. **앱·seller·Worker·preflight에 넣는 주소는 항상 프록시 주소다.** 구현 주소로 호출하면 초기화되지 않은 빈 계약이며(`_disableInitializers`), EIP-712 서명 도메인의 `verifyingContract`, birth seed, Pyth 요청자도 모두 프록시 주소다.
 
 비공개 환경을 현재 셸에 로드한 뒤 다음을 실행한다. 첫 명령은 fork 시뮬레이션이며 두 번째만 실제 배포 트랜잭션을 전송한다.
 
@@ -57,7 +59,23 @@ forge script script/DeployGuardians.s.sol --rpc-url giwa_sepolia -vv
 forge script script/DeployGuardians.s.sol --rpc-url giwa_sepolia --broadcast -vv
 ```
 
-계약은 `mintPaused=true`로 생성된다. 출력한 컬렉션 주소와 `broadcast/DeployGuardians.s.sol/91342/run-latest.json`의 배포 트랜잭션을 보관한다. `cast receipt <배포_해시> --rpc-url giwa_sepolia`와 explorer에서 실제 성공을 확인한다. source verification은 배포 주소·생성자 인수를 사용해 `forge verify-contract`로 별도로 수행한다. 성공 여부를 확인하지 않은 상태에서 verified로 표기하지 않는다.
+계약은 `mintPaused=true`로 생성된다. 로그의 `Mapae Guardians (proxy, ARCADE_GUARDIAN_ADDRESS)`가 컬렉션 주소이고 `implementation`이 구현 주소다. 두 주소와 `broadcast/DeployGuardians.s.sol/91342/run-latest.json`의 세 트랜잭션(라이브러리 CREATE2, 구현, 프록시)과 `.libraries` 항목을 보관한다. `cast receipt <배포_해시> --rpc-url giwa_sepolia`와 explorer에서 각각 실제 성공을 확인한다.
+
+source verification은 Blockscout에서 세 계약을 각각 수행한다. 값은 위 JSON에서 복사한다.
+
+```sh
+cd contracts
+VERIFY="--rpc-url giwa_sepolia --verifier blockscout --verifier-url https://sepolia-explorer.giwa.io/api/ --watch"
+forge verify-contract $VERIFY <라이브러리_주소> src/GuardianMetadata.sol:GuardianMetadata
+forge verify-contract $VERIFY --libraries src/GuardianMetadata.sol:GuardianMetadata:<라이브러리_주소> \
+  --constructor-args $(cast abi-encode "f(address,address)" 0x0708325268dF9F66270F1401206434524814508b 0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344) \
+  <구현_주소> src/MapaeGuardians.sol:MapaeGuardians
+INIT=$(cast calldata "initialize(address,address,string)" <관리자> <결과_서명자> https://mapae.io/api/arcade/guardians/)
+forge verify-contract $VERIFY --constructor-args $(cast abi-encode "f(address,bytes)" <구현_주소> $INIT) \
+  <프록시_주소> lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy
+```
+
+프록시 생성자 인수는 `(구현_주소, initialize 호출 데이터)`이고, `run-latest.json` 프록시 트랜잭션 `input`의 끝부분과 같아야 한다. Blockscout가 프록시를 인식하면 컬렉션 페이지의 Read/Write as Proxy에 구현 ABI가 보인다. 성공 여부를 확인하지 않은 상태에서 verified로 표기하지 않는다.
 
 저장소 루트에서 배포 상태를 읽는다.
 
@@ -65,7 +83,7 @@ forge script script/DeployGuardians.s.sol --rpc-url giwa_sepolia --broadcast -vv
 bun --no-env-file scripts/arcade-guardians-preflight.ts --collection <배포한_주소>
 ```
 
-관리자·결과 서명자·이미지 주소가 의도한 값이고 mint가 paused인지 확인한다.
+관리자·결과 서명자·이미지 주소가 의도한 값이고 mint가 paused인지 확인한다. preflight는 ERC-1967 구현 슬롯이 비어 있지 않고 그 주소에 코드가 있는지도 읽어 `implementation`으로 출력한다. 이 값이 배포 로그의 구현 주소와 같아야 한다. 관리자 이전은 2단계(`transferOwnership` 후 새 주소의 `acceptOwnership`)이며, 결과 서명자 주소로는 이전할 수 없다.
 
 ## 3. D1와 서버 환경 연결
 
@@ -78,13 +96,13 @@ bunx wrangler secret put ARCADE_GUARDIAN_ADDRESS --env landing --config wrangler
 bunx wrangler secret put ARCADE_GUARDIAN_ADDRESS --env app --config wrangler.jsonc
 ```
 
-두 `secret put` 프롬프트에는 같은 **공개 NFT 계약 주소**만 넣는다. 이 값은 Worker 런타임 binding으로 저장하며 비밀 키가 아니다. 주소를 `VITE_*`로 만들지 않는다. 기존 `ARCADE_RECEIPT_TOKEN`은 seller와 두 Worker가 공유하는 서버 전용 값으로 유지한다.
+두 `secret put` 프롬프트에는 같은 **공개 NFT 프록시 주소**만 넣는다. 구현 주소를 넣지 않는다. 이 값은 Worker 런타임 binding으로 저장하며 비밀 키가 아니다. 주소를 `VITE_*`로 만들지 않는다. 기존 `ARCADE_RECEIPT_TOKEN`은 seller와 두 Worker가 공유하는 서버 전용 값으로 유지한다.
 
 seller 비공개 환경에 다음을 설정한다. [seller 예제](../apps/delegated-seller/.env.example)를 참고한다.
 
 ```text
 ARCADE_OUTINGS_ENABLED=true
-ARCADE_GUARDIAN_ADDRESS=<같은 NFT 계약 주소>
+ARCADE_GUARDIAN_ADDRESS=<같은 NFT 프록시 주소>
 ARCADE_RESULT_PRIVATE_KEY=<별도 결과 서명 키>
 GUARDIAN_DEPLOYER_ADDRESS=<배포자 공개 주소>
 GUARDIAN_ADMIN_ADDRESS=<관리자 공개 주소>
@@ -129,8 +147,26 @@ bun run deploy:app
 
 지갑에서 속도 올리기나 취소로 트랜잭션을 교체했다면 복구 화면에 교체 거래 해시를 입력한다. 같은 발신자·실제 nonce와 확정 영수증을 확인한 경우에만 기존 대기를 해제한다. 원래 거래가 RPC에 한 번도 관측되지 않아 nonce를 보관하지 못했고 이후에도 조회할 수 없는 경우에는 추측으로 기록을 지우지 않는다. 그때는 지갑·explorer에서 원래 거래의 검증 가능한 정보를 먼저 확보해야 한다.
 
+## 구현 업그레이드
+
+업그레이드는 관리자(owner)만 프록시에 `upgradeToAndCall(newImplementation, data)`로 실행한다. 저장 상태(소유자, birth, 성장, 뽑기 풀, 대기 중 요청)는 프록시의 ERC-7201 네임스페이스(`mapae.storage.MapaeGuardians`)에 있어 그대로 유지된다. 모든 업그레이드는 `BatchMetadataUpdate(1, 10000)`를 발생시켜 마켓·인덱서가 전체 메타데이터를 새로 읽게 한다. 절차는 다음과 같다.
+
+1. 새 구현은 `GuardiansStorage` 구조체 끝에만 필드를 추가한다. 기존 필드(`Account`, `Token`, `Growth` 구조체 포함)의 순서·타입을 바꾸거나 지우지 않는다. 네임스페이스 저장소는 `forge inspect ... storageLayout`에 나오지 않으므로 그 비교는 쓰지 않는다. 대신 `test_namespacedStorageLayoutIsPinned`와 `test_storageSlotMatchesErc7201AndPacksHotFields`가 **수정 없이** 새 구현에서 통과해야 하고, 업그레이드 테스트(`test_upgradePreservesStateAndPendingEntropyCallback`)를 새 구현으로 확장한다. `_EIP712Name`/`_EIP712Version`과 `_hashTypedDataV4`의 상수("Mapae Guardians", "1")를 유지해야 이미 발급된 결과 서명이 유효하다. 같은 테스트가 업그레이드 후 `eip712Domain()`을 확인한다.
+2. Entropy 주소와 provider는 구현의 immutable이다. 보통은 새 구현도 같은 두 값으로 생성한다. 바꿀 때는 `setMintPaused(true)` 후 업그레이드한다. 요청은 (Entropy, provider, sequence)로 저장되므로 새 provider의 sequence가 예전 번호와 겹쳐도 뽑기가 막히지 않는다. 변경 시점에 대기 중이던 뽑기는 이전 Entropy/provider로는 더 이상 공개되지 않으며, 그 토큰의 민터가 `rerequestBirth(tokenId, contribution, maxFee)`로 새 수수료를 내고 다시 요청한다. 현재 쌍이 기존 요청을 아직 전달할 수 있으면 이 호출은 `PendingDraw`로 거절되므로 한 토큰이 두 개의 유효한 난수 중 하나를 고를 수 없다. 각 요청에는 토큰의 시도 번호가 함께 저장되고 콜백은 가장 최근 시도만 받으므로, 이전 Entropy/provider로 되돌려도 대체된 요청은 공개되지 않는다. 재요청은 `MintRequested`가 아니라 `BirthRerequested`를 내보내며, 보고서는 이를 민트로 세지 않고 웹 복구 화면은 두 이벤트를 모두 읽는다. 웹 복구 화면의 `GUARDIAN_ENTROPY`/`GUARDIAN_PROVIDER` 상수도 함께 바꾼다.
+3. 새 구현을 배포·verify한다(생성자 인수 동일). 링크된 `GuardianMetadata` 주소가 검증된 라이브러리 bytecode의 CREATE2 주소와 같은지 확인한다. `tokenURI`는 이 라이브러리를 DELEGATECALL하므로 잘못 링크된 주소는 프록시 저장소에서 실행된다. fork 시뮬레이션에서 `upgradeToAndCall`을 실행해 기존 토큰의 `tokenURI`를 비교한 뒤 관리자 지갑으로 실제 호출한다. 추가 초기화가 필요하면 `reinitializer(2)` 함수를 `data`로 함께 호출한다.
+4. `Upgraded(implementation)` 이벤트와 preflight의 `implementation` 출력이 새 주소인지 확인한다. 프록시 주소는 바뀌지 않으므로 Worker·seller 설정은 그대로 둔다.
+
+구현이 UUPS가 아니면(`proxiableUUID` 없음) 업그레이드가 되돌려진다. 업그레이드 권한을 잃지 않도록 관리자 키를 잃어버리거나 `renounceOwnership`을 호출하지 않는다. 호출하면 이후 업그레이드는 불가능하다.
+
+### 신뢰 경계
+
+- 관리자는 모든 상태를 신뢰받는다. 업그레이드는 즉시 적용되고(timelock 없음) birth·성장·소유권을 바꿀 수 있으며, 결과 서명자를 자기 키로 바꿔 성장을 직접 발급할 수도 있다. 관리자/서명자 분리는 서명 키가 유출돼도 관리자 권한을 얻지 못하게 하는 키 위생 규칙이다. 테스트넷 밖에서 쓰기 전에 owner를 multisig(필요하면 TimelockController)로 `transferOwnership` → `acceptOwnership`한다.
+- 교체한 결과 서명 키는 폐기된 것으로 본다. 결과에는 만료가 없어서, 예전 키로 되돌리면 그 키가 서명했지만 청구되지 않은 결과가 다시 유효해진다.
+- 정식 컬렉션은 `ARCADE_GUARDIAN_ADDRESS`의 프록시 하나뿐이다. 누구나 같은 구현 앞에 자기 프록시를 세워 같은 이름의 토큰을 만들 수 있으므로 마켓·인덱서에는 프록시 주소를 기준으로 안내한다. 서명 domain·birth seed·Pyth 요청자가 모두 프록시 주소에 묶여 있어 다른 프록시로 옮겨지지 않는다.
+- 감사 기록: [MapaeGuardians UUPS audit 2026-10-11](audits/mapae-guardians-uups-2026-10-11.md).
+
 ## 운영 중 중지와 기록
 
 신규 뽑기는 `setMintPaused(true)`로 중지한다. 외출 문제가 있으면 사용자 UI에서 중지·권한 회수하고 필요 시 `ARCADE_OUTINGS_ENABLED=false`로 seller를 재시작한다. 이미 제출한 결제·결과 DB는 보존한다. 이전 가변 캐릭터 버전으로 되돌려 NFT 작업을 실행하지 않는다.
 
-배포 기록에는 git SHA, 체인 ID, NFT 주소·배포 해시·관리자·결과 서명자, 난수 요청/공개 해시와 token/sequence, 입장·성장 해시, D1 적용 시점, seller 재시작 시점, 두 Worker version ID를 남긴다. 개인 키·bearer·권한 원문은 기록하지 않는다. 실제 이용자 성과 보고서는 [파일럿 안내](arcade-guardians-pilot.md)의 읽기 전용 도구로 별도 생성한다.
+배포 기록에는 git SHA, 체인 ID, NFT 프록시 주소·구현 주소·라이브러리 주소·배포 해시·관리자·결과 서명자, 업그레이드 해시, 난수 요청/공개 해시와 token/sequence, 입장·성장 해시, D1 적용 시점, seller 재시작 시점, 두 Worker version ID를 남긴다. 개인 키·bearer·권한 원문은 기록하지 않는다. 실제 이용자 성과 보고서는 [파일럿 안내](arcade-guardians-pilot.md)의 읽기 전용 도구로 별도 생성한다.
