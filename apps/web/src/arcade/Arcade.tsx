@@ -1,6 +1,7 @@
 import {Web3Providers} from "../dapp/Web3Providers";
 import {ArcadeShell} from "./ArcadeShell";
 import {useArcadeMotion} from "./motion";
+import "./arcade-tokens.css";
 import "./arcade.css";
 import "./agent-arcade.css";
 import "./arcade-brand.css";

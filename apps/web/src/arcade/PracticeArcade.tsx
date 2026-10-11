@@ -28,6 +28,7 @@ import {ArcadeSound} from "./sound";
 import {swapScreen, useArcadeMotion} from "./motion";
 import {ResultImage} from "./ResultImage";
 import {useResultRitual} from "./result-ritual";
+import "./arcade-tokens.css";
 import "./arcade.css";
 
 const COPY = {

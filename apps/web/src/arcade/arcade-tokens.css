@@ -1,0 +1,12 @@
+/*
+ * The arcade's one token sheet. The shell is dark; records, boards and journals sit on paper cards.
+ * Medal colours carry rank only together with a numeral and a text label, never alone.
+ */
+.arcade{
+    --card:#fffaf0;--card-2:#f3ead8;--card-3:#e9dfcb;--card-ink:#302e28;--card-muted:#6d5a40;--card-hair:#ded2bd;--card-rim:#c9b998;
+    --gold:#e2b24a;--jade:#347c6e;--jade-ink:#265d51;--jade-wash:#e4efe9;--vermilion:#b0392c;--vermilion-wash:#f7e1dc;
+    --medal-gold:#e2b24a;--medal-gold-rim:#9a6a12;--medal-gold-light:#fff1c2;--medal-gold-ink:#5a3a00;--medal-gold-card:#fff4d6;
+    --medal-silver:#c9cfd6;--medal-silver-rim:#7d8792;--medal-silver-light:#f4f6f8;--medal-silver-ink:#36404a;--medal-silver-card:#f1f3f5;
+    --medal-bronze:#c9874e;--medal-bronze-rim:#8a4f22;--medal-bronze-light:#f6dec6;--medal-bronze-ink:#4a2810;--medal-bronze-card:#f9eadb;
+    --r-sm:8px;--r-md:12px;--r-lg:18px;--r-pill:999px;
+}
