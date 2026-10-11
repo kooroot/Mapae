@@ -86,14 +86,19 @@ export function useGuardians(owner:Address,ready:boolean,ko:boolean){
         if(!verified){await refresh();return;}
         const w=await wallet();const simulation=await publicClient.simulateContract({address:roster.collection,abi:guardianAbi,functionName:'claimResult',args:[verified.result,verified.signature],account:owner});
         await wallet();await recorded(await writeContract(w,simulation.request),'claim',token.tokenId);
-        const claimed=await publicClient.readContract({address:roster.collection,abi:guardianAbi,functionName:'claimedResults',args:[verified.result.resultId]});
+        const claimed=await publicClient.readContract({address:roster.collection,abi:guardianAbi,functionName:'claimedPayments',args:[verified.result.paymentTx]});
         setDetail(previous=>previous?{...previous,results:previous.results.map(r=>r.id===result.id?{...r,claimed}:r)}:null);
     });}
     async function recover(token:GuardianToken){await perform(async()=>{
         if(!roster?.collection||token.revealed||transaction)throw Error('not_pending');
         const request=await publicClient.readContract({address:GUARDIAN_ENTROPY,abi:entropyRecoveryAbi,functionName:'getRequestV2',args:[GUARDIAN_PROVIDER,BigInt(token.sequence)]});
         if(!sameAddress(request.requester,roster.collection)||!sameAddress(request.provider,GUARDIAN_PROVIDER)||request.sequenceNumber!==BigInt(token.sequence)||request.useBlockhash)throw Error('request_mismatch');
-        const logs=await publicClient.getLogs({address:roster.collection,event:parseAbiItem('event MintRequested(address indexed owner,uint256 indexed tokenId,uint64 indexed sequence,bytes32 contribution)'),args:{owner,tokenId:BigInt(token.tokenId),sequence:BigInt(token.sequence)},fromBlock:request.blockNumber,toBlock:request.blockNumber});
+        // The latest request is either the mint or a re-request after an oracle change; both carry the contribution.
+        const filter={address:roster.collection,args:{owner,tokenId:BigInt(token.tokenId),sequence:BigInt(token.sequence)},fromBlock:request.blockNumber,toBlock:request.blockNumber};
+        const logs=(await Promise.all([
+            publicClient.getLogs({...filter,event:parseAbiItem('event MintRequested(address indexed owner,uint256 indexed tokenId,uint64 indexed sequence,bytes32 contribution)')}),
+            publicClient.getLogs({...filter,event:parseAbiItem('event BirthRerequested(address indexed owner,uint256 indexed tokenId,uint64 indexed sequence,bytes32 contribution)')}),
+        ])).flat();
         const contribution=logs[0]?.args.contribution;if(logs.length!==1||!contribution)throw Error('request_missing');
         const response=await fetch(`https://fortuna-staging.dourolabs.app/v1/chains/giwa-testnet/revelations/${token.sequence}?block_number=${request.blockNumber}`,{signal:AbortSignal.timeout(15000),redirect:'error'});
         if(!response.ok)throw Error('provider_pending');

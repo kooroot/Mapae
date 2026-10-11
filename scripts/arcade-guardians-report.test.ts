@@ -46,8 +46,8 @@ function fixtures(empty=false){
     }
     e.close();s.close();return {engagementDb,sellerDb,asOf:now};
 }
-function collectionLog(eventName:'MintRequested'|'ResultClaimed'|'BirthRevealed',tx=hash):Log {
-    const args=eventName==='MintRequested'?{owner,tokenId:1n,sequence:1n}:eventName==='ResultClaimed'?{resultId:hash,tokenId:1n,paymentTx:hash}:{tokenId:1n,sequence:1n};
+function collectionLog(eventName:'MintRequested'|'BirthRerequested'|'ResultClaimed'|'BirthRevealed',tx=hash):Log {
+    const args=eventName==='MintRequested'||eventName==='BirthRerequested'?{owner,tokenId:1n,sequence:1n}:eventName==='ResultClaimed'?{resultId:hash,tokenId:1n,paymentTx:hash}:{tokenId:1n,sequence:1n};
     const data=eventName==='ResultClaimed'?encodeAbiParameters([{type:'address'}],[owner]):encodeAbiParameters([{type:'bytes32'}],[hash]);
     return {address:collection,topics:encodeEventTopics({abi:guardianAbi,eventName,args} as Parameters<typeof encodeEventTopics>[0]),data,
         blockNumber:10n,blockHash,transactionHash:tx,transactionIndex:0,logIndex:0,removed:false} as Log;
@@ -135,6 +135,10 @@ describe('bounded canonical chain evidence',()=>{
         expect(report.chain?.coverage.status).toBe('complete');expect(report.complete).toBe(true);
         expect(report.chain?.completeCounts).toEqual({mintTransactions:1,mintedTokens:1,revealTransactions:1,claimTransactions:1,claimActorWallets:1,paymentTransactions:2,distinctTransactions:2});
         expect(JSON.stringify(report)).not.toContain(owner);expect(JSON.stringify(report)).not.toContain(hash);
+    });
+    test('a birth re-request is not counted as a mint',async()=>{
+        const report=await guardiansReport({...fixtures(),...scan},chain({getLogs:async()=>[collectionLog('MintRequested'),collectionLog('BirthRerequested',second)]}));
+        expect(report.chain?.completeCounts).toMatchObject({mintTransactions:1,mintedTokens:1});
     });
     test('range failures, unsafe head and orphaned payments retain explicit incomplete coverage',async()=>{
         for(const c of [

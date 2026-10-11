@@ -1,8 +1,11 @@
 /** Public read-only release evidence. This tool never loads a wallet or sends a transaction. */
-import {createPublicClient, http, isAddress, parseAbi, type Address} from 'viem';
+import {createPublicClient, getAddress, http, isAddress, parseAbi, type Address} from 'viem';
 import {giwaSepolia} from '../packages/shared/src/index';
 import {GUARDIAN_CHAIN_ID, GUARDIAN_ENTROPY, GUARDIAN_PROVIDER, guardianTokenId, guardianTraits} from '../packages/arcade/src/guardians';
 import {guardianAbi} from '../packages/arcade/src/guardian-abi';
+
+// ERC-1967: bytes32(uint256(keccak256('eip1967.proxy.implementation')) - 1)
+const IMPLEMENTATION_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
 
 const entropyAbi = parseAbi([
     'function getDefaultProvider() view returns (address)',
@@ -40,6 +43,10 @@ async function main() {
     if (collection) {
         const address = collection as Address;
         if (!await client.getCode({address})) throw Error('collection_missing');
+        // The collection is a UUPS proxy: its implementation slot must point at deployed code.
+        const slot = await client.getStorageAt({address, slot: IMPLEMENTATION_SLOT, blockNumber: block.number});
+        const implementation = slot && BigInt(slot) !== 0n ? getAddress(`0x${slot.slice(-40)}`) : null;
+        if (!implementation || !await client.getCode({address: implementation, blockNumber: block.number})) throw Error('collection_not_a_proxy');
         const read = {address, abi: guardianAbi, blockNumber: block.number} as const;
         const [entropy, selectedProvider, signer, admin, mintPaused, supply, imageBase] = await Promise.all([
             client.readContract({...read, functionName: 'entropy'}), client.readContract({...read, functionName: 'entropyProvider'}),
@@ -48,7 +55,7 @@ async function main() {
             client.readContract({...read, functionName: 'imageBaseURI'}),
         ]);
         if (entropy.toLowerCase() !== GUARDIAN_ENTROPY.toLowerCase() || selectedProvider.toLowerCase() !== GUARDIAN_PROVIDER.toLowerCase() || signer.toLowerCase() === admin.toLowerCase()) throw Error('collection_configuration_mismatch');
-        deployed = {address, signer, admin, mintPaused, supply, imageBase, token: null};
+        deployed = {address, implementation, signer, admin, mintPaused, supply, imageBase, token: null};
         if (token) {
             // Safe-head state is evidence of a persisted reveal, not merely latest mempool/UI state.
             const [seed, sequence, revealed] = await client.readContract({...read, blockNumber: safe.number, functionName: 'birth', args: [BigInt(token)]});

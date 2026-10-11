@@ -199,6 +199,7 @@ export async function chainActivity(options:ReportOptions,payments:Payment[],pay
                 try{decoded=decodeEventLog({abi:guardianAbi,data:log.data,topics:log.topics});}catch{throw failure('undecodable_collection_log');}
                 const hash=`91342:${log.transactionHash.toLowerCase()}`,args=decoded.args as Record<string,unknown>;
                 if(decoded.eventName==='MintRequested'){minted.add(hash);tokens.add(String(args.tokenId));all.add(hash);}
+                else if(decoded.eventName==='BirthRerequested')all.add(hash); // a re-request after an oracle change is not a mint
                 else if(decoded.eventName==='BirthRevealed'){revealed.add(hash);all.add(hash);}
                 else if(decoded.eventName==='ResultClaimed'){claims.add(hash);actors.add(String(args.actor).toLowerCase());all.add(hash);}
             }
