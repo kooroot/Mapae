@@ -19,11 +19,7 @@
 html.arc-still{scroll-behavior:auto}
 @media(max-width:620px){.agent-arcade[data-screen=receipt]{padding-bottom:calc(105px + env(safe-area-inset-bottom))}}
 
-.arcade-revocations { --studio-red:#e36b62; --studio-red-wash:#e36b621a; --studio-text-3:var(--arc-dim); --studio-line:var(--arc-hair); margin-top: 18px; border-top: 1px solid #8d7658; padding-top: 14px; }
-.arcade-revocations > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; cursor: pointer; list-style: none; color: #e9c99f; }
-.arcade-revocations > summary::-webkit-details-marker { display: none; }
-.arcade-revocations[open] > summary > svg { transform: rotate(180deg); }
-.arc-queue-panel > .arcade-revocations { margin: 0; padding: 0; border: 0; }
+.arcade-revocations { --studio-red:#e36b62; --studio-red-wash:#e36b621a; --studio-text-3:var(--arc-dim); --studio-line:var(--arc-hair); }
 .arcade-revocation { padding: 12px 0; border-bottom: 1px solid #5e4b38; }
 .arcade-revocation > p { overflow-wrap: anywhere; }
 .arcade-revocation .studio-revoke-action { margin-top: 8px; }

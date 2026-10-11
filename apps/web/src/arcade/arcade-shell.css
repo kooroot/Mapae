@@ -44,6 +44,7 @@
 .arc-menu-account{padding-top:18px;border-top:1px solid var(--arc-hair)}
 .arc-menu-account>p{margin:0 0 12px;color:var(--arc-dim);font-size:13px;line-height:1.6;word-break:keep-all}
 .arc-menu-account .arc-account{flex-wrap:wrap;width:fit-content;max-width:100%;border-radius:22px}
+.arc-menu-account .arc-account-disconnect{width:auto;margin-left:12px;padding:0 16px 0 12px}.arc-menu-account .arc-account-disconnect>span{display:inline}
 .arc-menu-account .arc-account-hint{position:static;flex:1 0 100%;width:auto;max-width:none;margin:0 14px 10px 0;padding:0;border:0;background:none;color:var(--arc-dim);visibility:visible}
 .arc-menu-account .arc-button{display:flex;justify-content:center;align-items:center;gap:12px;width:100%;min-height:48px;padding:13px 20px;border:1px solid #a8947655!important;border-radius:999px;background:transparent;box-shadow:none;color:var(--arc-cream);font:650 14px var(--sans);transform:none}
 .arc-menu-account .arc-button:hover:not(:disabled){border-color:var(--arc-gold)!important;transform:none;box-shadow:none}

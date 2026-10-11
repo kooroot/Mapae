@@ -19,7 +19,7 @@ export function WalletSection({desk, walletWaiting, blocked, onDisconnect}: {des
 function Wallet({desk, blocked, onDisconnect}: {desk: GuardianDesk; blocked: boolean; onDisconnect: () => void}) {
     const {ko, locale, giwa, owner, disconnecting} = desk, hint = useId();
     if (!owner) return null;
-    const address = (value: string) => <a className="arc-inline-link" href={explorerAddressUrl(value)} target="_blank" rel="noreferrer" title={value}>{shortAddress(value)}<ExternalLink size={14} aria-hidden="true" /></a>;
+    const address = (value: string) => <a className="arc-inline-link arc-wallet-address" href={explorerAddressUrl(value)} target="_blank" rel="noreferrer" title={value}>{shortAddress(value)}<ExternalLink size={14} aria-hidden="true" /></a>;
     return <>
         <section className="arc-queue-panel arc-wallet-account" aria-labelledby="arc-wallet-title">
             <h2 id="arc-wallet-title">{ko ? '연결한 지갑' : 'Connected wallet'}</h2>
