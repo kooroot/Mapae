@@ -40,6 +40,8 @@ contract MapaeGuardians is
     uint32 public constant MIN_RULESET = 3;
     uint32 public constant MAX_SCORE = 1_000_000_000;
     uint32 public constant CALLBACK_GAS_LIMIT = 500_000;
+    /// @dev Bounds a `claimResults` batch's gas (about 1.4M at the cap) well under the block gas limit.
+    uint256 public constant MAX_CLAIM_BATCH = 32;
     bytes32 public constant RESULT_TYPEHASH = keccak256(
         "Result(bytes32 resultId,uint256 tokenId,address actor,uint64 ownershipEpoch,bytes32 paymentTx,bytes32 traitsHash,bytes32 inputsHash,uint32 ruleset,uint32 seed,uint8 game,uint32 score,bool victory)"
     );
@@ -88,7 +90,7 @@ contract MapaeGuardians is
         uint256 bestScores; // lane g (32 bits): best score in game g, at most MAX_SCORE < 2**32
     }
 
-    /// @dev Slot 0 is the seed; slot 1 packs the fields `_update`, mint and claimResult touch together.
+    /// @dev Slot 0 is the seed; slot 1 packs the fields `_update`, mint and result claims touch together.
     struct Token {
         bytes32 seed;
         uint64 sequence; // latest request's sequence, under the pair that was current when it was made
@@ -99,7 +101,7 @@ contract MapaeGuardians is
 
     /// @custom:storage-location erc7201:mapae.storage.MapaeGuardians
     struct GuardiansStorage {
-        // Slot 0 packs everything mint and claimResult read unconditionally.
+        // Slot 0 packs everything mint and result claims read unconditionally.
         address resultSigner;
         bool mintPaused;
         /// @dev Never decreases (the collection has no burn), so it is the draw counter, not totalSupply().
@@ -132,6 +134,7 @@ contract MapaeGuardians is
     error InvalidResult();
     error InvalidResultSignature();
     error AlreadyClaimed();
+    error InvalidBatch();
 
     event MintRequested(address indexed owner, uint256 indexed tokenId, uint64 indexed sequence, bytes32 contribution);
     event BirthRerequested(
@@ -383,7 +386,33 @@ contract MapaeGuardians is
     /// MIN_RULESET, `seed` and `inputsHash` are attestations owned by the signer. Anyone may relay a signature.
     /// Each paymentTx grows at most one result.
     function claimResult(Result calldata result, bytes calldata signature) external nonReentrant {
+        if (!_claim(_guardians(), result, signature)) revert AlreadyClaimed();
+    }
+
+    /// @notice Claims up to MAX_CLAIM_BATCH results in one transaction, each under exactly the checks of
+    /// `claimResult`. Any invalid entry (bad signature, field, token or pending birth) reverts the whole batch;
+    /// an entry whose paymentTx is already claimed, earlier in the batch or elsewhere, is skipped, but only after
+    /// its own signature and fields have been verified. Reverts AlreadyClaimed when nothing was applied.
+    function claimResults(Result[] calldata results, bytes[] calldata signatures)
+        external
+        nonReentrant
+        returns (uint256 applied)
+    {
+        uint256 count = results.length;
+        if (count == 0 || count > MAX_CLAIM_BATCH || signatures.length != count) revert InvalidBatch();
         GuardiansStorage storage $ = _guardians();
+        for (uint256 i; i < count; ++i) {
+            if (_claim($, results[i], signatures[i])) ++applied;
+        }
+        if (applied == 0) revert AlreadyClaimed();
+    }
+
+    /// @dev Verifies one result completely, then applies it unless its paymentTx is already claimed. Returns
+    /// whether it was applied; verification failures always revert, so a skip never hides an invalid result.
+    function _claim(GuardiansStorage storage $, Result calldata result, bytes calldata signature)
+        private
+        returns (bool)
+    {
         _requireOwned(result.tokenId);
         Token memory token = $.tokens[result.tokenId];
         if (!token.revealed) revert PendingDraw();
@@ -393,9 +422,9 @@ contract MapaeGuardians is
                 || result.ownershipEpoch > token.ownershipEpoch || result.game > 2 || result.ruleset < MIN_RULESET
                 || result.score > MAX_SCORE || result.traitsHash != keccak256(abi.encode(token.seed))
         ) revert InvalidResult();
-        if ($.claimedPayments[result.paymentTx]) revert AlreadyClaimed();
         (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(resultDigest(result), signature);
         if (error != ECDSA.RecoverError.NoError || recovered != $.resultSigner) revert InvalidResultSignature();
+        if ($.claimedPayments[result.paymentTx]) return false;
         // Historical valid results survive transfer. The signer attests the actor/epoch at departure.
         $.claimedPayments[result.paymentTx] = true;
         Growth storage g = $.growth[result.tokenId];
@@ -410,6 +439,7 @@ contract MapaeGuardians is
         }
         emit ResultClaimed(result.resultId, result.tokenId, result.paymentTx, result.actor);
         emit MetadataUpdate(result.tokenId);
+        return true;
     }
 
     function setMintPaused(bool paused) external onlyOwner {

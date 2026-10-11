@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test, Vm} from "forge-std/Test.sol";
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
@@ -1321,5 +1322,246 @@ contract MapaeGuardiansTest is Test {
         string memory json = _json(id);
         assertEq(vm.parseJsonString(json, ".name"), string.concat("Mapae Guardian #", vm.toString(id)));
         assertEq(vm.parseJsonString(json, ".image"), string.concat(hostile, vm.toString(id), "/image.svg"));
+    }
+
+    function _batch(MapaeGuardians.Result[] memory results)
+        internal
+        view
+        returns (MapaeGuardians.Result[] memory, bytes[] memory signatures)
+    {
+        signatures = new bytes[](results.length);
+        for (uint256 i; i < results.length; ++i) {
+            signatures[i] = _sign(results[i], SIGNER_KEY);
+        }
+        return (results, signatures);
+    }
+
+    function _results(uint256 id, uint256 from, uint256 count)
+        internal
+        view
+        returns (MapaeGuardians.Result[] memory r)
+    {
+        r = new MapaeGuardians.Result[](count);
+        for (uint256 i; i < count; ++i) {
+            // forge-lint: disable-next-line(unsafe-typecast)
+            r[i] = _result(id, from + i, uint8(i % 3), uint32(10 + i), i % 2 == 0);
+        }
+    }
+
+    function test_claimResultsAppliesEachResultLikeSingleClaims() public {
+        uint256 id = _ready(ALICE);
+        uint256 other = _ready(BOB);
+        MapaeGuardians.Result[] memory r = new MapaeGuardians.Result[](4);
+        r[0] = _result(id, 1, 0, 50, true);
+        r[1] = _result(id, 2, 0, 40, false);
+        r[2] = _result(id, 3, 1, 75, true);
+        r[3] = _result(other, 4, 2, 60, false);
+        (, bytes[] memory sigs) = _batch(r);
+        // Permissionless like claimResult: any relayer may submit, and claims ignore the mint pause.
+        nft.setMintPaused(true);
+        for (uint256 i; i < r.length; ++i) {
+            vm.expectEmit(address(nft));
+            emit MapaeGuardians.ResultClaimed(r[i].resultId, r[i].tokenId, r[i].paymentTx, r[i].actor);
+            vm.expectEmit(address(nft));
+            emit MapaeGuardians.MetadataUpdate(r[i].tokenId);
+        }
+        vm.prank(address(0xCAFE));
+        assertEq(nft.claimResults(r, sigs), 4);
+        GuardianMetadata.Progress memory p = nft.progress(id);
+        assertEq(p.plays, 3);
+        assertEq(p.victories, 2);
+        assertEq(p.experience, 40);
+        assertEq(p.gamePlays[0], 2);
+        assertEq(p.bestScores[0], 50);
+        assertEq(p.bestScores[1], 75);
+        assertEq(nft.progress(other).plays, 1);
+        assertEq(nft.progress(other).bestScores[2], 60);
+        for (uint256 i; i < r.length; ++i) {
+            assertTrue(nft.claimedPayments(r[i].paymentTx));
+        }
+    }
+
+    /// A paymentTx claimed elsewhere or earlier in the same batch is skipped rather than failing the batch.
+    function test_claimResultsSkipsAlreadyClaimedAndInBatchDuplicates() public {
+        uint256 id = _ready(ALICE);
+        MapaeGuardians.Result memory claimed = _result(id, 1, 0, 50, true);
+        _claim(claimed);
+        MapaeGuardians.Result memory fresh = _result(id, 2, 1, 30, false);
+        MapaeGuardians.Result memory samePayment = _result(id, 3, 2, 90, true);
+        samePayment.paymentTx = fresh.paymentTx;
+        MapaeGuardians.Result[] memory r = new MapaeGuardians.Result[](4);
+        (r[0], r[1], r[2], r[3]) = (claimed, fresh, fresh, samePayment);
+        (, bytes[] memory sigs) = _batch(r);
+        vm.recordLogs();
+        assertEq(nft.claimResults(r, sigs), 1);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 2);
+        assertEq(logs[0].topics[0], MapaeGuardians.ResultClaimed.selector);
+        assertEq(logs[0].topics[1], fresh.resultId);
+        GuardianMetadata.Progress memory p = nft.progress(id);
+        assertEq(p.plays, 2);
+        assertEq(p.bestScores[2], 0);
+        // Nothing left to apply: the batch reverts like a repeated single claim.
+        vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
+        nft.claimResults(r, sigs);
+    }
+
+    /// Skipping never hides an invalid entry: every entry is fully verified, and one failure reverts them all.
+    function test_claimResultsRevertsWholeBatchOnAnyInvalidEntry() public {
+        uint256 id = _ready(ALICE);
+        MapaeGuardians.Result memory claimed = _result(id, 1, 0, 50, true);
+        _claim(claimed);
+        MapaeGuardians.Result[] memory r = _results(id, 10, 3);
+        (, bytes[] memory sigs) = _batch(r);
+
+        bytes memory good = sigs[1];
+        sigs[1] = _sign(r[1], 999);
+        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
+        nft.claimResults(r, sigs);
+        sigs[1] = hex"01";
+        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
+        nft.claimResults(r, sigs);
+        sigs[1] = good;
+
+        // An already-claimed entry with a forged signature is rejected, not skipped.
+        MapaeGuardians.Result[] memory withClaimed = new MapaeGuardians.Result[](2);
+        (withClaimed[0], withClaimed[1]) = (r[0], claimed);
+        bytes[] memory forged = new bytes[](2);
+        (forged[0], forged[1]) = (sigs[0], _sign(claimed, 999));
+        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
+        nft.claimResults(withClaimed, forged);
+
+        // A signed result from a future ownership epoch is invalid in a batch as in a single claim.
+        uint64 epoch = r[2].ownershipEpoch;
+        r[2].ownershipEpoch = epoch + 1;
+        sigs[2] = _sign(r[2], SIGNER_KEY);
+        vm.expectRevert(MapaeGuardians.InvalidResult.selector);
+        nft.claimResults(r, sigs);
+        r[2].ownershipEpoch = epoch;
+        sigs[2] = _sign(r[2], SIGNER_KEY);
+
+        (uint256 pending,) = _mint(BOB);
+        r[2].tokenId = pending;
+        vm.expectRevert(MapaeGuardians.PendingDraw.selector);
+        nft.claimResults(r, sigs);
+        r[2].tokenId = 9_999_999;
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 9_999_999));
+        nft.claimResults(r, sigs);
+        r[2].tokenId = id;
+
+        assertEq(nft.progress(id).plays, 1);
+        for (uint256 i; i < r.length; ++i) {
+            assertFalse(nft.claimedPayments(r[i].paymentTx));
+        }
+        assertEq(nft.claimResults(r, sigs), 3);
+        assertEq(nft.progress(id).plays, 4);
+    }
+
+    /// Historical results stay valid after a transfer, and a batch may carry the previous owner's results.
+    function test_claimResultsAcceptsHistoricalEpochsAfterTransfer() public {
+        uint256 id = _ready(ALICE);
+        MapaeGuardians.Result[] memory r = _results(id, 1, 2);
+        (, bytes[] memory sigs) = _batch(r);
+        vm.prank(ALICE);
+        nft.transferFrom(ALICE, BOB, id);
+        assertEq(nft.ownershipEpoch(id), 2);
+        vm.prank(BOB);
+        assertEq(nft.claimResults(r, sigs), 2);
+        assertEq(nft.progress(id).plays, 2);
+    }
+
+    function test_claimResultsBoundsBatchSize() public {
+        uint256 id = _ready(ALICE);
+        uint256 cap = nft.MAX_CLAIM_BATCH();
+        assertEq(cap, 32);
+        MapaeGuardians.Result[] memory empty;
+        vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
+        nft.claimResults(empty, new bytes[](0));
+        (MapaeGuardians.Result[] memory over, bytes[] memory overSigs) = _batch(_results(id, 1, cap + 1));
+        vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
+        nft.claimResults(over, overSigs);
+        bytes[] memory short = new bytes[](cap);
+        vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
+        nft.claimResults(over, short);
+        (MapaeGuardians.Result[] memory full, bytes[] memory fullSigs) = _batch(_results(id, 1, cap));
+        uint256 before = gasleft();
+        assertEq(nft.claimResults(full, fullSigs), cap);
+        assertLt(before - gasleft(), 2_000_000);
+        GuardianMetadata.Progress memory p = nft.progress(id);
+        assertEq(p.plays, cap);
+        assertEq(p.experience, 10 * cap + 5 * (cap / 2));
+    }
+
+    /// Calldata gas under EIP-2028 (16 per nonzero byte, 4 per zero byte), for whole-transaction comparisons.
+    function _calldataGas(bytes memory data) internal pure returns (uint256 gas) {
+        for (uint256 i; i < data.length; ++i) {
+            gas += data[i] == 0 ? 4 : 16;
+        }
+    }
+
+    /// Records whole-transaction gas (21,000 base + calldata + cold execution) of N single claims against one
+    /// batch of the same N results, starting from identical state.
+    function test_gasClaimResultsVersusSingleClaims() public {
+        uint256 id = _ready(ALICE);
+        uint256[3] memory sizes = [uint256(1), 8, 32];
+        for (uint256 k; k < sizes.length; ++k) {
+            uint256 n = sizes[k];
+            (MapaeGuardians.Result[] memory r, bytes[] memory sigs) = _batch(_results(id, 1000 * (k + 1), n));
+            uint256 snapshot = vm.snapshotState();
+            uint256 singles;
+            for (uint256 i; i < n; ++i) {
+                vm.cool(address(nft));
+                bytes memory data = abi.encodeCall(MapaeGuardians.claimResult, (r[i], sigs[i]));
+                uint256 start = gasleft();
+                (bool ok,) = address(nft).call(data);
+                uint256 used = start - gasleft();
+                singles += used + 21_000 + _calldataGas(data);
+                assertTrue(ok);
+            }
+            vm.revertToState(snapshot);
+            vm.cool(address(nft));
+            bytes memory batchData = abi.encodeCall(MapaeGuardians.claimResults, (r, sigs));
+            uint256 begin = gasleft();
+            (bool success,) = address(nft).call(batchData);
+            uint256 batch = begin - gasleft();
+            batch += 21_000 + _calldataGas(batchData);
+            assertTrue(success);
+            assertEq(nft.progress(id).plays, n);
+            emit log_named_uint(string.concat("claims ", vm.toString(n), ": singles total gas"), singles);
+            emit log_named_uint(string.concat("claims ", vm.toString(n), ": batch total gas"), batch);
+            if (n > 1) assertLt(batch, singles);
+            vm.revertToState(snapshot);
+        }
+    }
+
+    /// Upgrading the live proxy to an implementation with claimResults keeps every byte of state, and results
+    /// signed before the upgrade can be batched afterwards, skipping those already claimed singly.
+    function test_upgradeToBatchClaimImplementationPreservesState() public {
+        uint256 id = _ready(ALICE);
+        MapaeGuardians.Result[] memory r = _results(id, 1, 3);
+        (, bytes[] memory sigs) = _batch(r);
+        nft.claimResult(r[0], sigs[0]);
+        vm.prank(ALICE);
+        nft.transferFrom(ALICE, BOB, id);
+        string memory uri = nft.tokenURI(id);
+        bytes32 traits = nft.traitsHash(id);
+
+        address next = address(new MapaeGuardians(address(entropy), PROVIDER));
+        vm.expectEmit(address(nft));
+        emit MapaeGuardians.BatchMetadataUpdate(1, 10_000);
+        nft.upgradeToAndCall(next, "");
+        assertEq(address(uint160(uint256(vm.load(address(nft), ERC1967Utils.IMPLEMENTATION_SLOT)))), next);
+        _assertDomainIsProxy();
+        assertEq(nft.owner(), address(this));
+        assertEq(nft.resultSigner(), vm.addr(SIGNER_KEY));
+        assertFalse(nft.mintPaused());
+        assertEq(nft.ownerOf(id), BOB);
+        assertEq(nft.ownershipEpoch(id), 2);
+        assertEq(nft.traitsHash(id), traits);
+        assertEq(keccak256(bytes(nft.tokenURI(id))), keccak256(bytes(uri)));
+        assertTrue(nft.claimedPayments(r[0].paymentTx));
+
+        assertEq(nft.claimResults(r, sigs), 2);
+        assertEq(nft.progress(id).plays, 3);
     }
 }

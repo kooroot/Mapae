@@ -33,6 +33,19 @@ export const guardianAbi = [
   },
   {
     "type": "function",
+    "name": "MAX_CLAIM_BATCH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_LIFETIME_MINTS",
     "inputs": [],
     "outputs": [
@@ -328,6 +341,92 @@ export const guardianAbi = [
       }
     ],
     "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "claimResults",
+    "inputs": [
+      {
+        "name": "results",
+        "type": "tuple[]",
+        "internalType": "struct MapaeGuardians.Result[]",
+        "components": [
+          {
+            "name": "resultId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "actor",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ownershipEpoch",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "paymentTx",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "traitsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "inputsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "ruleset",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "seed",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "game",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "score",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "victory",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      },
+      {
+        "name": "signatures",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "applied",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -1577,6 +1676,11 @@ export const guardianAbi = [
   {
     "type": "error",
     "name": "FailedCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidBatch",
     "inputs": []
   },
   {
