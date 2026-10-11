@@ -17,6 +17,8 @@ import {GuardiansSection} from "./sections/GuardiansSection";
 import {WalletSection} from "./sections/WalletSection";
 import {OutingsSection} from "./sections/OutingsSection";
 import {JournalSection} from "./sections/JournalSection";
+import {RankingSection} from "./sections/RankingSection";
+import {attemptsBadge, attemptsLeft} from "./ranking/format";
 import {NftPractice} from "./nft/NftPractice";
 import type {GuardianToken} from "./profile/guardians";
 import {arcadeSectionFromParam, arcadeSectionLink, outingStatusLabel, SECTION_COPY, type ArcadeSection} from "./sections";
@@ -26,7 +28,7 @@ import "./guest/guest.css";
 type Screen = {kind: "section"} | {kind: "guest"; game: GameId} | {kind: "practice"; token: GuardianToken; game: GameId; seed: number};
 
 /**
- * One arcade for every visitor, across five addresses. The route only changes a param, so this shell stays mounted while the
+ * One arcade for every visitor, across six addresses. The route only changes a param, so this shell stays mounted while the
  * visitor moves between sections. Games open over the shell without changing the URL and return to the section they were opened
  * from, with the same cabinet chosen.
  */
@@ -81,7 +83,21 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
     function playGuest(game: GameId) {trackEngagement({event: "arcade_entered", game, locale}); go(() => {setSelected(game); setScreen({kind: "guest", game});});}
     function practice(token: GuardianToken, game: GameId) {go(() => {setSelected(game); setScreen({kind: "practice", token, game, seed: dailyChallenge(game, desk.now).seed});});}
     function meetGuardian(game: GameId) {setSelected(game); visit("guardians");}
-    function sendOuting(game: GameId) {
+    // A plan for another guardian waits until the switch lands, since the plan is kept per guardian.
+    const [queued, setQueued] = useState<{tokenId: string; game: GameId} | null>(null);
+    useEffect(() => {
+        if (!queued || desk.token?.tokenId !== queued.tokenId) return;
+        if (!desk.activeJob) desk.setOperation({game: queued.game});
+        setQueued(null);
+    }, [queued, desk.token?.tokenId]);
+    function sendOuting(game: GameId, tokenId = desk.token?.tokenId) {
+        if (tokenId && tokenId !== desk.token?.tokenId) {
+            void desk.nft.select(tokenId);
+            setQueued({tokenId, game});
+            const running = desk.giwa.jobs.some(j => ["queued", "running", "paused"].includes(j.status) && j.guardian.tokenId === tokenId);
+            visit("outings", running ? "outings-title" : "arcade-allowance");
+            return;
+        }
         // A running outing keeps its own destination; otherwise the cabinet being browsed becomes the plan.
         if (!desk.activeJob) desk.setOperation({game});
         visit("outings", desk.activeJob ? "outings-title" : "arcade-allowance");
@@ -95,6 +111,7 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
     const roster = desk.nft.roster, badges: SectionBadges = {
         guardians: desk.stage === "waiting" ? ko ? "탄생 대기" : "Revealing" : roster?.guardians.length ? `${roster.guardians.length}/3` : undefined,
         outings: desk.activeJob ? outingStatusLabel(desk.activeJob.status, locale) ?? undefined : undefined,
+        ranking: attemptsBadge(attemptsLeft(desk.ranking.standings), locale),
         wallet: desk.giwa.grants.length ? String(desk.giwa.grants.length) : undefined,
     };
     const blocked = desk.busy || desk.session.status === "signing", leave = () => void disconnect();
@@ -110,6 +127,7 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
             </ArcadeRoom> : section === "guardians" ? <GuardiansSection desk={desk} walletWaiting={walletWaiting} onPractice={practice} />
                 : section === "wallet" ? <WalletSection desk={desk} walletWaiting={walletWaiting} blocked={blocked} onDisconnect={leave} />
                 : section === "outings" ? <OutingsSection desk={desk} walletWaiting={walletWaiting} />
+                : section === "ranking" ? <RankingSection desk={desk} walletWaiting={walletWaiting} onSendOuting={sendOuting} />
                 : <JournalSection desk={desk} walletWaiting={walletWaiting} />}
             <footer className="arc-footer"><p>{ko ? "작은 자유, 분명한 한도." : "A little freedom. A clear limit."}</p><span>GIWA SEPOLIA · {ko ? "테스트 토큰 사용" : "TEST TOKENS"}</span></footer>
         </div>

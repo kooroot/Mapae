@@ -9,6 +9,7 @@ describe("arcade sections", () => {
         expect(arcadeSectionFromPath("/arcade/outings")).toBe("outings");
         expect(arcadeSectionFromPath("/ko/arcade/wallet")).toBe("wallet");
         expect(arcadeSectionFromPath("/ko/arcade/journal/")).toBe("journal");
+        expect(arcadeSectionFromPath("/arcade/ranking")).toBe("ranking");
     });
 
     test("anything else is not an arcade page", () => {
@@ -26,7 +27,8 @@ describe("arcade sections", () => {
         expect(arcadeSectionPath("wallet", "ko")).toBe("/ko/arcade/wallet");
     });
 
-    test("route params name only the four sub-sections", () => {
+    test("route params name only the five sub-sections", () => {
+        expect(ARCADE_SECTIONS.filter(isArcadeSubsection)).toEqual(["guardians", "outings", "ranking", "journal", "wallet"]);
         expect(isArcadeSubsection("guardians")).toBe(true);
         expect(isArcadeSubsection("lobby")).toBe(false);
         expect(isArcadeSubsection("arcade-icon.png")).toBe(false);

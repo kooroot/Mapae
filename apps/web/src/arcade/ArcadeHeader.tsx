@@ -1,6 +1,6 @@
 import {useId, type ReactNode} from 'react';
 import {Link} from '@tanstack/react-router';
-import {BookOpen, Compass, Gamepad2, LoaderCircle, LogOut, Sparkles, Wallet, type LucideIcon} from 'lucide-react';
+import {BookOpen, Compass, Gamepad2, LoaderCircle, LogOut, Sparkles, Trophy, Wallet, type LucideIcon} from 'lucide-react';
 import type {Address} from 'viem';
 import {LocaleSwitch} from '../lib/locale';
 import {localizePath, type Locale} from '../lib/i18n';
@@ -8,10 +8,10 @@ import {ArcadeBrand} from './ArcadeBrand';
 import {shortAddress} from '../lib/dial';
 import {ARCADE_SECTIONS, arcadeSectionLink, SECTION_COPY, type ArcadeSection} from './sections';
 
-export const SECTION_ICONS: Record<ArcadeSection, LucideIcon> = {lobby: Gamepad2, guardians: Sparkles, outings: Compass, journal: BookOpen, wallet: Wallet};
+export const SECTION_ICONS: Record<ArcadeSection, LucideIcon> = {lobby: Gamepad2, guardians: Sparkles, outings: Compass, ranking: Trophy, journal: BookOpen, wallet: Wallet};
 
 /**
- * The one arcade header for every visitor. Wide screens show the five sections inline, then the wallet and language; narrower
+ * The one arcade header for every visitor. Wide screens show every section inline, then the wallet and language; narrower
  * ones show the menu button, the brand and where the visitor is, with everything else inside the menu's drawer.
  */
 export function ArcadeHeader({section, locale, menu, owner, disconnecting, blocked, onDisconnect}: {
