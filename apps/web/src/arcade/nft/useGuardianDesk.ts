@@ -10,6 +10,7 @@ import {trackEngagement} from '../engagement/client';
 import {useGuardians} from './useGuardians';
 import {nftCompanion} from './model';
 import {activeGuardianOuting} from './outing-model';
+import {useRankingStandings} from '../ranking/client';
 
 export type Operation={goal:AgentGoal;game:GameId|'auto';admissions:number};
 /** Where a visitor stands, from no wallet to a revealed guardian ready to play. */
@@ -36,6 +37,8 @@ export function useGuardianDesk(owner:Address|undefined,walletWaiting:boolean,de
     const member=token?.revealed?nftCompanion(token,locale,operation.goal,operation.admissions):null,traits=token?.revealed?guardianTraits(token.seed):null;
     const revealed=roster?.guardians.filter(t=>t.revealed)??[];
     const crew=revealed.map(t=>nftCompanion(t,locale));
+    // Public standings for the revealed crew; a landed round (the crew's result count) refreshes them.
+    const ranking=useRankingStandings(revealed.map(t=>t.tokenId),giwa.jobs.reduce((n,j)=>n+j.results.length,0));
     // Nothing is claimed before it is known: a reconnecting wallet, an unchecked session and an unread roster all read as pending.
     const stage:DeskStage=!owner?walletWaiting?'pending':'guest'
         :session.status==='loading'?'pending'
@@ -46,5 +49,6 @@ export function useGuardianDesk(owner:Address|undefined,walletWaiting:boolean,de
         :member?'ready':'waiting';
     async function disconnect(){if(!owner)return;setDisconnecting(true);try{await logoutProfile(owner);}finally{giwa.disconnect();setDisconnecting(false);}}
     return {owner,ko,locale,session,giwa,nft,stage,token,member,traits,identity,activeJob,revealed,crew,operation,setOperation,now,
+        ranking:{standings:ranking.value,loading:ranking.loading,error:ranking.error},
         busy:giwa.busy||nft.busy,disconnecting,disconnect};
 }

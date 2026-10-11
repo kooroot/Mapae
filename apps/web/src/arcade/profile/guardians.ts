@@ -1,5 +1,6 @@
 import {isAddress,isHash,type Address} from 'viem';
 import {guardianName,guardianTokenId,guardianTraitsHash} from '@mapae/arcade/guardians';
+import {rankedSeed,validRankedAttempt} from '@mapae/arcade/ranking';
 import type {GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
 export type {GuardianClaim,GuardianDetail,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
 
@@ -35,9 +36,11 @@ function copyResult(v:unknown,tokenId:string):VerifiedResult {
         !uint(v.seed)||v.seed>0xffffffff||!uint(v.at)||v.at>8_640_000_000_000_000||!uint(v.ruleset)||v.ruleset<3||
         !uint(v.score)||v.score>1_000_000_000||typeof v.victory!=='boolean'||typeof v.claimed!=='boolean'||
         !isOutcome(v.outcome)||v.outcome.game!==v.game||v.outcome.score!==v.score||v.outcome.replay?.seed!==v.seed||
-        v.outcome.replay?.version!==v.ruleset||v.outcome.achievement?.victory!==v.victory)throw Error();
+        v.outcome.replay?.version!==v.ruleset||v.outcome.achievement?.victory!==v.victory||
+        (v.ranked!==undefined&&(!validRankedAttempt(v.ranked)||v.seed!==rankedSeed(v.outcome.game,v.ranked.day,v.ranked.attempt,tokenId,v.ruleset))))throw Error();
     const outcome=projectActivity({id:v.id,characterId:`nft-${tokenId}`,name:guardianName(tokenId,'ko'),color:'red',game:v.outcome.game,at:v.at,reason:'',source:'practice',mode:'human',ticketId:null,model:null,giwa:null,status:'complete',outcome:v.outcome}).outcome!;
-    return {id:v.id,tokenId,actor:v.actor as VerifiedResult['actor'],ownershipEpoch:v.ownershipEpoch,transaction:v.transaction as VerifiedResult['transaction'],game:v.outcome.game,seed:v.seed,at:v.at,ruleset:v.ruleset,score:v.score,victory:v.victory,claimed:v.claimed,outcome};
+    return {id:v.id,tokenId,actor:v.actor as VerifiedResult['actor'],ownershipEpoch:v.ownershipEpoch,transaction:v.transaction as VerifiedResult['transaction'],game:v.outcome.game,seed:v.seed,at:v.at,ruleset:v.ruleset,score:v.score,victory:v.victory,claimed:v.claimed,outcome,
+        ...(v.ranked?{ranked:{day:v.ranked.day,attempt:v.ranked.attempt}}:{})};
 }
 const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
 export type GuardianDependencies={receiptToken?:string;fetcher?:(url:string,init?:RequestInit)=>Promise<Response>};

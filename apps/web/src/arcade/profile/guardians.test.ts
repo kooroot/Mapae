@@ -3,6 +3,7 @@ import {Database} from 'bun:sqlite';
 import {readFileSync} from 'node:fs';
 import {guardianTraitsHash} from '@mapae/arcade/guardians';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
+import {kstDay} from '@mapae/arcade/ranking';
 import type {Address} from 'viem';
 import {emptyProgress,type GuardianRoster} from '../../../../delegated-seller/guardians/types';
 import {profileRepository} from './repository';
@@ -65,9 +66,17 @@ describe('authenticated guardian bridge',()=>{
             const app=createGuardianApp({token:receiptToken,reader,ledger:s.guardians});
             const r=await guardiansApi(request('/1'),owner,null,{receiptToken,fetcher:async(url,init)=>app.request(new Request(url.replace('https://seller.mapae.io/arcade/guardians','https://seller.mapae.io'),init))});
             expect(r.status).toBe(200);
-            const body=await r.json<{earned:{plays:number};results:{outcome:{achievement:{victory:boolean}}}[]}>();
+            const body=await r.json<{earned:{plays:number};results:{ranked?:unknown;outcome:{achievement:{victory:boolean}}}[]}>();
             expect(body.earned.plays).toBe(1);expect(body.results).toHaveLength(1);expect(typeof body.results[0]!.outcome.achievement.victory).toBe('boolean');
             expect(JSON.stringify(body)).not.toContain('must-never-reach-browser');
+            // The seller marks the first stamp round today as ranked attempt 1; the bridge checks it against the fixed seed.
+            const raw=await (await app.request('/1',{headers:{Authorization:`Bearer ${receiptToken}`,'X-Mapae-Owner':owner}})).json<{results:Record<string,unknown>[]}>();
+            expect(raw.results[0]!.ranked).toEqual({day:kstDay(now),attempt:1});
+            expect(body.results[0]!.ranked).toEqual({day:kstDay(now),attempt:1});
+            const tampered=(ranked:unknown)=>guardiansApi(request('/1'),owner,null,{receiptToken,fetcher:response({...raw,results:[{...raw.results[0],ranked}]})});
+            for(const ranked of [{day:kstDay(now),attempt:2},{day:kstDay(now),attempt:4},{day:'2026-01-01',attempt:1},{day:kstDay(now),attempt:1,bonus:true}])expect((await tampered(ranked)).status).toBe(503);
+            const unranked=await tampered(undefined);expect(unranked.status).toBe(200);
+            expect((await unranked.json<{results:object[]}>()).results[0]).not.toHaveProperty('ranked');
         }finally{s.close();}
     });
     test('response projections strip extra fields and reject wrong owner or identity',async()=>{
