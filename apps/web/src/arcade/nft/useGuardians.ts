@@ -39,7 +39,7 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
             if(id){const d=await profileRequest(owner,`/guardians/${id}`) as GuardianDetail;if(live(owner)&&selectedRef.current===id)setDetail(previous=>refreshedDetail(previous,d));}else setDetail(null);
             // Only a load failure is cleared by a load success; a wallet error stays until the next action.
             if(live(owner)&&loadFailed.current){loadFailed.current=false;setError('');}
-        }catch{if(live(owner)){loadFailed.current=true;setPaused(true);setError(ko?'전령 상태를 확인하지 못했어요. 새로고침 후 다시 시도해 주세요.':'Could not verify your guardians. Refresh and try again.');}}finally{refreshing.current=false;if(alive.current)setLoading(false);}
+        }catch{if(live(owner)){loadFailed.current=true;setPaused(true);setError(ko?'전령 상태를 확인하지 못했어요. 잠시 뒤 다시 불러와 주세요.':'Could not verify your guardians. Try loading them again shortly.');}}finally{refreshing.current=false;if(alive.current)setLoading(false);}
         const collection=rosterRef.current?.enabled?rosterRef.current.collection:null;
         if(!collection){if(live(owner))setPaused(true);return;}
         try{const p=await publicClient.readContract({address:collection,abi:guardianAbi,functionName:'mintPaused'});if(live(owner))setPaused(p);}catch{if(live(owner))setPaused(true);}

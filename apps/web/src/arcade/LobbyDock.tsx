@@ -61,7 +61,7 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
         waiting: <div className="arc-dock-next"><p><Clock size={16} aria-hidden="true" />{ko ? "전령의 탄생을 기다리고 있어요." : "Your guardian is on the way."}</p><Link className="arc-button arc-button-paper" {...guardians}><Sparkles size={18} aria-hidden="true" />{ko ? "탄생 확인하러 가기" : "Check the reveal"}</Link>{revealed[0] && <button type="button" className="arc-text-button" onClick={() => void nft.select(revealed[0]!.tokenId)}>{ko ? "다른 전령과 놀기" : "Play with another guardian"}</button>}</div>,
     };
     return <div className="arc-entry-dock">
-        <h2>{ko ? "먼저 한 판, 가볍게 놀아보세요" : "Try a round. Make yourself at home."}</h2>
+        <h2>{stage === "unavailable" ? ko ? "전령을 잠시 불러오지 못했어요" : "Your guardians did not load" : ko ? "먼저 한 판, 가볍게 놀아보세요" : "Try a round. Make yourself at home."}</h2>
         <p>{stage === "guest" ? ko ? "지갑 없이 직접 플레이하고, 마음에 들면 나의 전령을 만나보세요." : "Play without a wallet, then meet your own guardian." : ko ? "무료 체험은 언제든 할 수 있어요." : "A free round is always on the house."}</p>
         <div className="arc-entry-free"><button type="button" className="arc-button" onClick={() => onPlayGuest(game)}>{ko ? "무료로 한 판" : "Play a free round"}<ArrowRight size={19} aria-hidden="true" /></button><small>{ko ? "연습 기록은 이 탭에만 저장돼요" : "Practice records stay in this tab"}</small></div>
         <div className="arc-entry-guardian">{guardian[stage]}</div>
