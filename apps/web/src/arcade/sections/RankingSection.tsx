@@ -1,5 +1,6 @@
 import {useEffect, useState} from 'react';
-import {CircleAlert, Compass, LoaderCircle} from 'lucide-react';
+import {Link} from '@tanstack/react-router';
+import {CalendarDays, CircleAlert, Compass, Crown, LoaderCircle, Lock, RefreshCw, Timer, Users} from 'lucide-react';
 import type {GameId} from '@mapae/arcade';
 import {guardianName} from '@mapae/arcade/guardians';
 import {
@@ -12,7 +13,10 @@ import {GuardianAvatar} from '../GuardianAvatar';
 import {guardianPortrait} from '../nft/model';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {useRankingBoard} from '../ranking/client';
-import {boardScore, countdown, placeLabel, points, streakCopy} from '../ranking/format';
+import {boardScore, countdown, placeLabel, points, resetClock, streakCopy} from '../ranking/format';
+import {RankMedal} from '../ranking/RankMedal';
+import {GameThumb} from '../Characters';
+import {arcadeSectionLink} from '../sections';
 import {RankLine, TitleChips} from '../ranking/RankLine';
 import {DeskGate, SectionHeading} from './SectionFrame';
 
@@ -36,19 +40,22 @@ export function RankingSection({desk, walletWaiting, onSendOuting}: {desk: Guard
     return <div className="nft-arcade">
         <SectionHeading section="ranking" desk={desk} />
         <div className="rank-tabs" role="group" aria-label={ko ? '순위표 고르기' : 'Choose a board'}>
-            {BOARDS.map(id => <button key={id} type="button" aria-pressed={board === id} onClick={() => setBoard(id)}>{id === 'devotion' ? DEVOTION_NAME[locale] : GAME_NAMES[locale][id]}</button>)}
+            {BOARDS.map(id => <button key={id} type="button" aria-pressed={board === id} onClick={() => setBoard(id)}>
+                {id === 'devotion' ? <CalendarDays size={20} aria-hidden="true" /> : <GameThumb game={id} />}<span>{id === 'devotion' ? DEVOTION_NAME[locale] : GAME_NAMES[locale][id]}</span>
+            </button>)}
         </div>
-        {board !== 'devotion' && <div className="rank-periods" role="group" aria-label={ko ? '기간 고르기' : 'Choose a period'}>
-            {GAME_PERIODS.map(id => <button key={id} type="button" aria-pressed={period === id} onClick={() => setPeriod(id)}>{PERIOD_NAMES[locale][id]}</button>)}
-        </div>}
-        <section className="nft-panel" aria-labelledby="rank-board-title" aria-busy={remote.loading}>
+        <section className="nft-panel rank-board" aria-labelledby="rank-board-title" aria-busy={remote.loading}>
             <div className="rank-board-head">
-                <div><span className="arc-overline">{board === 'devotion' ? (ko ? `최근 ${DEVOTION_DAYS}일` : `LAST ${DEVOTION_DAYS} DAYS`) : PERIOD_NAMES[locale][period]}</span>
+                <div><span className="arc-overline">{board === 'devotion' ? (ko ? `최근 ${DEVOTION_DAYS}일` : `Last ${DEVOTION_DAYS} days`) : remote.value ? span(remote.value) : PERIOD_NAMES[locale][period]}</span>
                     <h2 id="rank-board-title">{board === 'devotion' ? (ko ? '랭크 도전에 나온 날' : 'Days with a ranked round') : ko ? `${GAME_NAMES.ko[board]} 순위` : `${GAME_NAMES.en[board]} board`}</h2></div>
-                {remote.value && <BoardMeta board={remote.value} desk={desk} />}
+                {remote.value && <BoardChips board={remote.value} locale={locale} />}
             </div>
+            {board !== 'devotion' && <div className="rank-periods" role="group" aria-label={ko ? '기간 고르기' : 'Choose a period'}>
+                {GAME_PERIODS.map(id => <button key={id} type="button" aria-pressed={period === id} onClick={() => setPeriod(id)}>{PERIOD_NAMES[locale][id]}</button>)}
+            </div>}
             {remote.value ? <Board board={remote.value} mine={mine} locale={locale} />
-                : remote.error ? <p className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true" />{ko ? '순위표를 불러오지 못했어요. 잠시 뒤 다시 읽어 와요.' : 'The board could not load. It will try again shortly.'}</p>
+                : remote.error ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '순위표를 불러오지 못했어요. 잠시 뒤 저절로 다시 읽어 와요.' : 'The board could not load. It will try again shortly.'}</p>
+                    <button type="button" className="arc-button arc-button-paper" disabled={remote.loading} onClick={remote.retry}><RefreshCw size={16} aria-hidden="true" />{ko ? '지금 다시 불러오기' : 'Retry now'}</button></div>
                 : <p role="status" className="rank-empty"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true" /> {ko ? '순위표를 불러오고 있어요…' : 'Loading the board…'}</p>}
         </section>
         <DeskGate desk={desk} walletWaiting={walletWaiting} need="guardian"><MyGuardians desk={desk} onSendOuting={onSendOuting} /></DeskGate>
@@ -56,34 +63,60 @@ export function RankingSection({desk, walletWaiting, onSendOuting}: {desk: Guard
     </div>;
 }
 
-function BoardMeta({board, desk}: {board: RankingBoard; desk: GuardianDesk}) {
-    const {ko, locale, now} = desk;
-    // The visitor's clock is read after hydration, so the server and the first client render agree on KST.
+const span = (board: RankingBoard) => board.from === board.to ? board.from : `${board.from} – ${board.to}`;
+
+/** Entrants, and the reset as a ticking chip that turns urgent in the last hour; a closed window reads as final. */
+function BoardChips({board, locale}: {board: RankingBoard; locale: Locale}) {
+    const ko = locale === 'ko', now = useSecondClock(board.closesAt !== null);
     const [offset, setOffset] = useState(KST_OFFSET_MINUTES);
+    // The visitor's clock is read after hydration, so the server and the first client render agree on KST.
     useEffect(() => setOffset(-new Date().getTimezoneOffset()), []);
-    const entrants = ko ? `참가 ${board.entrants}` : `${board.entrants} ${board.entrants === 1 ? 'entrant' : 'entrants'}`;
-    const span = board.from === board.to ? board.from : `${board.from} – ${board.to}`;
-    const closes = board.closesAt === null ? (ko ? '마감된 기록' : 'Final') : countdown({now, closesAt: board.closesAt, period: board.period === 'week' ? 'week' : 'day', locale, offsetMinutes: offset});
-    return <p>{span} · {entrants} · {closes}</p>;
+    const period = board.period === 'week' ? 'week' : 'day';
+    const reset = board.closesAt === null ? null : resetClock({now, closesAt: board.closesAt, period, locale});
+    return <div className="rank-chips">
+        <span className="rank-chip"><Users size={15} aria-hidden="true" />{ko ? `참가 ${board.entrants}` : `${board.entrants} ${board.entrants === 1 ? 'entrant' : 'entrants'}`}</span>
+        {reset ? <span className={`rank-chip is-clock${reset.soon ? ' is-soon' : ''}${reset.final ? ' is-final' : ''}`} title={countdown({now, closesAt: board.closesAt!, period, locale, offsetMinutes: offset})}>
+            {reset.final ? <i className="rank-pulse" aria-hidden="true" /> : <Timer size={15} aria-hidden="true" />}<span>{reset.label}</span></span>
+            : <span className="rank-chip is-closed"><Lock size={14} aria-hidden="true" />{ko ? '마감' : 'Final'}</span>}
+    </div>;
+}
+/** Wall-clock milliseconds, every second while `running`. */
+function useSecondClock(running: boolean) {
+    const [now, setNow] = useState(Date.now);
+    useEffect(() => {if (!running) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t);}, [running]);
+    return now;
 }
 
 function Board({board, mine, locale}: {board: RankingBoard; mine: ReadonlySet<string>; locale: Locale}) {
     const ko = locale === 'ko';
     if (!board.rows.length) {
         const open = board.closesAt !== null;
-        return <div className="rank-empty"><p><b>{open ? (ko ? '아직 오른 기록이 없어요' : 'No records yet') : (ko ? '이 기간에는 기록이 없어요' : 'No records in this window')}</b></p>
-            {open && <p>{ko ? '랭크 도전 한 판이면 첫 줄에 이름이 올라가요.' : 'One ranked round puts a name on the first line.'}</p>}</div>;
+        return <div className="rank-empty">
+            <ol className="rank-ghost" aria-hidden="true">{[2, 1, 3].map(place => <li key={place} className={`is-place-${place}`}><RankMedal rank={place} locale={locale} size="lg" decorative /></li>)}</ol>
+            <p><b>{open ? (ko ? '아직 오른 기록이 없어요' : 'No records yet') : (ko ? '이 기간에는 기록이 없어요' : 'No records in this window')}</b></p>
+            {open && <><p>{ko ? '랭크 도전 한 판이면 첫 메달이 내 전령에게 가요.' : 'One ranked round puts the first medal on your guardian.'}</p>
+                <Link className="arc-button" {...arcadeSectionLink('outings', locale)}><Compass size={18} aria-hidden="true" />{ko ? '랭크 도전 보내기' : 'Send a ranked round'}</Link></>}
+        </div>;
     }
     const podium = board.rows.slice(0, 3), rest = board.rows.slice(3);
+    const lead = board.rows[1] && board.rows[0]!.score > board.rows[1].score ? board.rows[0]!.score - board.rows[1].score : 0;
     return <>
         <ol className="rank-podium" aria-label={ko ? '상위 3' : 'Top three'}>
-            {podium.map((row, i) => <li key={row.tokenId} className={`${['is-first', 'is-second', 'is-third'][i]}${mine.has(row.tokenId) ? ' is-mine' : ''}`}>
-                <Portrait row={row} /><b>{placeLabel(row.rank, locale)}</b><strong>{guardianName(row.tokenId, locale)}{mine.has(row.tokenId) && <MineTag ko={ko} />}</strong><span>{boardScore(board.board, row.score, locale)}</span>
+            {podium.map((row, i) => <li key={row.tokenId} className={`rank-step is-pos-${i + 1} is-place-${row.rank}${mine.has(row.tokenId) ? ' is-mine' : ''}`}>
+                <div className="rank-card">
+                    {mine.has(row.tokenId) && <MineTag ko={ko} />}
+                    {row.rank === 1 && <Crown className="rank-crown" size={22} aria-hidden="true" />}
+                    <div className="rank-portrait"><Portrait row={row} /><RankMedal rank={row.rank} locale={locale} size="lg" /></div>
+                    <strong>{guardianName(row.tokenId, locale)}</strong>
+                    <span className="rank-score">{boardScore(board.board, row.score, locale)}</span>
+                    {i === 0 && lead > 0 && <small className="rank-lead">{ko ? `2위보다 ${boardScore(board.board, lead, locale)} 앞섬` : `${boardScore(board.board, lead, locale)} ahead`}</small>}
+                </div>
+                <div className="rank-riser" aria-hidden="true" />
             </li>)}
         </ol>
         {rest.length > 0 && <ol className="rank-list" aria-label={ko ? '4위부터' : 'From fourth place'}>
             {rest.map(row => <li key={row.tokenId} className={`rank-row${mine.has(row.tokenId) ? ' is-mine' : ''}`}>
-                <b>{placeLabel(row.rank, locale)}</b><Portrait row={row} /><span>{guardianName(row.tokenId, locale)}{mine.has(row.tokenId) && <MineTag ko={ko} />}</span><strong>{boardScore(board.board, row.score, locale)}</strong>
+                <RankMedal rank={row.rank} locale={locale} /><Portrait row={row} /><span>{guardianName(row.tokenId, locale)}{mine.has(row.tokenId) && <MineTag ko={ko} />}</span><strong>{boardScore(board.board, row.score, locale)}</strong>
             </li>)}
         </ol>}
     </>;
@@ -97,10 +130,10 @@ const MineTag = ({ko}: {ko: boolean}) => <span className="rank-mine-tag">{ko ? '
 function MyGuardians({desk, onSendOuting}: {desk: GuardianDesk; onSendOuting: (game: GameId, tokenId: string) => void}) {
     const {ko, locale, revealed, crew, ranking, busy} = desk, standings = ranking.standings;
     return <section className="nft-panel" aria-labelledby="rank-mine-title">
-        <span className="arc-overline">{ko ? '오늘의 랭크 도전' : 'TODAY’S RANKED ROUNDS'}</span>
+        <span className="arc-overline">{ko ? '오늘의 랭크 도전' : 'Today’s ranked rounds'}</span>
         <h2 id="rank-mine-title">{ko ? '내 전령의 자리' : 'Where my guardians stand'}</h2>
         {!standings ? ranking.error
-            ? <p className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true" />{ko ? '내 전령의 순위를 불러오지 못했어요.' : 'Your guardians’ standings could not load.'}</p>
+            ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '내 전령의 순위를 불러오지 못했어요. 잠시 뒤 저절로 다시 읽어 와요.' : 'Your guardians’ standings could not load. They will try again shortly.'}</p></div>
             : <p role="status"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true" /> {ko ? '순위를 확인하고 있어요…' : 'Checking standings…'}</p>
             : <ul className="rank-guardians">
                 {revealed.map((token, index) => {

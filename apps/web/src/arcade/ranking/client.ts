@@ -41,9 +41,10 @@ function useVisibleTick(): number {
     return tick;
 }
 
-/** One board, refreshed every minute while the page is in view. */
-export function useRankingBoard(board: RankingBoardId, period: RankingPeriod): Remote<RankingBoard> {
-    return useRemote<RankingBoard>(`/board/${board}/${period}`, String(useVisibleTick()));
+/** One board, refreshed every minute while the page is in view, and at once on `retry`. */
+export function useRankingBoard(board: RankingBoardId, period: RankingPeriod): Remote<RankingBoard> & {retry: () => void} {
+    const [attempt, setAttempt] = useState(0), tick = useVisibleTick();
+    return {...useRemote<RankingBoard>(`/board/${board}/${period}`, `${tick}:${attempt}`), retry: () => setAttempt(a => a + 1)};
 }
 
 /**
