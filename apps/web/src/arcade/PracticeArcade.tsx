@@ -25,7 +25,7 @@ import {gameSeed, withReplay} from "./replay";
 import type {PracticeEvent} from "./engagement/model";
 import type {GuardianAptitudes} from '@mapae/arcade/guardians';
 import {ArcadeSound} from "./sound";
-import {swapScreen, useArcadeMotion} from "./motion";
+import {scrollToGameStart, swapScreen, useArcadeMotion} from "./motion";
 import {ResultImage} from "./ResultImage";
 import {useResultRitual} from "./result-ritual";
 import "./arcade-tokens.css";
@@ -128,7 +128,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
     useEffect(() => {
         entryLock.current = false;
         if (screen !== "play") focusHeading.current?.focus({preventScroll: true});
-        window.scrollTo({top: 0, behavior: "instant"});
+        scrollToGameStart();
     }, [screen]);
     useEffect(() => {
         if (!ready || !initialReplay || startedChallenge.current) return;

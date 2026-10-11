@@ -7,7 +7,7 @@ import {useLocale} from "../lib/locale";
 import {ArcadeRoom} from "./ArcadeRoom";
 import {ArcadeHeader} from "./ArcadeHeader";
 import {ArcadeMenu} from "./ArcadeMenu";
-import {swapScreen} from "./motion";
+import {scrollToGameStart, swapScreen} from "./motion";
 import {LobbyDock} from "./LobbyDock";
 import {GuestArcade} from "./guest/GuestArcade";
 import {useGuestPractice} from "./guest/useGuestPractice";
@@ -77,7 +77,7 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
     }, [place, screen.kind]);
 
     // A game replaces the whole page, so it starts at its own top, not where the section was scrolled to before it was opened.
-    useLayoutEffect(() => {if (screen.kind !== "section") window.scrollTo({top: 0});}, [screen.kind]);
+    useLayoutEffect(() => {if (screen.kind !== "section") scrollToGameStart();}, [screen.kind]);
 
     const go = (change: () => void) => swapScreen(reducedMotion, change);
     const visit = (next: ArcadeSection, target?: string) => void navigate(arcadeSectionLink(next, locale, target));

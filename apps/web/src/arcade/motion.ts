@@ -53,3 +53,13 @@ export function swapScreen(still: boolean, change: () => void) {
     // Skipped transitions (a newer swap, a duplicate name) reject `ready`; `change` still runs, so there is nothing to report.
     document.startViewTransition(() => flushSync(change)).ready.catch(() => {});
 }
+
+/**
+ * A new game screen starts at its own top. A stamp round whose playfield would end below the fold starts with the arena at
+ * the top instead, so every window is in view from the first beat.
+ */
+export function scrollToGameStart() {
+    window.scrollTo({top: 0, behavior: "instant"});
+    const arena = document.querySelector<HTMLElement>(".arc-arena"), field = arena?.querySelector(".arc-playfield");
+    if (arena && field && field.getBoundingClientRect().bottom > window.innerHeight) arena.scrollIntoView({block: "start", behavior: "instant"});
+}
