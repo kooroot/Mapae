@@ -8,7 +8,7 @@
 .shop-guest{position:absolute;left:2%;bottom:53px;width:60%;display:block;padding:0;filter:drop-shadow(0 5px 4px #21140940)}
 .shop-guest>.arc-guardian{width:100%;max-width:none;display:block;transform-origin:center bottom}
 .shop-customer-stage .shop-guest>div{position:absolute;bottom:0;left:12%;right:8%;display:grid;gap:3px;padding:9px 10px;text-align:center;background:#2a4338f0;border:1px solid #c9a261;border-radius:8px;color:#fff3d5;box-shadow:0 4px 8px #29150833}
-.shop-guest>div>span{font-size:9px;letter-spacing:.1em;color:#dbbe86}.shop-guest strong{font-size:18px;line-height:1.3}
+.shop-guest>div>span{font-size:10px;letter-spacing:.1em;color:#dbbe86}.shop-guest strong{font-size:18px;line-height:1.3}
 .shop-speech{position:absolute;top:100px;right:18px;width:55%;margin:0;padding:18px;font-size:15px;line-height:1.7;min-height:0;background:#fff8e7f5;border:1px solid #dcb775;border-radius:16px 16px 16px 3px;box-shadow:0 5px 0 #8f652d20,0 8px 24px #3223101f;overflow-wrap:anywhere}
 .shop-speech::before{top:auto;bottom:-9px;left:22px;border:0;border-bottom:1px solid #dcb775;border-right:1px solid #dcb775;background:#fff8e7;rotate:45deg}
 .shop-counter-edge{position:absolute;left:0;right:0;bottom:0;padding:11px 18px;background:#422a1de6;border-top:1px solid #d5a562;color:#fff1c9;font-size:11px;min-height:43px}
