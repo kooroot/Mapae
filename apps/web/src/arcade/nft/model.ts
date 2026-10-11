@@ -1,5 +1,5 @@
 import {guardianName, guardianTraits, guardianTraitsHash, guardianResultDomain, GUARDIAN_RESULT_TYPES, guardianResultFromJson} from '@mapae/arcade/guardians';
-import type {AgentGoal,GameId} from '@mapae/arcade';
+import type {AgentGoal} from '@mapae/arcade';
 import {isAddress,isHash,recoverTypedDataAddress,type Address,type Hex} from 'viem';
 import type {GuardianClaim,GuardianToken,VerifiedResult} from '../profile/guardians';
 import type {Color,Companion} from '../state';
@@ -45,9 +45,4 @@ export async function verifiedClaim(claim:GuardianClaim,expected:{collection:Add
     if(claim.claimed)return null;
     if(!claim.signature||!sameAddress(await recoverTypedDataAddress({domain:guardianResultDomain(expected.collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:result,signature:claim.signature}),expected.signer))throw Error('claim_signature');
     return {result,signature:claim.signature};
-}
-export function dailyObjective(results:VerifiedResult[],now=Date.now()):{day:string;game:GameId;completed:boolean} {
-    const day=new Date(now+9*3600_000).toISOString().slice(0,10);
-    const game=(['stamp','race','shop'] as const)[Math.floor((now+9*3600_000)/86400_000)%3]!;
-    return {day,game,completed:results.some(r=>r.game===game&&new Date(r.at+9*3600_000).toISOString().slice(0,10)===day)};
 }

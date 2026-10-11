@@ -3,7 +3,7 @@ import {privateKeyToAccount} from 'viem/accounts';
 import {encodePacked,keccak256,toHex,type Address,type Hex} from 'viem';
 import {guardianName,guardianResultDomain,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash} from '@mapae/arcade/guardians';
 import type {GuardianClaim,GuardianToken,VerifiedResult} from '../profile/guardians';
-import {nftCompanion,verifiedClaim,dailyObjective,refreshedDetail,verifyReplacement} from './model';
+import {nftCompanion,verifiedClaim,guardianPortrait,refreshedDetail,verifyReplacement} from './model';
 import {assertNftTransactionStorage,saveNftTransaction,readNftTransaction,clearNftTransaction} from './transaction-store';
 import {verifyRevelation} from './recovery';
 import {activeGuardianOuting} from './outing-model';
@@ -54,12 +54,11 @@ test('manual recovery verifies original Pyth request commitment without new entr
     expect(verifyRevelation(user,reveal,3,commitment)).toBe(reveal);
     for(const [u,r,n,c] of [[word(12),reveal,3,commitment],[user,word(98),3,commitment],[user,reveal,2,commitment],[user,reveal,0,commitment],[user,reveal,1001,commitment],[user,'bad',3,commitment],[user,reveal,3,word(9)]] as const)expect(()=>verifyRevelation(u,r,n,c)).toThrow('recovery_proof');
 });
-test('daily objective uses Korea midnight and actual matching verified results',()=>{
-    const before=Date.parse('2026-10-09T14:59:59Z'),after=before+1000;
-    expect(dailyObjective([],before).day).toBe('2026-10-09');expect(dailyObjective([],after).day).toBe('2026-10-10');
-    const current=dailyObjective([],after);expect(current.completed).toBe(false);
-    expect(dailyObjective([{...result,game:current.game,at:after}],after).completed).toBe(true);
-    expect(dailyObjective([{...result,game:current.game,at:before}],after).completed).toBe(false);
+test('a board row draws the same portrait from the public seed as the owner sees',()=>{
+    const seed=`0x${'ab'.repeat(32)}` as Hex,portrait=guardianPortrait(seed);
+    const owned=nftCompanion({...token,seed,revealed:true},'ko');
+    expect(portrait.appearance).toEqual(owned.appearance!);expect(portrait.color).toBe(owned.color);
+    expect(guardianPortrait(`0x${'cd'.repeat(32)}`).appearance).not.toEqual(portrait.appearance);
 });
 const previous=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
 afterEach(()=>{if(previous)Object.defineProperty(globalThis,'localStorage',previous);else Reflect.deleteProperty(globalThis,'localStorage');});

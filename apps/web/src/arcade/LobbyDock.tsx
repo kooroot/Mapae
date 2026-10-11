@@ -1,6 +1,6 @@
 import type {ReactNode} from "react";
 import {Link} from "@tanstack/react-router";
-import {ArrowRight, CircleAlert, Clock, Compass, Gamepad2, LoaderCircle, Pause, RefreshCw, Sparkles, Ticket} from "lucide-react";
+import {ArrowRight, CircleAlert, Clock, Compass, Gamepad2, LoaderCircle, Pause, RefreshCw, Sparkles, Ticket, Trophy} from "lucide-react";
 import type {GameId} from "@mapae/arcade";
 import {guardianName} from "@mapae/arcade/guardians";
 import {GAME_NAMES} from "./game-names";
@@ -12,6 +12,7 @@ import type {DeskStage, GuardianDesk} from "./nft/useGuardianDesk";
 import type {GuardianToken} from "./profile/guardians";
 import {arcadeSectionLink, outingStatusLabel} from "./sections";
 import {ConnectInvite, GuardianSwitcher} from "./sections/SectionFrame";
+import {RankLine} from "./ranking/RankLine";
 
 /** What the lobby offers under the chosen cabinet, from a first free round to playing and sending out one's own guardian. */
 export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, onSendOuting}: {
@@ -31,6 +32,7 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
                         <h2>{guardianName(token.tokenId, locale)}</h2>
                         <p>{GUARDIAN_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}</p>
                         <p className="arc-dock-aptitude"><span>{ko ? `${names[game]} 적성` : `${names[game]} aptitude`}</span><meter min={0} max={6} value={traits.aptitudes[game]} aria-hidden="true" /><b>{traits.aptitudes[game]} / 6</b></p>
+                        <RankLine locale={locale} game={game} guardian={desk.ranking.standings?.guardians.find(g => g.tokenId === token.tokenId)} leader={desk.ranking.standings?.leaders[game] ?? null} named={false} />
                         {activeJob && status && <span className="arc-dock-chip" role="status">{activeJob.status === "paused" ? <Pause size={14} aria-hidden="true" /> : <Compass size={14} aria-hidden="true" />}{ko ? `${status} · ${activeJob.spent}/${activeJob.admissions}회` : `${status} · ${activeJob.spent}/${activeJob.admissions} rounds`}</span>}
                     </div>
                 </div>
@@ -42,6 +44,7 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
                     <button type="button" className="arc-button arc-button-paper" onClick={() => onSendOuting(game)}><Ticket size={18} aria-hidden="true" />{activeJob ? ko ? "외출 살펴보기" : "Check the outing" : ko ? "전령 외출 보내기" : "Send on an outing"}</button>
                 </div>
                 <small>{ko ? "연습은 무료예요 · NFT 경험치는 외출로만 쌓여요" : "Practice is free · NFT experience comes from outings"}</small>
+                <Link className="arc-text-button arc-dock-free" {...arcadeSectionLink("ranking", locale)}><Trophy size={16} aria-hidden="true" />{ko ? "랭킹 보기" : "See the rankings"}</Link>
                 <button type="button" className="arc-text-button arc-dock-free" onClick={() => onPlayGuest(game)}>{ko ? "체험 전령으로 무료 한 판" : "Free round with a trial guardian"}<ArrowRight size={16} aria-hidden="true" /></button>
             </div>
         </div>;
