@@ -6,6 +6,7 @@ import {dailyChallenge} from "@mapae/arcade/challenge";
 import {useLocale} from "../lib/locale";
 import {ArcadeRoom} from "./ArcadeRoom";
 import {ArcadeHeader} from "./ArcadeHeader";
+import {ArcadeMenu, type SectionBadges} from "./ArcadeMenu";
 import {swapScreen} from "./motion";
 import {LobbyDock} from "./LobbyDock";
 import {GuestArcade} from "./guest/GuestArcade";
@@ -15,7 +16,7 @@ import {useGuardianDesk} from "./nft/useGuardianDesk";
 import {GuardianArcade} from "./nft/GuardianArcade";
 import {NftPractice} from "./nft/NftPractice";
 import type {GuardianToken} from "./profile/guardians";
-import {arcadeSectionFromParam, arcadeSectionLink, SECTION_COPY, type ArcadeSection} from "./sections";
+import {arcadeSectionFromParam, arcadeSectionLink, outingStatusLabel, SECTION_COPY, type ArcadeSection} from "./sections";
 import "./arcade-shell.css";
 import "./guest/guest.css";
 
@@ -84,11 +85,19 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
         visit("lobby");
     }
     const back = () => go(() => setScreen({kind: "section"}));
+    // Shown only inside the open drawer, which never renders on the server, so wallet-derived values cannot split hydration.
+    const roster = desk.nft.roster, badges: SectionBadges = {
+        guardians: desk.stage === "waiting" ? ko ? "탄생 대기" : "Revealing" : roster?.guardians.length ? `${roster.guardians.length}/3` : undefined,
+        outings: desk.activeJob ? outingStatusLabel(desk.activeJob.status, locale) ?? undefined : undefined,
+        wallet: desk.giwa.grants.length ? String(desk.giwa.grants.length) : undefined,
+    };
+    const blocked = desk.busy || desk.session.status === "signing", leave = () => void disconnect();
 
     if (screen.kind === "guest") return <GuestArcade game={screen.game} store={guestStore} onBack={back} onGuardian={meetGuardian} />;
     if (screen.kind === "practice") return <NftPractice token={screen.token} game={screen.game} seed={screen.seed} ko={ko} reducedMotion={reducedMotion} returnLabel={SECTION_COPY[locale][section].back} onClose={back} />;
     return <main className="arcade agent-arcade arc-shell">
-        <ArcadeHeader section={section} locale={locale} owner={owner} disconnecting={desk.disconnecting} blocked={desk.busy || desk.session.status === "signing"} onDisconnect={() => void disconnect()} />
+        <ArcadeHeader section={section} locale={locale} owner={owner} disconnecting={desk.disconnecting} blocked={blocked} onDisconnect={leave}
+            menu={<ArcadeMenu locale={locale} owner={owner} walletWaiting={walletWaiting} badges={badges} disconnecting={desk.disconnecting} blocked={blocked} onDisconnect={leave} />} />
         <div className="arc-main">
             {section === "lobby" ? <ArcadeRoom locale={locale} selected={selected} onSelect={setSelected} reducedMotion={reducedMotion}>
                 <LobbyDock desk={desk} game={selected} walletWaiting={walletWaiting} onPlayGuest={playGuest} onPractice={practice} onSendOuting={sendOuting} onOpenGuardians={() => visit("guardians")} />

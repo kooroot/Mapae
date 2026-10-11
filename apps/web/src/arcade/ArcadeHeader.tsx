@@ -1,4 +1,4 @@
-import {useId} from 'react';
+import {useId, type ReactNode} from 'react';
 import {Link} from '@tanstack/react-router';
 import {BookOpen, Compass, Gamepad2, LoaderCircle, LogOut, Sparkles, Wallet, type LucideIcon} from 'lucide-react';
 import type {Address} from 'viem';
@@ -10,12 +10,16 @@ import {ARCADE_SECTIONS, arcadeSectionLink, SECTION_COPY, type ArcadeSection} fr
 
 export const SECTION_ICONS: Record<ArcadeSection, LucideIcon> = {lobby: Gamepad2, guardians: Sparkles, outings: Compass, journal: BookOpen, wallet: Wallet};
 
-/** The one arcade header for every visitor: the brand, the five sections, then the connected wallet and its disconnect control. */
-export function ArcadeHeader({section, locale, owner, disconnecting, blocked, onDisconnect}: {
-    section: ArcadeSection; locale: Locale; owner?: Address; disconnecting: boolean; blocked: boolean; onDisconnect: () => void;
+/**
+ * The one arcade header for every visitor. Wide screens show the five sections inline, then the wallet and language; narrower
+ * ones show the menu button, the brand and where the visitor is, with everything else inside the menu's drawer.
+ */
+export function ArcadeHeader({section, locale, menu, owner, disconnecting, blocked, onDisconnect}: {
+    section: ArcadeSection; locale: Locale; menu: ReactNode; owner?: Address; disconnecting: boolean; blocked: boolean; onDisconnect: () => void;
 }) {
     const ko = locale === 'ko', copy = SECTION_COPY[locale];
     return <header className="arc-header arc-shell-header">
+        {menu}
         <a className="arc-wordmark" href={localizePath('/', locale)} aria-label={ko ? 'Mapae 홈' : 'Mapae home'}><ArcadeBrand /></a>
         <span className="arc-header-title" aria-hidden="true">{copy[section].label}</span>
         <nav className="arc-nav" aria-label={ko ? '오락실 메뉴' : 'Arcade sections'}>

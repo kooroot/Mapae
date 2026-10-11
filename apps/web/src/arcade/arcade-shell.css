@@ -7,6 +7,51 @@
 .arc-nav a[aria-current=page]{background:#e9c99f1f;color:var(--arc-gold);box-shadow:inset 0 0 0 1px #e9c99f40}
 .arcade .arc-nav a:focus-visible{outline-offset:2px}
 .arc-header-title{display:none}
+.arc-menu-toggle{display:none}
+/* Wide but not roomy: the disconnect control keeps its icon and its accessible name, and gives up the visible label. */
+@media(min-width:1100px) and (max-width:1279px){.arc-shell-header{gap:16px}.arc-shell-header .arc-account-disconnect{justify-content:center;width:44px;min-height:44px;margin-left:8px;padding:0}.arc-shell-header .arc-account-disconnect>span{display:none}}
+/* Below 1100px the sections, wallet and language move into the drawer; the header keeps the menu, the brand and where you are. */
+@media(max-width:1099px){
+.arc-shell-header{gap:12px}
+.arc-shell-header :is(.arc-nav,.arc-header-actions){display:none}
+.arc-menu-toggle{display:grid;place-items:center;flex:none;width:44px;height:44px;margin-left:-6px;border:1px solid var(--arc-hair);border-radius:50%;background:#e9d8bc08;color:var(--arc-cream);cursor:pointer}
+.arc-menu-toggle:hover{color:var(--arc-gold);border-color:#e9c99f55}
+.arc-header-title{display:block;min-width:0;margin-left:auto;overflow:hidden;color:var(--arc-gold);font:600 15px/1.4 var(--sans);text-overflow:ellipsis;white-space:nowrap;word-break:keep-all}
+}
+
+/* The drawer renders in a portal outside .arcade: colours come from .arc-ui-theme, durations are literal. */
+.arc-menu-backdrop{position:fixed;inset:0;z-index:130;background:#000a;backdrop-filter:blur(4px);opacity:1;transition:opacity 240ms cubic-bezier(.22,1,.36,1)}
+.arc-menu-backdrop:is([data-starting-style],[data-ending-style]){opacity:0}
+.arc-menu-viewport{position:fixed;inset:0;z-index:131;pointer-events:none}
+.arc-menu-popup{pointer-events:auto;position:absolute;inset:0 auto 0 0;display:flex;flex-direction:column;gap:18px;width:min(22rem,calc(100vw - 3rem));height:100%;overflow-y:auto;overscroll-behavior:contain;padding:max(14px,env(safe-area-inset-top)) 18px max(20px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));border-right:1px solid #b99a6766;background:radial-gradient(ellipse at 0 0,#70533033,transparent 55%),#1b1712;color:var(--arc-cream);box-shadow:20px 0 80px #000b;transform:translateX(var(--drawer-swipe-movement-x,0px));transition:transform 320ms cubic-bezier(.22,1,.36,1)}
+.arc-menu-popup:is([data-starting-style],[data-ending-style]){transform:translateX(-100%)}
+.arc-menu-popup[data-swiping]{transition:none}
+.arc-menu-popup :focus-visible{outline:2px solid var(--arc-coral);outline-offset:3px}
+.arc-menu-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.arc-menu-title{margin:0;color:var(--arc-gold);font:600 14px/1.4 var(--sans);letter-spacing:.02em;word-break:keep-all}
+.arc-menu-popup:focus{outline:none}
+.arc-menu-close{display:grid;place-items:center;flex:none;width:44px;height:44px;border:1px solid var(--arc-hair);border-radius:50%;background:none;color:var(--arc-cream);cursor:pointer}
+.arc-menu-nav{display:grid;gap:4px}
+.arc-menu-nav a{display:flex;align-items:center;gap:14px;min-height:60px;padding:10px 12px;border-radius:14px;color:var(--arc-cream);text-decoration:none}
+.arc-menu-nav a>svg{flex:none;color:var(--arc-dim)}
+.arc-menu-nav a>span{display:grid;gap:3px;flex:1;min-width:0}
+.arc-menu-nav b{font-size:15px;font-weight:600;word-break:keep-all}
+.arc-menu-nav small{color:var(--arc-dim);font-size:12px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere}
+.arc-menu-nav em{flex:none;padding:3px 9px;border:1px solid #e9c99f40;border-radius:999px;color:var(--arc-gold);font:600 11px/1.5 var(--sans);font-style:normal;white-space:nowrap}
+.arc-menu-nav a:hover{background:#e9c99f0d}
+.arc-menu-nav a[aria-current=page]{background:#e9c99f1a;box-shadow:inset 0 0 0 1px #e9c99f40}
+.arc-menu-nav a[aria-current=page]>svg,.arc-menu-nav a[aria-current=page] b{color:var(--arc-gold)}
+.arc-menu-account{padding-top:18px;border-top:1px solid var(--arc-hair)}
+.arc-menu-account>p{margin:0 0 12px;color:var(--arc-dim);font-size:13px;line-height:1.6;word-break:keep-all}
+.arc-menu-account .arc-account{flex-wrap:wrap;width:fit-content;max-width:100%;border-radius:22px}
+.arc-menu-account .arc-account-hint{position:static;flex:1 0 100%;width:auto;max-width:none;margin:0 14px 10px 0;padding:0;border:0;background:none;color:var(--arc-dim);visibility:visible}
+.arc-menu-account .arc-button{display:flex;justify-content:center;align-items:center;gap:12px;width:100%;min-height:48px;padding:13px 20px;border:1px solid #a8947655!important;border-radius:999px;background:transparent;box-shadow:none;color:var(--arc-cream);font:650 14px var(--sans);transform:none}
+.arc-menu-account .arc-button:hover:not(:disabled){border-color:var(--arc-gold)!important;transform:none;box-shadow:none}
+.arc-menu-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;padding-top:14px;border-top:1px solid var(--arc-hair)}
+.arc-menu-foot>a:last-child{display:inline-flex;align-items:center;gap:6px;min-height:44px;color:var(--arc-dim);font-size:13px;text-decoration:none}
+.arc-menu-foot>a:last-child:hover{color:var(--arc-cream)}
+.arc-still :is(.arc-menu-popup,.arc-menu-backdrop){transition:none}
+@media(prefers-reduced-motion:reduce){.arc-menu-popup,.arc-menu-backdrop{transition:none}}
 
 .arc-signin{text-align:center}
 .arc-signin>h2:first-child{display:flex;align-items:center;justify-content:center;gap:10px;margin:0;color:#f8eee0;font-size:19px;font-weight:550;letter-spacing:-.03em;line-height:1.45;word-break:keep-all}
@@ -22,8 +67,4 @@
 .nft-arcade>.arc-signin{max-width:560px;margin:22px auto;padding:28px 24px;border:1px solid #c4a46b44;border-radius:20px;background:#231c14b3}
 
 @media(max-width:720px){.arc-shell .arc-footer{gap:14px;flex-wrap:wrap}}
-@media(max-width:1099px){
-.arc-shell-header{flex-wrap:wrap;row-gap:10px}
-.arc-shell-header .arc-nav{order:3;flex:1 0 100%;margin:0;overflow-x:auto}
-}
 @media(max-width:620px){.nft-arcade>.arc-signin{padding:22px 16px}}
