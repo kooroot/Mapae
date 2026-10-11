@@ -6,6 +6,7 @@ import {engagementApi, recordAuthenticatedEngagement} from "./arcade/engagement/
 import {engagementRepository} from "./arcade/engagement/repository";
 import {guardiansApi} from "./arcade/profile/guardians";
 import {guardianArtApi} from "./arcade/guardian-art/api";
+import {rankingApi} from "./arcade/ranking/api";
 import type {ExecutionContext, ScheduledController} from "@cloudflare/workers-types";
 import {
     createStartHandler,
@@ -42,6 +43,10 @@ const entry = createServerEntry({fetch: (request, options) => {
     if (path === "/api/arcade/engagement") return engagementApi(request, engagementRepository(env.ARCADE_DB), {
         development: import.meta.env.DEV, resolveOwner: r => profileSessionOwner(r, profileRepository(env.ARCADE_DB)),
     });
+    if (path.startsWith("/api/arcade/ranking/")) {
+        const profiles = profileRepository(env.ARCADE_DB);
+        return rankingApi(request, {receiptToken: env.ARCADE_RECEIPT_TOKEN, cache: caches.open("mapae-ranking"), rateLimit: (bucket, until, limit) => profiles.rateLimit(bucket, until, limit)});
+    }
     if (path.startsWith("/api/arcade/profile")) {
         const profiles = profileRepository(env.ARCADE_DB);
         return profileApi(request, profiles, {
