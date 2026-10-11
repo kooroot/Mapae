@@ -13,9 +13,10 @@ import {GuestArcade} from "./guest/GuestArcade";
 import {useGuestPractice} from "./guest/useGuestPractice";
 import {trackEngagement} from "./engagement/client";
 import {useGuardianDesk} from "./nft/useGuardianDesk";
-import {GuardianArcade} from "./nft/GuardianArcade";
 import {GuardiansSection} from "./sections/GuardiansSection";
 import {WalletSection} from "./sections/WalletSection";
+import {OutingsSection} from "./sections/OutingsSection";
+import {JournalSection} from "./sections/JournalSection";
 import {NftPractice} from "./nft/NftPractice";
 import type {GuardianToken} from "./profile/guardians";
 import {arcadeSectionFromParam, arcadeSectionLink, outingStatusLabel, SECTION_COPY, type ArcadeSection} from "./sections";
@@ -105,7 +106,8 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
                 <LobbyDock desk={desk} game={selected} walletWaiting={walletWaiting} onPlayGuest={playGuest} onPractice={practice} onSendOuting={sendOuting} />
             </ArcadeRoom> : section === "guardians" ? <GuardiansSection desk={desk} walletWaiting={walletWaiting} onPractice={practice} />
                 : section === "wallet" ? <WalletSection desk={desk} walletWaiting={walletWaiting} blocked={blocked} onDisconnect={leave} />
-                : <GuardianArcade section={section} desk={desk} walletWaiting={walletWaiting} />}
+                : section === "outings" ? <OutingsSection desk={desk} walletWaiting={walletWaiting} />
+                : <JournalSection desk={desk} walletWaiting={walletWaiting} />}
             <footer className="arc-footer"><p>{ko ? "작은 자유, 분명한 한도." : "A little freedom. A clear limit."}</p><span>GIWA SEPOLIA · {ko ? "테스트 토큰 사용" : "TEST TOKENS"}</span></footer>
         </div>
     </main>;
