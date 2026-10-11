@@ -9,6 +9,8 @@ import {emptyProgress, type Progress, type ReceiptEvidence, type ResultJson, typ
 export type StoredResult = {
     result: ResultJson; outcome: OutingResult; collection: Address; payer: Address; inputs: string;
     evidence: ReceiptEvidence | null; signature: Hex | null; signer: Address | null;
+    /** Set once the chain reports the payment claimed; claims are permanent, so the chain is never asked again. */
+    claimed?: true;
 };
 export const resultId = (job: Job): Hex => keccak256(stringToHex(JSON.stringify([job.guardian.chainId, job.guardian.collection.toLowerCase(), job.id, job.spent + 1])));
 export function resultInputs(job: Job): string {
@@ -65,6 +67,17 @@ export class GuardianLedger {
         const row = this.get(id); if (!row) throw new OutingError('not_found');
         row.evidence = evidence; row.signer = signer; row.signature = signature;
         this.db.query('UPDATE arcade_guardian_results SET data=? WHERE result_id=?').run(JSON.stringify(row), id.toLowerCase());
+    }
+    markClaimed(id: string): void {
+        const row = this.get(id); if (!row || row.claimed) return;
+        row.claimed = true;
+        this.db.query('UPDATE arcade_guardian_results SET data=? WHERE result_id=?').run(JSON.stringify(row), id.toLowerCase());
+    }
+    /** Oldest results not yet seen claimed, bounded; rows claimed on-chain but not yet marked are marked and skipped by the caller. */
+    unclaimed(collection: Address, tokenId: string): StoredResult[] {
+        return this.db.query<{data: string}, [string,string]>(
+            `SELECT data FROM arcade_guardian_results WHERE collection=? AND token_id=? AND json_extract(data,'$.claimed') IS NULL ORDER BY rowid ASC LIMIT 96`)
+            .all(collection.toLowerCase(), tokenId).map(r => JSON.parse(r.data));
     }
     list(collection: Address, tokenId: string, before?: string): StoredResult[] {
         // Stable rowid cursor survives equal timestamps. Only bounded indexed pages leave the server.
