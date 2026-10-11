@@ -1,13 +1,13 @@
 import {createHash, timingSafeEqual} from 'node:crypto';
 import {Hono} from 'hono';
-import {getAddress, isAddress, isHash, type Address, type Hex} from 'viem';
+import {getAddress, isAddress, type Address} from 'viem';
 import {OutingError, validTokenId} from '../outings/validation';
 import {resultView, type GuardianLedger} from './ledger';
-import type {GuardianClaim, GuardianDetail, GuardianReader, GuardianRoster} from './types';
+import type {GuardianClaimBatch, GuardianDetail, GuardianReader, GuardianRoster} from './types';
 
 export function createGuardianApp(options: {
     token?: string; reader?: GuardianReader; ledger?: GuardianLedger;
-    claim?: (owner:Address,id:Hex)=>Promise<GuardianClaim>;
+    claim?: (owner:Address,tokenId:string)=>Promise<GuardianClaimBatch>;
 }) {
     const app = new Hono<{Variables:{owner:Address}}>(), digest = (v:string)=>createHash('sha256').update(v).digest();
     app.use('*', async(c,next)=>{
@@ -37,10 +37,10 @@ export function createGuardianApp(options: {
         return c.json({guardian:token,earned:options.ledger.progress(options.reader.collection,id),results,
             nextCursor:rows.length===40?options.ledger.cursor(rows.at(-1)!.result.resultId):null} satisfies GuardianDetail);
     });
-    app.post('/results/:id/claim',async c=>{
+    app.post('/:tokenId/claims',async c=>{
         if(!options.claim) throw new OutingError('disabled');
-        const id=c.req.param('id'); if(!isHash(id)) throw new OutingError('invalid_request');
-        // The request selects exactly one existing result; it cannot submit gameplay.
+        const id=c.req.param('tokenId'); if(!validTokenId(id)) throw new OutingError('invalid_request');
+        // The request names one guardian; it cannot select or submit gameplay.
         if (Number(c.req.header('Content-Length')??0)>1024) throw new OutingError('invalid_request');
         return c.json(await options.claim(c.get('owner'),id));
     });

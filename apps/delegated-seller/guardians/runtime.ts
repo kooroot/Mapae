@@ -5,9 +5,9 @@ import {giwaSepolia, parseNodeRpcUrl, MOCK_USDC} from '@mapae/shared';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
 import {ARCADE_PAY_TO, ARCADE_REDEEMER, ARCADE_TICKET_AMOUNT} from '@mapae/arcade/tickets';
 import {guardianAbi} from '@mapae/arcade/guardian-abi';
-import {guardianTraitsHash, guardianResultDomain, guardianResultFromJson, GUARDIAN_RESULT_TYPES} from '@mapae/arcade/guardians';
+import {guardianTraitsHash, guardianResultDomain, guardianResultFromJson, GUARDIAN_CLAIM_BATCH, GUARDIAN_RESULT_TYPES} from '@mapae/arcade/guardians';
 import {OutingError, validTokenId} from '../outings/validation';
-import {type GuardianReader, type GuardianToken, type GuardianRoster, type GuardianSnapshot, type GuardianClaim, type Progress, type ReceiptEvidence} from './types';
+import {type GuardianReader, type GuardianToken, type GuardianRoster, type GuardianSnapshot, type GuardianClaimBatch, type Progress, type ReceiptEvidence} from './types';
 import type {GuardianLedger, StoredResult} from './ledger';
 
 export function readGuardianConfig(env: Record<string,string | undefined> = process.env) {
@@ -74,30 +74,37 @@ export function createGuardianReader(config: Config, client: GuardianClient = cr
     };
 }
 
-/** Receipt success alone is insufficient for an irrevocable signed growth claim. */
-export async function safeReceipt(client: GuardianClient, row: StoredResult): Promise<ReceiptEvidence> {
-    if (await client.getChainId() !== 91342) throw new OutingError('receipt_unconfirmed');
+/** Receipt success alone is insufficient for an irrevocable signed growth claim. The caller checked the chain and read the safe head. */
+export async function safeReceipt(client: GuardianClient, row: StoredResult, safe: bigint): Promise<ReceiptEvidence> {
     const receipt = await client.getTransactionReceipt({hash:row.result.paymentTx});
     if (receipt.status !== 'success' || reconcileSettlementReceipt({logs:receipt.logs, asset:MOCK_USDC.address,
         payer:row.payer,payTo:ARCADE_PAY_TO,amount:ARCADE_TICKET_AMOUNT}).length) throw new OutingError('receipt_unconfirmed');
-    const safe = await client.getBlock({blockTag:'safe'});
-    if (safe.number === null || receipt.blockNumber > safe.number) throw new OutingError('receipt_unconfirmed');
+    if (receipt.blockNumber > safe) throw new OutingError('receipt_unconfirmed');
     const canonical = await client.getBlock({blockNumber:receipt.blockNumber});
     if (!canonical.hash || canonical.hash.toLowerCase() !== receipt.blockHash.toLowerCase()) throw new OutingError('receipt_unconfirmed');
     return {blockNumber:receipt.blockNumber.toString(),blockHash:receipt.blockHash};
 }
+/** Signs the current owner's oldest unclaimed results of one guardian, at most one claimResults batch. Unsafe payments wait for a later batch. */
 export function createGuardianClaims(config: Config, ledger: GuardianLedger, reader: GuardianReader,
     client: GuardianClient = createPublicClient({chain:giwaSepolia,transport:throttledHttp(config.rpcUrl, {}, {timeout:15_000,retryCount:1})})) {
-    return async (owner: Address, id: Hex): Promise<GuardianClaim> => {
-        const row = ledger.get(id); if (!row || row.collection.toLowerCase() !== config.collection.toLowerCase()) throw new OutingError('not_found');
-        if (row.result.actor.toLowerCase() !== owner.toLowerCase() && (await reader.token(row.result.tokenId)).owner.toLowerCase() !== owner.toLowerCase()) throw new OutingError('not_found');
+    return async (owner: Address, tokenId: string): Promise<GuardianClaimBatch> => {
+        if ((await reader.token(tokenId)).owner.toLowerCase() !== owner.toLowerCase()) throw new OutingError('not_found');
         const signer = await client.readContract({address:config.collection,abi:guardianAbi,functionName:'resultSigner'});
         if (getAddress(signer as Address) !== config.signer.address) throw new OutingError('guardian_unavailable');
-        if (await reader.claimed(row.result.paymentTx)) return {collection:config.collection,signer:config.signer.address,result:row.result,signature:null,claimed:true};
-        // Recheck canonical provenance even when a previous signature exists.
-        const evidence = await safeReceipt(client,row);
-        const signature = await config.signer.signTypedData({domain:guardianResultDomain(config.collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:guardianResultFromJson(row.result)});
-        ledger.attest(id,evidence,config.signer.address,signature);
-        return {collection:config.collection,signer:config.signer.address,result:row.result,signature,claimed:false};
+        if (await client.getChainId() !== 91342) throw new OutingError('receipt_unconfirmed');
+        const safe = (await client.getBlock({blockTag:'safe'})).number;
+        if (safe === null) throw new OutingError('receipt_unconfirmed');
+        const claims: GuardianClaimBatch['claims'] = [];
+        for (const row of ledger.unclaimed(config.collection, tokenId)) {
+            if (claims.length === GUARDIAN_CLAIM_BATCH) break;
+            if (await reader.claimed(row.result.paymentTx)) {ledger.markClaimed(row.result.resultId); continue;}
+            // Recheck canonical provenance even when a previous signature exists.
+            let evidence: ReceiptEvidence;
+            try {evidence = await safeReceipt(client,row,safe);} catch (e) {if (e instanceof OutingError && e.code === 'receipt_unconfirmed') continue; throw e;}
+            const signature = await config.signer.signTypedData({domain:guardianResultDomain(config.collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:guardianResultFromJson(row.result)});
+            ledger.attest(row.result.resultId,evidence,config.signer.address,signature);
+            claims.push({result:row.result,signature});
+        }
+        return {collection:config.collection,signer:config.signer.address,claims};
     };
 }

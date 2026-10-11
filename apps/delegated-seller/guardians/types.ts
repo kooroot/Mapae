@@ -21,6 +21,8 @@ export type VerifiedResult = Omit<OutingResult,'transaction'> & {
 };
 export type GuardianDetail = {guardian: GuardianToken; earned: Progress; results: VerifiedResult[]; nextCursor: string | null};
 export type GuardianClaim = {collection: Address; signer: Address; result: ResultJson; signature: Hex | null; claimed: boolean};
+/** Signed, still-unclaimed results of one guardian, oldest first: exactly the arguments of one claimResults transaction. */
+export type GuardianClaimBatch = {collection: Address; signer: Address; claims: {result: ResultJson; signature: Hex}[]};
 export interface GuardianReader {
     readonly collection: Address;
     inspect(tokenId: string): Promise<GuardianSnapshot>;
