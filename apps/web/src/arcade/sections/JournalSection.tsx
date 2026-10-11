@@ -48,7 +48,7 @@ function Journal({desk}: {desk: GuardianDesk}) {
             <div className="jr-xp">
                 <XpBar recorded={onChain.experience} waiting={pending?.experience ?? 0} total={total} label={ko ? `NFT ${onChain.experience} XP, 기록 대기 ${pending?.experience ?? 0} XP` : `${onChain.experience} XP on NFT, ${pending?.experience ?? 0} XP waiting`} />
                 <p className="jr-xp-legend"><span className="is-onchain">{ko ? 'NFT' : 'On NFT'} <b>{onChain.experience} XP</b></span>
-                    {pending ? <><span className="is-waiting">{ko ? '기록 대기' : 'Waiting'} <b>+{pending.experience} XP</b></span><span>{ko ? `${detail!.earned.plays}회 모험` : `${detail!.earned.plays} outings`}</span></>
+                    {pending ? <>{pending.experience > 0 && <span className="is-waiting">{ko ? '기록 대기' : 'Waiting'} <b>+{pending.experience} XP</b></span>}<span>{ko ? `${detail!.earned.plays}회 모험` : `${detail!.earned.plays} outings`}</span></>
                         : nft.error && !nft.loading ? <span>{ko ? '검증된 모험을 불러오지 못했어요' : 'Verified outings unavailable'}</span>
                         : <span role="status">{ko ? '검증된 모험을 불러오는 중…' : 'Loading verified outings…'}</span>}</p>
             </div>

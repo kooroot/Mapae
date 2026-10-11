@@ -113,7 +113,7 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
         guardians: desk.stage === "waiting" ? ko ? "탄생 대기" : "Revealing" : roster?.guardians.length ? `${roster.guardians.length}/3` : undefined,
         outings: desk.activeJob ? outingStatusLabel(desk.activeJob.status, locale) ?? undefined : undefined,
         ranking: attemptsBadge(attemptsLeft(desk.ranking.standings), locale),
-        journal: waiting ? ko ? `기록 ${waiting}` : `${waiting} to record` : undefined,
+        journal: waiting ? ko ? `기록 ${waiting}` : `${waiting} new` : undefined,
         wallet: desk.giwa.grants.length ? String(desk.giwa.grants.length) : undefined,
     };
     const blocked = desk.busy || desk.session.status === "signing", leave = () => void disconnect();
