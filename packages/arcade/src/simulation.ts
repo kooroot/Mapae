@@ -1,6 +1,6 @@
 import {ARCADE_RULESET_VERSION, type ActivityOutcome, type AgentDecision, type AgentProfile, type GameId} from "./contracts";
 import {applyRaceRound, chooseRaceAction, createRaceSeason, makeRaceCourse, raceEndTime, raceHighlights, RACE_ROUNDS, seasonRanking, type RaceSeason, type RaceStrategy} from "./race";
-import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseShopMemory, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopOutcome, shopSellerObservation, type ShopMemory} from "./shop";
+import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, defaultShopName, nextShopCustomer, parseShopMemory, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopOutcome, shopSellerObservation, type ShopMemory} from "./shop";
 import {advanceAgent, newGame, ROUND_MS, stampHighlights, type Game} from "./stamp";
 import {validGuardianAptitudes} from "./guardians";
 
@@ -97,7 +97,7 @@ export function runArcadeSimulation({game, seed, profile, locale, shopMemory}: {
         return raceOutcome(season, notes, locale);
     }
     if (game === "shop") {
-        const config = {...DEFAULT_SHOP_CONFIG, name: locale === "ko" ? `${profile.name.slice(0, 10)} 잡화점` : `${profile.name.slice(0, 10)}'s shop`};
+        const config = {...DEFAULT_SHOP_CONFIG, name: defaultShopName(profile.name, locale)};
         let state = createShop(seed, config, shopMemory, profile.aptitudes);
         // Same turn boundary and role-specific observations as ShopGame, with a finite guard.
         for (let turn = 0; turn < 64 && state.phase !== "finished"; turn++) {

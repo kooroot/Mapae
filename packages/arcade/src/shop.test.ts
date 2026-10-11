@@ -1,5 +1,6 @@
 import {describe, expect, test} from "bun:test";
-import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, nextShopCustomer, parseBuyerAction, parseSellerAction, parseShopConfig, parseShopMemory, shopForecast, shopCampaign, shopReturnLine, type ShopMemory, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOffersRemaining, shopOfferChoices, shopEvents, shopOutcome, shopPatience, shopSellerObservation, simulateShop, SHOP_GOALS, SHOP_STORIES, type ShopGoal, type ShopState, type SellerAction} from "./shop";
+import {applyBuyerAction, applySellerAction, createShop, DEFAULT_SHOP_CONFIG, defaultShopName, nextShopCustomer, parseBuyerAction, parseSellerAction, parseShopConfig, parseShopMemory, shopForecast, shopCampaign, shopReturnLine, type ShopMemory, ruleBuyerAction, ruleSellerAction, shopBuyerObservation, shopMetrics, shopOffersRemaining, shopOfferChoices, shopEvents, shopOutcome, shopPatience, shopSellerObservation, simulateShop, SHOP_GOALS, SHOP_STORIES, type ShopGoal, type ShopState, type SellerAction} from "./shop";
+import {guardianName} from "./guardians";
 
 function ready(): ShopState {
     return applyBuyerAction(createShop(32), {type: "request", wants: ["water"], reason: "need"});
@@ -677,6 +678,19 @@ describe("Counter events for presentation", () => {
             expect(events.at(-1)).toEqual({type: "finished"});
             expect(events.flatMap(e => e.type === "deal" ? [e.receipt] : [])).toEqual(state.receipts);
             expect(simulateShop(seed, {...DEFAULT_SHOP_CONFIG, role})).toEqual(state);
+        }
+    });
+});
+
+describe("default shop name", () => {
+    test("every guardian name fits the shop name bound without cutting a word", () => {
+        expect(defaultShopName("졸린 돌쇠", "ko")).toBe("졸린 돌쇠 잡화점");
+        expect(defaultShopName("Sleepy Dolsoe", "en")).toBe("Dolsoe's shop");
+        expect(defaultShopName("Mapae", "en")).toBe("Mapae's shop");
+        for (let id = 1; id <= 10_000; id++) for (const locale of ["ko", "en"] as const) {
+            const name = guardianName(id, locale), shop = defaultShopName(name, locale), owner = locale === "ko" ? shop.slice(0, -4) : shop.slice(0, -7);
+            expect(parseShopConfig({...DEFAULT_SHOP_CONFIG, name: shop})?.name).toBe(shop);
+            expect(name.split(" ")).toContain(owner.split(" ").at(-1)!);
         }
     });
 });

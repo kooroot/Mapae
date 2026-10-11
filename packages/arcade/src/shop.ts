@@ -36,6 +36,12 @@ export const DEFAULT_SHOP_CONFIG: ShopConfig = {
     role: "seller", name: "말랑 잡화점", focus: "balanced", pricing: 100,
     advertising: "none", negotiation: "loyalty", buyerGoal: "picnic", buyerCap: 18,
 };
+/** Fits the 18-character shop name bound without cutting a word: long English names keep only the given name. */
+export function defaultShopName(owner: string, locale: "ko" | "en"): string {
+    if (locale === "ko") return `${[...owner].slice(0, 14).join("")} 잡화점`;
+    const short = [...owner].length <= 11 ? owner : owner.split(" ").at(-1)!;
+    return `${[...short].slice(0, 11).join("")}'s shop`;
+}
 const emptyBasket = (): Basket => ({water: 0, snack: 0, charm: 0});
 const objectives: Record<ShopGoal, Basket> = {
     picnic: {water: 1, snack: 2, charm: 0}, study: {water: 1, snack: 0, charm: 1},
