@@ -28,6 +28,9 @@ const streamWithSecurityHeaders = defineHandlerCallback((context) => {
         "Content-Security-Policy",
         createContentSecurityPolicy(nonce),
     );
+    // A document is valid only with its own nonce, and only alongside the bundles of the deploy that rendered it. Without this,
+    // Back after a deploy restored the previous release's page from the browser cache under the new URL scheme.
+    context.responseHeaders.set("Cache-Control", "no-store");
     return defaultStreamHandler(context);
 });
 
