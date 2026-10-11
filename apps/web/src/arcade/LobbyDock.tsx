@@ -25,25 +25,29 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
     if (stage === "ready" && token && member && traits) {
         const status = activeJob && activeJob.status in OUTING_STATUS[locale] ? OUTING_STATUS[locale][activeJob.status as keyof typeof OUTING_STATUS.ko] : null;
         return <div className="arc-entry-dock arc-dock-ready">
-            <div className="arc-dock-guardian">
-                <GuardianAvatar appearance={member.appearance} color={member.color} portrait />
-                <div>
-                    <span className="arc-dock-label">{ko ? "함께할 전령" : "Your guardian"}</span>
-                    <h2>{guardianName(token.tokenId, locale)}</h2>
-                    <p>{GUARDIAN_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}</p>
-                    <p className="arc-dock-aptitude"><span>{ko ? `${names[game]} 적성` : `${names[game]} aptitude`}</span><meter min={0} max={6} value={traits.aptitudes[game]} aria-hidden="true" /><b>{traits.aptitudes[game]} / 6</b></p>
-                    {activeJob && status && <span className="arc-dock-chip" role="status">{activeJob.status === "paused" ? <Pause size={14} aria-hidden="true" /> : <Compass size={14} aria-hidden="true" />}{ko ? `${status} · ${activeJob.spent}/${activeJob.admissions}회` : `${status} · ${activeJob.spent}/${activeJob.admissions} rounds`}</span>}
+            <div className="arc-dock-side">
+                <div className="arc-dock-guardian">
+                    <GuardianAvatar appearance={member.appearance} color={member.color} portrait />
+                    <div>
+                        <span className="arc-dock-label">{ko ? "함께할 전령" : "Your guardian"}</span>
+                        <h2>{guardianName(token.tokenId, locale)}</h2>
+                        <p>{GUARDIAN_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}</p>
+                        <p className="arc-dock-aptitude"><span>{ko ? `${names[game]} 적성` : `${names[game]} aptitude`}</span><meter min={0} max={6} value={traits.aptitudes[game]} aria-hidden="true" /><b>{traits.aptitudes[game]} / 6</b></p>
+                        {activeJob && status && <span className="arc-dock-chip" role="status">{activeJob.status === "paused" ? <Pause size={14} aria-hidden="true" /> : <Compass size={14} aria-hidden="true" />}{ko ? `${status} · ${activeJob.spent}/${activeJob.admissions}회` : `${status} · ${activeJob.spent}/${activeJob.admissions} rounds`}</span>}
+                    </div>
                 </div>
+                {revealed.length > 1 && <div className="arc-dock-switcher" role="group" aria-label={ko ? "함께할 전령 바꾸기" : "Switch guardian"}>
+                    {revealed.map((t, index) => <button key={t.tokenId} type="button" aria-pressed={t.tokenId === token.tokenId} aria-label={guardianName(t.tokenId, locale)} title={guardianName(t.tokenId, locale)} onClick={() => void nft.select(t.tokenId)}><GuardianAvatar appearance={crew[index]?.appearance} color={crew[index]?.color} portrait /></button>)}
+                </div>}
             </div>
-            {revealed.length > 1 && <div className="arc-dock-switcher" role="group" aria-label={ko ? "함께할 전령 바꾸기" : "Switch guardian"}>
-                {revealed.map((t, index) => <button key={t.tokenId} type="button" aria-pressed={t.tokenId === token.tokenId} aria-label={guardianName(t.tokenId, locale)} title={guardianName(t.tokenId, locale)} onClick={() => void nft.select(t.tokenId)}><GuardianAvatar appearance={crew[index]?.appearance} color={crew[index]?.color} portrait /></button>)}
-            </div>}
-            <div className="arc-dock-actions">
-                <button type="button" className="arc-button" onClick={() => onPractice(token, game)}><Gamepad2 size={18} aria-hidden="true" />{ko ? "내 전령과 연습" : "Practice with my guardian"}</button>
-                <button type="button" className="arc-button arc-button-paper" onClick={() => onSendOuting(game)}><Ticket size={18} aria-hidden="true" />{activeJob ? ko ? "외출 살펴보기" : "Check the outing" : ko ? "전령 외출 보내기" : "Send on an outing"}</button>
+            <div className="arc-dock-play">
+                <div className="arc-dock-actions">
+                    <button type="button" className="arc-button" onClick={() => onPractice(token, game)}><Gamepad2 size={18} aria-hidden="true" />{ko ? "내 전령과 연습" : "Practice with my guardian"}</button>
+                    <button type="button" className="arc-button arc-button-paper" onClick={() => onSendOuting(game)}><Ticket size={18} aria-hidden="true" />{activeJob ? ko ? "외출 살펴보기" : "Check the outing" : ko ? "전령 외출 보내기" : "Send on an outing"}</button>
+                </div>
+                <small>{ko ? "연습은 무료예요 · NFT 경험치는 외출로만 쌓여요" : "Practice is free · NFT experience comes from outings"}</small>
+                <button type="button" className="arc-text-button arc-dock-free" onClick={() => onPlayGuest(game)}>{ko ? "체험 전령으로 무료 한 판" : "Free round with a trial guardian"}<ArrowRight size={16} aria-hidden="true" /></button>
             </div>
-            <small>{ko ? "연습은 무료예요 · NFT 경험치는 외출로만 쌓여요" : "Practice is free · NFT experience comes from outings"}</small>
-            <button type="button" className="arc-text-button arc-dock-free" onClick={() => onPlayGuest(game)}>{ko ? "체험 전령으로 무료 한 판" : "Free round with a trial guardian"}<ArrowRight size={16} aria-hidden="true" /></button>
         </div>;
     }
     const guardian: Record<DeskStage, ReactNode> = {

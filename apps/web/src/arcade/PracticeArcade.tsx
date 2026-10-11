@@ -219,7 +219,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
     }
     return (
         <main className="arcade arc-practice">
-            <header className="arc-header"><button className="arc-back" onClick={requestBack} aria-label={ko ? "오락실 입구로 돌아가기" : "Back to the arcade entrance"}><ArrowLeft size={18} /></button>
+            <header className="arc-header"><button className="arc-back" onClick={requestBack} aria-label={t.lobby}><ArrowLeft size={18} /></button>
                 <a className="arc-wordmark" href={localizePath("/", locale)} aria-label={t.home}><ArcadeBrand /></a>
                 <div className="arc-header-actions">
                     <button className="arc-sound" aria-label={demo.sound ? t.soundOn : t.soundOff} aria-pressed={demo.sound} onClick={() => void toggleSound()}>{demo.sound ? <Volume2 size={18} /> : <VolumeX size={18} />}<span>{demo.sound ? t.soundOn : t.soundOff}</span></button>
