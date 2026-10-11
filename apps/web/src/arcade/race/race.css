@@ -28,8 +28,7 @@
 .arc-race-sitout { text-align: center; font-size:14px; padding: 13px 5px 0; }
 .arc-race-owner strong > small { color: #a8392c; border: 1px solid #a8392c; font-size: 10px; vertical-align: middle; padding: 1px 3px; margin-left: 4px; white-space: nowrap; }
 .arc-race-playback { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 18px 0 10px; }
-.arc-race-playback .arc-button { min-height: 42px; padding: 8px 14px; font-size:14px; }
-.arc-race-playback .arc-button-plain { background: var(--arc-paper); }
+.arc-race-playback .arc-button { min-height: 44px; padding: 8px 16px; }
 .arc-race-text-button { font-size:14px; text-decoration: underline; text-underline-offset: 4px; min-height: 44px; }
 .arc-race-status { text-align: center; font-size:14px; color: var(--arc-muted); min-height: 20px; }
 .arc-race-standings { margin-top: 30px; }
@@ -62,7 +61,7 @@
     .arc-race-mode { font-size:14px; margin-bottom: 20px; }
     .arc-race-decision { padding: 13px; }
     .arc-race-playback { gap: 10px; }
-    .arc-race-playback .arc-button { font-size:14px; padding: 8px 10px; }
+    .arc-race-playback .arc-button { padding: 8px 12px; }
     .arc-race-text-button { font-size:14px; }
     .arc-race-standings th, .arc-race-standings td { padding: 11px 7px; }
     .arc-race-standings th { font-size:14px; }
