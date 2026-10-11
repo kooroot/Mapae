@@ -6,7 +6,7 @@ import {dailyChallenge} from "@mapae/arcade/challenge";
 import {useLocale} from "../lib/locale";
 import {ArcadeRoom} from "./ArcadeRoom";
 import {ArcadeHeader} from "./ArcadeHeader";
-import {ArcadeMenu, type SectionBadges} from "./ArcadeMenu";
+import {ArcadeMenu} from "./ArcadeMenu";
 import {swapScreen} from "./motion";
 import {LobbyDock} from "./LobbyDock";
 import {GuestArcade} from "./guest/GuestArcade";
@@ -21,7 +21,8 @@ import {RankingSection} from "./sections/RankingSection";
 import {attemptsBadge, attemptsLeft} from "./ranking/format";
 import {NftPractice} from "./nft/NftPractice";
 import type {GuardianToken} from "./profile/guardians";
-import {arcadeSectionFromParam, arcadeSectionLink, outingStatusLabel, SECTION_COPY, type ArcadeSection} from "./sections";
+import {arcadeSectionFromParam, arcadeSectionLink, outingStatusLabel, SECTION_COPY, type ArcadeSection, type SectionBadges} from "./sections";
+import {pendingGrowth} from "./nft/model";
 import "./arcade-shell.css";
 import "./guest/guest.css";
 
@@ -107,11 +108,12 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
         visit("lobby");
     }
     const back = () => go(() => setScreen({kind: "section"}));
-    // Shown only inside the open drawer, which never renders on the server, so wallet-derived values cannot split hydration.
-    const roster = desk.nft.roster, badges: SectionBadges = {
+    // Wallet-derived, so they only show client-side: in the drawer, and in the wide header after hydration.
+    const roster = desk.nft.roster, detail = desk.nft.detail, waiting = detail ? pendingGrowth(detail.guardian.progress, detail.earned).plays : 0, badges: SectionBadges = {
         guardians: desk.stage === "waiting" ? ko ? "탄생 대기" : "Revealing" : roster?.guardians.length ? `${roster.guardians.length}/3` : undefined,
         outings: desk.activeJob ? outingStatusLabel(desk.activeJob.status, locale) ?? undefined : undefined,
         ranking: attemptsBadge(attemptsLeft(desk.ranking.standings), locale),
+        journal: waiting ? ko ? `기록 ${waiting}` : `${waiting} to record` : undefined,
         wallet: desk.giwa.grants.length ? String(desk.giwa.grants.length) : undefined,
     };
     const blocked = desk.busy || desk.session.status === "signing", leave = () => void disconnect();
@@ -119,7 +121,7 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
     if (screen.kind === "guest") return <GuestArcade game={screen.game} store={guestStore} onBack={back} onGuardian={meetGuardian} />;
     if (screen.kind === "practice") return <NftPractice token={screen.token} game={screen.game} seed={screen.seed} ko={ko} reducedMotion={reducedMotion} returnLabel={SECTION_COPY[locale][section].back} onClose={back} />;
     return <main className="arcade agent-arcade arc-shell">
-        <ArcadeHeader section={section} locale={locale} owner={owner} disconnecting={desk.disconnecting} blocked={blocked} onDisconnect={leave}
+        <ArcadeHeader section={section} locale={locale} owner={owner} walletWaiting={walletWaiting} badges={badges} disconnecting={desk.disconnecting} blocked={blocked} onDisconnect={leave}
             menu={<ArcadeMenu locale={locale} owner={owner} walletWaiting={walletWaiting} badges={badges} disconnecting={desk.disconnecting} blocked={blocked} onDisconnect={leave} />} />
         <div className="arc-main">
             {section === "lobby" ? <ArcadeRoom locale={locale} selected={selected} onSelect={setSelected} reducedMotion={reducedMotion}>

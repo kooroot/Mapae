@@ -7,6 +7,9 @@ import {localizePath, type Locale} from "../lib/i18n";
 export const ARCADE_SECTIONS = ["lobby", "guardians", "outings", "ranking", "journal", "wallet"] as const;
 export type ArcadeSection = (typeof ARCADE_SECTIONS)[number];
 /** A section that lives at `/arcade/<section>`; the lobby is the bare `/arcade`. */
+/** A short live count or state beside a section link, e.g. "2/3" or "기록 26". */
+export type SectionBadges = Partial<Record<ArcadeSection, string>>;
+
 export type ArcadeSubsection = Exclude<ArcadeSection, "lobby">;
 
 export function isArcadeSubsection(segment: string): segment is ArcadeSubsection {

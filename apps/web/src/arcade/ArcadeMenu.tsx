@@ -7,9 +7,7 @@ import {WalletPicker} from '../components/WalletPicker';
 import {LocaleSwitch} from '../lib/locale';
 import {localizePath, type Locale} from '../lib/i18n';
 import {AccountChip, SECTION_ICONS} from './ArcadeHeader';
-import {ARCADE_SECTIONS, arcadeSectionLink, SECTION_COPY, type ArcadeSection} from './sections';
-
-export type SectionBadges = Partial<Record<ArcadeSection, string>>;
+import {ARCADE_SECTIONS, arcadeSectionLink, SECTION_COPY, type SectionBadges} from './sections';
 
 /**
  * The narrow-screen menu: a left drawer with every section, the wallet and the language. Base UI's drawer brings the focus

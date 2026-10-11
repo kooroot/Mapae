@@ -9,7 +9,8 @@ import "./brand-controls.css";
 import {useLocale} from "../lib/locale";
 
 /** A single entry point; discovered wallets belong inside the chooser. */
-export function WalletPicker({reconnecting = false, context = "arcade"}: {reconnecting?: boolean; context?: "arcade" | "studio"}) {
+/** In the arcade it is always the primary action: a full button in cards and the drawer, a compact one in the wide header. */
+export function WalletPicker({reconnecting = false, context = "arcade", placement = "card"}: {reconnecting?: boolean; context?: "arcade" | "studio"; placement?: "card" | "header"}) {
     const {locale} = useLocale(); const ko = locale === "ko";
     const {connectors, connectAsync, isPending} = useConnect();
     const [open, setOpen] = useState(false);
@@ -28,9 +29,9 @@ export function WalletPicker({reconnecting = false, context = "arcade"}: {reconn
     const destination = context === "arcade" ? `https://mapae.io${localizePath("/arcade", locale)}` : localizeUrl(appUrl, locale);
     const mobileDestination = destination.startsWith("https://") ? destination.slice(8) : `app.mapae.io${localizePath("/", locale)}`;
     return <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Trigger className={context === "arcade" ? "arc-button arc-button-paper arc-entry-connect" : "mapae-action mapae-action-primary"} disabled={busy}>
-            {busy ? <LoaderCircle size={19} className="mapae-spinner" /> : <Wallet size={19} />}
-            {busy ? ko ? "지갑 연결 확인 중…" : "Connecting…" : ko ? "지갑 연결" : "Connect wallet"}<ArrowRight size={19} />
+        <Dialog.Trigger className={context === "studio" ? "mapae-action mapae-action-primary" : placement === "header" ? "arc-button arc-header-connect" : "arc-button arc-entry-connect"} disabled={busy}>
+            {busy ? <LoaderCircle size={placement === "header" ? 17 : 19} className="mapae-spinner" /> : <Wallet size={placement === "header" ? 17 : 19} />}
+            {busy ? ko ? "지갑 연결 확인 중…" : "Connecting…" : ko ? "지갑 연결" : "Connect wallet"}{placement === "card" && <ArrowRight size={19} />}
         </Dialog.Trigger>
         <Dialog.Portal className="arc-ui-theme"><Dialog.Backdrop className="mapae-dialog-backdrop" />
             <Dialog.Popup className="arc-wallet-dialog">
