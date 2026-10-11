@@ -57,3 +57,8 @@
 .nft-growth .nft-more{display:flex;width:100%;margin:16px 0 4px}
 @media(max-width:700px){.jr-summary{grid-template-columns:64px minmax(0,1fr);grid-template-areas:"art who" "xp xp" "action action";gap:10px 14px}.jr-summary>.arc-guardian-portrait{width:64px;height:64px}.jr-action{margin-top:6px}
     .jr-row{grid-template-columns:40px minmax(0,1fr) auto 44px;grid-template-areas:"art main score receipt" "art meta xp receipt";gap:2px 10px;padding:8px 0}.jr-row>.arc-game-thumb{grid-area:art}.jr-row-main{grid-area:main}.jr-score{grid-area:score}.jr-xp-pill{grid-area:xp;justify-self:end}.jr-meta{grid-area:meta}.jr-receipt{grid-area:receipt}.jr-filter{display:flex}.jr-filter button{flex:1;justify-content:center}}
+/* Empty places in the three-guardian roster: quiet numbered outlines beside the draw card, wide screens only. */
+.nft-slot{display:grid;place-items:center;min-height:240px;border:1px dashed #e9d8bc33;border-radius:var(--r-lg);background:#ffffff05}
+.nft-slot>span{display:grid;place-items:center;width:48px;height:48px;border:1px dashed #e9d8bc40;border-radius:50%;color:var(--arc-dim);font:600 18px var(--display)}
+.nft-draw .arc-button{margin-top:16px}
+@media(max-width:700px){.nft-slot{display:none}}
