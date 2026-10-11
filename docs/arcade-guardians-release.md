@@ -175,7 +175,9 @@ bun run deploy:app
 5. 관리자 지갑(Rabby 또는 Blockscout의 Write as Proxy)으로 프록시의 `upgradeToAndCall(<새_구현>, 0x)`를 실행한다. 추가 초기화가 없으므로 `data`는 비워 둔다.
 6. `bun --no-env-file scripts/arcade-guardians-preflight.ts --collection <프록시_주소>`의 `implementation`이 새 구현 주소인지 확인하고, `Upgraded`·`BatchMetadataUpdate(1, 10000)` 이벤트를 explorer에서 확인한다. 기존 전령의 `progress`와 `tokenURI`가 업그레이드 전과 같은지 비교하고, 업그레이드 해시를 배포 기록에 남긴다.
 
-웹이 `claimResults`를 호출하는 배포는 이 업그레이드가 끝난 뒤에 한다. 업그레이드 전 구현에는 이 함수가 없어 시뮬레이션 단계에서 거절된다.
+웹이 `claimResults`를 호출하는 배포는 이 업그레이드가 끝난 뒤에 한다. 업그레이드 전 구현에는 이 함수가 없어, 모험 기록 화면은 `MAX_CLAIM_BATCH` 읽기가 되돌려지는 것을 보고 업그레이드 대기 안내만 띄운다(결과 하나씩 기록하는 예전 경로로 돌아가지 않는다).
+
+결과 서명도 묶음으로 바뀐다. seller의 `POST /arcade/guardians/:tokenId/claims`가 현재 소유자의 아직 기록되지 않은 결과를 오래된 순서로 최대 32개까지 서명해 돌려주고, 웹 Worker는 `POST /api/arcade/profile/guardians/:tokenId/claims`로 이를 중계한다. 결과 하나를 서명하던 `/results/:id/claim` 경로는 seller와 Worker 모두에서 지웠다. 그래서 순서는 ① 구현 업그레이드 ② seller 재시작(새 경로) ③ `bun run deploy:app`이다. seller는 체인에서 기록됨을 확인한 결과를 DB에 표시해 두고 다시 묻지 않으므로, 모험 기록 목록의 RPC 읽기도 줄어든다.
 
 구현이 UUPS가 아니면(`proxiableUUID` 없음) 업그레이드가 되돌려진다. 업그레이드 권한을 잃지 않도록 관리자 키를 잃어버리거나 `renounceOwnership`을 호출하지 않는다. 호출하면 이후 업그레이드는 불가능하다.
 

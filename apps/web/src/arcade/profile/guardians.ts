@@ -2,7 +2,7 @@ import {isAddress,isHash,type Address} from 'viem';
 import {guardianName,guardianTokenId,guardianTraitsHash,GUARDIAN_CLAIM_BATCH} from '@mapae/arcade/guardians';
 import {rankedSeed,validRankedAttempt} from '@mapae/arcade/ranking';
 import type {GuardianClaimBatch,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
-export type {GuardianClaim,GuardianClaimBatch,GuardianDetail,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
+export type {GuardianClaimBatch,GuardianDetail,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
 
 import {isOutcome,projectActivity} from '../activity';
 const UPSTREAM='https://seller.mapae.io/arcade/guardians';
