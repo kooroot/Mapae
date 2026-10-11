@@ -36,9 +36,10 @@ describe("ranked seeds", () => {
         expect(rankedSeed("race", "2026-10-10", 1, "7")).toBe(base);
         expect(Number.isInteger(base) && base >= 0 && base <= 0xffff_ffff).toBe(true);
         const variants = [rankedSeed("race", "2026-10-10", 2, "7"), rankedSeed("race", "2026-10-10", 1, "8"), rankedSeed("shop", "2026-10-10", 1, "7"),
-            rankedSeed("race", "2026-10-11", 1, "7"), fnv1a(`${ARCADE_RULESET_VERSION + 1}:ranked:2026-10-10:race:1:7`)];
+            rankedSeed("race", "2026-10-11", 1, "7"), rankedSeed("race", "2026-10-10", 1, "7", ARCADE_RULESET_VERSION + 1)];
         expect(new Set([base, ...variants]).size).toBe(6);
         expect(base).toBe(fnv1a(`${ARCADE_RULESET_VERSION}:ranked:2026-10-10:race:1:7`));
+        expect(rankedSeed("race", "2026-10-10", 1, "7", ARCADE_RULESET_VERSION)).toBe(base);
         expect(base).not.toBe(dailyChallenge("race", Date.parse("2026-10-10T03:00:00Z")).seed);
     });
     test("rejects attempts outside the daily three and malformed inputs", () => {

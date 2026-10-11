@@ -84,13 +84,14 @@ export function fnv1a(key: string): number {
 /**
  * The seed of a guardian's ranked attempt. Fixed per guardian, game, day and attempt, so nobody can reroll a ranked course, and
  * different per guardian, so a board does not collapse into ties between guardians with the same aptitudes. The ruleset is part
- * of the key: a ruleset change starts every ranked course afresh.
+ * of the key: a ruleset change starts every ranked course afresh. Validators pass a stored result's own ruleset.
  */
-export function rankedSeed(game: GameId, day: string, attempt: number, tokenId: string): number {
-    if (!RANKED_GAMES.includes(game) || !isRankingDay(day) || !Number.isInteger(attempt) || attempt < 1 || attempt > RANKED_ATTEMPTS || !validRankingTokenId(tokenId)) {
+export function rankedSeed(game: GameId, day: string, attempt: number, tokenId: string, ruleset = ARCADE_RULESET_VERSION): number {
+    if (!RANKED_GAMES.includes(game) || !isRankingDay(day) || !Number.isInteger(attempt) || attempt < 1 || attempt > RANKED_ATTEMPTS || !validRankingTokenId(tokenId) ||
+        !Number.isSafeInteger(ruleset) || ruleset < 1) {
         throw new Error("Invalid ranked attempt");
     }
-    return fnv1a(`${ARCADE_RULESET_VERSION}:ranked:${day}:${game}:${attempt}:${tokenId}`);
+    return fnv1a(`${ruleset}:ranked:${day}:${game}:${attempt}:${tokenId}`);
 }
 export function validRankedAttempt(value: unknown): value is RankedAttempt {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;

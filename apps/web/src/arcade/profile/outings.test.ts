@@ -3,6 +3,7 @@ import type {Address} from "viem";
 import {guardianName,guardianTraits,guardianTraitsHash,type GuardianSnapshot} from "@mapae/arcade/guardians";
 import {ARCADE_RULESET_VERSION, type ActivityOutcome} from "@mapae/arcade";
 import type {OutingStatus, OutingView} from "@mapae/arcade/outings";
+import {kstDay, rankedSeed} from "@mapae/arcade/ranking";
 import type {ProfileRepository} from "./repository";
 import {profileApi, tokenHash} from "./api";
 import {outingsApi, parseOutingStatus, type OutingFetcher} from "./outings";
@@ -88,6 +89,18 @@ describe("untrusted seller response", () => {
         const corruptions: ((s: OutingStatus) => void)[] = [s => {s.jobs[0]!.results[0]!.outcome.game = "shop";}, s => {s.jobs[0]!.results[0]!.outcome.replay!.seed++;}, s => {s.jobs[0]!.results[0]!.outcome.transcript = [{speaker: "seller", text: "x".repeat(1001)}];}, s => {s.jobs[0]!.results[0]!.transaction = "0x123";}, s => {s.jobs[0]!.spent = 0;}, s => {s.jobs[0]!.admissions = 37;}, s => {s.jobs[0]!.error = "private rpc and secret";}, s => {s.jobs.push(s.jobs[0]!);}, s => {const j = job(2); j.results[0]!.id = s.jobs[0]!.results[0]!.id; s.jobs.push(j);}, s => {s.agent = null;}, s => {s.jobs = Array.from({length: 25}, (_, i) => job(i + 1));}];
         for (const corrupt of corruptions) {const {repo} = repository(), value = status([job()]); corrupt(value); expect((await outingsApi(request(), owner, null, deps(repo, respond(value)))).status).toBe(502);}
     });
+    test("a ranked round must carry the guardian's fixed seed for its day and attempt; unranked rounds stay unranked", () => {
+        const ranked = (attempt: number, seedFor = attempt) => {
+            const value = status([job()]), result = value.jobs[0]!.results[0]!, seed = rankedSeed("race", "2026-10-10", seedFor, "1");
+            Object.assign(result, {seed, ranked: {day: "2026-10-10", attempt}}); result.outcome.replay!.seed = seed;
+            return value;
+        };
+        expect(parseOutingStatus(ranked(2))?.jobs[0]!.results[0]!.ranked).toEqual({day: "2026-10-10", attempt: 2});
+        expect(parseOutingStatus(status([job()]))?.jobs[0]!.results[0]).not.toHaveProperty("ranked");
+        for (const value of [ranked(2, 1), ranked(1, 2)]) expect(parseOutingStatus(value)).toBeNull();
+        const fourth = ranked(3); fourth.jobs[0]!.results[0]!.ranked = {day: "2026-10-10", attempt: 4}; expect(parseOutingStatus(fourth)).toBeNull();
+        const extra = ranked(1); Object.assign(extra.jobs[0]!.results[0]!.ranked!, {bonus: 1}); expect(parseOutingStatus(extra)).toBeNull();
+    });
     test("all 24 jobs can return their verified rounds beyond 1 MiB with a strict per-outcome cap", async () => {
         const {repo} = repository(), value = status(Array.from({length: 24}, (_, i) => job(i + 1, 36)));
         for (const j of value.jobs) for (const r of j.results) r.outcome.transcript = [{speaker: "game", text: "x".repeat(1000)}, {speaker: "game", text: "y".repeat(1000)}];
@@ -134,7 +147,7 @@ describe("real seller and web bridge contract", () => {
             expect(post.status).toBe(200); const created = await post.json<OutingStatus>(); expect(created.jobs[0]!.status).toBe("queued"); expect(created.jobs[0]!.expiresAt).toBe(now + 7200_000);
             await runner.tick(); expect(charged).toBe(1);
             const synced = await profileApi(request(), repo, handler(repo, fetcher)); expect(synced.status).toBe(200);
-            const saved = await synced.json<OutingStatus>(); expect(saved.jobs[0]?.results[0]).toMatchObject({transaction});
+            const saved = await synced.json<OutingStatus>(); expect(saved.jobs[0]?.results[0]).toMatchObject({transaction, ranked: {day: kstDay(now), attempt: 1}});
             const again = await profileApi(request(), repo, handler(repo, fetcher)); expect(again.status).toBe(200); expect(await again.json<OutingStatus>()).toEqual(saved);
             expect((await profileApi(request("POST", "/outing-one/stop", {}), repo, handler(repo, fetcher))).status).toBe(200);
             expect((await profileApi(request("POST", "/missing-one/stop", {}), repo, handler(repo, fetcher))).status).toBe(404);

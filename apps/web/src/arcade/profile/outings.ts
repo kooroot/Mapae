@@ -3,6 +3,7 @@ import {GUARDIAN_MAX_SUPPLY,guardianName,guardianTokenId,guardianTraits,type Gua
 import {validGuardianSnapshot} from "./guardians";
 import type {AgentProfile, GameId} from "@mapae/arcade";
 import {MAX_OUTING_ADMISSIONS, type OutingResult, type OutingStart, type OutingStatus, type OutingView} from "@mapae/arcade/outings";
+import {rankedSeed, validRankedAttempt} from "@mapae/arcade/ranking";
 import {isOutcome, projectActivity} from "../activity";
 import {validReplaySeed} from "../replay";
 
@@ -56,11 +57,14 @@ export function parseOutingStatus(v: unknown): OutingStatus | null {
             if (!object(r) || typeof r.id !== "string" || !RESULT_ID.test(r.id) || resultIds.has(r.id) || !game(r.game) ||
                 (j.choice !== "auto" && j.choice !== r.game) || !validReplaySeed(r.seed) || !time(r.at) || r.at < j.createdAt || r.at > j.updatedAt ||
                 typeof r.transaction !== "string" || !TRANSACTION.test(r.transaction) || transactions.has(r.transaction.toLowerCase()) ||
-                !isOutcome(r.outcome) || new TextEncoder().encode(JSON.stringify(r.outcome)).byteLength > 16_384 || !Number.isSafeInteger(r.outcome.score) || r.outcome.game !== r.game || r.outcome.replay?.seed !== r.seed || r.outcome.replay.version !== guardian.ruleset || typeof r.outcome.achievement?.victory !== 'boolean') return null;
+                !isOutcome(r.outcome) || new TextEncoder().encode(JSON.stringify(r.outcome)).byteLength > 16_384 || !Number.isSafeInteger(r.outcome.score) || r.outcome.game !== r.game || r.outcome.replay?.seed !== r.seed || r.outcome.replay.version !== guardian.ruleset || typeof r.outcome.achievement?.victory !== 'boolean' ||
+                // A ranked round must be the guardian's fixed course for that day and attempt; absent, the round was unranked.
+                (r.ranked !== undefined && (!validRankedAttempt(r.ranked) || r.seed !== rankedSeed(r.game, r.ranked.day, r.ranked.attempt, guardian.tokenId, guardian.ruleset)))) return null;
             // Reuse the existing exhaustive outcome projection rather than retaining unknown nested fields.
             const projected = projectActivity({id: r.id, characterId: j.characterId, color: profile.color, name: profile.name, game: r.game, at: r.at,
                 reason: "", source: "mapae-giwa", mode: "rules", ticketId: r.transaction, model: null, giwa: {balanceAfter: null, allowanceAfter: null}, status: "complete", outcome: r.outcome});
-            results.push({id: r.id, game: r.game, seed: r.seed, at: r.at, transaction: r.transaction as `0x${string}`, outcome: projected.outcome!});
+            results.push({id: r.id, game: r.game, seed: r.seed, at: r.at, transaction: r.transaction as `0x${string}`, outcome: projected.outcome!,
+                ...(r.ranked ? {ranked: {day: r.ranked.day, attempt: r.ranked.attempt}} : {})});
             resultIds.add(r.id); transactions.add(r.transaction.toLowerCase());
         }
         jobs.push({id: j.id, characterId: j.characterId, guardian: {chainId: guardian.chainId, collection: guardian.collection, tokenId: guardian.tokenId, owner: guardian.owner, ownershipEpoch: guardian.ownershipEpoch, seed: guardian.seed, traitsHash: guardian.traitsHash, ruleset: guardian.ruleset}, profile, locale: j.locale, choice: j.choice, status: j.status as OutingView["status"],
