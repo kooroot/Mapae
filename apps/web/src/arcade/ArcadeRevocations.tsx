@@ -2,22 +2,23 @@ import {decodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {isDelegationRevoked} from "@mapae/delegation/revocation";
 import {useQuery} from "@tanstack/react-query";
 import {useState} from "react";
-import {ChevronDown} from "lucide-react";
 import type {Hex} from "viem";
 import type {SessionGrant} from "../lib/grant";
 import {deployment, publicClient} from "../lib/config";
 import {RevokeButton} from "../dapp/RevokeButton";
 
+/** The outing permissions this browser signed, each with its on-chain state and a revoke control. */
 export function ArcadeRevocations({grants, ko, onRevoked}: {
     grants: SessionGrant[]; ko: boolean; onRevoked: (context: Hex) => void;
 }) {
-    if (grants.length === 0) return null;
-    return <details className="arcade-revocations"><summary><span>{ko ? `내 아케이드 승인 기록 · ${grants.length}` : `My arcade permissions · ${grants.length}`}</span><ChevronDown size={16} aria-hidden="true" /></summary>
-        <p>{ko ? "이 브라우저에 남긴 권한입니다. 지갑 서명으로 GIWA에서 철회할 수 있어요. 철회 전에는 서명한 한도와 만료 시각이 적용됩니다." : "Permissions saved in this browser. Sign with the owner wallet to revoke on GIWA. Until then, each signed cap and expiry still applies."}</p>
+    return <section className="arc-queue-panel arcade-revocations" aria-labelledby="arc-revocations-title">
+        <h2 id="arc-revocations-title">{ko ? `내 오락실 승인 기록 · ${grants.length}` : `My arcade permissions · ${grants.length}`}</h2>
+        {grants.length === 0 ? <p>{ko ? "이 브라우저에 남은 외출 승인 기록이 없어요. 외출을 보낼 때 서명한 권한이 여기에 남아요." : "No outing permissions are saved in this browser. Each one you sign to send an outing appears here."}</p> : <p>{ko ? "이 브라우저에 남긴 권한입니다. 지갑 서명으로 GIWA에서 철회할 수 있어요. 철회 전에는 서명한 한도와 만료 시각이 적용됩니다." : "Permissions saved in this browser. Sign with the owner wallet to revoke on GIWA. Until then, each signed cap and expiry still applies."}</p>}
         {grants.map(grant => {
             const root = decodeDelegations(grant.artifact.permissionContext).at(-1);
             return root && <ArcadeRevocation key={grant.artifact.permissionContext} grant={grant} delegation={root} ko={ko} onRevoked={onRevoked} />;
-        })}</details>;
+        })}
+    </section>;
 }
 
 function ArcadeRevocation({grant, delegation, ko, onRevoked}: {

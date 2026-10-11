@@ -9,12 +9,11 @@ import {newArcadeState} from '../state';
 import type {GuardianDesk} from './useGuardianDesk';
 import {dailyObjective} from './model';
 import {BrandSelect} from '../../components/BrandSelect';
-import {ArcadeRevocations} from '../ArcadeRevocations';
 import type {ArcadeSubsection} from '../sections';
 import {DeskGate,NftStatus,SectionHeading} from '../sections/SectionFrame';
 import './nft.css';
 
-/** Outings, journal and wallet while they still share one page: the daily outing, strategy, allowance, growth and the away journal. */
+/** Outings and journal while they still share one page: the daily outing, strategy, allowance, growth and the away journal. */
 export function GuardianArcade({section,desk,walletWaiting}:{section:ArcadeSubsection;desk:GuardianDesk;walletWaiting:boolean}){
     const {ko,locale,session,giwa,nft,token,member,traits,activeJob,crew,now}=desk,nftIdentity=desk.identity,active=!!activeJob,op=desk.operation,updateOp=desk.setOperation;
     const allowance=useRef<HTMLElement>(null),names=GAME_NAMES[locale];
@@ -34,7 +33,6 @@ export function GuardianArcade({section,desk,walletWaiting}:{section:ArcadeSubse
             <div className="nft-results">{detail?.results.length===0&&<p>{ko?'첫 번째 외출을 보내 모험 기록을 시작해 보세요.':'Send your first outing to begin this story.'}</p>}{detail?.results.map(r=><article key={r.id} className="nft-result"><div><strong>{names[r.game]} · {r.score.toLocaleString()} {ko?'점':'pts'}</strong><p>{r.victory?(ko?'목표 달성 · +15 XP':'Achievement · +15 XP'):(ko?'모험 완료 · +10 XP':'Completed · +10 XP')}</p><small>{new Date(r.at).toLocaleString(locale)} · {r.outcome.summary[locale]}</small>{r.transaction&&<a href={explorerTxUrl(r.transaction)} target="_blank" rel="noreferrer">{ko?'입장 결제 영수증':'Admission receipt'}<ExternalLink size={13} aria-hidden="true"/></a>}</div>{r.claimed?<span className="nft-result-claimed"><Check size={14} aria-hidden="true"/>{ko?'NFT 기록 완료':'Recorded on NFT'}</span>:<button className="arc-button arc-button-paper" disabled={nft.busy||giwa.busy||!!nft.transaction} onClick={()=>void nft.claim(r)}>{ko?'NFT에 성장 기록':'Record growth on NFT'}</button>}</article>)}</div>{detail?.nextCursor&&<button className="arc-button arc-button-paper nft-more" onClick={()=>void nft.more()}>{ko?'이전 모험 더 보기':'More adventures'}</button>}<p className="nft-small">{ko?'성장 기록에는 테스트 ETH 네트워크 수수료가 필요해요. 실패해도 같은 모험을 다시 기록하며, 입장권을 새로 사지 않아요.':'Recording growth uses test ETH for gas. Retry the same result if it fails; no new admission is purchased.'}</p></section>
         </>}
         <OutingBoard giwa={giwa} demo={presentation} ko={ko} onOpen={()=>{}}/>
-        {!member&&giwa.grants.length>0&&<section className="arc-queue-panel"><ArcadeRevocations grants={giwa.grants} ko={ko} onRevoked={giwa.revoked}/></section>}
         {giwa.submission&&!member&&<section className="nft-panel"><p>{ko?'전송했던 외출 요청이 남아 있어요. 새 서명 없이 같은 요청을 확인하세요.':'An outing submission is pending. Recover the same request without signing again.'}</p><button className="arc-button" disabled={giwa.busy} onClick={()=>void giwa.recoverSubmission()}>{ko?'외출 요청 복구':'Recover outing submission'}</button></section>}
         </DeskGate>
     </div>;

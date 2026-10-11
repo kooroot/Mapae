@@ -1,11 +1,11 @@
 import {useState, type Ref} from 'react';
+import {Link} from '@tanstack/react-router';
 import {ArrowRight, ExternalLink, ShieldCheck} from 'lucide-react';
 import type {GameId} from '@mapae/arcade';
 import {MOCK_USDC} from '@mapae/shared';
 import {ARCADE_TICKET_COST} from '@mapae/arcade/tickets';
 import {guardianName} from '@mapae/arcade/guardians';
 import type {useGiwaTickets} from './useGiwaTickets';
-import {ArcadeRevocations} from './ArcadeRevocations';
 import {AllowanceProgress} from './AllowanceProgress';
 import {AllowanceAmount} from './AllowanceAmount';
 import {GuardianAvatar} from './GuardianAvatar';
@@ -13,6 +13,7 @@ import {GUARDIAN_NAMES} from './guardian';
 import type {Companion} from './state';
 import {appUrl} from '../lib/config';
 import {localizeUrl} from '../lib/i18n';
+import {arcadeSectionLink} from './sections';
 import './allowance.css';
 import {activeGuardianOuting,type GuardianIdentity} from './nft/outing-model';
 import {TEMPERAMENT_NAMES} from './nft/model';
@@ -26,7 +27,7 @@ export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,authenti
     const total=members.reduce((n,c)=>n+c.agent.rounds,0)*ARCADE_TICKET_COST;
     const valid=members.every(c=>!invalid[c.id]);
     return <section id="arcade-allowance" className="arc-giwa-allowance" ref={ref} tabIndex={-1} aria-labelledby="allowance-heading">
-        <span className="arc-overline">02 / {ko?'용돈 쥐여 보내기':'SEND THEM OUT'}</span>
+        <span className="arc-overline">{ko?'용돈 쥐여 보내기':'SEND THEM OUT'}</span>
         <h2 id="allowance-heading">{ko?'다녀와, 우리 친구!':'Off on a little adventure'}</h2>
         <p>{ko?'용돈과 놀이를 정하면 화면을 닫아도 계속해요. 돌아오면 모험첩을 펼쳐 보세요.':'Set their allowance and games. They keep going after you leave. Come back to their stories.'}</p>
         <div className="arc-allowance-balance"><span>{ko?'스마트 계정 잔액':'Smart-account balance'}</span><strong>{giwa.balance??'—'} {MOCK_USDC.symbol}</strong><a className="arc-inline-link" href={localizeUrl(appUrl,ko?'ko':'en')}>{ko?'테스트 토큰 충전':'Get test tokens'}<ExternalLink size={14} aria-hidden="true"/></a></div>
@@ -41,6 +42,6 @@ export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,authenti
         {giwa.error&&<p role="alert" className="arc-notice">{giwa.error}</p>}
         {giwa.busy && giwa.phase !== 'idle'?<AllowanceProgress phase={giwa.phase} walletName={giwa.walletName} target={giwa.approvalTarget} ko={ko}/>:<button className="arc-button arc-approve-button" disabled={giwa.busy||!canLaunch||!valid||!authenticated} onClick={()=>{if(giwa.submission)onLaunch();else void giwa.approve(members.map(c=>({...c.nft,goal:c.agent.goal,name:guardianName(c.nft.tokenId,'ko'),admissions:c.agent.rounds})),choice);}}>{giwa.busy?(ko?'외출 상태 확인 중…':'Checking outing…'):giwa.submission?(ko?'외출 요청 확인':'Recover outing request'):(ko?'승인하고 놀러 보내기':'Approve and send')}<ArrowRight size={18}/></button>}
         <p className="arc-allowance-guard"><ShieldCheck size={16}/>{ko?'잔액은 내 스마트 계정에 있어요. 서명한 한도만 사용할 수 있어요.':'Funds stay in your smart account. Only your signed allowance can be spent.'}</p>
-        <ArcadeRevocations grants={giwa.grants} ko={ko} onRevoked={giwa.revoked}/>
+        <Link className="arc-inline-link" {...arcadeSectionLink('wallet',ko?'ko':'en')}>{ko?'승인 기록과 회수는 지갑·승인에서':'Approvals and revocation live in Wallet & approvals'}<ArrowRight size={14} aria-hidden="true"/></Link>
     </section>;
 }
