@@ -22,6 +22,8 @@ describe("rank line", () => {
             .toBe(`오늘 3위 · 1위까지 100점 · 2위 ${guardianName("2", "ko")}까지 20점 · 랭크 도전 2판 남음`);
         const second = standingAt(2, 320, [row(1, "1", 400), row(2, "2", 320)]);
         expect(rankLine({locale: "en", attemptsUsed: 1, standing: second, leader: 400})).toBe(`#2 today · 80 pts to #1 ${guardianName("1", "en")} · 2 ranked tries left`);
+        const far = standingAt(14, 1440, [row(12, "12", 1600), row(13, "13", 1510), row(14, "14", 1440)]);
+        expect(rankLine({locale: "ko", attemptsUsed: 1, standing: {...far, leader: 2500}, leader: 2500})).toContain("1위까지 1,060점");
         const tied = standingAt(2, 400, [row(1, "1", 400), row(2, "2", 400)]);
         expect(rankLine({locale: "ko", attemptsUsed: 1, standing: tied, leader: 400})).toContain(`1위 ${guardianName("1", "ko")}: 동점`);
     });

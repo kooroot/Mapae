@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import type {RankingBoard, RankingBoardId, RankingPeriod, RankingStandings} from "@mapae/arcade/ranking";
 
 type Remote<T> = {value: T | null; loading: boolean; error: boolean};
-const BOARD_REFRESH_MS = 60_000;
+const REFRESH_MS = 60_000;
 
 /** The proxy validated every field; the browser keeps no copy of its own, so a refetch reaches the edge cache. */
 async function read<T>(path: string, signal: AbortSignal): Promise<T> {
@@ -29,23 +29,28 @@ function useRemote<T>(path: string | null, key: string): Remote<T> {
     return {value: state.value, loading: state.loading, error: state.error};
 }
 
-/** One board, refreshed every minute while the page is in view and on returning to it. */
-export function useRankingBoard(board: RankingBoardId, period: RankingPeriod): Remote<RankingBoard> {
+/** Counts up every minute while the page is in view and on returning to it, so boards and standings recover and roll over. */
+function useVisibleTick(): number {
     const [tick, setTick] = useState(0);
     useEffect(() => {
         const refresh = () => {if (document.visibilityState === "visible") setTick(t => t + 1);};
-        const timer = setInterval(refresh, BOARD_REFRESH_MS);
+        const timer = setInterval(refresh, REFRESH_MS);
         document.addEventListener("visibilitychange", refresh);
         return () => {clearInterval(timer); document.removeEventListener("visibilitychange", refresh);};
     }, []);
-    return useRemote<RankingBoard>(`/board/${board}/${period}`, String(tick));
+    return tick;
+}
+
+/** One board, refreshed every minute while the page is in view. */
+export function useRankingBoard(board: RankingBoardId, period: RankingPeriod): Remote<RankingBoard> {
+    return useRemote<RankingBoard>(`/board/${board}/${period}`, String(useVisibleTick()));
 }
 
 /**
  * Where the owner's guardians stand. `refreshKey` changes when a verified round lands (the crew's result count), so a rank
- * moves as soon as the outing that earned it reports back.
+ * moves as soon as the outing that earned it reports back; the minute tick retries a failed read and picks up midnight.
  */
 export function useRankingStandings(tokenIds: readonly string[], refreshKey: number): Remote<RankingStandings> {
-    const ids = [...tokenIds].sort((a, b) => Number(a) - Number(b)).join(",");
-    return useRemote<RankingStandings>(ids ? `/guardians/${ids}` : null, String(refreshKey));
+    const ids = [...tokenIds].sort((a, b) => Number(a) - Number(b)).join(","), tick = useVisibleTick();
+    return useRemote<RankingStandings>(ids ? `/guardians/${ids}` : null, `${refreshKey}:${tick}`);
 }

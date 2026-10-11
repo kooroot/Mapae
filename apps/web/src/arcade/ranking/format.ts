@@ -27,7 +27,7 @@ export function rankLine({locale, attemptsUsed, standing, leader}: {
     if (left === 0) return ko ? `오늘 ${rank}위로 마감 · 자정에 도전 ${RANKED_ATTEMPTS}판이 다시 열려요` : `Finished #${rank} today · ${RANKED_ATTEMPTS} new tries at midnight (KST)`;
     if (rank === 1) {
         const second = standing.nearby.find(row => row.rank === 2);
-        const lead = second ? ko ? ` · 2위와 ${standing.score - second.score}점 차` : ` · ${points(standing.score - second.score, locale)} ahead` : "";
+        const lead = second ? ko ? ` · 2위와 ${points(standing.score - second.score, locale)} 차` : ` · ${points(standing.score - second.score, locale)} ahead` : "";
         return ko ? `오늘 1위!${lead} · ${tries}` : `#1 today${lead} · ${tries}`;
     }
     const parts = [ko ? `오늘 ${rank}위` : `#${rank} today`, gap(1, standing.leader - standing.score, locale, rank === 2 ? standing.above?.tokenId : undefined)];
@@ -37,7 +37,7 @@ export function rankLine({locale, attemptsUsed, standing, leader}: {
 function gap(place: number, difference: number, locale: Locale, tokenId?: string): string {
     const ko = locale === "ko", name = tokenId ? ` ${guardianName(tokenId, locale)}` : "";
     if (difference === 0) return ko ? `${place}위${name}: 동점` : `level with #${place}${name}`;
-    return ko ? `${place}위${name}까지 ${difference}점` : `${points(difference, locale)} to #${place}${name}`;
+    return ko ? `${place}위${name}까지 ${points(difference, locale)}` : `${points(difference, locale)} to #${place}${name}`;
 }
 export function points(value: number, locale: Locale): string {
     return locale === "ko" ? `${value.toLocaleString("ko-KR")}점` : `${value.toLocaleString("en-US")} ${value === 1 ? "pt" : "pts"}`;
