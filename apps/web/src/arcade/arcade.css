@@ -46,7 +46,7 @@
 .arc-section-label > span:last-child { color: var(--arc-muted); }
 .arc-section-label button { font-size: 11px; text-decoration: underline; text-underline-offset: 3px; min-height: 24px; }
 /* Mono labels are tuned for Latin capitals; Hangul in the coding face and its tracking read as gaps between syllables, so Korean labels take the sans face. */
-.arcade:lang(ko) :is(.arc-overline, .arc-section-label, .arc-cabinet-marquee, .arc-game-tags span, .arc-personal-best > span, .arc-receipt-disclaimer, .arc-result-score > small, .arc-footer > span, .arc-postcard-illustration > span, .arc-progress-top > span) { font-family: var(--sans); letter-spacing: .02em; }
+.arcade:lang(ko) :is(.arc-overline, .arc-section-label, .arc-cabinet-marquee, .arc-game-tags span, .arc-personal-best > span, .arc-receipt-disclaimer, .arc-result-score > small, .arc-footer > span, .arc-progress-top > span) { font-family: var(--sans); letter-spacing: .02em; }
 .arc-cabinet { background: #bc4737; border: 2px solid var(--arc-ink); border-radius: 10px 10px 3px 3px; padding: 0 20px 11px; box-shadow: 6px 7px 0 #282b25; }
 .arc-cabinet-marquee { height: 45px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 500 15px var(--mono); letter-spacing: .12em; color: #fcf2d7; text-shadow: 1px 2px #762d24; }
 .arc-bulbs { font-size: 7px; letter-spacing: 8px; color: #eabe63; }
