@@ -1,3 +1,4 @@
+import "./kit-telemetry.js";
 import {
     ScopeType,
     createDelegation,

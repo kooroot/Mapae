@@ -1,3 +1,4 @@
+import "./kit-telemetry.js";
 import type {SmartAccountsEnvironment} from "@metamask/smart-accounts-kit";
 import {
     getAddress,
