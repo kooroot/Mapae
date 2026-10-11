@@ -8,7 +8,7 @@ import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {DeskGate, SectionHeading} from './SectionFrame';
 
 /**
- * Wallet & approvals: who is connected, the smart account that pays for outings and every signed permission. Disconnecting
+ * Wallet: who is connected, the smart account that pays for outings and every signed permission. Disconnecting
  * lives once, on the account chip in the header (wide) or the menu (narrow).
  */
 export function WalletSection({desk, walletWaiting}: {desk: GuardianDesk; walletWaiting: boolean}) {

@@ -53,7 +53,7 @@ export const SECTION_COPY: Record<Locale, Record<ArcadeSection, {label: string; 
         outings: {label: "Outings", description: "Set today’s plan and allowance, send your guardian out and follow the outing.", back: "Back to outings"},
         ranking: {label: "Rankings", description: "Daily and weekly boards for every game, plus streaks and last week’s titles.", back: "Back to rankings"},
         journal: {label: "Journal", description: "Your guardian’s growth and the results of every adventure.", back: "Back to the journal"},
-        wallet: {label: "Wallet & approvals", description: "Your connected wallet, smart-account balance, approval records and revocation.", back: "Back to wallet & approvals"},
+        wallet: {label: "Wallet", description: "Your connected wallet, smart-account balance, approval records and revocation.", back: "Back to wallet"},
     },
 };
 

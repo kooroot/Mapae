@@ -45,6 +45,6 @@ export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,authenti
         {giwa.error&&<p role="alert" className="arc-notice">{giwa.error}</p>}
         {giwa.busy && giwa.phase !== 'idle'?<AllowanceProgress phase={giwa.phase} walletName={giwa.walletName} target={giwa.approvalTarget} ko={ko}/>:<button className="arc-button arc-approve-button" disabled={giwa.busy||!canLaunch||!valid||!authenticated} onClick={()=>{if(giwa.submission)onLaunch();else void giwa.approve(members.map(c=>({...c.nft,goal:c.agent.goal,name:guardianName(c.nft.tokenId,'ko'),admissions:c.agent.rounds})),choice);}}>{giwa.busy?(ko?'외출 상태 확인 중…':'Checking outing…'):giwa.submission?(ko?'외출 요청 확인':'Recover outing request'):(ko?'승인하고 놀러 보내기':'Approve and send')}<ArrowRight size={18}/></button>}
         <p className="arc-allowance-guard"><ShieldCheck size={16}/>{ko?'잔액은 내 스마트 계정에 있어요. 서명한 한도만 사용할 수 있어요.':'Funds stay in your smart account. Only your signed allowance can be spent.'}</p>
-        <Link className="arc-inline-link" {...arcadeSectionLink('wallet',ko?'ko':'en')}>{ko?'승인 기록과 회수는 지갑·승인에서':'Approvals and revocation live in Wallet & approvals'}<ArrowRight size={14} aria-hidden="true"/></Link>
+        <Link className="arc-inline-link" {...arcadeSectionLink('wallet',ko?'ko':'en')}>{ko?'승인 기록과 회수는 지갑·승인에서':'Approvals and revocation live in Wallet'}<ArrowRight size={14} aria-hidden="true"/></Link>
     </section>;
 }
