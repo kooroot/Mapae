@@ -112,6 +112,12 @@ describe('canonical safe payment before attestation',()=>{
         expect(batch.claims[0]!.result.paymentTx).toBe(`0x${(1).toString(16).padStart(64,'a')}`);
         expect(s.guardians.unclaimed(collection,'1')).toHaveLength(33);
     });
+    test('a spent time budget returns the claims signed so far, never an empty batch',async()=>{
+        const s=store();
+        for(let i=0;i<3;i++)await complete(s,`guardian-outing-${i}`,'1',`0x${i.toString(16).padStart(64,'a')}` as Hex);
+        const batch=await createGuardianClaims(config,s.guardians,reader,client(),0)(owner,'1');
+        expect(batch.claims).toHaveLength(1);expect(batch.claims[0]!.result.paymentTx).toBe(`0x${(0).toString(16).padStart(64,'a')}`);
+    });
     test('wrong chain and missing safe head fail; unsafe, orphaned, reverted and wrong Transfer wait unsigned',async()=>{
         const s=store(),row=await complete(s);
         for(const c of [client({getChainId:async()=>1}),client({getBlock:async()=>{throw Error('safe not supported');}})])

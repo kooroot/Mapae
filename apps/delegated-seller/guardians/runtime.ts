@@ -84,10 +84,15 @@ export async function safeReceipt(client: GuardianClient, row: StoredResult, saf
     if (!canonical.hash || canonical.hash.toLowerCase() !== receipt.blockHash.toLowerCase()) throw new OutingError('receipt_unconfirmed');
     return {blockNumber:receipt.blockNumber.toString(),blockHash:receipt.blockHash};
 }
-/** Signs the current owner's oldest unclaimed results of one guardian, at most one claimResults batch. Unsafe payments wait for a later batch. */
+/**
+ * Signs the current owner's oldest unclaimed results of one guardian, at most one claimResults batch. Unsafe payments wait for a later batch.
+ * Each row costs serialized RPC reads (paced on the public endpoint), so signing stops once `budgetMs` has passed with at least one claim:
+ * the web proxy gives up after 20 s, and the rest simply follow in the next batch.
+ */
 export function createGuardianClaims(config: Config, ledger: GuardianLedger, reader: GuardianReader,
-    client: GuardianClient = createPublicClient({chain:giwaSepolia,transport:throttledHttp(config.rpcUrl, {}, {timeout:15_000,retryCount:1})})) {
+    client: GuardianClient = createPublicClient({chain:giwaSepolia,transport:throttledHttp(config.rpcUrl, {}, {timeout:15_000,retryCount:1})}), budgetMs = 10_000) {
     return async (owner: Address, tokenId: string): Promise<GuardianClaimBatch> => {
+        const deadline = Date.now() + budgetMs;
         if ((await reader.token(tokenId)).owner.toLowerCase() !== owner.toLowerCase()) throw new OutingError('not_found');
         const signer = await client.readContract({address:config.collection,abi:guardianAbi,functionName:'resultSigner'});
         if (getAddress(signer as Address) !== config.signer.address) throw new OutingError('guardian_unavailable');
@@ -96,7 +101,7 @@ export function createGuardianClaims(config: Config, ledger: GuardianLedger, rea
         if (safe === null) throw new OutingError('receipt_unconfirmed');
         const claims: GuardianClaimBatch['claims'] = [];
         for (const row of ledger.unclaimed(config.collection, tokenId)) {
-            if (claims.length === GUARDIAN_CLAIM_BATCH) break;
+            if (claims.length === GUARDIAN_CLAIM_BATCH || claims.length && Date.now() >= deadline) break;
             if (await reader.claimed(row.result.paymentTx)) {ledger.markClaimed(row.result.resultId); continue;}
             // Recheck canonical provenance even when a previous signature exists.
             let evidence: ReceiptEvidence;
