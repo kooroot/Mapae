@@ -17,7 +17,7 @@
 @keyframes stamp-lantern{from{opacity:.55}to{opacity:.9}}@keyframes stamp-lantern-wane{0%,100%{opacity:.55}50%{opacity:.95}}
 .arc-arena .stamp-herald{position:absolute;top:70px;left:10%;right:10%;z-index:7;display:flex;align-items:center;justify-content:center;gap:10px;padding:7px 12px;border:1px solid #c8a165;border-radius:8px;background:#f3e3bdf2;color:#4a2416;box-shadow:0 6px 18px #1c101066;pointer-events:none;opacity:0}
 .arc-arena .stamp-herald.is-chief{top:50%;margin-top:-28px;background:#2b1d1af2;border-color:#e0663a;color:#ffe9b0}
-.arc-arena .stamp-herald>i{display:grid;place-items:center;width:42px;height:42px;flex:none;border:2px solid #b0392c;border-radius:8px;background:#b0392c;color:#fff3cd;font:800 15px/1 var(--display);font-style:normal;box-shadow:inset 0 0 0 2px #f3e3bd}.arc-arena .stamp-herald>b{font-size:17px;font-weight:900;letter-spacing:-.02em}
+.arc-arena .stamp-herald>i{display:grid;place-items:center;width:42px;height:42px;flex:none;border:2px solid var(--vermilion);border-radius:8px;background:var(--vermilion);color:#fff3cd;font:800 15px/1 var(--display);font-style:normal;box-shadow:inset 0 0 0 2px #f3e3bd}.arc-arena .stamp-herald>b{font-size:17px;font-weight:900;letter-spacing:-.02em}
 .arc-arena.stamp-fever .stamp-fever-strip{background:#62442e}
 .stamp-cast{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border-top:1px solid #b59f7444;margin:18px 0 8px;padding-top:13px}
 .stamp-cast>div{display:flex;align-items:center;gap:7px;min-width:0}.stamp-cast .arc-goblin{width:56px;height:56px;flex:none;object-fit:contain;filter:drop-shadow(0 3px 2px #462d211f)}
@@ -68,11 +68,11 @@
 @keyframes stamp-deduct{25%{translate:-4px 0}50%{translate:4px 0}75%{translate:-2px 0}}
 .arc-arena .arc-impact-stamp .arc-impact em,.arc-arena .arc-impact-crack .arc-impact em{opacity:0}.arc-still .arc-arena .arc-impact em{opacity:1}
 .arc-arena .stamp-fx{position:absolute;inset:0;pointer-events:none}.arc-arena .stamp-fx>*{position:absolute;opacity:0;z-index:7}
-.arc-arena .stamp-ink{inset:6%;z-index:5;border-radius:50%;background:radial-gradient(closest-side,#b0392c 55%,#b0392c00)}
+.arc-arena .stamp-ink{inset:6%;z-index:5;border-radius:50%;background:radial-gradient(closest-side,var(--vermilion) 55%,#b0392c00)}
 .arc-arena .stamp-ring{left:50%;top:50%;width:64%;aspect-ratio:1;translate:-50% -50%;border:3px solid #fff6be;border-radius:50%;box-shadow:0 0 8px #ffd96a88}
 .arc-arena .stamp-shard{left:50%;top:48%;width:14px;height:14px;translate:-50% -50%;border-radius:50%;background:linear-gradient(#4a2c12,#4a2c12) center/4px 4px no-repeat,radial-gradient(circle at 35% 30%,#fff1b0,#e2a83e 55%,#9a6420);box-shadow:0 0 0 1.5px #4a2c12}
 .arc-arena .stamp-spark{inset:0;display:grid;place-items:center;font-size:70px;font-style:normal;color:#fff6b3;text-shadow:0 0 12px #f9a849}
-.arc-arena .stamp-fx>.stamp-strike{inset:0;opacity:1}.arc-arena .stamp-strike>i{position:absolute;left:16%;right:16%;top:50%;height:6px;margin-top:-3px;border-radius:3px;background:#b0392c;opacity:0;rotate:38deg}.arc-arena .stamp-strike>i+i{rotate:-38deg}
+.arc-arena .stamp-fx>.stamp-strike{inset:0;opacity:1}.arc-arena .stamp-strike>i{position:absolute;left:16%;right:16%;top:50%;height:6px;margin-top:-3px;border-radius:3px;background:var(--vermilion);opacity:0;rotate:38deg}.arc-arena .stamp-strike>i+i{rotate:-38deg}
 .arc-arena .stamp-ripple{left:50%;top:50%;width:70%;aspect-ratio:1;translate:-50% -50%;border:2px solid #d9d2c3;border-radius:50%;background:radial-gradient(closest-side,#d9d2c300 55%,#d9d2c366)}
 .arc-arena .stamp-float{inset:0;display:flex;align-items:center;justify-content:center;padding-top:2.1em;font:700 21px var(--mono);font-variant-numeric:tabular-nums;color:#ffedb6;text-shadow:0 2px 3px #3b211a,1px 0 #3b211a}
 .arc-arena .stamp-shade{inset:0;background:#120d16}
@@ -85,11 +85,11 @@
 .arc-arena .stamp-go,.arc-arena .stamp-end{pointer-events:none;background:none;border:0;border-radius:0 0 17px 17px}.arc-arena .stamp-go::before,.arc-arena .stamp-end::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit}
 .arc-arena .stamp-go::before{background:#1c1a2bed;opacity:0;animation:stamp-veil-lift .3s var(--arc-ease-out)}@keyframes stamp-veil-lift{from{opacity:1}}
 .arc-arena .stamp-end{position:absolute;inset:0;z-index:9;display:grid;place-items:center}.arc-arena .stamp-end::before{background:#120d16;opacity:.5;animation:stamp-dim .3s var(--arc-ease-out) backwards}@keyframes stamp-dim{from{opacity:0}}
-.arc-arena .stamp-go b,.arc-arena .stamp-end b{position:relative;padding:10px 22px;border:3px solid #ffdc87;border-radius:12px;background:#b0392c;color:#fff3cd;font:800 44px/1 var(--mono);box-shadow:0 0 0 3px #b0392c,0 8px 22px #120d1680;rotate:-7deg;animation:arc-seal-slam var(--arc-dur-base) var(--arc-ease-stamp) both}
+.arc-arena .stamp-go b,.arc-arena .stamp-end b{position:relative;padding:10px 22px;border:3px solid #ffdc87;border-radius:12px;background:var(--vermilion);color:#fff3cd;font:800 44px/1 var(--mono);box-shadow:0 0 0 3px var(--vermilion),0 8px 22px #120d1680;rotate:-7deg;animation:arc-seal-slam var(--arc-dur-base) var(--arc-ease-stamp) both}
 .arc-arena .stamp-go b{animation:arc-seal-slam var(--arc-dur-base) var(--arc-ease-stamp) both,stamp-go-out .15s var(--arc-ease-in) .3s forwards}@keyframes stamp-go-out{to{opacity:0}}
 .arc-arena .arc-scoreboard>div{position:relative}.arc-arena .arc-scoreboard .stamp-pulse{position:relative;display:inline-block;margin:0;font:inherit;color:inherit}
 .arc-arena .stamp-mult{display:inline-block;margin-left:.3em}.arc-arena .stamp-mult.is-up{--seal-rest:0deg;animation:arc-seal-slam var(--arc-dur-base) var(--arc-ease-stamp) both}
-.arc-arena .stamp-combo-chip{position:absolute;left:50%;top:-4px;translate:-50% 0;padding:2px 7px;border-radius:7px;background:#b0392c;color:#fff3cd;font:800 12px var(--mono);font-style:normal;opacity:0;pointer-events:none}
+.arc-arena .stamp-combo-chip{position:absolute;left:50%;top:-4px;translate:-50% 0;padding:2px 7px;border-radius:7px;background:var(--vermilion);color:#fff3cd;font:800 12px var(--mono);font-style:normal;opacity:0;pointer-events:none}
 .arc-arena .stamp-beat{animation:arc-heartbeat var(--arc-dur-base) var(--arc-ease-back)}.arc-arena .stamp-beat.is-final::after{content:"";position:absolute;inset:-6px -12px;border:2px solid #ea6555;border-radius:50%;opacity:0;animation:stamp-final-ring var(--arc-dur-slow) var(--arc-ease-out)}
 @keyframes stamp-final-ring{from{opacity:.9;scale:.8}to{opacity:0;scale:1.3}}
 @media(max-width:480px){.arc-arena .stamp-herald{top:44px;left:6%;right:6%;gap:7px;padding:5px 8px}.arc-arena .stamp-herald>i{width:32px;height:32px;font-size:11px}.arc-arena .stamp-herald>b{font-size:13px}.arc-arena .stamp-herald.is-chief{margin-top:-21px}.arc-arena .stamp-count>i{width:120px}.arc-arena .stamp-go b,.arc-arena .stamp-end b{font-size:32px;padding:8px 16px}.arc-arena .stamp-combo-chip{font-size:10px;padding:1px 5px}}
