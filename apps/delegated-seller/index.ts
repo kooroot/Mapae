@@ -9,6 +9,8 @@ import {OutingStore} from "./outings/store";
 import {OutingRunner} from "./outings/runner";
 import {createOutingPayment, readOutingConfig} from "./outings/runtime";
 import {createOutingApp, OUTING_BODY_LIMIT} from "./outings/routes";
+import {RankingReader} from "./ranking/board";
+import {createRankingApp} from "./ranking/routes";
 
 /**
  * Timeout budgets, and why the idle timeout is set explicitly.
@@ -144,6 +146,7 @@ const outingRunner = outingsConfig && outingStore && guardianReader
 app.route("/arcade/outing", createOutingApp({token: ARCADE_RECEIPT_TOKEN, store: outingStore, runner: outingRunner}));
 app.route("/arcade/guardians", createGuardianApp({token: ARCADE_RECEIPT_TOKEN, reader: guardianReader, ledger: outingStore?.guardians,
     claim: guardianConfig && guardianReader && outingStore ? createGuardianClaims(guardianConfig, outingStore.guardians, guardianReader) : undefined}));
+app.route("/arcade/ranking", createRankingApp({token: ARCADE_RECEIPT_TOKEN, reader: outingStore && guardianReader ? new RankingReader(outingStore, guardianReader.collection) : undefined}));
 outingRunner?.start();
 
 const shops = store.sellers.list().filter((seller) => seller.kind === "hosted");
