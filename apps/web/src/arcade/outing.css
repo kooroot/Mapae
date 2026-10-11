@@ -22,7 +22,7 @@
 .arc-outing-friend { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .arc-outing-friend>.arc-sprite { width:52px; height:52px; flex:0 0 52px; border-radius:14px; }
 .arc-outing-friend>div { flex:1; min-width:80px; }
-.arc-outing-friend strong { display:block; overflow-wrap:anywhere; font-size:16px; }
+.arc-outing-friend strong { display:block; word-break:keep-all; overflow-wrap:anywhere; font-size:16px; }
 .arc-outing-friend>div>span { display:block; margin-top:5px; color:#bfb097; font-size:12px; }
 .arc-outing-status { display:flex; align-items:center; gap:4px; font-size:11px; color:#dfc695; }
 .arc-outing-progress { margin-top:22px; }
