@@ -74,14 +74,35 @@
 .arc-entry-guardian { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--arc-hair); }
 .arc-entry-dock .arc-entry-guardian > p { margin: 0 0 12px; }
 .arc-entry-dock .arc-notice { margin-top: 16px; }
-.arc-room-dock .arc-empty-departure { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.arc-empty-departure h2 { font-size: 21px; font-weight: 550; letter-spacing: -.035em; }
-.arc-empty-departure p { color: var(--arc-dim); font-size: 12px; margin-top: 6px; }
-.arc-empty-departure a { flex: none; }
-.agent-in-lobby .arc-main, .arc-wallet-gate .arc-main { max-width: 1280px; }
-.arc-room + .arc-roster { scroll-margin-top: 24px; }
+.arc-entry-guardian .nft-notice { margin: 0; text-align: left; }
+/* Signed-in dock states: a reserved-height wait, a next step, or the chosen guardian with its two actions for this cabinet. */
+.arc-dock-pending { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 132px; margin: 0; color: #ccbaa0; font-size: 13px; }
+.arc-entry-dock .arc-entry-guardian > .arc-dock-pending { margin: 0; }
+.arc-dock-next { display: grid; justify-items: center; gap: 12px; }
+.arc-entry-dock .arc-dock-next p { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; }
+.arc-dock-next .arc-button { gap: 10px; }
+.arc-dock-ready { display: grid; gap: 16px; text-align: left; }
+.arc-dock-guardian { display: flex; align-items: center; gap: 20px; }
+.arc-dock-guardian .arc-guardian-portrait { width: 104px; height: 104px; margin: 0; filter: none; }
+.arc-dock-guardian > div { min-width: 0; }
+.arc-dock-label { color: var(--arc-gold); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+.arc-entry-dock .arc-dock-guardian h2 { margin: 2px 0; font-size: 24px; }
+.arc-entry-dock .arc-dock-guardian p { margin: 0; }
+.arc-entry-dock .arc-dock-aptitude { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; color: #ead6b6; }
+.arc-dock-aptitude meter { width: 112px; height: 8px; }
+.arc-dock-aptitude b { font: 600 13px var(--mono); font-variant-numeric: tabular-nums; }
+.arc-dock-chip { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 5px 12px; border: 1px solid #e9c99f55; border-radius: 999px; color: var(--arc-gold); font-size: 12px; line-height: 1.5; }
+.arc-dock-switcher { display: flex; flex-wrap: wrap; gap: 8px; }
+.arc-dock-switcher button { width: 52px; height: 52px; padding: 2px; border: 1px solid var(--arc-hair); border-radius: 12px; background: none; cursor: pointer; }
+.arc-dock-switcher button[aria-pressed=true] { border-color: var(--arc-gold); box-shadow: 0 0 0 2px #e9c99f55; }
+.arc-dock-switcher .arc-guardian-portrait { width: 100%; height: 100%; margin: 0; filter: none; border-radius: 9px; }
+.arc-dock-switcher button:focus-visible { outline-offset: 2px; }
+.arc-dock-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.arc-entry-dock .arc-dock-actions .arc-button { flex: 1 1 220px; justify-content: center; gap: 10px; }
+.arc-entry-dock .arc-dock-ready > small { text-align: center; }
+.arc-entry-dock .arc-dock-free { justify-self: center; display: inline-flex; align-items: center; gap: 6px; color: var(--arc-gold); font-size: 13px; }
 @media (hover: hover) { .arc-room-cabinet:hover:not([aria-pressed=true])::before { opacity: .7; } }
-@media (max-width: 900px) and (min-width: 621px) { .arc-room { padding-inline: 20px; } .arc-room-cabinets { gap: 4px; } .arc-room-dock { padding: 20px; } .arc-room-dock .agent-quick-budget { display: none; } }
+@media (max-width: 900px) and (min-width: 621px) { .arc-room { padding-inline: 20px; } .arc-room-cabinets { gap: 4px; } .arc-room-dock { padding: 20px; } }
 @media (max-width: 720px) and (min-width: 621px) { .arc-room { margin-inline: -16px; } }
 @media (max-width: 620px) {
     .arc-room { margin: 0 -16px 28px; padding: 18px 0 20px; }
@@ -90,7 +111,7 @@
     .arc-room-sign .arc-brand-emblem { width: 43px; height: 48px; }
     .arc-room-sign .arc-brand-type { gap: 8px; }
     .arc-room-sign .arc-brand-type > img { width: 158px; }
-    .arc-room-sign .arc-brand-type > b { font-size: 9px; }
+    .arc-room-sign .arc-brand-type > b { font-size: 10px; }
     .arc-room-sign h1 { font-size: 12px; }
     .arc-room-viewport { overflow: hidden; cursor: grab; }
     .arc-room-viewport:active { cursor: grabbing; }
@@ -111,8 +132,10 @@
     .arc-room-dock { margin: 0 14px; padding: 19px 18px; border-radius: 14px; }
     .arc-entry-dock h2 { font-size: 19px; }
     .arc-entry-dock .arc-button { width: 100%; min-width: 0; font-size: 13px; padding-inline: 16px; gap: 16px; }
-    .arc-room-dock .arc-empty-departure { flex-direction: column; text-align: center; gap: 16px; }
-    .arc-empty-departure h2 { font-size: 20px; }
-    .arc-empty-departure a { width: 100%; }
+    .arc-dock-guardian { gap: 14px; }
+    .arc-dock-guardian .arc-guardian-portrait { width: 76px; height: 76px; }
+    .arc-entry-dock .arc-dock-guardian h2 { font-size: 20px; }
+    .arc-dock-actions { flex-direction: column; gap: 10px; }
+    .arc-entry-dock .arc-dock-actions .arc-button { flex: none; }
 }
 @media (max-width: 360px) { .arc-room { margin-inline: -12px; } }
