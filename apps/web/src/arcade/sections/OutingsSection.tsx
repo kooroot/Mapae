@@ -74,7 +74,7 @@ function RankedToday({desk, locked, allowance}: {desk: GuardianDesk; locked: boo
         allowance.current?.focus({preventScroll: true});
     }
     return <section className="nft-panel nft-daily" aria-labelledby="ranked-today-title">
-        <span className="arc-overline">{standings ? `${standings.day} · RANKED` : 'RANKED'}</span>
+        <span className="arc-overline">{ko ? '랭크 도전' : 'Ranked'}{standings && ` · ${standings.day}`}</span>
         <h2 id="ranked-today-title">{ko ? '오늘의 랭크 도전' : 'Today’s ranked rounds'}</h2>
         <p>{ko ? `놀이마다 하루 처음 ${RANKED_ATTEMPTS}판이 순위에 올라가요.` : `The first ${RANKED_ATTEMPTS} rounds of each game a day go on the boards.`}{standings && ` ${countdown({now, closesAt: standings.closesAt.day, period: 'day', locale, offsetMinutes: offset})}`}</p>
         {standing ? <ul className="rank-games">{RANKED_GAMES.map(game => <li key={game}>
