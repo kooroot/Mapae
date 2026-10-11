@@ -247,3 +247,55 @@ The callback authorization, the single-live-draw rule for `rerequestBirth`, fee 
 - Slither 0.11.5, 101 detectors: 7 results, the same accepted categories as listed under Static analysis.
 - `bun run typecheck`: exit 0. `bun run check`: exit 0 (1657 TypeScript tests: 1130 + 3 MCP + 489 web + 35 docs, then 61 Foundry). The README counts were updated.
 
+
+## Addendum: batched result claims (2026-10-11)
+
+The journal could record growth only one result per transaction, so a guardian with many verified outings needed one wallet confirmation and one transaction each. The implementation adds `claimResults(Result[] results, bytes[] signatures) returns (uint256 applied)` and the constant `MAX_CLAIM_BATCH = 32`. This is a pure implementation upgrade of the deployed proxy: `GuardiansStorage`, `Account`, `Token` and `Growth` are unchanged, and the EIP-712 domain, `RESULT_TYPEHASH` and every existing signature stay valid.
+
+### Semantics
+
+- `claimResult` and `claimResults` share one private `_claim`. Each entry gets exactly the single-claim checks: the token exists and is revealed, every field is valid (nonzero IDs and actor, epoch between 1 and the current epoch, game, ruleset floor, score cap, traits hash), and the signature recovers to the current result signer.
+- Any entry that fails a check reverts the whole batch with the single-claim error (`ERC721NonexistentToken`, `PendingDraw`, `InvalidResult`, `InvalidResultSignature`).
+- An entry whose `paymentTx` is already claimed, either before the transaction or earlier in the same batch, is skipped. The skip happens only after that entry's own fields and signature have verified, so a forged or tampered entry can never hide behind a claimed payment.
+- The batch reverts with `AlreadyClaimed` when nothing was applied, the same as a repeated single claim, so a relayer is never charged for a no-op that looks successful.
+- An empty batch, more than 32 entries, or a signature count that differs from the result count reverts with `InvalidBatch`.
+- Each applied result emits `ResultClaimed` and `MetadataUpdate`, exactly as a single claim does. Skipped entries emit nothing.
+- `claimResult` keeps its ABI and behaviour. It now verifies the signature before checking the payment, so a repeated claim with a bad signature reports `InvalidResultSignature` instead of `AlreadyClaimed`. Nothing else is observable.
+
+### Why skip claimed payments instead of reverting
+
+The journal, another tab or a relayer can claim the same result while a batch is pending. With all-or-nothing replay protection, one such race would revert a 32-result batch and waste its gas. Replay protection is unchanged: a payment still grows a guardian at most once. Skipping keeps the batch useful, and full verification before the skip keeps invalid input loud.
+
+### Threat analysis
+
+| Concern | Result |
+|---|---|
+| Replay within a batch | `claimedPayments` is written before the next entry runs, so a repeated `paymentTx` in the same batch is skipped. Covered by `test_claimResultsSkipsAlreadyClaimedAndInBatchDuplicates`. |
+| Hidden invalid entries | A claimed payment is skipped only after its signature and fields verify. Covered by `test_claimResultsRevertsWholeBatchOnAnyInvalidEntry`, which pairs a claimed payment with a forged signature. |
+| Partial application | Any failure reverts the entire transaction. The same test asserts that no `paymentTx` is marked after each failing call and that the fixed batch then applies in full. |
+| Gas griefing and block limits | The cap of 32 bounds a batch at about 1.4M gas (`test_claimResultsBoundsBatchSize` asserts under 2M), far below the GIWA block gas limit. The caller pays for its own batch, and nobody else's claims are blocked. |
+| Mixed tokens and owners | Entries may name different tokens. Each is checked against its own token and epoch, and historical results stay valid after a transfer, as with single claims (I-09). |
+| Reentrancy | `claimResults` is `nonReentrant`, and `_claim` makes no external calls. Only the `ecrecover` precompile is called. |
+| Mint pause | Claims were never gated by `mintPaused`, and batches are not either. Pausing stops new draws, not growth from paid results. |
+| Signer rotation | Each entry must carry a signature from the current signer, including entries that would be skipped. After a rotation, clients fetch reissued signatures as they already do for single claims (I-11 is unchanged). |
+| Storage layout | No field was added, removed or reordered. `test_namespacedStorageLayoutIsPinned` and `test_storageSlotMatchesErc7201AndPacksHotFields` pass unchanged. `test_upgradeToBatchClaimImplementationPreservesState` claims a result singly, transfers the token, upgrades the proxy to a new implementation and checks owner, signer, pause, ownership epoch, traits, `tokenURI` and `claimedPayments`. It then batches the pre-upgrade signatures and gets 2 applied and 1 skipped. |
+
+### Gas
+
+`test_gasClaimResultsVersusSingleClaims` counts whole-transaction gas: 21,000 base, plus EIP-2028 calldata, plus execution with the proxy's storage cooled before each transaction (`vm.cool`). Both sides start from the same state and use one guardian.
+
+| Results | N single claims | One batch | Change |
+|---|---|---|---|
+| 1 | 116,831 | 118,185 | +1,354 (+1.2%) |
+| 8 | 694,900 | 399,818 | −295,082 (−42.5%) |
+| 32 | 2,681,648 | 1,373,926 | −1,307,722 (−48.8%) |
+
+The batch saves the per-transaction base cost and cold storage access for every entry after the first. The growth slots, the token slot and the signer slot stay warm. Per-entry cost at the cap is about 43k gas.
+
+`MapaeGuardians` runtime is now 19,507 bytes (5,069 under EIP-170). Slither 0.11.5 (101 detectors, `src/MapaeGuardians.sol`) reports the same accepted categories as before and nothing new.
+
+### Verification
+
+- `make -C contracts test`: 68 Foundry tests passed (54 `MapaeGuardiansTest`, including 7 new batch and upgrade tests, plus 11 + 3 in the other suites).
+- `forge fmt --check`: exit 0.
+- `packages/arcade/src/guardian-abi.ts` was regenerated from the Foundry artifact. The only additions are `claimResults`, `MAX_CLAIM_BATCH` and the `InvalidBatch` error.

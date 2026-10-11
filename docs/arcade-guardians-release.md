@@ -156,6 +156,27 @@ bun run deploy:app
 3. 새 구현을 배포·verify한다(생성자 인수 동일). 링크된 `GuardianMetadata` 주소가 검증된 라이브러리 bytecode의 CREATE2 주소와 같은지 확인한다. `tokenURI`는 이 라이브러리를 DELEGATECALL하므로 잘못 링크된 주소는 프록시 저장소에서 실행된다. fork 시뮬레이션에서 `upgradeToAndCall`을 실행해 기존 토큰의 `tokenURI`를 비교한 뒤 관리자 지갑으로 실제 호출한다. 추가 초기화가 필요하면 `reinitializer(2)` 함수를 `data`로 함께 호출한다.
 4. `Upgraded(implementation)` 이벤트와 preflight의 `implementation` 출력이 새 주소인지 확인한다. 프록시 주소는 바뀌지 않으므로 Worker·seller 설정은 그대로 둔다.
 
+### 묶음 성장 기록(`claimResults`) 적용
+
+`claimResults(Result[], bytes[])`는 검증된 결과를 최대 32개(`MAX_CLAIM_BATCH`)까지 한 트랜잭션으로 NFT에 기록한다. 각 결과는 `claimResult`와 같은 검사를 거치고, 하나라도 잘못되면 묶음 전체가 되돌려진다. 이미 기록된 결제는 서명과 필드를 검증한 뒤 건너뛰며, 하나도 기록하지 못하면 `AlreadyClaimed`로 되돌려진다. 저장 구조는 바뀌지 않으므로 기존 프록시에 구현만 바꾸면 되고, 이미 발급된 결과 서명도 그대로 쓸 수 있다. 결과 32개를 묶으면 따로 기록할 때보다 가스가 약 49% 줄어든다(감사 문서 부록 참고). 다음은 운영자가 직접 실행한다.
+
+1. 저장소 루트에서 `make -C contracts test`, `(cd contracts && forge fmt --check)`, `bun run typecheck`가 통과하는지 확인한다. 최초 배포의 `broadcast/DeployGuardians.s.sol/91342/run-latest.json`에서 `.libraries`의 `GuardianMetadata` 주소를 복사한다. 이번 변경은 라이브러리를 건드리지 않으므로 같은 주소를 그대로 링크한다.
+2. 비공개 환경을 셸에 로드한 뒤 새 구현을 배포한다. 첫 명령은 시뮬레이션이고 `--broadcast`가 붙은 두 번째만 실제로 전송한다. 생성자 인수는 최초 배포와 같은 Entropy·provider 주소다.
+
+   ```sh
+   cd contracts
+   IMPL_ARGS="--rpc-url giwa_sepolia --libraries src/GuardianMetadata.sol:GuardianMetadata:<라이브러리_주소> --constructor-args 0x0708325268dF9F66270F1401206434524814508b 0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344"
+   forge create src/MapaeGuardians.sol:MapaeGuardians $IMPL_ARGS --private-key "$GUARDIAN_DEPLOYER_PRIVATE_KEY"
+   forge create src/MapaeGuardians.sol:MapaeGuardians $IMPL_ARGS --private-key "$GUARDIAN_DEPLOYER_PRIVATE_KEY" --broadcast
+   ```
+
+3. 새 구현 주소를 위 `forge verify-contract` 명령(`--libraries` 포함)으로 Blockscout에서 verify한다. `cast call <새_구현> "MAX_CLAIM_BATCH()(uint256)" --rpc-url giwa_sepolia`가 `32`를 돌려주는지 확인한다.
+4. 관리자 주소로 업그레이드를 먼저 시뮬레이션한다. `cast call <프록시_주소> "upgradeToAndCall(address,bytes)" <새_구현> 0x --from <관리자> --rpc-url giwa_sepolia`가 되돌려지지 않아야 한다.
+5. 관리자 지갑(Rabby 또는 Blockscout의 Write as Proxy)으로 프록시의 `upgradeToAndCall(<새_구현>, 0x)`를 실행한다. 추가 초기화가 없으므로 `data`는 비워 둔다.
+6. `bun --no-env-file scripts/arcade-guardians-preflight.ts --collection <프록시_주소>`의 `implementation`이 새 구현 주소인지 확인하고, `Upgraded`·`BatchMetadataUpdate(1, 10000)` 이벤트를 explorer에서 확인한다. 기존 전령의 `progress`와 `tokenURI`가 업그레이드 전과 같은지 비교하고, 업그레이드 해시를 배포 기록에 남긴다.
+
+웹이 `claimResults`를 호출하는 배포는 이 업그레이드가 끝난 뒤에 한다. 업그레이드 전 구현에는 이 함수가 없어 시뮬레이션 단계에서 거절된다.
+
 구현이 UUPS가 아니면(`proxiableUUID` 없음) 업그레이드가 되돌려진다. 업그레이드 권한을 잃지 않도록 관리자 키를 잃어버리거나 `renounceOwnership`을 호출하지 않는다. 호출하면 이후 업그레이드는 불가능하다.
 
 ### 신뢰 경계
