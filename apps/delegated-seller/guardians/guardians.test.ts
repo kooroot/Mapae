@@ -147,7 +147,7 @@ describe('guardian chain runtime and routes',()=>{
             calls.push(v);switch(v.functionName){
                 case'ownerOf':return owner;case'ownershipEpoch':return 1n;case'birth':return[seed,1n,revealed];
                 case'progress':return{plays:0n,victories:0n,experience:0n,gamePlays:[0n,0n,0n],gameVictories:[0n,0n,0n],bestScores:[0,0,0]};
-                case'balanceOf':case'mintedBy':case'mintFee':return 1n;case'pendingMint':return 0n;case'resultSigner':return config.signer.address;case'tokenOfOwnerByIndex':return 1n;case'claimedResults':return false;
+                case'balanceOf':case'mintedBy':case'mintFee':return 1n;case'pendingMint':return 0n;case'resultSigner':return config.signer.address;case'tokensOfOwner':return[1n];case'claimedPayments':return false;
             }throw Error('unexpected getter');}});
         const chain=createGuardianReader(config,c);expect(await chain.inspect('1')).toEqual(snapshot());
         expect(calls.every(v=>(v as {blockNumber:bigint}).blockNumber===20n)).toBe(true);

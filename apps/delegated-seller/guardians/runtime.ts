@@ -60,16 +60,17 @@ export function createGuardianReader(config: Config, client: GuardianClient = cr
         },
         async roster(owner): Promise<GuardianRoster> {
             const n = await block();
-            const [count, minted, pending, fee, signer] = await Promise.all([
-                read('balanceOf',[owner],n), read('mintedBy',[owner],n), read('pendingMint',[owner],n), read('mintFee',[],n), read('resultSigner',[],n),
+            const [owned, minted, pending, fee, signer] = await Promise.all([
+                read('tokensOfOwner',[owner],n), read('mintedBy',[owner],n), read('pendingMint',[owner],n), read('mintFee',[],n), read('resultSigner',[],n),
             ]);
-            if (Number(count) > 3 || getAddress(signer as Address) !== config.signer.address) throw new OutingError('guardian_unavailable');
+            const ids = owned as readonly bigint[];
+            if (ids.length > 3 || getAddress(signer as Address) !== config.signer.address) throw new OutingError('guardian_unavailable');
             const guardians: GuardianToken[] = [];
-            for (let i=0;i<Number(count);i++) guardians.push(await token(String(await read('tokenOfOwnerByIndex',[owner,BigInt(i)],n)),n));
+            for (const id of ids) guardians.push(await token(String(id),n));
             return {enabled:true,chainId:91342,collection:config.collection,signer:config.signer.address,mintFee:String(fee),minted:Number(minted),
                 pendingTokenId:BigInt(pending as bigint) === 0n ? null : String(pending),guardians};
         },
-        async claimed(resultId) {return await read('claimedResults',[resultId]) as boolean;},
+        async claimed(paymentTx) {return await read('claimedPayments',[paymentTx]) as boolean;},
     };
 }
 
@@ -92,7 +93,7 @@ export function createGuardianClaims(config: Config, ledger: GuardianLedger, rea
         if (row.result.actor.toLowerCase() !== owner.toLowerCase() && (await reader.token(row.result.tokenId)).owner.toLowerCase() !== owner.toLowerCase()) throw new OutingError('not_found');
         const signer = await client.readContract({address:config.collection,abi:guardianAbi,functionName:'resultSigner'});
         if (getAddress(signer as Address) !== config.signer.address) throw new OutingError('guardian_unavailable');
-        if (await reader.claimed(id)) return {collection:config.collection,signer:config.signer.address,result:row.result,signature:null,claimed:true};
+        if (await reader.claimed(row.result.paymentTx)) return {collection:config.collection,signer:config.signer.address,result:row.result,signature:null,claimed:true};
         // Recheck canonical provenance even when a previous signature exists.
         const evidence = await safeReceipt(client,row);
         const signature = await config.signer.signTypedData({domain:guardianResultDomain(config.collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:guardianResultFromJson(row.result)});

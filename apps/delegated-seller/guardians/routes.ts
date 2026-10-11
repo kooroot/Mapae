@@ -28,7 +28,7 @@ export function createGuardianApp(options: {
         const cursor=c.req.query('before');
         if (cursor !== undefined && !/^[1-9][0-9]{0,15}$/.test(cursor)) throw new OutingError('invalid_request');
         const rows=options.ledger.list(options.reader.collection,id,cursor);
-        const results=await Promise.all(rows.map(async r=>resultView(r,owner,await options.reader!.claimed(r.result.resultId))));
+        const results=await Promise.all(rows.map(async r=>resultView(r,owner,await options.reader!.claimed(r.result.paymentTx))));
         return c.json({guardian:token,earned:options.ledger.progress(options.reader.collection,id),results,
             nextCursor:rows.length===40?options.ledger.cursor(rows.at(-1)!.result.resultId):null} satisfies GuardianDetail);
     });

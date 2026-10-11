@@ -26,6 +26,7 @@ export interface GuardianReader {
     inspect(tokenId: string): Promise<GuardianSnapshot>;
     roster(owner: Address): Promise<GuardianRoster>;
     token(tokenId: string): Promise<GuardianToken>;
-    claimed(resultId: Hex): Promise<boolean>;
+    /** Whether the result's payment already grew a guardian on-chain (each paymentTx grows at most one result). */
+    claimed(paymentTx: Hex): Promise<boolean>;
 }
 export type ReceiptEvidence = {blockNumber: string; blockHash: Hex};
