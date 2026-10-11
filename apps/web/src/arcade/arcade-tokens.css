@@ -4,6 +4,7 @@
  */
 /* Portalled drawers and dialogs (.arc-ui-theme) render outside .arcade and read the same tokens. */
 .arcade,.arc-ui-theme{
+    --arc-cream:#ede7da;--arc-dim:#b2a695;--arc-muted:#b2a695;--arc-gold:#e9c99f;--arc-coral:#e6a17e;--arc-hair:#e9d8bc26;--arc-ink:#282b25;--arc-red:#bf4434;
     --card:#fffaf0;--card-2:#f3ead8;--card-3:#e9dfcb;--card-ink:#302e28;--card-muted:#6d5a40;--card-hair:#ded2bd;--card-rim:#c9b998;
     --gold:#e2b24a;--jade:#347c6e;--jade-ink:#265d51;--jade-wash:#e4efe9;--vermilion:#b0392c;--vermilion-wash:#f7e1dc;
     --medal-gold:#e2b24a;--medal-gold-rim:#9a6a12;--medal-gold-light:#fff1c2;--medal-gold-ink:#5a3a00;--medal-gold-card:#fff4d6;

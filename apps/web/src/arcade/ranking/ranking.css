@@ -76,7 +76,7 @@
 .rank-error{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:20px 0 4px;padding:16px;border:1px solid #e3b2aa;border-radius:var(--r-md);background:var(--vermilion-wash);color:var(--card-ink)}
 .rank-error>svg{flex:none;color:var(--vermilion)}.rank-error>p{flex:1;min-width:min(220px,100%);margin:0;font-size:14px}
 .rank-guardians{display:grid;gap:14px;margin:0;padding:0;list-style:none}
-.rank-guardian{display:grid;grid-template-columns:64px minmax(0,1fr);gap:4px 14px;padding:14px 0;border-top:1px solid #ded2bd}
+.rank-guardian{display:grid;grid-template-columns:64px minmax(0,1fr);gap:4px 14px;padding:14px 0;border-top:1px solid var(--card-hair)}
 .rank-guardian:first-child{border-top:0;padding-top:0}
 .rank-guardian .arc-guardian-portrait{width:64px;height:64px;margin:0}
 .rank-guardian h3{margin:0;font-size:17px}
@@ -88,12 +88,12 @@
 .rank-games>li:first-child{border-top:0}
 .rank-games .rank-line{margin:0}
 .rank-games .arc-text-button{justify-self:end;gap:6px;color:#326f61;white-space:nowrap}
-.rank-games .arc-text-button[aria-pressed=true]{padding:0 14px;border-radius:999px;background:#e4efe9}
-.rank-nearby{grid-column:1/-1;display:grid;gap:2px;margin:2px 0 6px 23px;padding:8px 12px;border-radius:10px;background:#f3ead8;list-style:none;font-size:13px;font-variant-numeric:tabular-nums}
+.rank-games .arc-text-button[aria-pressed=true]{padding:0 14px;border-radius:999px;background:var(--jade-wash)}
+.rank-nearby{grid-column:1/-1;display:grid;gap:2px;margin:2px 0 6px 23px;padding:8px 12px;border-radius:10px;background:var(--card-2);list-style:none;font-size:13px;font-variant-numeric:tabular-nums}
 .rank-nearby li{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;align-items:center;min-height:26px}
 .rank-nearby b{font:600 13px var(--mono);color:#5d4c36}
 .rank-nearby strong{font:500 13px var(--mono)}
-.rank-nearby li.is-mine{font-weight:700;color:#265d51}
+.rank-nearby li.is-mine{font-weight:700;color:var(--jade-ink)}
 .rank-rules{margin:22px 0;color:var(--arc-cream)}
 .rank-rules summary{min-height:44px;align-content:center;cursor:pointer;font-weight:600}
 .rank-rules ul{margin:4px 0 0;padding-left:20px;color:var(--arc-dim);font-size:14px;line-height:1.8}
@@ -109,4 +109,4 @@
     .rank-nearby{margin-left:0}.rank-ghost{gap:10px}.rank-ghost li{width:64px}
 }
 @media(prefers-reduced-motion:reduce){.rank-pulse{animation:none}}
-.rank-aptitude{display:inline-flex;align-self:center;align-items:center;min-height:20px;padding:0 7px;border:1px solid #d8cab1;border-radius:999px;font:600 11px/1 var(--sans);color:#76654e;white-space:nowrap;font-variant-numeric:tabular-nums}.rank-aptitude.is-best{border-color:#9cc3b6;background:#e4efe9;color:#2d6457}
+.rank-aptitude{display:inline-flex;align-self:center;align-items:center;min-height:20px;padding:0 7px;border:1px solid #d8cab1;border-radius:999px;font:600 11px/1 var(--sans);color:#76654e;white-space:nowrap;font-variant-numeric:tabular-nums}.rank-aptitude.is-best{border-color:#9cc3b6;background:var(--jade-wash);color:#2d6457}

@@ -15,20 +15,12 @@
     --arc-ease-shake: cubic-bezier(.36, .07, .19, .97);
 }
 .arcade {
-    --arc-paper: #f5f0e2;
-    --arc-ink: #282b25;
-    --arc-muted: #66685d;
-    --arc-red: #bf4434;
-    --arc-yellow: #e7bd59;
     min-height: 100dvh;
-    background: #f1ecdf;
-    color: var(--arc-ink);
     font-family: var(--sans);
     line-height: 1.5;
 }
 .arcade button, .arcade a, .arcade input, .arcade summary { -webkit-tap-highlight-color: transparent; }
 .arcade button:disabled { cursor: not-allowed; opacity: .48; }
-.arcade :focus-visible { outline: 3px solid #356c69; outline-offset: 5px; }
 .arcade h1:focus, .arc-playfield:focus { outline: none; }
 .arc-header { min-height: 76px; padding: 13px max(28px, calc((100vw - 1152px)/2)); display: flex; align-items: center; gap: 26px; border-bottom: 1px solid #b9b9a6; }
 .arc-wordmark { display: flex; align-items: center; gap: 11px; flex: none; font-family: var(--mono); font-size: 16px; font-weight: 500; letter-spacing: -.05em; }
@@ -125,7 +117,7 @@
 .arc-target-label { position: absolute; bottom: 8px; right: 6px; font-size: 10px; font-weight: 800; padding: 2px 5px; color: #253226; background: #f8f1d9; border: 1px solid #4e5b42; border-radius: 2px; z-index: 5; transform: rotate(-7deg); }
 .arc-has-courier .arc-target-label { color: #315e44; }
 .arc-impact { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; z-index: 6; pointer-events: none; }
-.arc-impact b { font-weight: 900; color: #b0392c; border: 3px double currentColor; font-size: 30px; line-height: 1.15; padding: 4px 7px; transform: rotate(-12deg); animation: arc-stamp .22s ease-out; }
+.arc-impact b { font-weight: 900; color: var(--vermilion); border: 3px double currentColor; font-size: 30px; line-height: 1.15; padding: 4px 7px; transform: rotate(-12deg); animation: arc-stamp .22s ease-out; }
 .arc-impact em { font: 500 21px var(--mono); color: #2d4b34; text-shadow: 1px 1px #f9f3df; margin-top: 5px; }
 .arc-impact-wrong .arc-impact b { font-size: 23px; border: 0; }
 .arc-impact-wrong .arc-impact em { color: #a93528; }
