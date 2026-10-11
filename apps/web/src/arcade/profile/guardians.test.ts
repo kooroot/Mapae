@@ -25,14 +25,14 @@ const token={tokenId:'1',owner,ownershipEpoch:'1',revealed:true,seed,sequence:'1
 const roster:GuardianRoster={enabled:true,chainId:91342,collection:other,signer:other,mintFee:'12',minted:1,pendingTokenId:null,guardians:[token]};
 const response=(value:unknown)=>async()=>Response.json(value);
 const result={resultId:id,tokenId:'1',actor:owner,ownershipEpoch:'1',paymentTx:id,traitsHash:guardianTraitsHash(seed),inputsHash:seed,ruleset:ARCADE_RULESET_VERSION,seed:1,game:0,score:10,victory:false};
-const claim={collection:other,signer:other,result,claimed:false,signature:`0x${'11'.repeat(65)}`};
+const claim={collection:other,signer:other,claims:[{result,signature:`0x${'11'.repeat(65)}`}]};
 describe('authenticated guardian bridge',()=>{
     test('auth, CSRF, methods and rate limits precede any trusted seller call',async()=>{
         const repo=await repository();let calls=0;
         const options={now,guardians:(r:Request,a:Address,v:unknown)=>guardiansApi(r,a,v,{receiptToken,fetcher:async()=>{calls++;return Response.json(roster);}})};
         expect((await profileApi(request(),repo,options)).status).toBe(200);
         for(const headers of [{Cookie:''},{'X-Mapae-Wallet':other}] as Record<string,string>[])expect((await profileApi(request('','GET',undefined,headers),repo,options)).status).toBe(401);
-        expect((await profileApi(request(`/results/${id}/claim`,'POST',{}, {Origin:'https://evil.test'}),repo,options)).status).toBe(403);
+        expect((await profileApi(request('/1/claims','POST',{}, {Origin:'https://evil.test'}),repo,options)).status).toBe(403);
         expect((await profileApi(request('','POST',{}),repo,options)).status).toBe(405);
         expect((await profileApi(request('?owner='+other),repo,options)).status).toBe(403);
         expect(calls).toBe(1);
@@ -48,10 +48,19 @@ describe('authenticated guardian bridge',()=>{
         for(const suffix of ['/1?before=-1','/1?before=1&before=2','/1?before=9007199254740992','/1?url=https://evil.test','?before=1'])
             expect((await profileApi(request(suffix),repo,options)).status).toBe(403);
     });
-    test('claim selects a committed id; client gameplay is never forwarded',async()=>{
-        let sent:RequestInit|undefined;
-        const r=await guardiansApi(request(`/results/${id}/claim`,'POST',{score:999999}),owner,{score:999999},{receiptToken,fetcher:async(_url,init)=>{sent=init;return Response.json({...claim,privateKey:'secret',result:{...result,permission:'secret'}});}});
-        expect(r.status).toBe(200);expect(sent?.body).toBeUndefined();expect(await r.json<unknown>()).toEqual(claim);
+    test('a batch claim names one guardian; client input is never forwarded and the seller target is exact',async()=>{
+        let sent:RequestInit|undefined,target='';
+        const r=await guardiansApi(request('/1/claims','POST',{score:999999}),owner,null,{receiptToken,fetcher:async(url,init)=>{target=url;sent=init;return Response.json({...claim,privateKey:'secret',claims:[{...claim.claims[0],extra:'secret',result:{...result,permission:'secret'}}]});}});
+        expect(r.status).toBe(200);expect(sent?.body).toBeUndefined();expect(sent?.method).toBe('POST');expect(target).toBe('https://seller.mapae.io/arcade/guardians/1/claims');
+        expect(await r.json<unknown>()).toEqual(claim);
+        const repo=await repository();let calls=0;
+        const options={now,guardians:(q:Request,a:Address,v:unknown)=>{calls++;expect(v).toBeNull();return guardiansApi(q,a,v,{receiptToken,fetcher:response(claim)});}};
+        // A bodiless POST is the browser's natural request; it must reach the seller.
+        expect((await profileApi(new Request(base+'/1/claims',{method:'POST',headers:{Origin:'https://mapae.io','Content-Type':'application/json',Cookie:`__Host-mapae-arcade-session=${session}`,'X-Mapae-Wallet':owner}}),repo,options)).status).toBe(200);
+        expect((await profileApi(request('/1/claims'),repo,options)).status).toBe(405);
+        for(const path of ['/01/claims','/1/claim',`/results/${id}/claim`])expect((await profileApi(request(path,'POST',{}),repo,options)).status).toBe(404);
+        for(let i=1;i<6;i++)await profileApi(request('/1/claims','POST',{}),repo,options);
+        expect((await profileApi(request('/1/claims','POST',{}),repo,options)).status).toBe(429);expect(calls).toBe(6);
     });
     test('real seller completion produces a validated permanent detail through the bridge',async()=>{
         const {OutingStore}=await import('../../../../delegated-seller/outings/store');
@@ -84,8 +93,11 @@ describe('authenticated guardian bridge',()=>{
         expect(await r.json<unknown>()).toEqual(roster);
         for(const value of [{...roster,guardians:[{...token,owner:other}]},{...roster,guardians:[token,token]},{...roster,mintFee:'NaN'}])
             expect((await guardiansApi(request(),owner,null,{receiptToken,fetcher:response(value)})).status).toBe(503);
-        for(const patch of [{tokenId:'01'},{ownershipEpoch:'0'},{game:3},{score:1e10},{seed:2**32},{ruleset:1}])
-            expect((await guardiansApi(request(`/results/${id}/claim`,'POST',{}),owner,{}, {receiptToken,fetcher:response({...claim,result:{...result,...patch}})})).status).toBe(503);
+        const batch=(value:unknown)=>guardiansApi(request('/1/claims','POST'),owner,null,{receiptToken,fetcher:response(value)});
+        for(const patch of [{tokenId:'2'},{tokenId:'01'},{ownershipEpoch:'0'},{game:3},{score:1e10},{seed:2**32},{ruleset:1}])
+            expect((await batch({...claim,claims:[{...claim.claims[0],result:{...result,...patch}}]})).status).toBe(503);
+        for(const value of [{...claim,claims:[{...claim.claims[0],signature:'0x11'}]},{...claim,claims:[claim.claims[0],claim.claims[0]]},{...claim,claims:Array.from({length:33},(_,i)=>({...claim.claims[0],result:{...result,resultId:`0x${i.toString(16).padStart(64,'0')}`,paymentTx:`0x${i.toString(16).padStart(64,'1')}`}}))},{...claim,signer:'nope'}])
+            expect((await batch(value)).status).toBe(503);
     });
     test('disabled, redirect, oversized, non-JSON and private upstream errors never leak',async()=>{
         expect(await (await guardiansApi(request(),owner,null,{})).json()).toMatchObject({enabled:false,collection:null});

@@ -1,8 +1,8 @@
 import {isAddress,isHash,type Address} from 'viem';
-import {guardianName,guardianTokenId,guardianTraitsHash} from '@mapae/arcade/guardians';
+import {guardianName,guardianTokenId,guardianTraitsHash,GUARDIAN_CLAIM_BATCH} from '@mapae/arcade/guardians';
 import {rankedSeed,validRankedAttempt} from '@mapae/arcade/ranking';
-import type {GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
-export type {GuardianClaim,GuardianDetail,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
+import type {GuardianClaimBatch,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
+export type {GuardianClaim,GuardianClaimBatch,GuardianDetail,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
 
 import {isOutcome,projectActivity} from '../activity';
 const UPSTREAM='https://seller.mapae.io/arcade/guardians';
@@ -42,17 +42,26 @@ function copyResult(v:unknown,tokenId:string):VerifiedResult {
     return {id:v.id,tokenId,actor:v.actor as VerifiedResult['actor'],ownershipEpoch:v.ownershipEpoch,transaction:v.transaction as VerifiedResult['transaction'],game:v.outcome.game,seed:v.seed,at:v.at,ruleset:v.ruleset,score:v.score,victory:v.victory,claimed:v.claimed,outcome,
         ...(v.ranked?{ranked:{day:v.ranked.day,attempt:v.ranked.attempt}}:{})};
 }
+/** One signed result of the requested guardian, projected to exactly the contract's Result fields. */
+function claimEntry(v:unknown,tokenId:string):GuardianClaimBatch['claims'][number]{
+    if(!object(v)||typeof v.signature!=='string'||!/^0x[0-9a-fA-F]{130}$/.test(v.signature)||!object(v.result))throw Error();
+    const r=v.result;
+    if(typeof r.resultId!=='string'||!isHash(r.resultId)||r.tokenId!==tokenId||!guardianTokenId(r.ownershipEpoch)||BigInt(r.ownershipEpoch)>=1n<<64n||typeof r.paymentTx!=='string'||!isHash(r.paymentTx)||
+        typeof r.actor!=='string'||!isAddress(r.actor)||typeof r.traitsHash!=='string'||!isHash(r.traitsHash)||typeof r.inputsHash!=='string'||!isHash(r.inputsHash)||
+        !uint(r.ruleset)||r.ruleset<3||!uint(r.seed)||r.seed>0xffffffff||!uint(r.game)||r.game>2||!uint(r.score)||r.score>1_000_000_000||typeof r.victory!=='boolean')throw Error();
+    return {signature:v.signature as `0x${string}`,result:{resultId:r.resultId,tokenId,actor:r.actor,ownershipEpoch:r.ownershipEpoch,paymentTx:r.paymentTx,traitsHash:r.traitsHash,inputsHash:r.inputsHash,ruleset:r.ruleset,seed:r.seed,game:r.game,score:r.score,victory:r.victory}};
+}
 const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
 export type GuardianDependencies={receiptToken?:string;fetcher?:(url:string,init?:RequestInit)=>Promise<Response>};
 /** Caller is profileApi, which already authenticates SIWE, Origin, wallet and rate limits. */
 export async function guardiansApi(request:Request,owner:Address,_input:unknown,deps:GuardianDependencies):Promise<Response>{
     const url=new URL(request.url),path=url.pathname, base='/api/arcade/profile/guardians', suffix=path.slice(base.length);
-    const detail=/^\/([1-9][0-9]{0,77})$/.exec(suffix), claim=/^\/results\/(0x[0-9a-fA-F]{64})\/claim$/.exec(suffix);
+    const detail=/^\/([1-9][0-9]{0,77})$/.exec(suffix), claim=/^\/([1-9][0-9]{0,77})\/claims$/.exec(suffix);
     if(path!==base&&!detail&&!claim)return json({error:{code:'not_found'}},404);
     if((claim&&request.method!=='POST')||(!claim&&request.method!=='GET'))return json({error:{code:'method_not_allowed'}},405);
     const before=url.searchParams.get('before');
     if(url.search&&(!detail||request.method!=='GET'||url.searchParams.size!==1||before===null||!(/^[1-9][0-9]{0,15}$/).test(before)||!Number.isSafeInteger(Number(before))))return json({error:{code:'invalid_request'}},400);
-    if(detail&&!guardianTokenId(detail[1]))return json({error:{code:'invalid_request'}},400);
+    if((detail&&!guardianTokenId(detail[1]))||(claim&&!guardianTokenId(claim[1])))return json({error:{code:'invalid_request'}},400);
     if(!deps.receiptToken||deps.receiptToken.length<32){
         return suffix===''?json({enabled:false,chainId:91342,collection:null,signer:null,mintFee:null,minted:0,pendingTokenId:null,guardians:[]}):json({error:{code:'disabled'}},503);
     }
@@ -75,14 +84,10 @@ export async function guardiansApi(request:Request,owner:Address,_input:unknown,
             const results=v.results.map(r=>copyResult(r,detail[1]!));if(new Set(results.map(r=>r.id)).size!==results.length)throw Error();
             return json({guardian:copyToken(v.guardian),earned:copyProgress(v.earned),results,nextCursor:v.nextCursor});
         }else{
-            if(!object(v)||typeof v.collection!=='string'||!isAddress(v.collection)||typeof v.signer!=='string'||!isAddress(v.signer)||
-                typeof v.claimed!=='boolean'||!(v.signature===null||typeof v.signature==='string'&&/^0x[0-9a-fA-F]{130}$/.test(v.signature))||
-                !object(v.result)||v.result.resultId?.toString().toLowerCase()!==claim![1]!.toLowerCase()||
-                !guardianTokenId(v.result.tokenId)||!guardianTokenId(v.result.ownershipEpoch)||typeof v.result.paymentTx!=='string'||!isHash(v.result.paymentTx)||
-                typeof v.result.actor!=='string'||!isAddress(v.result.actor)||typeof v.result.traitsHash!=='string'||!isHash(v.result.traitsHash)||
-                typeof v.result.inputsHash!=='string'||!isHash(v.result.inputsHash)||!uint(v.result.ruleset)||!uint(v.result.seed)||
-                !uint(v.result.game)||v.result.game>2||!uint(v.result.score)||v.result.score>1_000_000_000||v.result.seed>0xffffffff||v.result.ruleset<3||BigInt(v.result.ownershipEpoch)>=1n<<64n||typeof v.result.victory!=='boolean'||(!v.claimed&&v.signature===null))throw Error();
-            const r=v.result;return json({collection:v.collection,signer:v.signer,claimed:v.claimed,signature:v.signature,result:{resultId:r.resultId,tokenId:r.tokenId,actor:r.actor,ownershipEpoch:r.ownershipEpoch,paymentTx:r.paymentTx,traitsHash:r.traitsHash,inputsHash:r.inputsHash,ruleset:r.ruleset,seed:r.seed,game:r.game,score:r.score,victory:r.victory}});
+            if(!object(v)||typeof v.collection!=='string'||!isAddress(v.collection)||typeof v.signer!=='string'||!isAddress(v.signer)||!Array.isArray(v.claims)||v.claims.length>GUARDIAN_CLAIM_BATCH)throw Error();
+            const claims=v.claims.map(c=>claimEntry(c,claim![1]!));
+            if(new Set(claims.map(c=>c.result.resultId.toLowerCase())).size!==claims.length||new Set(claims.map(c=>c.result.paymentTx.toLowerCase())).size!==claims.length)throw Error();
+            return json({collection:v.collection,signer:v.signer,claims});
         }
     }catch{return json({error:{code:'guardian_unavailable'}},503);}
 }

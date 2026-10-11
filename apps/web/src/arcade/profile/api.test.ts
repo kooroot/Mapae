@@ -132,7 +132,7 @@ test("guardian routes derive their actor from SIWE and only allow a bounded hist
     expect((await profileApi(request("/guardians", "GET", undefined, {...user.headers, "X-Mapae-Wallet": account().address}), repo, options)).status).toBe(401);
     expect((await profileApi(request("/guardians/1?before=12", "GET", undefined, user.headers), repo, options)).status).toBe(200);
     for (const path of ["/guardians?before=12", "/guardians/1?before=0", "/guardians/1?before=9007199254740992", "/guardians/1?before=12&owner=other"]) expect((await profileApi(request(path, "GET", undefined, user.headers), repo, options)).status).toBe(403);
-    const claim = `/guardians/results/0x${"12".repeat(32)}/claim`;
+    const claim = "/guardians/1/claims";
     expect((await profileApi(request(claim, "GET", undefined, user.headers), repo, options)).status).toBe(405);
     expect((await profileApi(request(claim, "POST", {}, {...user.headers, Origin: "https://evil.test"}), repo, options)).status).toBe(403);
     expect((await profileApi(request(claim, "POST", {}, user.headers), repo, options)).status).toBe(200);

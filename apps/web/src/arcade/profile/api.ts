@@ -48,7 +48,7 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
     if (write && (request.headers.get("Origin") !== url.origin || request.headers.get("Content-Type")?.split(";")[0] !== "application/json")) return error("origin_denied", 403);
     const path = url.pathname;
     const outingPath = /^\/api\/arcade\/profile\/outings(?:\/[A-Za-z0-9_-]{8,80}\/(?:stop|resume))?$/.test(path);
-    const guardianPath = /^\/api\/arcade\/profile\/guardians(?:\/[1-9][0-9]{0,77}|\/results\/0x[a-fA-F0-9]{64}\/claim)?$/.test(path);
+    const guardianPath = /^\/api\/arcade\/profile\/guardians(?:\/[1-9][0-9]{0,77}(?:\/claims)?)?$/.test(path);
     if (!outingPath && !guardianPath && !["/api/arcade/profile/session", "/api/arcade/profile/challenge", "/api/arcade/profile/login", "/api/arcade/profile/logout"].includes(path)) return error("not_found", 404);
     try {
         if (path.endsWith("/challenge") && request.method === "POST") {
@@ -90,12 +90,13 @@ export async function profileApi(request: Request, repo: ProfileRepository, opti
         const ip = request.headers.get("CF-Connecting-IP"), requestWindow = Math.floor(now / 60_000);
         if (ip && !await repo.rateLimit(`authenticated-ip:${await tokenHash(ip)}:${requestWindow}`, (requestWindow + 1) * 60_000, 600)) return limited((requestWindow + 1) * 60_000, now);
         if (guardianPath) {
-            const claim = path.endsWith("/claim");
+            const claim = path.endsWith("/claims");
             if (request.method !== (claim ? "POST" : "GET")) return error("method_not_allowed", 405);
             const until = (requestWindow + 1) * 60_000;
-            if (!await repo.rateLimit(`guardians:${identity.owner}:${request.method}:${requestWindow}`, until, claim ? 12 : 30)) return limited(until, now);
+            if (!await repo.rateLimit(`guardians:${identity.owner}:${request.method}:${requestWindow}`, until, claim ? 6 : 30)) return limited(until, now);
             if (!options.guardians) return error("guardians_unavailable", 503);
-            return await options.guardians(request, getAddress(identity.owner).toLowerCase() as Address, claim ? await body(request, 1024) : null);
+            // The path alone names the guardian; a claim request carries no client input to parse.
+            return await options.guardians(request, getAddress(identity.owner).toLowerCase() as Address, null);
         }
         if (outingPath) {
             if (request.method !== "POST" && !(path === "/api/arcade/profile/outings" && request.method === "GET")) return error("method_not_allowed", 405);
