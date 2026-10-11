@@ -25,8 +25,10 @@ import {activeGuardianOuting,type GuardianIdentity} from './nft/outing-model';
 export type AllowanceRequest = GuardianIdentity & {goal: AgentGoal; name: string; admissions: number};
 const isArcadeGrant = (grant: SessionGrant) => grant.name === "Mapae Arcade" || grant.name.startsWith("Mapae Arcade · ");
 export type ApprovalPhase = "idle" | "catalogue" | "wallet" | "switching" | "preparing" | "signing" | "authorizing" | "bootstrap" | "verifying" | "submitting";
-export function useGiwaTickets(locale: Locale, authenticated: boolean) {
-    const {address, chainId, connector} = useAccount();
+/** One instance per page: its lock keeps a single approval in flight. `owner` is the gated arcade owner, never a raw connection. */
+export function useGiwaTickets(locale: Locale, owner: Address | undefined, authenticated: boolean) {
+    const address = owner;
+    const {chainId, connector} = useAccount();
     const config = useConfig();
     const {disconnect: disconnectWallet} = useDisconnect();
     const {switchChainAsync} = useSwitchChain();
@@ -210,7 +212,7 @@ export function useGiwaTickets(locale: Locale, authenticated: boolean) {
     }
     function revoked(_context: Hex) {void refreshOutings();}
     function disconnect() {disconnectWallet();}
-    return {address, payer, balance, jobs, available, submission, refreshOutings, recoverSubmission, controlJob,
+    return {payer, balance, jobs, available, submission, refreshOutings, recoverSubmission, controlJob,
         approvalTarget, busy, phase, chainId, walletName: connector?.name ?? "", error: error || statusError,
         grants, revoked, disconnect, approve};
 }

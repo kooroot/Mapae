@@ -1,54 +1,40 @@
-import {useEffect,useRef,useState} from 'react';
+import {useRef,useState} from 'react';
 import {Check,CircleAlert,Clock,ExternalLink,Gamepad2,LoaderCircle,Pause,RefreshCw} from 'lucide-react';
 import {formatEther,type Address} from 'viem';
 import type {AgentGoal,GameId} from '@mapae/arcade';
-import {guardianName,guardianTraits} from '@mapae/arcade/guardians';
+import {guardianName} from '@mapae/arcade/guardians';
 import {dailyChallenge} from '@mapae/arcade/challenge';
 import {useLocale} from '../../lib/locale';
 import {explorerAddressUrl,explorerTxUrl} from '../../lib/config';
-import {logoutProfile} from '../profile/client';
-import {useArcadeSession} from '../useArcadeSession';
 import {SessionAccess} from '../SessionAccess';
-import {useGiwaTickets} from '../useGiwaTickets';
 import {GiwaAllowance} from '../GiwaAllowance';
 import {OutingBoard} from '../OutingBoard';
 import {GuardianAvatar} from '../GuardianAvatar';
 import {GUARDIAN_NAMES} from '../guardian';
 import {GAME_NAMES} from '../game-names';
 import {newArcadeState} from '../state';
-import {useGuardians} from './useGuardians';
+import {useGuardianDesk} from './useGuardianDesk';
 import {dailyObjective,nftCompanion,TEMPERAMENT_NAMES} from './model';
 import {GuardianHeader} from './GuardianHeader';
 import {BrandSelect} from '../../components/BrandSelect';
 import {NftPractice} from './NftPractice';
 import type {GuardianToken} from '../profile/guardians';
-import {trackEngagement} from '../engagement/client';
 import {ArcadeRevocations} from '../ArcadeRevocations';
-import {activeGuardianOuting} from './outing-model';
 import {TransactionRecovery} from './TransactionRecovery';
 import {swapScreen,useArcadeMotion} from '../motion';
 import '../arcade.css';import '../agent-arcade.css';import '../arcade-brand.css';import './nft.css';
 
-type Operation={goal:AgentGoal;game:GameId|'auto';admissions:number};
 export function GuardianArcade({owner,initialGame,onGuest}:{owner:Address;initialGame:GameId|'auto';onGuest?:()=>void}){
-    const {locale}=useLocale(),ko=locale==='ko',session=useArcadeSession(owner),giwa=useGiwaTickets(locale,session.ready),nft=useGuardians(owner,session.ready,ko),still=useArcadeMotion(false);
-    const [operations,setOperations]=useState<Record<string,Operation>>({}),[practice,setPractice]=useState<{token:GuardianToken;game:GameId;seed:number}|null>(null),[now,setNow]=useState(Date.now),[disconnecting,setDisconnecting]=useState(false);
+    const {locale}=useLocale(),desk=useGuardianDesk(owner,false,initialGame),still=useArcadeMotion(false);
+    const {ko,session,giwa,nft,token,member,traits,activeJob,crew,now,disconnecting,disconnect}=desk,nftIdentity=desk.identity,active=!!activeJob,op=desk.operation,updateOp=desk.setOperation;
+    const [practice,setPractice]=useState<{token:GuardianToken;game:GameId;seed:number}|null>(null);
     const allowance=useRef<HTMLElement>(null),names=GAME_NAMES[locale];
-    useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),60000);return()=>clearInterval(t);},[]);
-    const token=nft.roster?.guardians.find(t=>t.tokenId===nft.selected),key=token?`${nft.roster?.collection}:${token.tokenId}:${token.ownershipEpoch}`:'';
-    const nftIdentity=token&&nft.roster?.collection?{tokenId:token.tokenId,ownershipEpoch:token.ownershipEpoch,collection:nft.roster.collection}:null;
-    const activeJob=nftIdentity?giwa.jobs.find(j=>activeGuardianOuting(j,nftIdentity)):undefined,active=!!activeJob;
-    const op=activeJob?{goal:activeJob.profile.goal,game:activeJob.choice,admissions:activeJob.admissions}:operations[key]??{goal:'explore',game:initialGame,admissions:1};
-    function updateOp(patch:Partial<Operation>){trackEngagement({event:'operator_action',locale});setOperations(v=>({...v,[key]:{...op,...patch}}));}
-    const member=token?.revealed?nftCompanion(token,locale,op.goal,op.admissions):null,traits=token?.revealed?guardianTraits(token.seed):null;
     const detail=nft.detail?.guardian.tokenId===token?.tokenId?nft.detail:null;
     const objective=dailyObjective(detail?.results??[],now);
-    const crew=(nft.roster?.guardians??[]).filter(t=>t.revealed).map(t=>nftCompanion(t,locale));
     const games=['stamp','race','shop'] as const,refreshing=nft.loading||nft.busy;
     const refreshButton=(label:string)=><button className="arc-text-button" disabled={refreshing} onClick={()=>void nft.refresh()}><RefreshCw size={16} className={nft.loading?'arc-loading-icon':undefined} aria-hidden="true"/>{nft.loading?(ko?'불러오는 중…':'Refreshing…'):label}</button>;
     const drawStatus=nft.roster&&nft.roster.minted>=3?{icon:<Check size={15}/>,label:ko?'이번 지갑의 뽑기 완료':'Wallet draw limit reached'}:nft.roster?.pendingTokenId?{icon:<Clock size={15}/>,label:ko?'진행 중인 뽑기 확인':'Draw in progress'}:nft.paused?{icon:<Pause size={15}/>,label:ko?'뽑기 잠시 준비 중':'Draws currently paused'}:null;
     const presentation={...newArcadeState(),characters:crew,selectedCharacterId:member?.id??null};
-    async function disconnect(){setDisconnecting(true);try{await logoutProfile(owner);}finally{giwa.disconnect();setDisconnecting(false);}}
     if(!session.ready)return <SessionAccess owner={owner} session={session} ko={ko} disconnecting={disconnecting} onDisconnect={()=>void disconnect()} onGuest={onGuest}/>;
     if(practice)return <NftPractice {...practice} ko={ko} reducedMotion={still} onClose={()=>swapScreen(still,()=>setPractice(null))}/>;
     return <main className="arcade agent-arcade nft-arcade">

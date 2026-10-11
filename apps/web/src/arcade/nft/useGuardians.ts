@@ -14,17 +14,22 @@ import {assertNftTransactionStorage,clearNftTransaction,readNftTransaction,saveN
 import {entropyRecoveryAbi,verifyRevelation} from './recovery';
 import {trackEngagement} from '../engagement/client';
 
-export function useGuardians(owner:Address,ready:boolean,ko:boolean){
+/** One instance per page: its lock guards draws, claims and recoveries against double submission. */
+export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
     const {address,connector}=useAccount(), config=useConfig(),{switchChainAsync}=useSwitchChain();
     const [roster,setRoster]=useState<GuardianRoster|null>(null),[detail,setDetail]=useState<GuardianDetail|null>(null),[selected,setSelected]=useState<string|null>(null);
     const [error,setError]=useState(''),[busy,setBusy]=useState(false),[phase,setPhase]=useState(''),[loading,setLoading]=useState(false),[paused,setPaused]=useState(true),[transaction,setTransaction]=useState<NftTransaction|null>(null);
-    const alive=useRef(true),locked=useRef(false),refreshing=useRef(false),selectedRef=useRef(selected),identity=useRef({address,uid:connector?.uid});selectedRef.current=selected;identity.current={address,uid:connector?.uid};
-    useEffect(()=>{alive.current=true;try{setTransaction(readNftTransaction(owner));}catch{setError(ko?'트랜잭션 복구 기록을 읽지 못했어요.':'Transaction recovery record is unavailable.');}return()=>{alive.current=false;};},[owner]);
+    const alive=useRef(true),locked=useRef(false),refreshing=useRef(false),selectedRef=useRef(selected),identity=useRef({address,uid:connector?.uid}),scope=useRef(owner);selectedRef.current=selected;identity.current={address,uid:connector?.uid};scope.current=owner;
+    // A switched wallet starts from nothing: no roster, guardian or recovery record of the previous owner survives one render.
+    const [shown,setShown]=useState(owner);
+    if(shown!==owner){setShown(owner);setRoster(null);setDetail(null);setSelected(null);setError('');setTransaction(null);setPaused(true);}
+    const live=(target:Address)=>alive.current&&scope.current===target;
+    useEffect(()=>{alive.current=true;refreshing.current=false;if(!owner)return;try{setTransaction(readNftTransaction(owner));}catch{setError(ko?'트랜잭션 복구 기록을 읽지 못했어요.':'Transaction recovery record is unavailable.');}return()=>{alive.current=false;};},[owner]);
     const refresh=useCallback(async()=>{
-        if(!ready||refreshing.current)return;refreshing.current=true;setLoading(true);
+        if(!owner||!ready||refreshing.current)return;refreshing.current=true;setLoading(true);
         try{
             const value=await profileRequest(owner,'/guardians') as GuardianRoster;
-            if(!alive.current)return;
+            if(!live(owner))return;
             if(value.chainId!==GUARDIAN_CHAIN_ID||!Array.isArray(value.guardians)||value.guardians.some(t=>!sameAddress(t.owner,owner))||value.enabled&&(!value.collection||!isAddress(value.collection)))throw Error('roster');
             setRoster(value);
             const id=value.guardians.find(t=>t.tokenId===selectedRef.current)?.tokenId??value.guardians[0]?.tokenId??null;
@@ -37,16 +42,17 @@ export function useGuardians(owner:Address,ready:boolean,ko:boolean){
                     publicClient.readContract({address:value.collection,abi:guardianAbi,functionName:'entropyProvider'}),
                 ]);
                 if(!sameAddress(oracle,GUARDIAN_ENTROPY)||!sameAddress(provider,GUARDIAN_PROVIDER))throw Error('collection');
-                if(alive.current)setPaused(p);
+                if(live(owner))setPaused(p);
             }else setPaused(true);
-            if(id){const d=await profileRequest(owner,`/guardians/${id}`) as GuardianDetail;if(alive.current&&selectedRef.current===id)setDetail(previous=>refreshedDetail(previous,d));}else setDetail(null);
-        }catch{if(alive.current){setPaused(true);setError(ko?'전령 상태를 확인하지 못했어요. 새로고침 후 다시 시도해 주세요.':'Could not verify your guardians. Refresh and try again.');}}
+            if(id){const d=await profileRequest(owner,`/guardians/${id}`) as GuardianDetail;if(live(owner)&&selectedRef.current===id)setDetail(previous=>refreshedDetail(previous,d));}else setDetail(null);
+        }catch{if(live(owner)){setPaused(true);setError(ko?'전령 상태를 확인하지 못했어요. 새로고침 후 다시 시도해 주세요.':'Could not verify your guardians. Refresh and try again.');}}
         finally{refreshing.current=false;if(alive.current)setLoading(false);}
     },[owner,ready,ko]);
     useEffect(()=>{void refresh();const poll=setInterval(()=>{if(!document.hidden&&!locked.current)void refresh();},12000);const focus=()=>{if(!document.hidden&&!locked.current)void refresh();};window.addEventListener('focus',focus);return()=>{clearInterval(poll);window.removeEventListener('focus',focus);};},[refresh]);
-    async function select(id:string){setSelected(id);selectedRef.current=id;setDetail(null);try{const d=await profileRequest(owner,`/guardians/${id}`) as GuardianDetail;if(alive.current&&selectedRef.current===id)setDetail(d);}catch{setError(ko?'이 전령을 불러올 수 없어요. 소유권을 다시 확인해 주세요.':'Guardian unavailable. Refresh ownership.');void refresh();}}
-    async function more(){if(!detail?.nextCursor||!selected)return;try{const d=await profileRequest(owner,`/guardians/${selected}?before=${detail.nextCursor}`) as GuardianDetail;if(selectedRef.current===selected)setDetail({...d,results:[...detail.results,...d.results.filter(r=>!detail.results.some(old=>old.id===r.id))]});}catch{setError(ko?'이전 기록을 불러오지 못했어요.':'Could not load earlier results.');}}
+    async function select(id:string){if(!owner)return;setSelected(id);selectedRef.current=id;setDetail(null);try{const d=await profileRequest(owner,`/guardians/${id}`) as GuardianDetail;if(live(owner)&&selectedRef.current===id)setDetail(d);}catch{if(!live(owner))return;setError(ko?'이 전령을 불러올 수 없어요. 소유권을 다시 확인해 주세요.':'Guardian unavailable. Refresh ownership.');void refresh();}}
+    async function more(){if(!owner||!detail?.nextCursor||!selected)return;try{const d=await profileRequest(owner,`/guardians/${selected}?before=${detail.nextCursor}`) as GuardianDetail;if(live(owner)&&selectedRef.current===selected)setDetail({...d,results:[...detail.results,...d.results.filter(r=>!detail.results.some(old=>old.id===r.id))]});}catch{setError(ko?'이전 기록을 불러오지 못했어요.':'Could not load earlier results.');}}
     async function wallet(){
+        if(!owner)throw Error('wallet_changed');
         assertNftTransactionStorage(owner);
         if(!connector||!sameAddress(address??'',owner))throw Error('wallet_changed');
         if(await connector.getChainId()!==GUARDIAN_CHAIN_ID)await switchChainAsync({chainId:GUARDIAN_CHAIN_ID,connector});
@@ -55,7 +61,7 @@ export function useGuardians(owner:Address,ready:boolean,ko:boolean){
         return w;
     }
     async function recorded(hash:Hex,kind:NftTransaction['kind'],tokenId?:string){
-        if(!roster?.collection)throw Error('collection');
+        if(!owner||!roster?.collection)throw Error('collection');
         let tx:NftTransaction={owner,collection:roster.collection,hash,kind,...(tokenId?{tokenId}:{})};
         setTransaction(tx);saveNftTransaction(tx);setPhase(ko?'GIWA 확인 중…':'Confirming on GIWA…');
         // The wallet may choose a nonce, so record the actual submitted transaction, never a guess.
@@ -68,9 +74,9 @@ export function useGuardians(owner:Address,ready:boolean,ko:boolean){
         if(receipt.status!=='success'){clearNftTransaction(owner);setTransaction(null);throw Error('reverted');}
         clearNftTransaction(owner);setTransaction(null);if(cancelled)throw Error('cancelled');await refresh();
     }
-    async function perform(action:()=>Promise<void>){if(locked.current)return;trackEngagement({event:'operator_action',locale:ko?'ko':'en'});locked.current=true;setBusy(true);setError('');setPhase(ko?'지갑에서 확인해 주세요':'Confirm in your wallet');try{await action();}catch(e){const code=giwaWalletError(e)?.code;setError(code==='rejected'?(ko?'지갑 요청을 취소했어요. 다시 시도할 수 있어요.':'Wallet request cancelled. You can try again.'):(ko?'완료를 확인하지 못했어요. 아래 트랜잭션과 전령 상태를 새로고침해 주세요. 새 결제나 재추첨을 자동으로 요청하지 않아요.':'Completion is not confirmed. Check the transaction and refresh your guardian. Nothing is paid or redrawn automatically.'));}finally{locked.current=false;if(alive.current){setBusy(false);setPhase('');}await refresh();}}
+    async function perform(action:()=>Promise<void>){if(locked.current||!owner)return;trackEngagement({event:'operator_action',locale:ko?'ko':'en'});locked.current=true;setBusy(true);setError('');setPhase(ko?'지갑에서 확인해 주세요':'Confirm in your wallet');try{await action();}catch(e){const code=giwaWalletError(e)?.code;setError(code==='rejected'?(ko?'지갑 요청을 취소했어요. 다시 시도할 수 있어요.':'Wallet request cancelled. You can try again.'):(ko?'완료를 확인하지 못했어요. 아래 트랜잭션과 전령 상태를 새로고침해 주세요. 새 결제나 재추첨을 자동으로 요청하지 않아요.':'Completion is not confirmed. Check the transaction and refresh your guardian. Nothing is paid or redrawn automatically.'));}finally{locked.current=false;if(alive.current){setBusy(false);setPhase('');}await refresh();}}
     async function mint(){await perform(async()=>{
-        if(!roster?.enabled||!roster.collection||paused||transaction)throw Error('mint_unavailable');
+        if(!owner||!roster?.enabled||!roster.collection||paused||transaction)throw Error('mint_unavailable');
         const w=await wallet();
         const fee=await publicClient.readContract({address:roster.collection,abi:guardianAbi,functionName:'mintFee'});
         const contribution=bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
@@ -78,7 +84,7 @@ export function useGuardians(owner:Address,ready:boolean,ko:boolean){
         await wallet();const hash=await writeContract(w,simulation.request);await recorded(hash,'mint');
     });}
     async function claim(result:VerifiedResult){await perform(async()=>{
-        if(!roster?.collection||!detail||transaction)throw Error('claim_unavailable');
+        if(!owner||!roster?.collection||!detail||transaction)throw Error('claim_unavailable');
         const token=detail.guardian;
         const signed=await profileRequest(owner,`/guardians/results/${result.id}/claim`,'POST') as GuardianClaim;
         const signer=await publicClient.readContract({address:roster.collection,abi:guardianAbi,functionName:'resultSigner'});
@@ -90,7 +96,7 @@ export function useGuardians(owner:Address,ready:boolean,ko:boolean){
         setDetail(previous=>previous?{...previous,results:previous.results.map(r=>r.id===result.id?{...r,claimed}:r)}:null);
     });}
     async function recover(token:GuardianToken){await perform(async()=>{
-        if(!roster?.collection||token.revealed||transaction)throw Error('not_pending');
+        if(!owner||!roster?.collection||token.revealed||transaction)throw Error('not_pending');
         const request=await publicClient.readContract({address:GUARDIAN_ENTROPY,abi:entropyRecoveryAbi,functionName:'getRequestV2',args:[GUARDIAN_PROVIDER,BigInt(token.sequence)]});
         if(!sameAddress(request.requester,roster.collection)||!sameAddress(request.provider,GUARDIAN_PROVIDER)||request.sequenceNumber!==BigInt(token.sequence)||request.useBlockhash)throw Error('request_mismatch');
         // The latest request is either the mint or a re-request after an oracle change; both carry the contribution.
@@ -109,6 +115,7 @@ export function useGuardians(owner:Address,ready:boolean,ko:boolean){
         await wallet();await recorded(await writeContract(w,simulation.request),'recovery',token.tokenId);
     });}
     async function checkTransaction(replacementHash?:string){if(!transaction)return;await perform(async()=>{
+        if(!owner)throw Error('wallet_changed');
         let tx=transaction;
         if(replacementHash){
             if(!isHash(replacementHash))throw Error('replacement_hash');
