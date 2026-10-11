@@ -72,6 +72,7 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
     }
     async function perform(action:()=>Promise<void>){if(locked.current||!owner)return;trackEngagement({event:'operator_action',locale:ko?'ko':'en'});locked.current=true;setBusy(true);setError('');loadFailed.current=false;setPhase(ko?'지갑에서 확인해 주세요':'Confirm in your wallet');try{await action();}catch(e){const code=giwaWalletError(e)?.code;const reason=e instanceof Error?e.message:'';setError(code==='rejected'?(ko?'지갑 요청을 취소했어요. 다시 시도할 수 있어요.':'Wallet request cancelled. You can try again.')
         :reason==='batch_unavailable'?(ko?'한 번에 기록하기는 전령 컨트랙트 업그레이드 뒤에 열려요. 업그레이드가 끝나면 다시 시도해 주세요.':'Recording in one go opens after the guardian contract upgrade. Try again once it lands.')
+        :reason==='claim_rejected'?(ko?'기록이 이미 반영됐거나 상태가 바뀌어 지갑 요청을 보내지 않았어요. 새로고침한 뒤 다시 기록해 주세요.':'Nothing was sent: these outings were already recorded or the guardian changed. Refresh and record again.')
         :reason==='claims_waiting'?(ko?'아직 GIWA에서 확정되지 않은 모험이에요. 몇 분 뒤 다시 기록해 주세요.':'These outings are not final on GIWA yet. Record them again in a few minutes.')
         :e instanceof ProfileError&&e.code==='rate_limited'?(ko?'요청이 많아요. 잠시 후 다시 시도해 주세요.':'Too many requests. Try again shortly.')
         :(ko?'완료를 확인하지 못했어요. 아래 트랜잭션과 전령 상태를 새로고침해 주세요. 새 결제나 재추첨을 자동으로 요청하지 않아요.':'Completion is not confirmed. Check the transaction and refresh your guardian. Nothing is paid or redrawn automatically.'));}finally{locked.current=false;if(alive.current){setBusy(false);setPhase('');}await refresh();}}
@@ -100,8 +101,11 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         const signer=await publicClient.readContract({address:collection,abi:guardianAbi,functionName:'resultSigner'});
         const {results,signatures}=await verifiedClaims(batch,{collection,signer,token,known:detail.results});
         if(!results.length)throw Error('claims_waiting');
-        setPhase(ko?'지갑에서 확인해 주세요':'Confirm in your wallet');
-        const w=await wallet();const simulation=await publicClient.simulateContract({address:collection,abi:guardianAbi,functionName:'claimResults',args:[results,signatures],account:owner});
+        setPhase(ko?`${results.length}건 기록을 지갑에서 확인해 주세요`:`Confirm ${results.length} in your wallet`);
+        const w=await wallet();
+        // A revert here means nothing was sent; say so rather than pointing at a transaction that does not exist.
+        const simulation=await publicClient.simulateContract({address:collection,abi:guardianAbi,functionName:'claimResults',args:[results,signatures],account:owner})
+            .catch((e:unknown)=>{if(e instanceof BaseError&&e.walk(x=>x instanceof ContractFunctionRevertedError))throw Error('claim_rejected');throw e;});
         await wallet();await recorded(await writeContract(w,simulation.request),'claim',token.tokenId);
     });}
     async function recover(token:GuardianToken){await perform(async()=>{
