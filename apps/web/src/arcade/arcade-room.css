@@ -41,7 +41,7 @@
     border: .45cqw solid #573a1b; border-radius: 1.7cqw;
     background: linear-gradient(120deg, #eed094 0%, #d8a85f 38%, #c08b44 74%, #e0b571 100%);
     box-shadow: 0 .6cqw .8cqw #120b0799, inset 0 0 0 .35cqw #f5d99e, inset 0 0 0 .75cqw #946229;
-    color: #382511; font-family: var(--sans); font-size: 3.7cqw;
+    color: #382511; font-family: var(--sans); font-size: max(10px, 3.7cqw);
     font-weight: 700; line-height: 1; letter-spacing: 0; white-space: nowrap;
     text-shadow: 0 .15cqw #ffe4ae80;
 }
