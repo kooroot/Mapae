@@ -104,9 +104,9 @@ export class OutingRunner {
     /** The next admission: one of the guardian's ranked attempts for today while any remain, otherwise an unranked random round. */
     private admission(job: Job): Pending {
         const game = chooseOutingGame(job.profile, job.choice, job.results.map(r => r.game)), day = kstDay(this.now());
-        const used = this.store.rankedAttemptsUsed(job.guardian.collection, job.guardian.tokenId, day, job.id)[game];
-        if (used < RANKED_ATTEMPTS) {
-            const attempt = used + 1;
+        const taken = this.store.rankedAttemptsTaken(job.guardian.collection, job.guardian.tokenId, day, job.id)[game];
+        const attempt = Array.from({length: RANKED_ATTEMPTS}, (_, i) => i + 1).find(n => !taken.includes(n));
+        if (attempt) {
             return {game, seed: rankedSeed(game, day, attempt, job.guardian.tokenId), header: null, transaction: null, ranked: {day, attempt}};
         }
         return {game, seed: crypto.getRandomValues(new Uint32Array(1))[0]!, header: null, transaction: null};

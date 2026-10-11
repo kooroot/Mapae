@@ -349,7 +349,7 @@ describe('ranked attempts',()=>{
         expect(results.map(r=>r.ranked)).toEqual([{day,attempt:1},{day,attempt:2},{day,attempt:3},undefined]);
         expect(results.slice(0,3).map(r=>r.seed)).toEqual([1,2,3].map(n=>rankedSeed('race',day,n,'1')));
         expect([1,2,3].map(n=>rankedSeed('race',day,n,'1'))).not.toContain(results[3]!.seed);
-        expect(db.rankedAttemptsUsed(collection,'1',day)).toEqual({stamp:0,race:3,shop:0});
+        expect(db.rankedAttemptsTaken(collection,'1',day)).toEqual({stamp:[],race:[1,2,3],shop:[]});
         const rows=db.db.query<{attempt:number;week:string;score:number},[]>('SELECT attempt, week, score FROM arcade_guardian_ranked ORDER BY attempt').all();
         expect(rows.map(r=>r.attempt)).toEqual([1,2,3]);expect(rows[0]!.week).toBe(kstWeek(day));
         expect(rows.map(r=>r.score)).toEqual(results.slice(0,3).map(r=>r.outcome.score));
@@ -365,13 +365,13 @@ describe('ranked attempts',()=>{
         await runner.tick();
         const result=db.get(job.id)!.results[0]!;expect(kstDay(result.at)).toBe('2033-05-19');
         expect(result.ranked).toEqual({day:'2033-05-18',attempt:1});expect(result.seed).toBe(rankedSeed('race','2033-05-18',1,'1'));
-        expect(db.rankedAttemptsUsed(collection,'1','2033-05-18').race).toBe(1);expect(db.rankedAttemptsUsed(collection,'1','2033-05-19').race).toBe(0);
+        expect(db.rankedAttemptsTaken(collection,'1','2033-05-18').race).toEqual([1]);expect(db.rankedAttemptsTaken(collection,'1','2033-05-19').race).toEqual([]);
     });
     test('a previous owner\'s pending ranked admission still counts for the token',async()=>{
         const db=store(),prior=plan(db,'ranked-prior-epoch','race',2);
         prior.status='paused';prior.pending={game:'race',seed:rankedSeed('race',day,1,'1'),header:'old-header',transaction:null,ranked:{day,attempt:1}};db.save(prior);
         const next=plan(db,'ranked-next-epoch','race',1,'1',stranger.address,'2');
-        expect(db.rankedAttemptsUsed(collection,'1',day,next.id).race).toBe(1);
+        expect(db.rankedAttemptsTaken(collection,'1',day,next.id).race).toEqual([1]);
         const runner=new OutingRunner(db,agent.address,{async pay(j,_p,persist){if(j.id===prior.id)throw Error('old payment unresolved');persist('new-owner-header');return tx;}},{inspect:async()=>({...guardian('1',stranger.address),ownershipEpoch:'2'})},()=>now);
         await runner.tick();await runner.tick();
         expect(db.get(next.id)!.results[0]!.ranked).toEqual({day,attempt:2});
@@ -379,11 +379,18 @@ describe('ranked attempts',()=>{
     test('a stopped admission that was never paid frees its attempt',async()=>{
         const db=store(),first=plan(db,'ranked-stopped-free','race',2);
         first.pending={game:'race',seed:rankedSeed('race',day,1,'1'),header:null,transaction:null,ranked:{day,attempt:1}};db.save(first);
-        expect(db.rankedAttemptsUsed(collection,'1',day,'other-job').race).toBe(1);
+        expect(db.rankedAttemptsTaken(collection,'1',day,'other-job').race).toEqual([1]);
         new OutingRunner(db,agent.address,counting,reader,()=>now).control(owner.address,first.id,'stop');
-        expect(db.get(first.id)!.status).toBe('stopped');expect(db.rankedAttemptsUsed(collection,'1',day).race).toBe(0);
+        expect(db.get(first.id)!.status).toBe('stopped');expect(db.rankedAttemptsTaken(collection,'1',day).race).toEqual([]);
         const next=plan(db,'ranked-after-stop','race',1);await drain(db,()=>now,2);
         expect(db.get(next.id)!.results[0]!.ranked).toEqual({day,attempt:1});
+    });
+    test('a freed attempt number is reused without colliding with a settled one',async()=>{
+        const db=store();
+        db.db.query('INSERT INTO arcade_guardian_ranked VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run('0xsettled-two',collection.toLowerCase(),'1','0x'+'ab'.repeat(32),3,'race',day,kstWeek(day),2,100,0,now);
+        const job=plan(db,'ranked-gap-fill','race',3);await drain(db,()=>now,4);
+        expect(db.get(job.id)!.results.map(r=>r.ranked?.attempt)).toEqual([1,3,undefined]);
+        expect(db.get(job.id)!.status).toBe('complete');
     });
     test('a transfer does not reset the count, and the next KST day does',async()=>{
         const db=store();plan(db,'ranked-before-sale','race',3);await drain(db,()=>now,4);

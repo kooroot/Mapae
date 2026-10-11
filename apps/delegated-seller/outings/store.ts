@@ -80,19 +80,20 @@ export class OutingStore {
         }).immediate();
     }
     /**
-     * Ranked attempts a guardian has used per game on a KST day: settled ranked rounds, plus admissions still pending in any
-     * other active outing of the token (an earlier owner's recovery included). Counted per token, so a transfer resets nothing;
-     * a pending admission cleared without payment frees its attempt. The runner is serial under the lease, so this cannot race.
+     * The ranked attempt numbers a guardian has taken per game on a KST day: settled ranked rounds, plus admissions still pending
+     * in any other active outing of the token (an earlier owner's recovery included). Counted per token, so a transfer resets
+     * nothing; a pending admission cleared without payment frees its number. The runner is serial under the lease, so this
+     * cannot race, and it hands out the lowest free number, so a freed attempt never collides with a settled one.
      */
-    rankedAttemptsUsed(collection: Address, tokenId: string, day: string, excludeJobId = ''): Record<GameId, number> {
-        const used = Object.fromEntries(RANKED_GAMES.map(game => [game, 0])) as Record<GameId, number>;
-        for (const row of this.db.query<{game: GameId; n: number}, [string, string, string]>(
-            'SELECT game, COUNT(*) AS n FROM arcade_guardian_ranked WHERE collection=? AND token_id=? AND day=? GROUP BY game').all(collection.toLowerCase(), tokenId, day)) used[row.game] += row.n;
-        for (const row of this.db.query<{game: GameId; n: number}, [string, string, string, string]>(
-            `SELECT json_extract(data,'$.pending.game') AS game, COUNT(*) AS n FROM arcade_outings
+    rankedAttemptsTaken(collection: Address, tokenId: string, day: string, excludeJobId = ''): Record<GameId, number[]> {
+        const taken = Object.fromEntries(RANKED_GAMES.map(game => [game, new Set<number>()])) as Record<GameId, Set<number>>;
+        for (const row of this.db.query<{game: GameId; attempt: number}, [string, string, string]>(
+            'SELECT game, attempt FROM arcade_guardian_ranked WHERE collection=? AND token_id=? AND day=?').all(collection.toLowerCase(), tokenId, day)) taken[row.game]?.add(row.attempt);
+        for (const row of this.db.query<{game: GameId; attempt: number}, [string, string, string, string]>(
+            `SELECT json_extract(data,'$.pending.game') AS game, json_extract(data,'$.pending.ranked.attempt') AS attempt FROM arcade_outings
                 WHERE state IN ('queued','running','paused') AND lower(json_extract(data,'$.guardian.collection'))=? AND json_extract(data,'$.guardian.tokenId')=?
-                AND id<>? AND json_extract(data,'$.pending.ranked.day')=? GROUP BY game`).all(collection.toLowerCase(), tokenId, excludeJobId, day)) used[row.game] += row.n;
-        return used;
+                AND id<>? AND json_extract(data,'$.pending.ranked.day')=?`).all(collection.toLowerCase(), tokenId, excludeJobId, day)) taken[row.game]?.add(row.attempt);
+        return Object.fromEntries(RANKED_GAMES.map(game => [game, [...taken[game]].sort((a, b) => a - b)])) as Record<GameId, number[]>;
     }
     /** A bounded cleanup only retires expired work that never acquired a payment header.
      * Running senders are excluded; the lease-holding runner handles interrupted ones. */

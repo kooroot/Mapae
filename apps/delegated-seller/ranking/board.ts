@@ -54,14 +54,14 @@ export class RankingReader {
         }])) as Record<GameId, Record<'today' | 'week' | 'lastweek', RankingRow[]>>;
         const devotion = this.window('devotion', '28d', at).rows;
         const guardians = tokenIds.map((tokenId): GuardianStanding => {
-            const used = this.store.rankedAttemptsUsed(this.collection, tokenId, today);
+            const taken = this.store.rankedAttemptsTaken(this.collection, tokenId, today);
             const devoted = devotion.find(row => row.tokenId === tokenId);
             return {
                 tokenId, streak: guardianStreak(this.playedDays(tokenId, today), today),
                 devotion: {rank: devoted?.rank ?? null, days: devoted?.score ?? 0},
                 titles: RANKED_GAMES.flatMap(game => {const row = boards[game].lastweek.find(r => r.tokenId === tokenId); return row && row.rank <= BOARD_ROWS ? [{game, place: row.rank}] : [];}),
                 games: Object.fromEntries(RANKED_GAMES.map(game => [game, {
-                    attemptsUsed: used[game], today: standing(boards[game].today, tokenId), week: standing(boards[game].week, tokenId),
+                    attemptsUsed: taken[game].length, today: standing(boards[game].today, tokenId), week: standing(boards[game].week, tokenId),
                 }])) as GuardianStanding['games'],
             };
         });

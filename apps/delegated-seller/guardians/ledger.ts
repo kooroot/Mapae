@@ -30,7 +30,8 @@ export class GuardianLedger {
                 UNIQUE(collection, token_id, game, day, attempt));
             CREATE INDEX IF NOT EXISTS ranked_game_day ON arcade_guardian_ranked(collection, ruleset, game, day);
             CREATE INDEX IF NOT EXISTS ranked_game_week ON arcade_guardian_ranked(collection, ruleset, game, week);
-            CREATE INDEX IF NOT EXISTS ranked_token_day ON arcade_guardian_ranked(collection, token_id, day);`);
+            CREATE INDEX IF NOT EXISTS ranked_token_day ON arcade_guardian_ranked(collection, token_id, day);
+            CREATE INDEX IF NOT EXISTS ranked_day ON arcade_guardian_ranked(collection, day);`);
     }
     get(id: string): StoredResult | null {
         const row = this.db.query<{data: string}, [string]>('SELECT data FROM arcade_guardian_results WHERE result_id=?').get(id.toLowerCase());
@@ -41,7 +42,7 @@ export class GuardianLedger {
         const ranked = outcome.ranked;
         if (!job.pending || outcome.transaction !== job.pending.transaction || outcome.seed !== job.pending.seed ||
             JSON.stringify(ranked ?? null) !== JSON.stringify(job.pending.ranked ?? null) ||
-            (ranked && outcome.seed !== rankedSeed(outcome.game, ranked.day, ranked.attempt, job.guardian.tokenId)) ||
+            (ranked && outcome.seed !== rankedSeed(outcome.game, ranked.day, ranked.attempt, job.guardian.tokenId, job.guardian.ruleset)) ||
             outcome.game !== job.pending.game || outcome.id !== resultId(job) ||
             outcome.outcome.game !== outcome.game || outcome.outcome.replay?.version !== job.guardian.ruleset ||
             outcome.outcome.replay?.seed !== outcome.seed || typeof outcome.outcome.achievement?.victory !== 'boolean' ||
