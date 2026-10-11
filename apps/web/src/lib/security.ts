@@ -1,5 +1,3 @@
-import type {SiteSurface} from "./config";
-
 const CSP_NONCE_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 
 /**
@@ -42,7 +40,7 @@ export function createSsrNonce(): string | undefined {
 }
 
 /**
- * The policy for one response, shaped by which product the build is.
+ * The policy for one response — the same for every surface and route.
  *
  * The landing and Arcade share mapae.io's origin and therefore its sessionStorage.
  * A pending Arcade payment is a bearer authorization in that storage. Even though the
@@ -70,7 +68,7 @@ export function createSsrNonce(): string | undefined {
  * mechanism short of `'unsafe-hashes'` — so the app renders none: the three that
  * existed went to the stylesheet and the CSSOM, which the policy does not police.
  */
-export function createContentSecurityPolicy(nonce: string, _surface: SiteSurface): string {
+export function createContentSecurityPolicy(nonce: string): string {
     if (!CSP_NONCE_PATTERN.test(nonce)) {
         throw new Error("CSP nonce must be a 128-bit URL-safe value");
     }

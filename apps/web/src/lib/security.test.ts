@@ -49,7 +49,7 @@ describe("document security policy", () => {
         // script-src entry to anyone: that is full-page code execution on the origin
         // that holds the agent key. It shipped with the landing's telemetry origin for
         // a beacon Cloudflare never injected there.
-        const policy = createContentSecurityPolicy(NONCE, "app");
+        const policy = createContentSecurityPolicy(NONCE);
 
         expect(sources(policy, "script-src")).toEqual(["'self'", `'nonce-${NONCE}'`]);
         expect(sources(policy, "connect-src")).toEqual([
@@ -62,20 +62,6 @@ describe("document security policy", () => {
         expect(policy).not.toContain("'unsafe-eval'");
     });
 
-    test("the landing shares Arcade's origin, so it cannot run third-party scripts", () => {
-        const landing = createContentSecurityPolicy(NONCE, "landing");
-        const app = createContentSecurityPolicy(NONCE, "app");
-        expect(landing).toBe(app);
-        expect(sources(landing, "script-src")).toEqual(["'self'", `'nonce-${NONCE}'`]);
-        expect(landing).not.toContain("cloudflareinsights");
-    });
-
-    test("a combined build hosts the Studio, so it carries the Studio's policy", () => {
-        expect(createContentSecurityPolicy(NONCE, "combined")).toBe(
-            createContentSecurityPolicy(NONCE, "app"),
-        );
-    });
-
     test("connect-src names the sponsor origin, and nothing wider", () => {
         // Without this entry the browser refuses the bootstrap request before it is sent,
         // so the onboarding flow fails with no network activity to debug. Pinning it here
@@ -85,37 +71,33 @@ describe("document security policy", () => {
         // path rule on the facilitator hostname, and CSP polices origins, not paths) — so
         // this single entry is load-bearing for the kill switch too, and removing it
         // breaks two flows, not one.
-        for (const surface of ["app", "landing"] as const) {
-            const connect = sources(createContentSecurityPolicy(NONCE, surface), "connect-src");
+        const connect = sources(createContentSecurityPolicy(NONCE), "connect-src");
 
-            expect(connect).toContain("https://facilitator.mapae.io");
-            // A wildcard would make every other entry in this list decorative.
-            expect(connect.join(" ")).not.toContain("*");
-            expect(connect.join(" ")).not.toContain("http://");
-            // Linked to from every receipt, fetched by nothing: `<a href>` is not connect-src.
-            expect(connect).not.toContain("https://sepolia-explorer.giwa.io");
-        }
+        expect(connect).toContain("https://facilitator.mapae.io");
+        // A wildcard would make every other entry in this list decorative.
+        expect(connect.join(" ")).not.toContain("*");
+        expect(connect.join(" ")).not.toContain("http://");
+        // Linked to from every receipt, fetched by nothing: `<a href>` is not connect-src.
+        expect(connect).not.toContain("https://sepolia-explorer.giwa.io");
     });
 
-    test("style-src is the request nonce on both surfaces, with no unsafe-inline anywhere", () => {
+    test("style-src is the request nonce, with no unsafe-inline anywhere", () => {
         // A nonce-only style-src refuses every `style="…"` attribute and every `<style>`
         // without the nonce. Dev survives it because the root document renders a
         // `meta[property=csp-nonce]` whose IDL `nonce` Vite's client copies onto the
         // styles it injects; production never emits a `<style>` at all. No `-elem` or
         // `-attr` directive: one policy for the developer and the visitor alike.
-        for (const surface of ["app", "landing"] as const) {
-            const policy = createContentSecurityPolicy(NONCE, surface);
+        const policy = createContentSecurityPolicy(NONCE);
 
-            expect(sources(policy, "style-src")).toEqual(["'self'", `'nonce-${NONCE}'`]);
-            expect(policy).not.toContain("'unsafe-inline'");
-            expect(policy).not.toContain("'unsafe-hashes'");
-            expect(policy).not.toContain("style-src-elem");
-            expect(policy).not.toContain("style-src-attr");
-        }
+        expect(sources(policy, "style-src")).toEqual(["'self'", `'nonce-${NONCE}'`]);
+        expect(policy).not.toContain("'unsafe-inline'");
+        expect(policy).not.toContain("'unsafe-hashes'");
+        expect(policy).not.toContain("style-src-elem");
+        expect(policy).not.toContain("style-src-attr");
     });
 
     test("rejects values that could alter the response header", () => {
-        expect(() => createContentSecurityPolicy("bad'; script-src *", "app")).toThrow(
+        expect(() => createContentSecurityPolicy("bad'; script-src *")).toThrow(
             "CSP nonce must be a 128-bit URL-safe value",
         );
     });
