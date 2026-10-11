@@ -3,7 +3,7 @@ import {CircleAlert, Compass, LoaderCircle} from 'lucide-react';
 import type {GameId} from '@mapae/arcade';
 import {guardianName} from '@mapae/arcade/guardians';
 import {
-    DEVOTION_DAYS, GAME_PERIODS, RANKED_ATTEMPTS, RANKED_GAMES, STREAK_FREEZE_EVERY, STREAK_FREEZE_MAX, WEEKLY_COUNTED_DAYS,
+    BOARD_ROWS, DEVOTION_DAYS, GAME_PERIODS, RANKED_ATTEMPTS, RANKED_GAMES, STREAK_FREEZE_EVERY, STREAK_FREEZE_MAX, WEEKLY_COUNTED_DAYS,
     type GamePeriod, type RankingBoard, type RankingBoardId, type RankingRow,
 } from '@mapae/arcade/ranking';
 import type {Locale} from '../../lib/i18n';
@@ -12,7 +12,7 @@ import {GuardianAvatar} from '../GuardianAvatar';
 import {guardianPortrait} from '../nft/model';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {useRankingBoard} from '../ranking/client';
-import {boardScore, countdown, placeLabel, streakCopy} from '../ranking/format';
+import {boardScore, countdown, placeLabel, points, streakCopy} from '../ranking/format';
 import {RankLine, TitleChips} from '../ranking/RankLine';
 import {DeskGate, SectionHeading} from './SectionFrame';
 
@@ -112,18 +112,29 @@ function MyGuardians({desk, onSendOuting}: {desk: GuardianDesk; onSendOuting: (g
                     return <li key={token.tokenId} className="rank-guardian">
                         <GuardianAvatar appearance={member?.appearance} color={member?.color} portrait />
                         <div><h3>{guardianName(token.tokenId, locale)}</h3><p className="rank-line">{streak.title}</p><small>{streak.detail} · {devotion}</small><TitleChips locale={locale} titles={standing.titles} /></div>
-                        <div className="rank-guardian-games">
+                        <ul className="rank-games">
                             {RANKED_GAMES.map(game => {
-                                const left = RANKED_ATTEMPTS - standing.games[game].attemptsUsed;
-                                return <div key={game}><RankLine locale={locale} game={game} guardian={standing} leader={standings.leaders[game]} />
+                                const left = RANKED_ATTEMPTS - standing.games[game].attemptsUsed, today = standing.games[game].today;
+                                return <li key={game}><RankLine locale={locale} game={game} guardian={standing} leader={standings.leaders[game]} />
                                     {left > 0 && <button type="button" className="arc-text-button" disabled={busy} onClick={() => onSendOuting(game, token.tokenId)}><Compass size={16} aria-hidden="true" />{ko ? '랭크 도전 보내기' : 'Send a ranked round'}</button>}
-                                </div>;
+                                    {today && today.rank > BOARD_ROWS && <Nearby rows={today.nearby} self={token.tokenId} locale={locale} />}
+                                </li>;
                             })}
-                        </div>
+                        </ul>
                     </li>;
                 })}
             </ul>}
     </section>;
+}
+
+/** The places either side of a guardian outside the top ten: who to catch, and who is close behind. */
+function Nearby({rows, self, locale}: {rows: RankingRow[]; self: string; locale: Locale}) {
+    const ko = locale === 'ko';
+    return <ol className="rank-nearby" aria-label={ko ? '내 앞뒤 순위' : 'Places around mine'}>
+        {rows.map(row => <li key={row.tokenId} className={row.tokenId === self ? 'is-mine' : undefined}>
+            <b>{placeLabel(row.rank, locale)}</b><span>{guardianName(row.tokenId, locale)}</span><strong>{points(row.score, locale)}</strong>
+        </li>)}
+    </ol>;
 }
 
 function Rules({locale}: {locale: Locale}) {
@@ -135,6 +146,7 @@ function Rules({locale}: {locale: Locale}) {
         `출석 도장은 랭크 도전을 한 날마다 하나씩 찍혀요. ${STREAK_FREEZE_EVERY}일마다 쉼표가 하나 생겨(최대 ${STREAK_FREEZE_MAX}개) 빠진 하루를 지켜 줘요.`,
         '지난주 1위는 장원, 2–3위는 급제, 4–10위는 입격 칭호를 달아요. 칭호는 꾸밈일 뿐이에요.',
         '같은 점수면 먼저 낸 기록이 앞서요. 순위는 한국 시간 자정과 월요일 0시에 새로 시작해요.',
+        '무료 체험과 연습 점수는 들어가지 않아요. 검증된 외출 결과만 올라가요. 테스트 토큰만 써요.',
     ] : [
         `In each game, the first ${RANKED_ATTEMPTS} rounds of a Korean-time day are ranked. Later rounds still grow your guardian but stay off the boards.`,
         'Each ranked course is fixed per guardian, day and attempt, so it cannot be rerolled for a better one.',
@@ -142,6 +154,7 @@ function Rules({locale}: {locale: Locale}) {
         `Every day with a ranked round stamps your streak. Every ${STREAK_FREEZE_EVERY} days earn a rest day (up to ${STREAK_FREEZE_MAX}) that covers a missed day.`,
         'Last week’s #1 is Champion, #2–3 Podium and #4–10 Top 10. Titles are cosmetic.',
         'On equal scores the earlier record leads. Boards restart at midnight KST, and weekly ones on Monday 00:00 KST.',
+        'Free play and practice scores never count; only verified outing results reach the boards. Test tokens only.',
     ];
     return <details className="rank-rules"><summary>{ko ? '랭킹 규칙' : 'How rankings work'}</summary><ul>{items.map(item => <li key={item}>{item}</li>)}</ul></details>;
 }

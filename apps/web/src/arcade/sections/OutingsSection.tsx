@@ -1,4 +1,6 @@
 import {useEffect, useRef, useState, type RefObject} from 'react';
+import {Link} from '@tanstack/react-router';
+import {ArrowRight, Check} from 'lucide-react';
 import type {AgentGoal, GameId} from '@mapae/arcade';
 import {BrandSelect} from '../../components/BrandSelect';
 import {GiwaAllowance} from '../GiwaAllowance';
@@ -8,6 +10,7 @@ import {RANKED_ATTEMPTS, RANKED_GAMES} from '@mapae/arcade/ranking';
 import {countdown} from '../ranking/format';
 import {RankLine} from '../ranking/RankLine';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
+import {arcadeSectionLink} from '../sections';
 import {DeskGate, GuardianSwitcher, SectionHeading} from './SectionFrame';
 
 const GAMES = ['stamp', 'race', 'shop'] as const;
@@ -72,10 +75,11 @@ function RankedToday({desk, locked, allowance}: {desk: GuardianDesk; locked: boo
         <span className="arc-overline">{standings ? `${standings.day} · RANKED` : 'RANKED'}</span>
         <h2 id="ranked-today-title">{ko ? '오늘의 랭크 도전' : 'Today’s ranked rounds'}</h2>
         <p>{ko ? `놀이마다 하루 처음 ${RANKED_ATTEMPTS}판이 순위에 올라가요.` : `The first ${RANKED_ATTEMPTS} rounds of each game a day go on the boards.`}{standings && ` ${countdown({now, closesAt: standings.closesAt.day, period: 'day', locale, offsetMinutes: offset})}`}</p>
-        {standing ? RANKED_GAMES.map(game => <div key={game} className="nft-panel-actions">
+        {standing ? <ul className="rank-games">{RANKED_GAMES.map(game => <li key={game}>
             <RankLine locale={locale} game={game} guardian={standing} leader={standings!.leaders[game]} />
-            {(left(game) ?? 0) > 0 && <button type="button" className="arc-text-button" disabled={locked} aria-pressed={op.game === game} onClick={() => aim(game)}>{ko ? '이 놀이로 준비' : 'Plan this game'}</button>}
-        </div>) : <p className="nft-small" role="status">{ranking.error ? (ko ? '순위를 불러오지 못했어요. 외출은 그대로 보낼 수 있어요.' : 'Standings could not load. Outings still work as usual.') : (ko ? '순위를 확인하고 있어요…' : 'Checking standings…')}</p>}
+            {(left(game) ?? 0) > 0 && <button type="button" className="arc-text-button" disabled={locked} aria-pressed={op.game === game} onClick={() => aim(game)}>{op.game === game && <Check size={16} aria-hidden="true" />}{ko ? '이 놀이로 준비' : 'Plan this game'}</button>}
+        </li>)}</ul> : <p className="nft-small" role="status">{ranking.error ? (ko ? '순위를 불러오지 못했어요. 외출은 그대로 보낼 수 있어요.' : 'Standings could not load. Outings still work as usual.') : (ko ? '순위를 확인하고 있어요…' : 'Checking standings…')}</p>}
         {hint && <p className="nft-small">{hint}</p>}
+        <Link className="arc-inline-link" {...arcadeSectionLink('ranking', locale)}>{ko ? '랭킹 보기' : 'See the rankings'}<ArrowRight size={17} aria-hidden="true" /></Link>
     </section>;
 }
