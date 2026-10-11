@@ -1,50 +1,5 @@
 /* The lobby continues the cabinet's warm wood, brass and paper materials. */
-.arc-journey { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-block:1px solid var(--arc-hair); margin:4px 0 30px; }
-.arc-journey a { display:flex; align-items:center; gap:14px; padding:22px 20px; min-width:0; }
-.arc-journey a + a { border-left:1px solid var(--arc-hair); }
-.arc-journey a>span { display:grid; place-items:center; width:36px; height:36px; flex:none; border:1px solid #8a70464f; border-radius:50%; font:12px var(--mono); color:var(--arc-gold); }
-.arc-journey a>span.is-done { color:#a6d3b9; background:#4a866021; border-color:#69907970; }
-.arc-journey b { display:block; font-size:14px; font-weight:600; }
-.arc-journey small { display:block; margin-top:3px; font-size:12px; color:var(--arc-dim); }
-.arc-journey a:hover { background:#e9c99f08; }
-.arc-postcards .arc-overline { color:var(--arc-gold); font-size:10px; letter-spacing:.12em; }
-.arc-destinations { border-top:1px solid var(--arc-hair); padding-top:20px; margin-top:18px; }
-.arc-destinations-heading { display:flex; flex-direction:column; gap:5px; margin-bottom:14px; font-size:14px; font-weight:600; }
-.arc-destinations-heading small { color:var(--arc-dim); font-size:12px; font-weight:400; }
-.arc-destinations>div:last-child { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-.arc-destinations button { display:flex; align-items:center; gap:8px; padding:12px; border:1px solid #e9c99f25; border-radius:10px; min-height:48px; color:var(--arc-dim); font-size:12px; text-align:left; }
-.arc-destinations button>svg { flex:none; }
-.arc-destinations button>svg:last-child:not(:first-child) { margin-left:auto; }
-.arc-destinations button[aria-pressed=true] { color:#f5d7a6; border-color:#c29b63; background:#b98a3f1c; }
-.arc-destinations button:hover { border-color:#c29b63; }
-.arc-postcards { scroll-margin-top:24px; border-top:1px solid var(--arc-hair); padding-top:30px; }
-.arc-postcards-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }
-.arc-postcards h2 { font-size:27px; margin-top:8px; letter-spacing:-.045em; }
-.arc-history-count { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--arc-dim); white-space:nowrap; }
-.arc-postcards .arc-history-filter { margin:0 0 18px; }
-.arc-postcard-empty { display:flex; align-items:center; gap:38px; min-height:232px; padding:28px 40px; border:1px solid #b5925638; border-radius:18px; background:radial-gradient(ellipse at 0 100%,#72502b30,transparent 60%),#1a1712; overflow:hidden; }
-.arc-postcard-illustration { position:relative; flex:none; width:200px; height:168px; border:1px solid #ab8c5c77; border-radius:6px; transform:rotate(-6deg); background:repeating-linear-gradient(0deg,transparent 0 24px,#b69a7010 24px 25px),#30271b; box-shadow:7px 8px 0 #0b09074f; }
-.arc-postcard-illustration>span { position:absolute; left:14px; top:15px; color:#d2b178; font:9px/1.5 var(--mono); letter-spacing:.1em; }
-.arc-postcard-illustration img { position:absolute; width:170px; height:190px; object-fit:contain; bottom:-16px; right:-27px; transform:rotate(6deg); }
-.arc-postcard-illustration i { position:absolute; bottom:14px; left:15px; color:#d2b178; font-size:25px; font-style:normal; }
-.arc-postcard-empty h3 { font-size:24px; letter-spacing:-.04em; margin:10px 0; }
-.arc-postcard-empty p { font-size:14px; line-height:1.8; color:var(--arc-dim); max-width:49ch; }
 .arc-inline-link { display:inline-flex; gap:8px; align-items:center; min-height:44px; margin-top:10px; font-size:13px; color:var(--arc-gold); }
-.arc-journal-bottom { display:flex; align-items:center; justify-content:space-between; gap:24px; margin-top:20px; }
-.arc-journal-bottom>p { display:flex; align-items:flex-start; gap:8px; color:var(--arc-dim); font-size:11px; line-height:1.65; max-width:48ch; }
-.arc-journal-bottom>p svg { flex:none; margin-top:2px; }
-.arc-practice-link { display:flex; flex:none; align-items:center; gap:12px; border:1px solid var(--arc-hair); border-radius:12px; padding:14px 16px; text-align:left; color:var(--arc-gold); font-size:13px; }
-.arc-practice-link small { display:block; color:var(--arc-dim); margin-top:4px; font-size:11px; }
-.arc-postcard-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; list-style:none; margin:0; padding:0; }
-.arc-postcard { display:flex; align-items:center; gap:16px; width:100%; height:100%; text-align:left; padding:20px; border:1px solid #b5925645; border-radius:14px; background:#211c15; }
-.arc-postcard:hover { border-color:#b59256; background:#2a2218; }
-.arc-postcard>.arc-sprite { width:76px; height:90px; flex:none; }
-.arc-postcard>div { min-width:0; flex:1; }.arc-postcard h3 { font-size:17px; margin:5px 0; overflow-wrap:anywhere; }
-.arc-postcard-game { font-size:10px; color:var(--arc-gold); }
-.arc-postcard p { font-size:12px; color:var(--arc-dim); line-height:1.6; overflow-wrap:anywhere; }
-.arc-postcard>div>small { display:block; font-size:10px; color:var(--arc-dim); margin-top:9px; }
-.arc-postcard-score { display:flex; flex-direction:column; align-items:flex-end; flex:none; color:var(--arc-gold); }
-.arc-postcard-score b { font:500 23px var(--mono); }.arc-postcard-score small { font-size:10px; }.arc-postcard-score svg:last-child { margin-top:15px; }
 .arc-outing-status { display:flex; align-items:center; justify-content:center; gap:10px; line-height:1.7; }
 .agent-wait>small { color:var(--arc-dim); font-size:12px; }
 /* The progress dialog lives in a portal, so its colors are self-contained. */
@@ -74,23 +29,7 @@
 .arc-progress-minimize { display:block; width:100%; min-height:44px; margin-top:10px; color:#d8c5a5; font-size:12px; text-decoration:underline; text-underline-offset:4px; }
 @keyframes arc-loading-turn { to { transform:rotate(360deg); } }
 .arc-loading-icon { animation:arc-loading-turn 1.4s linear infinite; }
-@media(max-width:960px) {
-    .arc-postcard { padding:16px; gap:10px; }.arc-postcard>.arc-sprite { width:55px; height:70px; }.arc-postcard-score b { font-size:19px; }
-}
-@media(max-width:780px) {
-    .arc-journey a { padding:18px 12px; gap:8px; }.arc-journey a>span { width:28px; height:28px; font-size:10px; }
-    .arc-journey b { font-size:12px; }.arc-journey small { font-size:10px; }
-    .arc-postcard-list { grid-template-columns:minmax(0,1fr); }
-    .arc-postcard>.arc-sprite { width:72px; height:86px; }.arc-postcard-score b { font-size:24px; }
-}
 @media(max-width:620px) {
-    .arc-journey { margin:0 0 20px; }.arc-journey a { flex-direction:column; align-items:flex-start; padding:16px 10px; gap:8px; }.arc-journey small { line-height:1.5; }
-    .arc-destinations button { padding:12px 9px; font-size:11px; gap:6px; }.arc-destinations button>svg:last-child:not(:first-child) { width:12px; }
-    .arc-postcards { padding-top:24px; }.arc-postcards h2 { font-size:25px; }.arc-history-count { font-size:10px; }
-    .arc-postcard-empty { flex-direction:column; align-items:flex-start; gap:30px; padding:30px 22px 22px; }.arc-postcard-illustration { margin:0 auto; width:174px; height:137px; }.arc-postcard-illustration img { height:160px; width:150px; }
-    .arc-postcard-empty h3 { font-size:22px; }.arc-postcard-empty .arc-overline { font-size:9px; }.arc-postcard-empty p { font-size:13px; }
-    .arc-journal-bottom { flex-direction:column-reverse; align-items:stretch; gap:18px; }.arc-journal-bottom>p { font-size:11px; }.arc-practice-link>svg:last-child { margin-left:auto; }
-    .arc-postcard { gap:12px; }.arc-postcard>.arc-sprite { width:56px; height:75px; }.arc-postcard-score b { font-size:20px; }.arc-postcard h3 { font-size:16px; }
     .arc-approval-dialog { padding:16px 20px; border-radius:20px; max-height:calc(100dvh - 24px); width:calc(100% - 24px); }.arc-progress-art { height:125px; width:145px; margin-bottom:10px; }.arc-approval-dialog h2 { font-size:21px; }
 }
 @media(max-height:680px) { .arc-progress-art { height:80px; width:105px; }.arc-approval-dialog [role=status] p { margin-bottom:12px; }.arc-progress-steps li { min-height:41px; } }
