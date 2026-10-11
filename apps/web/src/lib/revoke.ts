@@ -343,7 +343,8 @@ export async function requestSponsoredRevocation(
                     packed: params.packed,
                 }),
             ),
-            signal: AbortSignal.timeout(90_000),
+            // Outside the server's idle timeout (two 60 s receipt waits + 15 s), so the server answers first.
+            signal: AbortSignal.timeout(150_000),
         });
     } catch {
         throw new Error(t.unreachable);

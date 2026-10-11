@@ -162,6 +162,15 @@ const RPC_URL = parseNodeRpcUrl(
 );
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("REVOCATION_RECEIPT_TIMEOUT_MS", 60_000n));
 /**
+ * Bun closes a connection after `idleTimeout` seconds without bytes, and its default is 10 s.
+ * A sponsored request can wait out two receipts (deposit, then the operation), so the
+ * server has to out-wait both or Cloudflare answers the browser with a CORS-less 502 and
+ * the owner reads "unreachable" while the transaction still lands. Bun caps it at 255 s;
+ * the browser's own timeout (`AbortSignal.timeout` in apps/web) sits outside this one.
+ */
+const IDLE_TIMEOUT_SECONDS = 2 * Math.ceil(RECEIPT_TIMEOUT_MS / 1000) + 15;
+if (IDLE_TIMEOUT_SECONDS > 255) throw new Error("REVOCATION_RECEIPT_TIMEOUT_MS must leave two receipt waits under Bun's 255 s idle timeout");
+/**
  * The tip the relayer offers, clamped per broadcast to the operation's own fee.
  *
  * 1,000,000 wei is what GIWA suggests and what this repo's other sponsor already uses. It
@@ -938,6 +947,7 @@ console.log(`  submitter  ${relayer.address}`);
 export default {
     hostname: HOST,
     port: PORT,
+    idleTimeout: IDLE_TIMEOUT_SECONDS,
     maxRequestBodySize: MAX_BODY_BYTES,
     fetch: app.fetch,
 } satisfies Bun.Serve.Options<undefined>;

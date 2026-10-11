@@ -217,6 +217,10 @@ const MAX_REDEMPTION_GAS = readPositiveInteger("MAX_REDEMPTION_GAS", 1_500_000n)
 // 31634888→31634935), and settlement waits for a single confirmation, so the real cost is
 // the throttled RPC round trips rather than the chain.
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("SETTLEMENT_RECEIPT_TIMEOUT_MS", 25_000n));
+// Bun's default idle timeout is 10 s, shorter than the receipt wait it has to carry; this
+// server must out-wait its own settlement, and the seller's 35 s settle call out-waits it.
+const IDLE_TIMEOUT_SECONDS = Math.ceil(RECEIPT_TIMEOUT_MS / 1000) + 5;
+if (IDLE_TIMEOUT_SECONDS > 255) throw new Error("SETTLEMENT_RECEIPT_TIMEOUT_MS must fit Bun's 255 s idle timeout");
 // The relayer's own money is the one thing the on-chain caveats do not bound: every
 // redemption is paid for in the relayer's gas, and a payer holding a valid grant can
 // ask for as many as the grant allows. The daily ceiling is the operator's number for
@@ -523,4 +527,4 @@ console.log(`  metrics ${METRICS_TOKEN === undefined ? "disabled (METRICS_TOKEN 
 
 // Bun reads the object as `Bun.serve` options; `maxRequestBodySize` is the byte cap
 // above — a 413 from Bun for anything over it, with buffering bounded at the cap.
-export default {hostname: HOST, port: PORT, fetch: app.fetch, maxRequestBodySize: MAX_BODY_BYTES};
+export default {hostname: HOST, port: PORT, idleTimeout: IDLE_TIMEOUT_SECONDS, fetch: app.fetch, maxRequestBodySize: MAX_BODY_BYTES};

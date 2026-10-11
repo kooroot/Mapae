@@ -273,6 +273,15 @@ const DAILY_BUDGET = readPositiveInteger("BOOTSTRAP_DAILY_WEI", 500_000_000_000_
  */
 const RATE_PER_HOUR = Number(readPositiveInteger("BOOTSTRAP_RATE_PER_HOUR", 30n));
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("BOOTSTRAP_RECEIPT_TIMEOUT_MS", 60_000n));
+/**
+ * Bun closes a connection after `idleTimeout` seconds without bytes, and its default is 10 s.
+ * A sponsored request can wait out two receipts (deployment, then the top-up), so the
+ * server has to out-wait both or Cloudflare answers the browser with a CORS-less 502 and
+ * the owner reads "unreachable" while the transaction still lands. Bun caps it at 255 s;
+ * the browser's own timeout (`AbortSignal.timeout` in apps/web) sits outside this one.
+ */
+const IDLE_TIMEOUT_SECONDS = 2 * Math.ceil(RECEIPT_TIMEOUT_MS / 1000) + 15;
+if (IDLE_TIMEOUT_SECONDS > 255) throw new Error("BOOTSTRAP_RECEIPT_TIMEOUT_MS must leave two receipt waits under Bun's 255 s idle timeout");
 /** `:memory:` is accepted for dry runs; anything else is a file whose directory is created. */
 const STORE_PATH = process.env.STORE_PATH?.trim() || "./data/bootstrap.sqlite";
 if (ENABLED && STORE_PATH === ":memory:") {
@@ -703,6 +712,7 @@ console.log(`  store     ${STORE_PATH}`);
 export default {
     hostname: HOST,
     port: PORT,
+    idleTimeout: IDLE_TIMEOUT_SECONDS,
     maxRequestBodySize: MAX_BODY_BYTES,
     fetch: app.fetch,
 } satisfies Bun.Serve.Options<undefined>;
