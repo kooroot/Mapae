@@ -94,9 +94,13 @@ cd apps/web
 bunx wrangler d1 execute mapae-arcade-profiles --remote --env landing --config wrangler.jsonc --file src/arcade/engagement/schema.sql
 bunx wrangler secret put ARCADE_GUARDIAN_ADDRESS --env landing --config wrangler.jsonc
 bunx wrangler secret put ARCADE_GUARDIAN_ADDRESS --env app --config wrangler.jsonc
+bunx wrangler secret put GIWA_SEPOLIA_RPC_URL --env landing --config wrangler.jsonc
+bunx wrangler secret put GIWA_SEPOLIA_RPC_URL --env app --config wrangler.jsonc
 ```
 
-두 `secret put` 프롬프트에는 같은 **공개 NFT 프록시 주소**만 넣는다. 구현 주소를 넣지 않는다. 이 값은 Worker 런타임 binding으로 저장하며 비밀 키가 아니다. 주소를 `VITE_*`로 만들지 않는다. 기존 `ARCADE_RECEIPT_TOKEN`은 seller와 두 Worker가 공유하는 서버 전용 값으로 유지한다.
+`GIWA_SEPOLIA_RPC_URL`에는 seller·스폰서가 쓰는 것과 같은 **유료 전용 GIWA RPC** 주소(HTTPS)를 넣는다. 공개 RPC는 Cloudflare 출구 요청을 자주 거절해 이미지 API가 503이 된다(2026-10-12 운영 측정: 실제 토큰 4개 80회 중 54회 실패). 주소에 키가 들어 있을 수 있으므로 반드시 `secret put`으로만 넣고 `VITE_*`나 `wrangler.jsonc` `vars`로 만들지 않는다(`build-guards.ts`가 공개 번들의 비공개 RPC를 막는다). 값이 없으면 공개 RPC로 읽으며 이는 로컬 개발용이다.
+
+두 `ARCADE_GUARDIAN_ADDRESS` 프롬프트에는 같은 **공개 NFT 프록시 주소**만 넣는다. 구현 주소를 넣지 않는다. 이 값은 Worker 런타임 binding으로 저장하며 비밀 키가 아니다. 주소를 `VITE_*`로 만들지 않는다. 기존 `ARCADE_RECEIPT_TOKEN`은 seller와 두 Worker가 공유하는 서버 전용 값으로 유지한다.
 
 seller 비공개 환경에 다음을 설정한다. [seller 예제](../apps/delegated-seller/.env.example)를 참고한다.
 
@@ -123,7 +127,7 @@ bun run deploy:landing
 bun run deploy:app
 ```
 
-두 배포의 Worker version ID를 따로 보관한다. landing Worker의 하루 한 번 cron이 지표 보관 기한을 정리한다. 이미지 API는 `ASSETS` binding에서 기존 WebP를 읽어 독립 SVG에 포함한다. seller만 재시작해도 웹 UI나 D1은 업데이트되지 않는다.
+두 배포의 Worker version ID를 따로 보관한다. landing Worker의 하루 한 번 cron이 지표 보관 기한을 정리한다. 이미지 API는 `ASSETS` binding에서 기존 WebP를 읽어 독립 SVG에 포함한다. 공개(reveal)된 그림은 seed가 바뀌지 않으므로 Cache API(`mapae-guardian-art`)에 컬렉션·`ART_REVISION` 키로 7일 보관하고, 적중하면 RPC를 읽지 않는다. 레이어 그림이나 합성 방식을 바꾸면 `apps/web/src/arcade/guardian-art/api.ts`의 `ART_REVISION`을 올려 다시 그리게 한다. 대기 그림은 캐시하지 않는다. 없는 토큰 ID는 404(`max-age=30`), RPC·그림 장애만 503(`no-store`, `Retry-After: 5`)이다. seller만 재시작해도 웹 UI나 D1은 업데이트되지 않는다.
 
 ## 4. 한 개의 실제 뽑기와 한 번의 외출로 확인
 
@@ -137,7 +141,7 @@ bun run deploy:app
    bun --no-env-file scripts/arcade-guardians-preflight.ts --collection <NFT_주소> --token <토큰_ID>
    ```
 
-4. 새로고침·다른 기기에서도 같은 캐릭터가 보이는지, `https://mapae.io/api/arcade/guardians/<토큰_ID>/image.svg`가 실제 캐릭터 SVG인지 확인한다. 난수가 지연되면 기존 sequence의 복구만 사용한다. 재배포·새 요청으로 결과를 바꾸지 않는다.
+4. 새로고침·다른 기기에서도 같은 캐릭터가 보이는지, `https://mapae.io/api/arcade/guardians/<토큰_ID>/image.svg`가 실제 캐릭터 SVG인지 확인한다. 전용 RPC와 캐시는 `for i in $(seq 50); do curl -s -o /dev/null -w "%{http_code}\n" https://mapae.io/api/arcade/guardians/<토큰_ID>/image.svg; done | sort | uniq -c`가 50번 모두 `200`인지로 확인한다(app.mapae.io도 같다). `503`이 섞이면 두 Worker의 `GIWA_SEPOLIA_RPC_URL` 비밀부터 확인한다. 난수가 지연되면 기존 sequence의 복구만 사용한다. 재배포·새 요청으로 결과를 바꾸지 않는다.
 5. 1 mUSDC 입장 한 번만 허용하고 외출을 보낸다. payer·mUSDC·고정 수취인·정확한 금액을 GIWA 영수증에서 확인한다. 서버 결과가 생긴 뒤 NFT 성장 기록을 요청한다. 결제가 safe 블록에 도달하기 전에는 서명이 지연될 수 있다.
 6. `ResultClaimed`와 `progress(tokenId)`에서 플레이 1회·10 XP(승리라면 15 XP)를 대조한다. 같은 결과의 재청구는 추가 성장이나 추가 입장 결제를 만들면 안 된다.
 7. 전송한 트랜잭션 확인, 지갑 거절, 예산 중지·회수, NFT 이전 후 이전 소유자의 신규 결제 중단을 확인한다. 소유권이 바뀌어도 이미 제출한 한 건은 원래 권한으로 복구될 수 있다. 새 소유자는 자신의 권한을 따로 서명한다.

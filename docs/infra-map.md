@@ -89,7 +89,7 @@ D1–D2 EOA 흐름 개발용)와 delegation-lab(fork 시뮬레이션·e2e). 어�
 | `apps/delegated-seller` | 미니 | 3001 | `seller.mapae.io` | 없음 (수취 주소는 상점 파일의 판매자 행) | 호스티드 상점. `/s/:slug` 매니페스트, `/s/:slug/:key` 402 → 티켓, `/s/:slug/tickets/:code` 티켓 재조회, `/metrics`(`METRICS_TOKEN`). 정산은 루프백 `FACILITATOR_URL`로 하고 매니페스트·`/health`가 알리는 주소는 `PUBLIC_FACILITATOR_URL`(공개 `BASE_URL`이면 필수, 없으면 기동 거부). 판매자·상품·주문은 `STORE_PATH`의 SQLite 파일이고 시드는 `bun run seed`. 받기만 하므로 키가 없다 |
 | `apps/account-bootstrap` | 미니 | 8083 | `facilitator.mapae.io/bootstrap` | **부트스트랩 스폰서** | 서명만 있고 배포 안 된 payer 계정을 스폰서 가스로 배포. IP당 시간 제한(`BOOTSTRAP_RATE_PER_HOUR`)이 일일 예산 앞에 선다 |
 | `apps/revocation-submitter` | 미니 | 8082 | `facilitator.mapae.io/revoke` (라이브, 2026-08-04) | **서브미터 릴레이어 + 회수 스폰서** | 오너가 서명한 회수 UserOp을 EntryPoint에 실어 보낸다 |
-| Worker `mapae` / `mapae-app` | Cloudflare | — | `mapae.io` / `app.mapae.io` | 없음 | 랜딩 / Studio. 브라우저 코드만 서빙, 키 없음 |
+| Worker `mapae` / `mapae-app` | Cloudflare | — | `mapae.io` / `app.mapae.io` | 없음 | 랜딩 / Studio. 브라우저 코드만 서빙, 키 없음. 가디언 이미지 API만 서버에서 체인을 읽는데, Worker 비밀 `GIWA_SEPOLIA_RPC_URL`(유료 전용 RPC, 공개 RPC는 Cloudflare 출구를 자주 거절)로 읽고 공개된 그림은 Cache API에 둔다 |
 | Worker `mapae-docs` | Cloudflare | — | `docs.mapae.io` | 없음 | 기술 문서. 스크립트 없이 정적 파일만 서빙 |
 | Worker `mapae-docs-legacy` | Cloudflare | — | `gitbook.mapae.io` | 없음 | GitBook 시절 주소를 경로째 301로 넘긴다. 제출 폼에 적힌 링크가 여기로 온다 |
 
