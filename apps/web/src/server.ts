@@ -16,7 +16,8 @@ import {
 } from "@tanstack/react-start/server";
 import {createServerEntry} from "@tanstack/react-start/server-entry";
 import {createContentSecurityPolicy} from "./lib/security";
-import {siteSurface} from "./lib/config";
+import {faucetUrl, landingUrl, siteSurface} from "./lib/config";
+import {surfaceRedirect} from "./lib/surface-routing";
 import {arcadeProductionApi} from "./arcade/production-api";
 
 // One policy for every page: the landing, the arcade and the Studio share an origin,
@@ -42,7 +43,9 @@ const streamWithSecurityHeaders = defineHandlerCallback((context) => {
 const start = createStartHandler(streamWithSecurityHeaders);
 
 const entry = createServerEntry({fetch: (request, options) => {
-    const path = new URL(request.url).pathname;
+    const url = new URL(request.url), path = url.pathname;
+    const elsewhere = surfaceRedirect(siteSurface, url, {landingUrl, faucetUrl});
+    if (elsewhere) return elsewhere;
     if (path.startsWith("/api/arcade/guardians/")) return guardianArtApi(request, {
         collection: env.ARCADE_GUARDIAN_ADDRESS, rpcUrl: env.GIWA_SEPOLIA_RPC_URL, assets: env.ASSETS, cache: caches.open("mapae-guardian-art"),
     });

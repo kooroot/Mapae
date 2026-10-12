@@ -1,5 +1,6 @@
 import {getAddress, isAddress, verifyMessage, type Address, type Hex} from "viem";
 import {createSiweMessage, generateSiweNonce} from "viem/siwe";
+import {ipBucket} from "@mapae/shared/net";
 import type {ProfileRepository} from "../arcade/profile/repository";
 
 /**
@@ -56,8 +57,9 @@ export async function siweChallenge(request: Request, repo: ProfileRepository, s
     const url = new URL(request.url), input = await body(request, 1024);
     if (!object(input) || typeof input.address !== "string" || !isAddress(input.address)) return error("invalid_address", 400);
     const owner = getAddress(input.address).toLowerCase();
-    // Only Cloudflare's own IP header is trusted; client-forwarded headers are ignored.
-    const ip = request.headers.get("CF-Connecting-IP");
+    // Only Cloudflare's own IP header is trusted; client-forwarded headers are ignored. An
+    // IPv6 client is counted by its /64, which it can rotate addresses inside at will.
+    const ip = request.headers.get("CF-Connecting-IP") && ipBucket(request.headers.get("CF-Connecting-IP")!);
     const window = Math.floor(now / 600_000), until = (window + 1) * 600_000;
     if (!await repo.rateLimit(`${site.limitPrefix}owner:${owner}:${window}`, until, 20) || (ip && !await repo.rateLimit(`${site.limitPrefix}ip:${await tokenHash(ip)}:${window}`, until, 60))) return limited(until, now);
     await repo.cleanup(now);

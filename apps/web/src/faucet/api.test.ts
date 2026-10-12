@@ -155,6 +155,13 @@ describe("SIWE on the faucet origin", () => {
         expect((await faucetApi(request("/session", "GET", undefined, {Cookie: arcadeCookie, "X-Mapae-Wallet": signed.user.address}), deps(repository, fetcher))).status).toBe(401);
     });
 
+    test("challenges are counted per IPv6 /64, so rotating addresses inside it buys nothing", async () => {
+        const {fetcher} = network(), repository = repo();
+        const ask = (n: number) => faucetApi(request("/challenge", "POST", {address: privateKeyToAccount(generatePrivateKey()).address}, {"CF-Connecting-IP": `2001:db8:1:2::${n.toString(16)}`}), deps(repository, fetcher));
+        for (let n = 1; n <= 60; n += 1) expect((await ask(n)).status).toBe(200);
+        expect((await ask(61)).status).toBe(429);
+    });
+
     test("a session expires after a day and logout ends it", async () => {
         const net = network({service: (path) => path === "/status" ? Response.json(STATUS) : Response.json({reason: "unavailable"}, {status: 503})});
         const repository = repo(), signed = await login(repository, net.fetcher);
