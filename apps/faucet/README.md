@@ -59,12 +59,19 @@ faucet 지갑의 가스를 지키는 장치다. ETH가 실제로 노릴 만한 �
 
 - `reserved`가 2분 넘게 남음 → 서명된 적 없으니 `failed`
 - 영수증이 있음 → `confirmed` 또는 `failed`
-- 영수증이 없고 체인의 확정 nonce가 이 청구의 nonce를 지남 → 다른 거래가 가져갔으니 `failed`
+- 영수증이 없고 체인의 확정 nonce가 이 청구의 nonce를 지남 → 그 사이 채굴됐을 수 있으니 영수증을
+  한 번 더 읽고, 그래도 없으면 다른 거래가 가져간 것이라 `failed`
 - 그 밖에 마지막 시도 뒤 2분이 지남 → 같은 바이트를 다시 방송
+- 진행 중인 청구들의 nonce 아래에 아무도 쥐지 않은 빈 nonce가 있음(앞 청구가 노드에 거절됨) →
+  faucet 지갑 자신에게 0 ETH를 보내 채운다. 안 채우면 뒤의 청구가 영원히 줄 서 있다
 
 노드가 오류로 답한 방송은 노드가 받지 않은 것이므로 바로 `failed`로 닫고 nonce를
 돌려준다. 타임아웃처럼 모호한 경우만 `signed`로 남긴다. `skipped`와 `failed`는
 어떤 창도 소모하지 않는다.
+
+잔액 검사(바닥 + 이번 청구액 + 가스)는 서명과 같은 잠금 안에서 하고, 아직 채굴되지 않은
+`signed`·`sent` 청구의 ETH와 건당 최대 가스를 마지막 블록 잔액에서 먼저 뺀다. 동시에 들어온
+ETH 청구 여럿이 같은 잔액을 보고 바닥까지 함께 쓰는 일을 막는다.
 
 ## 환경 변수
 
@@ -83,7 +90,8 @@ faucet 지갑의 가스를 지키는 장치다. ETH가 실제로 노릴 만한 �
 | `DELEGATION_DEPLOYMENT_PATH` | `../../deployments/giwa-sepolia.framework.json` | 지불 계정 유도용. GIWA Sepolia가 아니면 기동 거부 |
 | `BOOTSTRAP_ADDRESS`, `FACILITATOR_SIGNER_ADDRESS`, `DEPLOYER_ADDRESS`, `REVOCATION_SPONSOR_ADDRESS` | 선택 | 넣으면 faucet 지갑과 같은지 검사해 같으면 기동 거부 |
 
-가스 상한(민팅 100k, 전송 21k), `maxFeePerGas` 5e7 wei, 팁 1e6 wei, 영수증 대기
+가스 상한(민팅 100k, ETH 전송 50k — EIP-7702로 위임한 지갑은 받을 때 위임 코드를 돌리므로
+21k로는 늘 되돌려진다; 일반 지갑은 상한과 상관없이 21k만 쓴다, 빈 nonce 채우기 21k), `maxFeePerGas` 5e7 wei, 팁 1e6 wei, 영수증 대기
 30초는 `claims.ts`의 상수다.
 
 ## 운영자 절차

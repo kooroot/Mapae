@@ -44,9 +44,16 @@ import {encodeFunctionData, getAddress, keccak256, parseAbi, type Address, type 
 
 const MINT_ABI = parseAbi(["function mint(address to, uint256 value)"]);
 
-/** Measured with the bootstrap sponsor: a MockUSDC mint, and a plain transfer. */
+/** Measured with the bootstrap sponsor: a MockUSDC mint. */
 export const MINT_GAS = 100_000n;
-export const TRANSFER_GAS = 21_000n;
+/**
+ * The ETH grant's gas limit. A plain wallet burns exactly 21,000 whatever the limit, but an
+ * EIP-7702 delegated wallet runs its delegate's code on receipt, and with a 21,000 limit
+ * that code starts with no gas at all: every grant to such a wallet would revert.
+ */
+export const TRANSFER_GAS = 50_000n;
+/** A zero-value send to the faucet itself, used only to fill a nonce the node dropped. */
+export const FILL_GAS = 21_000n;
 /** ~50x GIWA's measured 1,000,266 wei/gas. A fee spike above this is the operator's call. */
 export const MAX_FEE_PER_GAS = 50_000_000n;
 /** Explicit, because viem's 1 gwei default is above the fee cap and the node refuses it. */
@@ -174,7 +181,7 @@ export function createFaucet(deps: {
         kind === "musdc"
             ? {windowMs: FAUCET_WINDOW_MS, dayMs: FAUCET_LIMIT_WINDOW_MS, ...FAUCET_LIMITS.musdc}
             : {windowMs: FAUCET_ETH_WINDOW_MS, dayMs: FAUCET_LIMIT_WINDOW_MS, ...FAUCET_LIMITS.eth, dailyAmount: config.ethDailyWei};
-    /** What the faucet's own balance must cover for one claim of `kind`. */
+    /** What the faucet's own balance must cover for one claim of `kind`, beyond what in-flight claims already took. */
     const need = (kind: FaucetKind) =>
         kind === "musdc" ? MINT_GAS * MAX_FEE_PER_GAS : config.minBalanceWei + FAUCET_ETH_AMOUNT_WEI + TRANSFER_GAS * MAX_FEE_PER_GAS;
 
@@ -306,13 +313,9 @@ export function createFaucet(deps: {
                 store.markSkipped(id, now());
                 return {ok: true, view: view(store.get(id)!)};
             }
-            const blocked = await affordable(kind);
-            if (blocked) {
-                store.markFailed(id, now());
-                return blocked;
-            }
-            hash = await broadcast(id, kind, recipient, amount);
-            if (hash === undefined) return refuse("unavailable");
+            const sent = await broadcast(id, kind, recipient, amount);
+            if (!sent.ok) return sent;
+            hash = sent.hash;
         } catch (error) {
             console.error(`[faucet] ${kind} claim not sent — ${redactForLog(error)}`);
             // Only an unsigned claim can be failed here; a signed one belongs to the reconciler.
@@ -342,11 +345,18 @@ export function createFaucet(deps: {
         return (await chain.balance(recipient)) >= FAUCET_ETH_AMOUNT_WEI ? 0n : FAUCET_ETH_AMOUNT_WEI;
     }
 
+    /**
+     * The faucet's balance and the base fee, read under the broadcast mutex. The balance is
+     * the last block's, so claims signed but not yet mined are subtracted — their value and
+     * a worst-case fee each — or concurrent ETH claims would each see the same balance and
+     * together spend through the floor kept for mint gas.
+     */
     async function affordable(kind: FaucetKind): Promise<ClaimOutcome | undefined> {
         const [balance, baseFee] = await Promise.all([chain.balance(signer.address), chain.baseFee()]);
         if (baseFee === null) return refuse("unavailable");
         if (baseFee > MAX_FEE_PER_GAS) return refuse("fee_too_high");
-        if (balance < need(kind)) {
+        const inflight = store.inflight();
+        if (balance - inflight.wei - BigInt(inflight.count) * MINT_GAS * MAX_FEE_PER_GAS < need(kind)) {
             statusCache = undefined;
             return refuse("faucet_empty");
         }
@@ -354,7 +364,7 @@ export function createFaucet(deps: {
     }
 
     /**
-     * Sign, persist, then send — in that order, under the mutex.
+     * Check funds, sign, persist, then send — in that order, under the mutex.
      *
      * The nonce is the larger of the node's pending count and the ledger's own next nonce,
      * so a transaction signed but not yet seen by the node is never overwritten. The bytes
@@ -365,8 +375,13 @@ export function createFaucet(deps: {
      * and its nonce is free again. A timeout or a dropped connection is ambiguous — the
      * node may hold it — so the claim stays `signed` and the reconciler decides.
      */
-    function broadcast(id: string, kind: FaucetKind, recipient: Address, amount: bigint): Promise<Hex | undefined> {
+    function broadcast(id: string, kind: FaucetKind, recipient: Address, amount: bigint): Promise<{ok: true; hash: Hex} | Extract<ClaimOutcome, {ok: false}>> {
         return serial(async () => {
+            const blocked = await affordable(kind);
+            if (blocked && !blocked.ok) {
+                store.markFailed(id, now());
+                return blocked;
+            }
             const nonce = Math.max(await chain.nonce(signer.address, "pending"), store.nextNonce());
             const raw = await signer.sign(
                 kind === "musdc"
@@ -390,20 +405,20 @@ export function createFaucet(deps: {
             );
             const hash = keccak256(raw);
             // False when the reconciler already failed this reservation: nothing is sent.
-            if (!store.markSigned(id, {amount, nonce, txHash: hash.toLowerCase(), rawTx: raw.toLowerCase()}, now())) return undefined;
+            if (!store.markSigned(id, {amount, nonce, txHash: hash.toLowerCase(), rawTx: raw.toLowerCase()}, now())) return {ok: false, refusal: "unavailable", status: 503};
             let result: BroadcastResult;
             try {
                 result = await chain.sendRaw(raw);
             } catch (error) {
                 console.warn(`[faucet] broadcast unconfirmed, reconciler will retry ${hash} — ${redactForLog(error)}`);
-                return hash;
+                return {ok: true, hash};
             }
             if (result === "rejected") {
                 store.markFailed(id, now());
                 throw new Error("the node rejected the transaction");
             }
             store.markSent(id, now());
-            return hash;
+            return {ok: true, hash};
         });
     }
 
@@ -413,11 +428,15 @@ export function createFaucet(deps: {
      *
      * - `reserved` past {@link STALE_RESERVATION_MS}: nothing was signed — fail it.
      * - `signed`/`sent` with a receipt: record the outcome.
-     * - no receipt, and the chain's mined nonce has passed ours: another transaction took
-     *   the nonce, so ours can never land — fail it.
+     * - no receipt, and the chain's mined nonce has passed ours: either ours was mined
+     *   between the two reads (so the receipt is read once more) or another transaction
+     *   took the nonce and ours can never land — fail it.
      * - otherwise, once {@link REBROADCAST_AFTER_MS} has passed since the last attempt, send
      *   the same bytes again. Same hash, so it can never pay twice. A node that rejects
      *   them is checked for a receipt once more before the claim is failed.
+     * - a nonce below the highest in flight that nothing holds (its claim was refused by
+     *   the node after later ones were sent): filled with a zero-value send to the faucet
+     *   itself, or every later claim waits behind the gap forever.
      */
     async function reconcile(): Promise<void> {
         const at = now();
@@ -440,7 +459,9 @@ export function createFaucet(deps: {
                 }
                 mined ??= await chain.nonce(signer.address, "latest");
                 if (mined > row.nonce!) {
-                    store.markFailed(row.id, now());
+                    const landed = await chain.receipt(hash);
+                    if (landed === "success") store.markConfirmed(row.id, now());
+                    else store.markFailed(row.id, now());
                     continue;
                 }
                 if (at - row.updated_at < REBROADCAST_AFTER_MS) continue;
@@ -455,6 +476,20 @@ export function createFaucet(deps: {
             } catch (error) {
                 console.warn(`[faucet] reconcile ${row.id} deferred — ${redactForLog(error)}`);
             }
+        }
+        await serial(fillGaps);
+    }
+
+    /** Under the mutex, so no claim reads the pending nonce while a gap is being filled. */
+    async function fillGaps(): Promise<void> {
+        const held = store.unsettled().flatMap((row) => (row.state === "reserved" || row.nonce === null ? [] : [row.nonce]));
+        if (held.length === 0) return;
+        const taken = new Set(held), top = Math.max(...held);
+        for (let nonce = await chain.nonce(signer.address, "pending"); nonce < top; nonce += 1) {
+            if (taken.has(nonce)) continue;
+            console.warn(`[faucet] nonce ${nonce} is a gap below in-flight claims; filling it`);
+            const raw = await signer.sign({to: signer.address, value: 0n, gas: FILL_GAS, nonce, maxFeePerGas: MAX_FEE_PER_GAS, maxPriorityFeePerGas: PRIORITY_FEE_PER_GAS});
+            if ((await chain.sendRaw(raw)) === "rejected") return;
         }
     }
 

@@ -223,6 +223,15 @@ export function openFaucetStore(path: string) {
         /** The recipient already held enough; nothing was or will be sent. */
         markSkipped: (id: string, now: number) => transition(id, ["reserved"], "skipped", now, ", amount = '0'"),
         latest: (kind: FaucetClaimKind, owner: string) => latest.get(kind, owner) ?? undefined,
+        /**
+         * What signed and sent claims will still take from the faucet once mined: the ETH
+         * they carry and how many transactions there are. The service subtracts both from
+         * the last block's balance before it signs another.
+         */
+        inflight(): {wei: bigint; count: number} {
+            const rows = db.query<{kind: FaucetClaimKind; amount: string}, []>("SELECT kind, amount FROM faucet_claims WHERE state IN ('signed','sent')").all();
+            return {wei: rows.reduce((sum, row) => (row.kind === "eth" ? sum + BigInt(row.amount) : sum), 0n), count: rows.length};
+        },
         /** Rows the reconciler still owes an outcome. */
         unsettled: () => db.query<FaucetClaimRow, []>(`SELECT * FROM faucet_claims WHERE state IN ${INFLIGHT} ORDER BY nonce, created_at`).all(),
         /**

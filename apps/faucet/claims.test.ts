@@ -49,6 +49,8 @@ class FakeChain implements FaucetChain {
     fee: bigint | null = 1_000_000n;
     sends: Hex[] = [];
     sendMode: "accept" | "reject" | "throw" = "accept";
+    /** Nonces the node refuses whatever the bytes, as a full pool might. */
+    refusedNonces = new Set<number>();
     receiptMode: "instant" | "timeout" = "instant";
     revert = false;
     failMainnet = false;
@@ -62,18 +64,30 @@ class FakeChain implements FaucetChain {
     };
     code = async (address: Address) => this.codes.get(address.toLowerCase());
     baseFee = async () => this.fee;
-    nonce = async (_address: Address, tag: "pending" | "latest") => (tag === "latest" ? this.mined : this.mined + this.mempool.size);
+    /** Like a node: `pending` counts only the run of queued nonces contiguous with the mined one. */
+    nonce = async (_address: Address, tag: "pending" | "latest") => {
+        if (tag === "latest") return this.mined;
+        const queued = new Set([...this.mempool.values()].map((tx) => tx.nonce));
+        let next = this.mined;
+        while (queued.has(next)) next += 1;
+        return next;
+    };
     sendRaw = async (raw: Hex): Promise<BroadcastResult> => {
         this.sends.push(raw);
         if (this.sendMode === "throw") throw new Error("socket hang up");
         if (this.sendMode === "reject") return "rejected";
         const tx = this.signed.get(raw)!;
-        if (tx.nonce < this.mined) return "rejected";
+        if (tx.nonce < this.mined || this.refusedNonces.has(tx.nonce)) return "rejected";
         this.mempool.set(keccak256(raw), tx);
         if (this.receiptMode === "instant") this.mine();
         return "accepted";
     };
-    receipt = async (hash: Hex) => this.receipts.get(hash) ?? null;
+    /** Receipt reads that answer "not yet" even though the transaction was mined: a lagging index. */
+    laggingReceipts = 0;
+    receipt = async (hash: Hex) => {
+        if (this.laggingReceipts > 0) {this.laggingReceipts -= 1; return null;}
+        return this.receipts.get(hash) ?? null;
+    };
     waitForReceipt = async (hash: Hex) => (this.receiptMode === "timeout" ? null : (this.receipts.get(hash) ?? null));
     mainnetNonce = async (address: Address) => {
         if (this.failMainnet) throw new Error("mainnet read failed");
@@ -405,6 +419,54 @@ describe("broadcast and recovery", () => {
         await faucet.reconcile();
         expect(store.get(row.id)?.state).toBe("failed");
         expect(chain.sends).toHaveLength(1);
+    });
+
+    test("a claim mined between the receipt read and the nonce read is confirmed, not failed", async () => {
+        const {chain, faucet, store, tick} = setup();
+        chain.receiptMode = "timeout";
+        await faucet.claim(request());
+        chain.mine();
+        chain.laggingReceipts = 1;
+        tick(15_000);
+        await faucet.reconcile();
+        expect(store.latest("musdc", owner(1).toLowerCase())?.state).toBe("confirmed");
+        // Confirmed, so the day's window holds: a second claim is a cooldown, not a second mint.
+        expect(await faucet.claim(request())).toMatchObject({refusal: "cooldown"});
+    });
+
+    test("a refused nonce below a queued claim is filled, so the queue behind it lands", async () => {
+        const {chain, faucet, store, signs, tick} = setup();
+        chain.receiptMode = "timeout";
+        chain.sendMode = "throw"; // nonce 0 is signed, but the node never got it
+        await faucet.claim(request());
+        chain.sendMode = "accept";
+        await faucet.claim(request({owner: owner(2), ipKey: key(2)})); // nonce 1, queued behind the gap
+        expect(signs.map((s) => s.nonce)).toEqual([0, 1]);
+        tick(REBROADCAST_AFTER_MS);
+        chain.refusedNonces.add(0); // the rebroadcast of nonce 0 is refused (a full pool, say), and so is the first fill
+        await faucet.reconcile();
+        expect(store.latest("musdc", owner(1).toLowerCase())?.state).toBe("failed");
+        expect(chain.mined).toBe(0);
+        chain.refusedNonces.clear();
+        await faucet.reconcile();
+        expect(signs.at(-1)).toMatchObject({to: FAUCET, value: 0n, nonce: 0});
+        chain.mine();
+        await faucet.reconcile();
+        expect(store.latest("musdc", owner(2).toLowerCase())?.state).toBe("confirmed");
+        expect(chain.mined).toBe(2);
+    });
+
+    test("concurrent ETH claims count each other's unmined grants against the floor", async () => {
+        const {chain, faucet, signs} = setup();
+        chain.receiptMode = "timeout";
+        chain.mainnet.set(owner(1).toLowerCase(), 1);
+        chain.mainnet.set(owner(2).toLowerCase(), 1);
+        // Enough for one grant above the floor, not two.
+        chain.eth.set(FAUCET.toLowerCase(), 2n * 10n ** 16n + FAUCET_ETH_AMOUNT_WEI + 10n ** 14n);
+        const outcomes = await Promise.all([faucet.claim(ethRequest(1)), faucet.claim(ethRequest(2))]);
+        expect(outcomes.filter((o) => o.ok)).toHaveLength(1);
+        expect(outcomes.filter((o) => !o.ok && o.refusal === "faucet_empty")).toHaveLength(1);
+        expect(signs).toHaveLength(1);
     });
 
     test("a claim that died before signing is failed after two minutes and is never broadcast", async () => {

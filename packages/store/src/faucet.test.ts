@@ -234,6 +234,20 @@ describe("nonces, history and pruning", () => {
         expect(store.nextNonce()).toBe(5);
     });
 
+    test("inflight sums the ETH that signed and sent claims carry and counts every one of them", () => {
+        const store = open();
+        expect(store.inflight()).toEqual({wei: 0n, count: 0});
+        const mint = reserved(store, input({owner: owner(1)}), T0);
+        store.markSigned(mint.id, {amount: 7n, nonce: 0, txHash: `0x${"01".repeat(32)}`, rawTx: RAW}, T0);
+        const grant = reserved(store, input({kind: "eth", owner: owner(2), recipient: owner(2), ipKey: key(2), amount: ETH_AMOUNT}), T0, ETH);
+        store.markSigned(grant.id, {amount: ETH_AMOUNT, nonce: 1, txHash: `0x${"02".repeat(32)}`, rawTx: RAW}, T0);
+        store.markSent(grant.id, T0);
+        reserved(store, input({kind: "eth", owner: owner(3), recipient: owner(3), ipKey: key(3), amount: ETH_AMOUNT}), T0, ETH);
+        expect(store.inflight()).toEqual({wei: ETH_AMOUNT, count: 2});
+        store.markConfirmed(grant.id, T0 + 1);
+        expect(store.inflight()).toEqual({wei: 0n, count: 1});
+    });
+
     test("latest is the owner's newest claim of the kind, in any state", () => {
         const store = open();
         expect(store.latest("musdc", OWNER)).toBeUndefined();
