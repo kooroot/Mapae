@@ -33,6 +33,32 @@ export const guardianAbi = [
   },
   {
     "type": "function",
+    "name": "HONOR_GRACE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "HONOR_TYPEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_CLAIM_BATCH",
     "inputs": [],
     "outputs": [
@@ -265,87 +291,7 @@ export const guardianAbi = [
   },
   {
     "type": "function",
-    "name": "claimResult",
-    "inputs": [
-      {
-        "name": "result",
-        "type": "tuple",
-        "internalType": "struct MapaeGuardians.Result",
-        "components": [
-          {
-            "name": "resultId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "tokenId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "actor",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "ownershipEpoch",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "paymentTx",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "traitsHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "inputsHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "ruleset",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "seed",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "game",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "score",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "victory",
-            "type": "bool",
-            "internalType": "bool"
-          }
-        ]
-      },
-      {
-        "name": "signature",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "claimResults",
+    "name": "claim",
     "inputs": [
       {
         "name": "results",
@@ -415,7 +361,39 @@ export const guardianAbi = [
         ]
       },
       {
-        "name": "signatures",
+        "name": "resultSignatures",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      },
+      {
+        "name": "honors",
+        "type": "tuple[]",
+        "internalType": "struct MapaeGuardians.Honor[]",
+        "components": [
+          {
+            "name": "tokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "week",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "longestStreak",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "titles",
+            "type": "uint144",
+            "internalType": "uint144"
+          }
+        ]
+      },
+      {
+        "name": "honorSignatures",
         "type": "bytes[]",
         "internalType": "bytes[]"
       }
@@ -532,6 +510,47 @@ export const guardianAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "honorDigest",
+    "inputs": [
+      {
+        "name": "honor",
+        "type": "tuple",
+        "internalType": "struct MapaeGuardians.Honor",
+        "components": [
+          {
+            "name": "tokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "week",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "longestStreak",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "titles",
+            "type": "uint144",
+            "internalType": "uint144"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -811,6 +830,31 @@ export const guardianAbi = [
             "name": "bestScores",
             "type": "uint32[3]",
             "internalType": "uint32[3]"
+          },
+          {
+            "name": "honorWeek",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "longestStreak",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "champion",
+            "type": "uint16[3]",
+            "internalType": "uint16[3]"
+          },
+          {
+            "name": "podium",
+            "type": "uint16[3]",
+            "internalType": "uint16[3]"
+          },
+          {
+            "name": "top10",
+            "type": "uint16[3]",
+            "internalType": "uint16[3]"
           }
         ]
       }
@@ -1344,6 +1388,25 @@ export const guardianAbi = [
   },
   {
     "type": "event",
+    "name": "HonorRecorded",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "week",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -1695,6 +1758,11 @@ export const guardianAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidHonor",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
   },
@@ -1705,7 +1773,7 @@ export const guardianAbi = [
   },
   {
     "type": "error",
-    "name": "InvalidResultSignature",
+    "name": "InvalidSignature",
     "inputs": []
   },
   {

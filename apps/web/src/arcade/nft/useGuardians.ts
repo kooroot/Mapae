@@ -93,8 +93,8 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
     async function claimAll(){await perform(async()=>{
         if(!owner||!roster?.collection||!detail||transaction)throw Error('claim_unavailable');
         const collection=roster.collection,token=detail.guardian;
-        // An implementation without claimResults reverts this read: report the pending upgrade, never fall back.
-        try{await publicClient.readContract({address:collection,abi:guardianAbi,functionName:'MAX_CLAIM_BATCH'});}
+        // An implementation without claim reverts this read: report the pending upgrade, never fall back.
+        try{await publicClient.readContract({address:collection,abi:guardianAbi,functionName:'HONOR_TYPEHASH'});}
         catch(e){if(e instanceof BaseError&&e.walk(x=>x instanceof ContractFunctionRevertedError||x instanceof ContractFunctionZeroDataError))throw Error('batch_unavailable');throw e;}
         setPhase(ko?'기록할 모험에 서명 받는 중…':'Collecting signed results…');
         const batch=await profileRequest(owner,`/guardians/${token.tokenId}/claims`,'POST') as GuardianClaimBatch;
@@ -104,7 +104,7 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         setPhase(ko?`${results.length}건 기록을 지갑에서 확인해 주세요`:`Confirm ${results.length} in your wallet`);
         const w=await wallet();
         // A revert here means nothing was sent; say so rather than pointing at a transaction that does not exist.
-        const simulation=await publicClient.simulateContract({address:collection,abi:guardianAbi,functionName:'claimResults',args:[results,signatures],account:owner})
+        const simulation=await publicClient.simulateContract({address:collection,abi:guardianAbi,functionName:'claim',args:[results,signatures,[],[]],account:owner})
             .catch((e:unknown)=>{if(e instanceof BaseError&&e.walk(x=>x instanceof ContractFunctionRevertedError))throw Error('claim_rejected');throw e;});
         await wallet();await recorded(await writeContract(w,simulation.request),'claim',token.tokenId);
     });}
