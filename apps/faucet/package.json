@@ -1,0 +1,16 @@
+{
+  "name": "@mapae/faucet",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot index.ts",
+    "start": "bun run index.ts"
+  },
+  "dependencies": {
+    "@mapae/delegation": "workspace:*",
+    "@mapae/shared": "workspace:*",
+    "@mapae/store": "workspace:*",
+    "hono": "^4",
+    "viem": "^2.55.8"
+  }
+}

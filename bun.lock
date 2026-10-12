@@ -100,6 +100,16 @@
         "viem": "^2.55.8",
       },
     },
+    "apps/faucet": {
+      "name": "@mapae/faucet",
+      "dependencies": {
+        "@mapae/delegation": "workspace:*",
+        "@mapae/shared": "workspace:*",
+        "@mapae/store": "workspace:*",
+        "hono": "^4",
+        "viem": "^2.55.8",
+      },
+    },
     "apps/payment-scheduler": {
       "name": "@mapae/payment-scheduler",
       "dependencies": {
@@ -463,6 +473,8 @@
     "@mapae/docs": ["@mapae/docs@workspace:apps/docs"],
 
     "@mapae/facilitator-erc7710": ["@mapae/facilitator-erc7710@workspace:apps/facilitator-erc7710"],
+
+    "@mapae/faucet": ["@mapae/faucet@workspace:apps/faucet"],
 
     "@mapae/payment-scheduler": ["@mapae/payment-scheduler@workspace:apps/payment-scheduler"],
 
