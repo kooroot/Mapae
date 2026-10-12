@@ -5,6 +5,7 @@ import {guardianTraitsHash} from '@mapae/arcade/guardians';
 import {addDays, kstWeek, rankedSeed, type RankingBoard, type RankingStandings} from '@mapae/arcade/ranking';
 import {OutingStore} from '../outings/store';
 import {RankingReader} from './board';
+import {GuardianHonorBook} from './honors';
 import {createRankingApp} from './routes';
 
 const collection = '0x5555555555555555555555555555555555555555' as Address;
@@ -70,6 +71,59 @@ describe('boards', () => {
         const board = reader.board('devotion', '28d');
         expect(board).toMatchObject({from: '2026-09-17', to: '2026-10-14', closesAt: Date.parse('2026-10-14T15:00:00Z'), entrants: 3});
         expect(board.rows.map(r => [r.rank, r.tokenId, r.score])).toEqual([[1, '1', 2], [1, '2', 2], [3, '3', 1]]);
+    });
+});
+
+describe('sealed weeks', () => {
+    const late = (day: string) => (Date.parse('2026-10-13T03:00:00Z') - at(day)) / 60_000; // settled Tuesday 12:00 KST, past last week's seal
+    test('a round settled after the cutoff never changes the closed week board', () => {
+        const {add, reader} = setup();
+        add('1', 'race', '2026-10-07', 1, 50); add('2', 'race', '2026-10-08', 1, 40);
+        const before = reader.board('race', 'lastweek');
+        add('3', 'race', '2026-10-11', 1, 999, late('2026-10-11')); add('2', 'race', '2026-10-11', 1, 999, late('2026-10-11'));
+        expect(reader.board('race', 'lastweek')).toEqual(before);
+        expect(before.rows.map(r => [r.tokenId, r.score])).toEqual([['1', 50], ['2', 40]]);
+        // Inside the grace day a late settlement still counts.
+        add('4', 'race', '2026-10-11', 1, 60, (Date.parse('2026-10-12T14:59:00Z') - at('2026-10-11')) / 60_000);
+        expect(reader.board('race', 'lastweek').rows[0]!.tokenId).toBe('4');
+    });
+    test('a closed week keeps the ruleset it closed under after a bump; the open week takes the current one', () => {
+        const {add, reader} = setup(), old = ARCADE_RULESET_VERSION - 1;
+        add('1', 'shop', '2026-10-06', 1, 70, 1, old); add('2', 'shop', '2026-10-07', 1, 60, 1, old);
+        add('3', 'shop', '2026-10-13', 1, 80, 1, old);
+        expect(reader.board('shop', 'lastweek').rows.map(r => r.tokenId)).toEqual(['1', '2']);
+        expect(reader.board('shop', 'week').rows).toEqual([]);
+        expect(reader.standings(['1']).guardians[0]!.titles).toEqual([{game: 'shop', place: 1}]);
+        // Once the week closed under a newer ruleset, only that ruleset's rows rank it.
+        add('4', 'stamp', '2026-10-09', 1, 5);
+        expect(reader.board('shop', 'lastweek').rows).toEqual([]);
+    });
+});
+
+describe('honor book', () => {
+    const tuesday = Date.parse('2026-10-12T15:00:00Z'); // last week (2026-10-05, week 2961) seals now
+    test('nothing before the seal; titles add up across sealed weeks; the longest run counts only rows settled before the cutoff', () => {
+        const {store, add} = setup(), book = new GuardianHonorBook(store.db, collection);
+        for (const day of ['2026-09-30', '2026-10-01', '2026-10-02', '2026-10-06']) add('1', 'stamp', day, 1, 10);
+        add('1', 'stamp', '2026-10-07', 1, 10);
+        add('2', 'race', '2026-10-06', 1, 90); add('1', 'race', '2026-10-06', 1, 50); add('3', 'race', '2026-10-06', 1, 10);
+        expect(book.honor('1', tuesday - 1)).toEqual({week: 2960, longestStreak: 3, titles: [{champion: 1, podium: 0, top10: 0}, {champion: 0, podium: 0, top10: 0}, {champion: 0, podium: 0, top10: 0}]});
+        expect(book.honor('9', tuesday - 1)).toBeNull();
+        expect(book.honor('1', Date.parse('2026-09-28T15:00:00Z'))).toBeNull();
+        const sealed = {week: 2961, longestStreak: 3, titles: [{champion: 2, podium: 0, top10: 0}, {champion: 0, podium: 1, top10: 0}, {champion: 0, podium: 0, top10: 0}]};
+        expect(book.honor('1', tuesday)).toEqual(sealed);
+        expect(book.honor('3', tuesday)).toMatchObject({week: 2961, longestStreak: 1, titles: [{champion: 0}, {podium: 1}, {top10: 0}]});
+        // A late round would have joined the run and taken the race crown; both settled after the seal, so neither counts.
+        add('1', 'stamp', '2026-10-03', 1, 10, (Date.parse('2026-10-13T00:00:00Z') - at('2026-10-03')) / 60_000);
+        add('1', 'stamp', '2026-10-04', 1, 10, (Date.parse('2026-10-13T00:00:00Z') - at('2026-10-04')) / 60_000);
+        add('1', 'stamp', '2026-10-05', 1, 10, (Date.parse('2026-10-13T00:00:00Z') - at('2026-10-05')) / 60_000);
+        add('1', 'race', '2026-10-08', 1, 999, (Date.parse('2026-10-13T00:00:00Z') - at('2026-10-08')) / 60_000);
+        expect(book.honor('1', now)).toEqual(sealed);
+        expect(store.db.query('SELECT week, game, token_id, place FROM arcade_guardian_titles ORDER BY week, game, place').all()).toEqual([
+            {week: '2026-09-28', game: 'stamp', token_id: '1', place: 1},
+            {week: '2026-10-05', game: 'race', token_id: '2', place: 1}, {week: '2026-10-05', game: 'race', token_id: '1', place: 2}, {week: '2026-10-05', game: 'race', token_id: '3', place: 3},
+            {week: '2026-10-05', game: 'stamp', token_id: '1', place: 1},
+        ]);
     });
 });
 

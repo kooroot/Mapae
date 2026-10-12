@@ -1,7 +1,8 @@
+import type {Database} from 'bun:sqlite';
 import type {Address} from 'viem';
 import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
 import {
-    addDays, BOARD_ROWS, DEVOTION_DAYS, guardianStreak, kstDay, kstWeek, NEARBY_SPAN, nextReset, RANKED_GAMES, WEEKLY_COUNTED_DAYS,
+    addDays, BOARD_ROWS, DEVOTION_DAYS, guardianStreak, kstDay, kstWeek, NEARBY_SPAN, nextReset, RANKED_GAMES, WEEKLY_COUNTED_DAYS, weekCutoff,
     type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings,
 } from '@mapae/arcade/ranking';
 import type {OutingStore} from '../outings/store';
@@ -13,11 +14,14 @@ const DAY_BOARD = `WITH best AS (
         FROM arcade_guardian_ranked WHERE collection=? AND ruleset=? AND game=? AND day=?)
     SELECT ROW_NUMBER() OVER (ORDER BY score DESC, created_at, CAST(token_id AS INTEGER)) AS rank, token_id AS tokenId, guardian_seed AS seed, score
     FROM best WHERE n=1 ORDER BY rank`;
-/** The sum of a guardian's best daily bests in the week (at most WEEKLY_COUNTED_DAYS days), reached when its last counted day was. */
+/**
+ * The sum of a guardian's best daily bests in the week (at most WEEKLY_COUNTED_DAYS days), reached when its last counted day was.
+ * Only rows settled before the week's cutoff count, so a sealed week's board, and the titles it awards, never change.
+ */
 const WEEK_BOARD = `WITH daily AS (
         SELECT token_id, guardian_seed, day, score, created_at,
             ROW_NUMBER() OVER (PARTITION BY token_id, day ORDER BY score DESC, created_at, attempt) AS n
-        FROM arcade_guardian_ranked WHERE collection=? AND ruleset=? AND game=? AND week=?),
+        FROM arcade_guardian_ranked WHERE collection=? AND ruleset=? AND game=? AND week=? AND created_at<?),
     counted AS (
         SELECT token_id, guardian_seed, score, created_at, ROW_NUMBER() OVER (PARTITION BY token_id ORDER BY score DESC, day) AS k
         FROM daily WHERE n=1),
@@ -32,11 +36,25 @@ const DEVOTION_BOARD = `WITH days AS (
     SELECT RANK() OVER (ORDER BY score DESC) AS rank, token_id AS tokenId, guardian_seed AS seed, score
     FROM days ORDER BY rank, CAST(token_id AS INTEGER)`;
 
+/** The ruleset a closed week ranked under when it closed: a later ruleset bump never empties it. */
+const WEEK_RULESET = 'SELECT MAX(ruleset) AS ruleset FROM arcade_guardian_ranked WHERE collection=? AND week=? AND created_at<?';
+
 type Window = {from: string; to: string; closesAt: number | null; rows: RankingRow[]};
+
+/** Every entrant of one game's week board at `at`: the open week under the current ruleset, a closed one under its own. */
+export function weekBoard(db: Database, collection: Address, game: GameId, week: string, at: number): RankingRow[] {
+    const c = collection.toLowerCase(), cutoff = weekCutoff(week);
+    const ruleset = week < kstWeek(kstDay(at))
+        ? db.query<{ruleset: number | null}, [string, string, number]>(WEEK_RULESET).get(c, week, cutoff)?.ruleset ?? ARCADE_RULESET_VERSION
+        : ARCADE_RULESET_VERSION;
+    return db.query<RankingRow, [string, number, string, string, number, number]>(WEEK_BOARD).all(c, ruleset, game, week, cutoff, WEEKLY_COUNTED_DAYS)
+        .map(r => ({rank: r.rank, tokenId: r.tokenId, seed: r.seed, score: r.score}));
+}
 
 /**
  * Public leaderboards read from verified ranked rows only. Every board is derived on read; nothing here is stored, so a
- * ruleset change (filtered on read, and part of every ranked seed) starts fresh boards with no migration.
+ * ruleset change (filtered on read, and part of every ranked seed) starts fresh open boards with no migration, while a closed
+ * week keeps the ruleset it closed under.
  */
 export class RankingReader {
     constructor(readonly store: OutingStore, readonly collection: Address, readonly now: () => number = Date.now) {}
@@ -82,8 +100,7 @@ export class RankingReader {
             return {from: day, to: day, closesAt: period === 'today' ? nextReset(at, 'day') : null, rows: rows(DAY_BOARD, collection, ARCADE_RULESET_VERSION, board, day)};
         }
         const start = period === 'week' ? week : addDays(week, -7);
-        return {from: start, to: addDays(start, 6), closesAt: period === 'week' ? nextReset(at, 'week') : null,
-            rows: rows(WEEK_BOARD, collection, ARCADE_RULESET_VERSION, board, start, WEEKLY_COUNTED_DAYS)};
+        return {from: start, to: addDays(start, 6), closesAt: period === 'week' ? nextReset(at, 'week') : null, rows: weekBoard(db, this.collection, board, start, at)};
     }
 
     /** The token's ranked days over the last year: enough for any streak a board shows, bounded however long a token plays. */
