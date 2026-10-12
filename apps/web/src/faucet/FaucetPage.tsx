@@ -2,11 +2,11 @@ import {Tabs} from "@base-ui/react/tabs";
 import {FAUCET_KINDS, type FaucetClaimView, type FaucetKind, type FaucetMissionId} from "@mapae/delegation/faucet-policy";
 import {MOCK_USDC} from "@mapae/shared";
 import {useQuery} from "@tanstack/react-query";
-import {ChevronDown, Coins, Flame, Plus} from "lucide-react";
+import {ArrowUpRight, ChevronDown, Coins, Flame, Gamepad2, Plus, Terminal} from "lucide-react";
 import {useCallback, useEffect, useRef, useState} from "react";
 import type {Address} from "viem";
 import {useAccount, useDisconnect, useSignMessage, useSwitchChain, useWatchAsset} from "wagmi";
-import {Lockup} from "../brand/marks";
+import {Lockup, PassEmblem} from "../brand/marks";
 import {WalletPicker} from "../components/WalletPicker";
 import {Web3Providers} from "../dapp/Web3Providers";
 import {appUrl, chain, docsUrl, faucetUrl, landingUrl} from "../lib/config";
@@ -138,41 +138,59 @@ function FaucetScreen() {
                 </nav>
             </header>
             <main className="fct-main">
-                <div className="fct-hero">
-                    <p className="fct-eyebrow">GIWA SEPOLIA · TESTNET</p>
-                    <h1>{t.title}</h1>
-                    <p>{t.subline}</p>
-                </div>
-                <Tabs.Root className="fct-tabs" value={tab} onValueChange={(value) => setTab(value as FaucetKind)}>
-                    <Tabs.List className="fct-tablist" aria-label={t.tabsLabel}>
-                        {FAUCET_KINDS.map((kind) => (
-                            <Tabs.Tab key={kind} value={kind} className="fct-tab">
-                                {kind === "musdc" ? <Coins size={17} aria-hidden="true" /> : <Flame size={17} aria-hidden="true" />}
-                                <span>{t.tabs[kind]}</span>
-                                {kind === "eth" && status.data && !status.data.eth.enabled && <span className="fct-badge">{t.soon}</span>}
-                            </Tabs.Tab>
-                        ))}
-                    </Tabs.List>
-                    {FAUCET_KINDS.map((kind) => (
-                        <Tabs.Panel key={kind} value={kind} className="fct-card">
-                            <ClaimPanel
-                                kind={kind} status={status.data} statusFailed={status.isError} owner={address} wallet={wallet}
-                                recipient={kind === "eth" ? address : recipient} view={views[kind]} fresh={fresh[kind]} pendingLong={pendingLong}
-                                missionsDone={missions} onMission={onMission} ensureSession={ensureSession} submit={submit}
-                            />
-                            {kind === "eth" && <div className="fct-rules"><h3>{t.ethRules.title}</h3><ul>{t.ethRules.items(ethAmount).map((item) => <li key={item}>{item}</li>)}</ul></div>}
-                        </Tabs.Panel>
-                    ))}
-                </Tabs.Root>
+                <section className="fct-workspace" aria-labelledby="fct-title">
+                    <div className="fct-intro">
+                        <div className="fct-hero">
+                            <p className="fct-eyebrow"><span />GIWA SEPOLIA TESTNET</p>
+                            <h1 id="fct-title">{t.title}<br /><span>{t.titleEnd}</span></h1>
+                            <p className="fct-lead">{t.intro}</p>
+                        </div>
+                        <div className="fct-emblem-scene" aria-hidden="true">
+                            <div className="fct-orbit fct-orbit-outer" /><div className="fct-orbit fct-orbit-inner" />
+                            <span className="fct-orbit-point" />
+                            <div className="fct-seal"><PassEmblem size={104} /></div>
+                            <span className="fct-scene-label">PASS. PAY. PROCEED.</span>
+                        </div>
+                        <div className="fct-explore">
+                            <a href={arcadeHref}><Gamepad2 size={20} aria-hidden="true" /><span><strong>{t.nav.arcade}</strong><small>{t.explore.arcade}</small></span><ArrowUpRight size={17} aria-hidden="true" /></a>
+                            <a href={localizeUrl(appUrl, locale)}><Terminal size={20} aria-hidden="true" /><span><strong>{t.nav.studio}</strong><small>{t.explore.studio}</small></span><ArrowUpRight size={17} aria-hidden="true" /></a>
+                        </div>
+                    </div>
+                    <div className="fct-dispenser">
+                        <Tabs.Root className="fct-tabs" value={tab} onValueChange={(value) => setTab(value as FaucetKind)}>
+                            <Tabs.List className="fct-tablist" aria-label={t.tabsLabel}>
+                                {FAUCET_KINDS.map((kind) => (
+                                    <Tabs.Tab key={kind} value={kind} className="fct-tab">
+                                        {kind === "musdc" ? <Coins size={17} aria-hidden="true" /> : <Flame size={17} aria-hidden="true" />}
+                                        <span><strong>{t.tabs[kind]}</strong><small>{kind === "eth" && status.data && !status.data.eth.enabled ? t.soon : t.tokenUse[kind]}</small></span>
+                                    </Tabs.Tab>
+                                ))}
+                            </Tabs.List>
+                            {FAUCET_KINDS.map((kind) => (
+                                <Tabs.Panel key={kind} value={kind} className="fct-card">
+                                    <ClaimPanel
+                                        kind={kind} status={status.data} statusFailed={status.isError} owner={address} wallet={wallet}
+                                        recipient={kind === "eth" ? address : recipient} view={views[kind]} fresh={fresh[kind]} pendingLong={pendingLong}
+                                        missionsDone={missions} onMission={onMission} ensureSession={ensureSession} submit={submit}
+                                    />
+                                    {kind === "eth" && <div className="fct-rules"><h3>{t.ethRules.title}</h3><ul>{t.ethRules.items(ethAmount).map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                                </Tabs.Panel>
+                            ))}
+                        </Tabs.Root>
+                        <p className="fct-testnet-note">{t.subline}</p>
+                    </div>
+                </section>
                 <section className="fct-faq" aria-labelledby="fct-faq-title">
-                    <h2 id="fct-faq-title">{t.howTo.title}</h2>
-                    {t.howTo.items.map((item) => (
-                        <details key={item.id} className="fct-faq-item">
-                            <summary>{item.q}<ChevronDown size={18} aria-hidden="true" /></summary>
-                            <p>{item.a}</p>
-                            {item.id === "wallet" && address && <WatchToken />}
-                        </details>
-                    ))}
+                    <div className="fct-faq-heading"><p className="fct-eyebrow">GOOD TO KNOW</p><h2 id="fct-faq-title">{t.howTo.title}</h2><p>{t.faqIntro}</p><a href={docsUrl} target="_blank" rel="noopener noreferrer">Mapae Docs<ArrowUpRight size={15} aria-hidden="true" /></a></div>
+                    <div className="fct-faq-list">
+                        {t.howTo.items.map((item) => (
+                            <details key={item.id} className="fct-faq-item">
+                                <summary>{item.q}<ChevronDown size={18} aria-hidden="true" /></summary>
+                                <p>{item.a}</p>
+                                {item.id === "wallet" && address && <WatchToken />}
+                            </details>
+                        ))}
+                    </div>
                 </section>
             </main>
             <footer className="fct-foot">

@@ -35,8 +35,8 @@ export function formatWait(ms: number, locale: Locale): string {
 
 export const MISSION_COPY: Record<FaucetMissionId, Record<Locale, {title: string; detail: string; action: string}>> = {
     x_follow_mapae: {
-        ko: {title: "@mapae_io 팔로우", detail: "마패 공식 X 계정이에요. 새 기능과 faucet 소식을 여기서 알려요.", action: "X에서 팔로우"},
-        en: {title: "Follow @mapae_io", detail: "Mapae’s official X account, where new features and faucet news land first.", action: "Follow on X"},
+        ko: {title: "@mapae_io 팔로우", detail: "마패의 새로운 소식을 만나보세요.", action: "팔로우"},
+        en: {title: "Follow @mapae_io", detail: "Stay close to what’s next at Mapae.", action: "Follow"},
     },
 };
 
@@ -62,6 +62,15 @@ export const ERROR_COPY: Record<FaucetPageError, Record<Locale, string>> = {
 
 export interface FaucetCopy {
     title: string;
+    titleEnd: string;
+    intro: string;
+    explore: {arcade: string; studio: string};
+    tokenUse: Record<FaucetKind, string>;
+    amountLabel: Record<FaucetKind, string>;
+    destination: Record<FaucetKind, string>;
+    cadence: (wait: string) => string;
+    testnet: string;
+    faqIntro: string;
     subline: string;
     nav: {arcade: string; studio: string};
     tabs: Record<FaucetKind, string>;
@@ -109,12 +118,21 @@ export interface FaucetCopy {
 
 export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
     ko: {
-        title: "테스트 토큰 받기",
+        title: "새로운 실험의",
+        titleEnd: "시작은 여기서.",
+        intro: "테스트 토큰으로 나만의 에이전트를 만들고, 마패 아케이드에서 새로운 모험을 시작하세요.",
+        explore: {arcade: "캐릭터와 함께하는 작은 모험", studio: "나만의 에이전트를 만드는 곳"},
+        tokenUse: {musdc: "아케이드 · 에이전트 결제", eth: "네트워크 가스비"},
+        amountLabel: {musdc: "이 잔액까지 채워드려요", eth: "한 번에 받을 수 있어요"},
+        destination: {musdc: "지불 계정으로 충전", eth: "연결한 지갑으로 전송"},
+        cadence: (wait) => `${wait}마다`,
+        testnet: "테스트넷 전용",
+        faqIntro: "첫 충전 전, 알아두면 좋은 것들.",
         subline: "GIWA Sepolia 테스트넷 토큰이에요. 실제 돈이 아니에요.",
         nav: {arcade: "아케이드", studio: "Studio"},
-        tabs: {musdc: `테스트 토큰 (${SYM})`, eth: "GIWA Sepolia ETH"},
+        tabs: {musdc: SYM, eth: "ETH"},
         tabsLabel: "받을 토큰",
-        steps: {connect: "지갑 연결", missions: "미션", claim: "받기"},
+        steps: {connect: "지갑 연결", missions: "마패 팔로우", claim: "테스트 토큰 받기"},
         connected: "연결됨",
         disconnect: "연결 해제",
         wrongChain: "지갑이 다른 네트워크에 있어요.",
@@ -169,12 +187,21 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         footer: "Mapae · GIWA Sepolia 테스트넷",
     },
     en: {
-        title: "Get test tokens",
+        title: "Your next idea",
+        titleEnd: "starts here.",
+        intro: "Fuel your agents. Explore the arcade. Pick up free test tokens and see what you can build with Mapae.",
+        explore: {arcade: "A little adventure with your character", studio: "A place to build your own agents"},
+        tokenUse: {musdc: "Arcade & agent payments", eth: "Network gas fees"},
+        amountLabel: {musdc: "Top up your balance to", eth: "Receive per claim"},
+        destination: {musdc: "To your payer account", eth: "To your connected wallet"},
+        cadence: (wait) => `Every ${wait}`,
+        testnet: "Testnet only",
+        faqIntro: "A few things to know before you go.",
         subline: "GIWA Sepolia testnet tokens. They are not real money.",
         nav: {arcade: "Arcade", studio: "Studio"},
-        tabs: {musdc: `Test token (${SYM})`, eth: "GIWA Sepolia ETH"},
+        tabs: {musdc: SYM, eth: "ETH"},
         tabsLabel: "Token to receive",
-        steps: {connect: "Connect wallet", missions: "Missions", claim: "Claim"},
+        steps: {connect: "Connect wallet", missions: "Follow Mapae", claim: "Get test tokens"},
         connected: "Connected",
         disconnect: "Disconnect",
         wrongChain: "Your wallet is on another network.",

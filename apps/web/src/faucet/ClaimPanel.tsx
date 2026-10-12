@@ -90,6 +90,11 @@ export function ClaimPanel(props: ClaimPanelProps) {
     const off = status && !enabled || props.statusFailed;
     return (
         <div className="fct-panel">
+            <div className="fct-allowance">
+                <div className="fct-allowance-label"><span>{t.amountLabel[kind]}</span><span className="fct-badge">{t.testnet}</span></div>
+                <p className="fct-amount">{amount.replace(/^\d+/, (integer) => integer.replace(/\B(?=(\d{3})+(?!\d))/g, ","))}<span>{kind === "musdc" ? MOCK_USDC.symbol : "ETH"}</span></p>
+                <div className="fct-allowance-meta"><span>{t.destination[kind]}</span>{config && <span><Clock3 size={13} aria-hidden="true" />{t.cadence(formatWait(config.windowMs, locale))}</span>}</div>
+            </div>
             {off && (kind === "eth" ? (
                 <div className="fct-notice fct-notice-soon"><Clock3 size={20} aria-hidden="true" /><div><strong>{t.ethSoon.title}</strong><p>{t.ethSoon.body(amount)}</p></div></div>
             ) : (
