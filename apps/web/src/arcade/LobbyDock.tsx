@@ -32,7 +32,7 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
                         <h2>{guardianName(token.tokenId, locale)}</h2>
                         <p>{GUARDIAN_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}</p>
                         <p className="arc-dock-aptitude"><span>{ko ? `${names[game]} 적성` : `${names[game]} aptitude`}</span><meter min={0} max={6} value={traits.aptitudes[game]} aria-hidden="true" /><b>{traits.aptitudes[game]} / 6</b></p>
-                        <RankLine locale={locale} game={game} guardian={desk.ranking.standings?.guardians.find(g => g.tokenId === token.tokenId)} leader={desk.ranking.standings?.leaders[game] ?? null} named={false} />
+                        <RankLine locale={locale} game={game} guardian={desk.ranking.standings?.guardians.find(g => g.tokenId === token.tokenId)} leader={desk.ranking.standings?.leaders[game] ?? null} named={false} weekly />
                         {activeJob && status && <span className="arc-dock-chip" role="status">{activeJob.status === "paused" ? <Pause size={14} aria-hidden="true" /> : <Compass size={14} aria-hidden="true" />}{ko ? `${status} · ${activeJob.spent}/${activeJob.admissions}회` : `${status} · ${activeJob.spent}/${activeJob.admissions} rounds`}</span>}
                     </div>
                 </div>
