@@ -34,6 +34,8 @@ export const docsUrl =
     import.meta.env["VITE_DOCS_URL"]?.trim() || "https://docs.mapae.io";
 export const githubUrl =
     import.meta.env["VITE_GITHUB_URL"]?.trim() || "https://github.com/kooroot/Mapae";
+/** Testnet tokens live on their own site; the Studio and the arcade link there. */
+export const faucetUrl = import.meta.env["VITE_FAUCET_URL"]?.trim() || "https://faucet.mapae.io";
 /** The builder's front door — the guide stays in the public tree on purpose. */
 export const sellerGuideUrl = `${githubUrl}/blob/main/docs/seller-guide.md`;
 

@@ -11,6 +11,7 @@ import {
     ArrowUpRight,
     CircleGauge,
     Clock3,
+    Droplets,
     FileKey2,
     Fingerprint,
     KeyRound,
@@ -36,13 +37,13 @@ import {
     docsUrl,
     explorerAddressUrl,
     explorerTxUrl,
+    faucetUrl,
     landingUrl,
     publicClient,
     publicSubmitterAvailability,
     submitterAvailability,
 } from "../lib/config";
 import {RevokeButton} from "./RevokeButton";
-import {TestnetTopUp} from "./TestnetTopUp";
 import {awaitRevocationVisible} from "../lib/revoke";
 import {short, struckPercent} from "../lib/dial";
 import {
@@ -107,6 +108,8 @@ const COPY: Record<
         spentLegend: (amount: string) => string;
         capLegend: (amount: string) => string;
         noCapCaveat: string;
+        faucetAction: string;
+        faucetHint: string;
         metricsAria: string;
         payerAccount: string;
         payerAccountDetail: string;
@@ -195,6 +198,8 @@ const COPY: Record<
         spentLegend: (amount) => `Spent ${amount} ${MOCK_USDC.symbol}`,
         capLegend: (amount) => `Cap ${amount} ${MOCK_USDC.symbol}`,
         noCapCaveat: "This delegation has no period cap caveat.",
+        faucetAction: "Get testnet tokens",
+        faucetHint: `${MOCK_USDC.symbol} (testnet, not real money) for this payer account comes from the Mapae faucet. Sign in there with the owner wallet.`,
         metricsAria: "Key permission details",
         payerAccount: "Payer account",
         payerAccountDetail: "The smart account holding the funds",
@@ -290,6 +295,8 @@ const COPY: Record<
         spentLegend: (amount) => `사용 ${amount} ${MOCK_USDC.symbol}`,
         capLegend: (amount) => `한도 ${amount} ${MOCK_USDC.symbol}`,
         noCapCaveat: "이 위임에는 주기 한도 caveat이 없습니다.",
+        faucetAction: "테스트넷 토큰 받기",
+        faucetHint: `이 지불 계정에 넣을 ${MOCK_USDC.symbol}(테스트넷, 실제 돈 아님)는 Mapae faucet에서 받습니다. 그곳에서 소유자 지갑으로 로그인하세요.`,
         metricsAria: "권한 핵심 정보",
         payerAccount: "지불 계정",
         payerAccountDetail: "자금이 보관된 스마트 계정",
@@ -692,15 +699,21 @@ function StudioSidebar({
 }
 
 /**
- * The payer's token balance, refreshed alongside the delegation status and again after a
- * top-up (`refresh` is a counter the faucet button bumps).
+ * The payer's token balance, read again whenever the window regains focus — the faucet
+ * opens in its own tab, and coming back from it is when the number changes.
  *
  * Deliberately separate from `readDelegationStatus`: that function reads the enforcers,
  * which know the cap and nothing about the balance. Folding a token read into it would put
  * an ERC-20 dependency inside the delegation package for the benefit of one screen.
  */
-function usePayerBalance(payer: `0x${string}` | undefined, refresh: number): bigint | undefined {
+function usePayerBalance(payer: `0x${string}` | undefined): bigint | undefined {
     const [balance, setBalance] = useState<bigint | undefined>(undefined);
+    const [focus, setFocus] = useState(0);
+    useEffect(() => {
+        const again = () => setFocus((n) => n + 1);
+        window.addEventListener("focus", again);
+        return () => window.removeEventListener("focus", again);
+    }, []);
     useEffect(() => {
         if (!payer) {
             setBalance(undefined);
@@ -713,7 +726,7 @@ function usePayerBalance(payer: `0x${string}` | undefined, refresh: number): big
         return () => {
             current = false;
         };
-    }, [payer, refresh]);
+    }, [payer, focus]);
     return balance;
 }
 
@@ -726,8 +739,7 @@ function Overview({
 }) {
     const {locale} = useLocale();
     const t = COPY[locale];
-    const [topUps, setTopUps] = useState(0);
-    const balance = usePayerBalance(permission.root.delegator as `0x${string}`, topUps);
+    const balance = usePayerBalance(permission.root.delegator as `0x${string}`);
     const live = !status.revoked && !status.expired && !status.notYetActive;
     const started = (status.currentPeriod ?? 0n) > 0n;
     const cap = status.limit?.periodAmount;
@@ -818,11 +830,13 @@ function Overview({
                             <p>{t.noCapCaveat}</p>
                         </div>
                     )}
-                    <TestnetTopUp
-                        key={permission.context}
-                        root={permission.root}
-                        onMinted={() => setTopUps((n) => n + 1)}
-                    />
+                    <div className="studio-topup">
+                        <a className="mapae-action mapae-action-secondary" href={faucetUrl} target="_blank" rel="noreferrer noopener">
+                            <Droplets size={14} />
+                            {t.faucetAction}
+                        </a>
+                        <p className="studio-amount-note">{t.faucetHint}</p>
+                    </div>
                 </div>
 
                 <div className="studio-authority-emblem" aria-hidden="true">
