@@ -73,7 +73,8 @@ export async function faucetApi(request: Request, deps: FaucetApiDependencies): 
     if (write && (request.headers.get("Origin") !== url.origin || request.headers.get("Content-Type")?.split(";")[0] !== "application/json")) return error("origin_denied", 403);
     const {serviceToken, ipSalt, turnstileSecret, siteKey} = deps;
     if (!serviceToken || serviceToken.length < 32 || !ipSalt || ipSalt.length < 32 || !turnstileSecret || !siteKey) return refusal("faucet_off", 503);
-    const service = {token: serviceToken, fetcher: deps.fetcher ?? fetch};
+    // Native Workers fetch must not receive the service object as its `this`.
+    const service = {token: serviceToken, fetcher: deps.fetcher ?? ((url: string, init?: RequestInit) => fetch(url, init))};
     try {
         if (path === "/api/faucet/status") return await status(url, siteKey, service, deps.cache);
         if (path === "/api/faucet/challenge") return await siweChallenge(request, deps.repo, FAUCET_SITE, now);

@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, test} from "bun:test";
+import {afterEach, describe, expect, spyOn, test} from "bun:test";
 import {Database} from "bun:sqlite";
 import {readFileSync} from "node:fs";
 import {FAUCET_ETH_AMOUNT_WEI, FAUCET_ETH_WINDOW_MS, FAUCET_TARGET_BASE, FAUCET_WINDOW_MS} from "@mapae/delegation/faucet-policy";
@@ -95,6 +95,23 @@ describe("origin and configuration", () => {
 });
 
 describe("status", () => {
+    test("the default network adapter preserves the Workers fetch receiver", async () => {
+        const net = network();
+        // Workerd rejects native fetch called as service.fetcher(...). An injected
+        // arrow-function network fake does not, so exercise the default adapter too.
+        const nativeFetch = spyOn(globalThis, "fetch").mockImplementation(Object.assign(function(this: unknown, input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) {
+            if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+            return net.fetcher(String(input), init);
+        }, {preconnect: globalThis.fetch.preconnect}));
+        try {
+            const response = await faucetApi(request("/status"), deps(repo(), undefined));
+            expect(response.status).toBe(200);
+            expect(await response.json<unknown>()).toEqual({...STATUS, siteKey: SITE_KEY});
+            expect(net.service()).toHaveLength(1);
+            expect(net.service()[0]?.init?.headers).toMatchObject({Authorization: `Bearer ${TOKEN}`});
+        } finally {nativeFetch.mockRestore();}
+    });
+
     test("is the service's status, validated, with the site key, cached at the edge", async () => {
         const net = network(), repository = repo(), store = new Map<string, Response>();
         const cache = Promise.resolve({
