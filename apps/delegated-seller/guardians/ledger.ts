@@ -33,7 +33,8 @@ export class GuardianLedger {
             CREATE INDEX IF NOT EXISTS ranked_game_day ON arcade_guardian_ranked(collection, ruleset, game, day);
             CREATE INDEX IF NOT EXISTS ranked_game_week ON arcade_guardian_ranked(collection, ruleset, game, week);
             CREATE INDEX IF NOT EXISTS ranked_token_day ON arcade_guardian_ranked(collection, token_id, day);
-            CREATE INDEX IF NOT EXISTS ranked_day ON arcade_guardian_ranked(collection, day);`);
+            CREATE INDEX IF NOT EXISTS ranked_day ON arcade_guardian_ranked(collection, day);
+            CREATE INDEX IF NOT EXISTS ranked_week ON arcade_guardian_ranked(collection, week, created_at);`);
     }
     get(id: string): StoredResult | null {
         const row = this.db.query<{data: string}, [string]>('SELECT data FROM arcade_guardian_results WHERE result_id=?').get(id.toLowerCase());
