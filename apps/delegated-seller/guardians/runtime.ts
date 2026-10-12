@@ -45,10 +45,12 @@ export function createGuardianReader(config: Config, client: GuardianClient = cr
             read('ownerOf',[id],n), read('ownershipEpoch',[id],n), read('birth',[id],n), read('progress',[id],n),
         ]);
         const [seed, sequence, revealed] = birth as readonly [Hex,bigint,boolean];
-        const p = progress as {plays:bigint;victories:bigint;experience:bigint;gamePlays:readonly bigint[];gameVictories:readonly bigint[];bestScores:readonly number[]};
+        const p = progress as {plays:bigint;victories:bigint;experience:bigint;gamePlays:readonly bigint[];gameVictories:readonly bigint[];bestScores:readonly number[];
+            honorWeek:number;longestStreak:number;champion:readonly number[];podium:readonly number[];top10:readonly number[]};
         const growth: Progress = {plays: Number(p.plays), victories: Number(p.victories), experience: Number(p.experience), level: 1 + Number(p.experience / 100n),
             games: [0,1,2].map(i => ({plays:Number(p.gamePlays[i]),victories:Number(p.gameVictories[i]),bestScore:Number(p.bestScores[i])}))};
-        return {tokenId, owner:getAddress(owner as Address), ownershipEpoch:String(epoch), seed, sequence:String(sequence), revealed, progress:growth};
+        const honors = {week:p.honorWeek, longestStreak:p.longestStreak, titles:[0,1,2].map(i => ({champion:p.champion[i]!,podium:p.podium[i]!,top10:p.top10[i]!}))};
+        return {tokenId, owner:getAddress(owner as Address), ownershipEpoch:String(epoch), seed, sequence:String(sequence), revealed, progress:growth, honors};
     }
     return {
         collection: config.collection,

@@ -1,7 +1,7 @@
 import {afterEach,expect,test} from 'bun:test';
 import {privateKeyToAccount} from 'viem/accounts';
 import {encodePacked,keccak256,toHex,type Address,type Hex} from 'viem';
-import {guardianName,guardianResultDomain,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash} from '@mapae/arcade/guardians';
+import {emptyHonors,guardianName,guardianResultDomain,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash} from '@mapae/arcade/guardians';
 import type {GuardianClaimBatch,GuardianToken,VerifiedResult} from '../profile/guardians';
 import {nftCompanion,verifiedClaims,pendingGrowth,guardianPortrait,refreshedDetail,verifyReplacement} from './model';
 import {assertNftTransactionStorage,saveNftTransaction,readNftTransaction,clearNftTransaction} from './transaction-store';
@@ -12,7 +12,7 @@ import type {OutingView} from '@mapae/arcade/outings';
 const owner:Address='0x1111111111111111111111111111111111111111',collection:Address='0x2222222222222222222222222222222222222222';
 const account=privateKeyToAccount(toHex(123456n,{size:32}));
 const word=(n:number)=>toHex(n,{size:32});
-const token:GuardianToken={tokenId:'7',owner,ownershipEpoch:'3',revealed:true,seed:word(42),sequence:'12',progress:{plays:2,victories:1,experience:25,level:1,games:[{plays:1,victories:1,bestScore:200},{plays:1,victories:0,bestScore:50},{plays:0,victories:0,bestScore:0}]}};
+const token:GuardianToken={tokenId:'7',owner,ownershipEpoch:'3',revealed:true,seed:word(42),sequence:'12',progress:{plays:2,victories:1,experience:25,level:1,games:[{plays:1,victories:1,bestScore:200},{plays:1,victories:0,bestScore:50},{plays:0,victories:0,bestScore:0}]},honors:emptyHonors()};
 const result:VerifiedResult={id:word(1),tokenId:'7',actor:owner,ownershipEpoch:'1',transaction:word(2),game:'race',seed:123,ruleset:3,score:42,victory:true,claimed:false,at:Date.parse('2026-10-10T03:00:00Z'),outcome:{game:'race',score:42,summary:{ko:'우승',en:'Victory'},metrics:[],transcript:[],ranking:[],achievement:{victory:true},replay:{seed:123,version:3}}};
 const claimJson=(patch:Record<string,unknown>={})=>({resultId:result.id as Hex,tokenId:'7',actor:owner,ownershipEpoch:'1',paymentTx:word(2),traitsHash:guardianTraitsHash(token.seed),inputsHash:word(3),ruleset:3,seed:123,game:1,score:42,victory:true,...patch});
 const sign=(r:ReturnType<typeof claimJson>)=>account.signTypedData({domain:guardianResultDomain(collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:guardianResultFromJson(r)});

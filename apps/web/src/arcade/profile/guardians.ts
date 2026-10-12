@@ -1,5 +1,5 @@
 import {isAddress,isHash,type Address} from 'viem';
-import {guardianName,guardianTokenId,guardianTraitsHash,GUARDIAN_CLAIM_BATCH} from '@mapae/arcade/guardians';
+import {guardianName,guardianTokenId,guardianTraitsHash,validGuardianHonors,GUARDIAN_CLAIM_BATCH,type GuardianHonors} from '@mapae/arcade/guardians';
 import {rankedSeed,validRankedAttempt} from '@mapae/arcade/ranking';
 import type {GuardianClaimBatch,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
 export type {GuardianClaimBatch,GuardianDetail,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
@@ -15,7 +15,7 @@ function progress(v:unknown):v is Progress {
 }
 function token(v:unknown):v is GuardianToken {
     return object(v)&&guardianTokenId(v.tokenId)&&typeof v.owner==='string'&&isAddress(v.owner)&&guardianTokenId(v.ownershipEpoch)&&BigInt(v.ownershipEpoch)<1n<<64n&&
-        typeof v.seed==='string'&&isHash(v.seed)&&decimal(v.sequence)&&BigInt(v.sequence)<1n<<64n&&typeof v.revealed==='boolean'&&progress(v.progress);
+        typeof v.seed==='string'&&isHash(v.seed)&&decimal(v.sequence)&&BigInt(v.sequence)<1n<<64n&&typeof v.revealed==='boolean'&&progress(v.progress)&&validGuardianHonors(v.honors);
 }
 function roster(v:unknown):v is GuardianRoster {
     return object(v)&&typeof v.enabled==='boolean'&&v.chainId===91342&&uint(v.minted)&&v.minted<=3&&
@@ -29,7 +29,8 @@ export function validGuardianSnapshot(v:unknown):boolean {
         typeof v.seed==='string'&&isHash(v.seed)&&v.traitsHash===guardianTraitsHash(v.seed)&&uint(v.ruleset)&&v.ruleset>=3;
 }
 const copyProgress=(v:Progress):Progress=>({plays:v.plays,victories:v.victories,experience:v.experience,level:v.level,games:v.games.map(g=>({plays:g.plays,victories:g.victories,bestScore:g.bestScore}))});
-const copyToken=(v:GuardianToken):GuardianToken=>({tokenId:v.tokenId,owner:v.owner,ownershipEpoch:v.ownershipEpoch,revealed:v.revealed,seed:v.seed,sequence:v.sequence,progress:copyProgress(v.progress)});
+const copyHonors=(v:GuardianHonors):GuardianHonors=>({week:v.week,longestStreak:v.longestStreak,titles:v.titles.map(t=>({champion:t.champion,podium:t.podium,top10:t.top10}))});
+const copyToken=(v:GuardianToken):GuardianToken=>({tokenId:v.tokenId,owner:v.owner,ownershipEpoch:v.ownershipEpoch,revealed:v.revealed,seed:v.seed,sequence:v.sequence,progress:copyProgress(v.progress),honors:copyHonors(v.honors)});
 function copyResult(v:unknown,tokenId:string):VerifiedResult {
     if(!object(v)||typeof v.id!=='string'||!isHash(v.id)||v.tokenId!==tokenId||!guardianTokenId(v.ownershipEpoch)||
         !(v.actor===null||typeof v.actor==='string'&&isAddress(v.actor))||!(v.transaction===null||typeof v.transaction==='string'&&isHash(v.transaction))||

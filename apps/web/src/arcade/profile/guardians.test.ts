@@ -1,7 +1,7 @@
 import {afterEach,describe,expect,test} from 'bun:test';
 import {Database} from 'bun:sqlite';
 import {readFileSync} from 'node:fs';
-import {guardianTraitsHash} from '@mapae/arcade/guardians';
+import {emptyHonors,guardianTraitsHash} from '@mapae/arcade/guardians';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
 import {kstDay} from '@mapae/arcade/ranking';
 import type {Address} from 'viem';
@@ -21,7 +21,7 @@ async function repository(){
     const repo=profileRepository(d1(db));await repo.session(await tokenHash(session),{owner,origin:'https://mapae.io',expires_at:now+10000});return repo;
 }
 const request=(suffix='',method='GET',body?:unknown,headers:Record<string,string>={})=>new Request(base+suffix,{method,headers:{Origin:'https://mapae.io','Content-Type':'application/json',Cookie:`__Host-mapae-arcade-session=${session}`,'X-Mapae-Wallet':owner,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
-const token={tokenId:'1',owner,ownershipEpoch:'1',revealed:true,seed,sequence:'1',progress:emptyProgress()};
+const token={tokenId:'1',owner,ownershipEpoch:'1',revealed:true,seed,sequence:'1',progress:emptyProgress(),honors:emptyHonors()};
 const roster:GuardianRoster={enabled:true,chainId:91342,collection:other,signer:other,mintFee:'12',minted:1,pendingTokenId:null,guardians:[token]};
 const response=(value:unknown)=>async()=>Response.json(value);
 const result={resultId:id,tokenId:'1',actor:owner,ownershipEpoch:'1',paymentTx:id,traitsHash:guardianTraitsHash(seed),inputsHash:seed,ruleset:ARCADE_RULESET_VERSION,seed:1,game:0,score:10,victory:false};

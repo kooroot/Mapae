@@ -1,5 +1,5 @@
 import type {Address, Hex} from 'viem';
-import type {GuardianSnapshot, GuardianResult} from '@mapae/arcade/guardians';
+import type {GuardianHonors, GuardianSnapshot, GuardianResult} from '@mapae/arcade/guardians';
 import type {OutingResult} from '@mapae/arcade/outings';
 
 export type {GuardianSnapshot};
@@ -8,6 +8,8 @@ export const emptyProgress = (): Progress => ({plays: 0, victories: 0, experienc
 export type GuardianToken = {
     tokenId: string; owner: Address; ownershipEpoch: string; revealed: boolean;
     seed: Hex; sequence: string; progress: Progress;
+    /** Ranking honors on the NFT (week 0 until the first honor claim). */
+    honors: GuardianHonors;
 };
 export type GuardianRoster = {
     enabled: boolean; chainId: 91342; collection: Address | null; signer: Address | null;
