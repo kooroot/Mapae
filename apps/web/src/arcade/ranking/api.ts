@@ -1,5 +1,6 @@
 import {isHash, type Hex} from "viem";
 import type {GameId} from "@mapae/arcade";
+import {GUARDIAN_MAX_SUPPLY} from "@mapae/arcade/guardians";
 import {
     BOARD_ROWS, DEVOTION_DAYS, isRankingDay, NEARBY_SPAN, parseRankingIds, RANKED_ATTEMPTS, RANKED_GAMES, STREAK_FREEZE_MAX, validRankingBoard, validRankingTokenId,
     type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings,
@@ -79,6 +80,8 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const uint = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 const score = (v: unknown): v is number => uint(v) && v <= MAX_SCORE;
 const instant = (v: unknown): v is number => uint(v) && v <= 8_640_000_000_000_000;
+/** An earlier rank: a place on a board, or null for no entry there. With no comparison every one is null. */
+const previous = (v: unknown, moves: boolean): v is number | null => v === null || (moves && uint(v) && v >= 1 && v <= GUARDIAN_MAX_SUPPLY);
 
 function row(v: unknown): RankingRow | null {
     if (!object(v) || !uint(v.rank) || v.rank < 1 || !validRankingTokenId(v.tokenId) || typeof v.seed !== "string" || !isHash(v.seed) || !score(v.score)) return null;
@@ -101,20 +104,23 @@ function rows(v: unknown, max: number, shared: boolean): RankingRow[] | null {
 
 export function parseRankingBoard(v: unknown, board: RankingBoardId, period: RankingPeriod): RankingBoard | null {
     if (!object(v) || v.board !== board || v.period !== period || !isRankingDay(v.from) || !isRankingDay(v.to) || v.from > v.to ||
-        !(v.closesAt === null || instant(v.closesAt)) || !uint(v.entrants)) return null;
-    const list = rows(v.rows, BOARD_ROWS, board === "devotion");
+        !(v.closesAt === null || instant(v.closesAt)) || !uint(v.entrants) || typeof v.moves !== "boolean") return null;
+    const list = rows(v.rows, BOARD_ROWS, board === "devotion"), moves = v.moves;
     if (!list || list.length > v.entrants || (list.length > 0 && list[0]!.rank !== 1) || (list.length < BOARD_ROWS && list.length !== v.entrants) ||
         (board === "devotion" && list.some(r => r.score > DEVOTION_DAYS))) return null;
-    return {board, period, from: v.from, to: v.to, closesAt: v.closesAt, entrants: v.entrants, rows: list};
+    const prevs = (v.rows as Record<string, unknown>[]).map(r => r.prev);
+    if (!prevs.every(p => previous(p, moves))) return null;
+    return {board, period, from: v.from, to: v.to, closesAt: v.closesAt, entrants: v.entrants, moves, rows: list.map((r, i) => ({...r, prev: prevs[i] as number | null}))};
 }
 
 function standing(v: unknown, tokenId: string): RankingStanding | null {
-    if (!object(v) || !uint(v.rank) || v.rank < 1 || !score(v.score) || !uint(v.entrants) || v.entrants < v.rank || !score(v.leader) || v.leader < v.score) return null;
+    if (!object(v) || !uint(v.rank) || v.rank < 1 || !score(v.score) || !uint(v.entrants) || v.entrants < v.rank || !score(v.leader) || v.leader < v.score ||
+        typeof v.moves !== "boolean" || !previous(v.prev, v.moves)) return null;
     const nearby = rows(v.nearby, NEARBY_SPAN * 2 + 1, false), above = v.above === null ? null : row(v.above);
     const self = nearby?.find(r => r.tokenId === tokenId);
     if (!nearby || !self || self.rank !== v.rank || self.score !== v.score || (v.rank === 1) !== (above === null) || (v.rank === 1 && v.leader !== v.score) ||
         (above && (above.rank !== v.rank - 1 || above.score < v.score || !nearby.some(r => r.tokenId === above.tokenId && r.rank === above.rank && r.score === above.score)))) return null;
-    return {rank: v.rank, score: v.score, entrants: v.entrants, leader: v.leader, above, nearby};
+    return {rank: v.rank, score: v.score, moves: v.moves, prev: v.prev, entrants: v.entrants, leader: v.leader, above, nearby};
 }
 function optionalStanding(v: unknown, tokenId: string): RankingStanding | null | undefined {
     return v === null ? null : standing(v, tokenId) ?? undefined;

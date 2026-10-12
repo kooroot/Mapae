@@ -2,7 +2,7 @@ import type {GameId} from "@mapae/arcade";
 import {guardianName, type GuardianHonors} from "@mapae/arcade/guardians";
 import {
     addDays, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
-    type GuardianStreak, type RankingBoardId, type RankingStanding, type RankingStandings,
+    type GuardianStreak, type RankingBoardId, type RankingMove, type RankingPeriod, type RankingStanding, type RankingStandings,
 } from "@mapae/arcade/ranking";
 import type {Locale} from "../../lib/i18n";
 
@@ -49,6 +49,29 @@ export function boardScore(board: RankingBoardId, value: number, locale: Locale)
 }
 export function placeLabel(rank: number, locale: Locale): string {
     return locale === "ko" ? `${rank}위` : `#${rank}`;
+}
+
+export type RankShift = {kind: "up" | "down"; by: number} | {kind: "same" | "new"};
+/** How a place moved since the board one window earlier; null when the seller found nothing fair to compare with. */
+export function rankShift(rank: number, {moves, prev}: RankingMove): RankShift | null {
+    if (!moves) return null;
+    if (prev === null) return {kind: "new"};
+    return prev === rank ? {kind: "same"} : prev > rank ? {kind: "up", by: prev - rank} : {kind: "down", by: rank - prev};
+}
+/** The earlier window each period is measured against, with the Korean comparison particle it takes. */
+const SINCE: Record<RankingPeriod, {ko: [string, string]; en: string}> = {
+    today: {ko: ["어제", "와"], en: "yesterday"}, yesterday: {ko: ["전날", "과"], en: "the day before"},
+    week: {ko: ["지난주", "와"], en: "last week"}, lastweek: {ko: ["전주", "와"], en: "the week before"}, "28d": {ko: ["어제", "와"], en: "yesterday"},
+};
+/** The movement tick's short mark and the sentence that says it in words, so colour and arrows never carry it alone. */
+export function shiftCopy(shift: RankShift, period: RankingPeriod, locale: Locale): {mark: string; label: string} {
+    const [since, particle] = SINCE[period].ko, en = SINCE[period].en;
+    switch (shift.kind) {
+    case "up": return {mark: `▲${shift.by}`, label: locale === "ko" ? `${since}보다 ${shift.by}계단 올라감` : `Up ${shift.by} from ${en}`};
+    case "down": return {mark: `▼${shift.by}`, label: locale === "ko" ? `${since}보다 ${shift.by}계단 내려감` : `Down ${shift.by} from ${en}`};
+    case "same": return {mark: "–", label: locale === "ko" ? `${since}${particle} 같은 순위` : `Same place as ${en}`};
+    case "new": return {mark: "NEW", label: locale === "ko" ? `새로 오름 · ${since}에는 기록 없음` : `New: no record ${en}`};
+    }
 }
 
 /**

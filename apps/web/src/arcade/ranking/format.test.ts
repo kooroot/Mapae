@@ -1,12 +1,31 @@
 import {describe, expect, test} from "bun:test";
 import {emptyHonors, guardianName} from "@mapae/arcade/guardians";
 import type {RankingStanding, RankingStandings} from "@mapae/arcade/ranking";
-import {attemptsBadge, attemptsLeft, boardScore, countdown, freshestGame, medalName, rankLine, resetClock, streakCopy, titleName, titlesOnNft} from "./format";
+import {attemptsBadge, attemptsLeft, boardScore, countdown, freshestGame, medalName, rankLine, rankShift, resetClock, shiftCopy, streakCopy, titleName, titlesOnNft} from "./format";
 
 const seed = `0x${"1".padStart(64, "0")}` as const;
 const row = (rank: number, tokenId: string, score: number) => ({rank, tokenId, seed, score});
 const standingAt = (rank: number, score: number, nearby: ReturnType<typeof row>[]): RankingStanding => ({
-    rank, score, entrants: 20, leader: nearby[0]?.rank === 1 ? nearby[0].score : 400, above: nearby.find(r => r.rank === rank - 1) ?? null, nearby,
+    rank, score, moves: false, prev: null, entrants: 20, leader: nearby[0]?.rank === 1 ? nearby[0].score : 400, above: nearby.find(r => r.rank === rank - 1) ?? null, nearby,
+});
+
+describe("rank movement", () => {
+    test("up, down, unchanged and new against the earlier rank; nothing without a comparison", () => {
+        expect(rankShift(3, {moves: true, prev: 5})).toEqual({kind: "up", by: 2});
+        expect(rankShift(4, {moves: true, prev: 1})).toEqual({kind: "down", by: 3});
+        expect(rankShift(2, {moves: true, prev: 2})).toEqual({kind: "same"});
+        expect(rankShift(1, {moves: true, prev: null})).toEqual({kind: "new"});
+        expect(rankShift(1, {moves: false, prev: null})).toBeNull();
+    });
+    test("every mark has a sentence naming the earlier window, in both languages", () => {
+        expect(shiftCopy({kind: "up", by: 2}, "today", "ko")).toEqual({mark: "▲2", label: "어제보다 2계단 올라감"});
+        expect(shiftCopy({kind: "up", by: 2}, "today", "en")).toEqual({mark: "▲2", label: "Up 2 from yesterday"});
+        expect(shiftCopy({kind: "down", by: 1}, "week", "ko")).toEqual({mark: "▼1", label: "지난주보다 1계단 내려감"});
+        expect(shiftCopy({kind: "same"}, "yesterday", "ko")).toEqual({mark: "–", label: "전날과 같은 순위"});
+        expect(shiftCopy({kind: "same"}, "lastweek", "en").label).toBe("Same place as the week before");
+        expect(shiftCopy({kind: "new"}, "28d", "ko")).toEqual({mark: "NEW", label: "새로 오름 · 어제에는 기록 없음"});
+        expect(shiftCopy({kind: "new"}, "week", "en").label).toBe("New: no record last week");
+    });
 });
 
 describe("rank line", () => {

@@ -1,19 +1,21 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import type {Hex} from "viem";
 import {ARCADE_RULESET_VERSION} from "@mapae/arcade";
-import {kstWeek, type RankingBoard, type RankingStandings} from "@mapae/arcade/ranking";
+import {kstWeek, type RankingBoard, type RankingStanding, type RankingStandings} from "@mapae/arcade/ranking";
 import {parseRankingBoard, parseRankingStandings, rankingApi, type RankingDependencies} from "./api";
 
 const receiptToken = "ranking-receipt-token".repeat(3), now = Date.parse("2026-10-14T03:00:00Z");
 const origin = "https://app.mapae.io/api/arcade/ranking";
 const seedOf = (tokenId: string) => `0x${tokenId.padStart(64, "0")}` as Hex;
 const rowOf = (rank: number, tokenId = String(rank), score = 100 - rank) => ({rank, tokenId, seed: seedOf(tokenId), score});
-const board = (rows = [rowOf(1), rowOf(2)]): RankingBoard => ({board: "race", period: "today", from: "2026-10-14", to: "2026-10-14", closesAt: now + 1000, entrants: rows.length, rows});
+const board = (rows: RankingBoard["rows"] = [{...rowOf(1), prev: 2}, {...rowOf(2), prev: null}], moves = true): RankingBoard =>
+    ({board: "race", period: "today", from: "2026-10-14", to: "2026-10-14", closesAt: now + 1000, entrants: rows.length, moves, rows});
+const still = (...rows: ReturnType<typeof rowOf>[]) => rows.map(r => ({...r, prev: null}));
 const empty = {attemptsUsed: 0, today: null, week: null};
 function standings(): RankingStandings {
     return {day: "2026-10-14", week: "2026-10-12", closesAt: {day: now + 1000, week: now + 5000}, leaders: {stamp: null, race: 99, shop: null}, guardians: [{
         tokenId: "2", streak: {current: 2, best: 4, freezes: 0, playedToday: true}, devotion: {rank: 1, days: 6}, titles: [{game: "race", place: 3}],
-        games: {stamp: empty, race: {attemptsUsed: 2, today: {rank: 2, score: 98, entrants: 2, leader: 99, above: rowOf(1), nearby: [rowOf(1), rowOf(2)]}, week: null}, shop: empty},
+        games: {stamp: empty, race: {attemptsUsed: 2, today: {rank: 2, score: 98, moves: true, prev: 5, entrants: 2, leader: 99, above: rowOf(1), nearby: [rowOf(1), rowOf(2)]}, week: null}, shop: empty},
     }]};
 }
 function memoryCache() {
@@ -68,7 +70,7 @@ describe("public ranking proxy", () => {
         expect((await rankingApi(new Request(origin + "/board/race/today"), {rateLimit: async () => true})).status).toBe(503);
         for (const answer of [() => new Response(null, {status: 302, headers: {Location: "https://evil.test"}}), () => Response.json({error: {code: "disabled"}}, {status: 503}),
             () => new Response("{}", {headers: {"Content-Length": String(65 * 1024)}}), () => new Response(`{"x":"${"a".repeat(70_000)}"}`), () => new Response("not json"),
-            () => Response.json({...board(), rows: [rowOf(2)]})]) {
+            () => Response.json({...board(), rows: still(rowOf(2))})]) {
             const {entries, call} = setup(answer);
             const response = await call("/board/race/today");
             expect(response.status).toBe(503); expect(await response.json<unknown>()).toEqual({error: {code: "ranking_unavailable"}}); expect(entries.size).toBe(0);
@@ -78,18 +80,22 @@ describe("public ranking proxy", () => {
 
 describe("strict copies", () => {
     test("boards: well-formed ranks, seeds, scores and counts; unknown fields dropped", () => {
-        const extra = {...board(), owner: "0x1111111111111111111111111111111111111111", rows: [{...rowOf(1), actor: "x"}, rowOf(2)]};
+        const extra = {...board(), owner: "0x1111111111111111111111111111111111111111", rows: [{...rowOf(1), prev: 2, actor: "x"}, {...rowOf(2), prev: null}]};
         expect(parseRankingBoard(extra, "race", "today")).toEqual(board());
+        expect(parseRankingBoard(board(still(rowOf(1)), false), "race", "today")?.moves).toBe(false);
         const bad: unknown[] = [
             {...board(), board: "shop"}, {...board(), period: "week"}, {...board(), from: "2026-10-15"}, {...board(), entrants: 1},
-            {...board(), entrants: 5}, board([rowOf(1), rowOf(3)]), board([rowOf(1), rowOf(2, "1")]), board([rowOf(1, "1", 1), rowOf(2, "2", 5)]),
-            board([{...rowOf(1), seed: "0x12"}]), board([{...rowOf(1), score: 1_000_000_001}]), board([{...rowOf(1), tokenId: "01"}]),
-            {...board(Array.from({length: 11}, (_, i) => rowOf(i + 1, String(i + 1), 50))), entrants: 11}, {...board(), closesAt: -1},
+            {...board(), entrants: 5}, board(still(rowOf(1), rowOf(3))), board(still(rowOf(1), rowOf(2, "1"))), board(still(rowOf(1, "1", 1), rowOf(2, "2", 5))),
+            board(still({...rowOf(1), seed: "0x12"})), board(still({...rowOf(1), score: 1_000_000_001})), board(still({...rowOf(1), tokenId: "01"})),
+            {...board(still(...Array.from({length: 11}, (_, i) => rowOf(i + 1, String(i + 1), 50)))), entrants: 11}, {...board(), closesAt: -1},
+            // Movement: a flag on every board, an earlier rank only while it compares, and a real place when given.
+            {...board(), moves: undefined}, {...board(), moves: "yes"}, board([{...rowOf(1), prev: 2}], false),
+            ...[undefined, 0, "2", 1.5, 10_001].map(prev => ({...board(), entrants: 1, rows: [{...rowOf(1), prev}]})),
         ];
         for (const value of bad) expect(parseRankingBoard(value, "race", "today")).toBeNull();
-        const devotion = {board: "devotion", period: "28d", from: "2026-09-17", to: "2026-10-14", closesAt: null, entrants: 3, rows: [rowOf(1, "1", 5), rowOf(1, "2", 5), rowOf(3, "3", 2)]};
+        const devotion = {board: "devotion", period: "28d", from: "2026-09-17", to: "2026-10-14", closesAt: null, entrants: 3, moves: false, rows: still(rowOf(1, "1", 5), rowOf(1, "2", 5), rowOf(3, "3", 2))};
         expect(parseRankingBoard(devotion, "devotion", "28d")?.rows.map(r => r.rank)).toEqual([1, 1, 3]);
-        for (const rows of [[rowOf(1, "1", 5), rowOf(2, "2", 5)], [rowOf(1, "1", 5), rowOf(3, "2", 2)], [rowOf(1, "1", 29)]]) expect(parseRankingBoard({...devotion, rows, entrants: rows.length}, "devotion", "28d")).toBeNull();
+        for (const rows of [still(rowOf(1, "1", 5), rowOf(2, "2", 5)), still(rowOf(1, "1", 5), rowOf(3, "2", 2)), still(rowOf(1, "1", 29))]) expect(parseRankingBoard({...devotion, rows, entrants: rows.length}, "devotion", "28d")).toBeNull();
     });
     test("standings: the requested guardians in order, with consistent ranks, attempts, streaks and titles", () => {
         expect(parseRankingStandings(standings(), ["2"])).toEqual(standings());
@@ -100,7 +106,8 @@ describe("strict copies", () => {
             s => {s.leaders.race = 120;}, s => {s.guardians[0]!.streak.freezes = 3;}, s => {s.guardians[0]!.streak.current = 5;},
             s => {s.guardians[0]!.devotion = {rank: null, days: 3};}, s => {s.guardians[0]!.titles.push({game: "race", place: 1});},
             s => {s.guardians[0]!.titles = [{game: "race", place: 11}];}, s => {delete (s.guardians[0]!.games as Partial<typeof s.guardians[0]["games"]>).shop;},
-            s => {s.closesAt.week = s.closesAt.day - 1;},
+            s => {s.closesAt.week = s.closesAt.day - 1;}, s => {delete (s.guardians[0]!.games.race.today as Partial<RankingStanding>).moves;},
+            s => {s.guardians[0]!.games.race.today!.moves = false;}, s => {s.guardians[0]!.games.race.today!.prev = 0;},
         ];
         for (const change of corrupt) {const value = standings(); change(value); expect(parseRankingStandings(value, ["2"])).toBeNull();}
     });
@@ -127,6 +134,8 @@ describe("real seller contract", () => {
             expect(response.status).toBe(200);
         }
         const mine = await (await rankingApi(new Request(origin + "/guardians/12"), deps)).json() as RankingStandings;
-        expect(mine.guardians[0]!.games.race.today).toMatchObject({rank: 12, entrants: 14}); expect(mine.guardians[0]!.streak).toMatchObject({current: 2});
+        expect(mine.guardians[0]!.games.race.today).toMatchObject({rank: 12, entrants: 14, moves: true, prev: 1});
+        const race = await (await rankingApi(new Request(origin + "/board/race/today"), deps)).json() as RankingBoard;
+        expect(race.moves).toBe(true); expect(race.rows.map(r => r.prev)).toEqual(Array(10).fill(null)); expect(mine.guardians[0]!.streak).toMatchObject({current: 2});
     });
 });
