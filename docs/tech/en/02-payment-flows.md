@@ -263,20 +263,27 @@ signatures that OZ `ECDSA` reverts on, so without this check we would pay to dep
 accounts whose every grant reverts forever.
 
 Per-account idempotency is identity, not a budget — keypairs are free offline, so
-the real bounds on a griefing run are the faucet window (one top-up per account per
-24 hours), the daily gas budget (`BOOTSTRAP_DAILY_WEI`), and the sponsor balance
+the real bounds on a griefing run are the daily gas budget (`BOOTSTRAP_DAILY_WEI`)
+and the sponsor balance
 kept deliberately small. The hourly per-IP cap (`BOOTSTRAP_RATE_PER_HOUR`, default
 30, IPv6 counted per /64) is a speed bump on top of those: IPs are shared and keys
 are free, so it cannot stop a griefer, but without any cap one machine could drain
 the day's budget from one address in under an hour by sending fresh keypairs. The
-faucet tops any account below 1000 tUSDC (testnet, not real money) up to that
-target (`packages/delegation/src/faucet-policy.ts`). The sponsor holds no
-delegation authority, so it cannot reach payer funds, caps, or settlement.
-Verification is `bun run test:e2e:bootstrap` — 16 cases on a GIWA fork (kill
-switch, approval mismatch, shared-relayer refusal, foreign signer, high-s,
-deployment, late binding, gas accounting, faucet top-up to target, idempotency,
-concurrency, faucet 24-hour window, budget exhaustion, chain-failure leak guard,
-hourly per-IP cap with the header-less exemption), 16/16.
+sponsor holds no delegation authority, so it cannot reach payer funds, caps, or
+settlement. Verification is `bun run test:e2e:bootstrap` — 14 cases on a GIWA fork
+(kill switch, approval mismatch, shared-relayer refusal, foreign signer, high-s,
+deployment, late binding, gas accounting, idempotency, concurrency, budget
+exhaustion, chain-failure leak guard, hourly per-IP cap with the header-less
+exemption), 14/14.
+
+Testnet tokens come from faucet.mapae.io instead (`apps/faucet`). The Worker checks a
+SIWE session bound to that origin, Turnstile (bound to the hostname, the claim's kind
+and the wallet) and HMAC'd IP and subnet keys, then calls the service with a bearer.
+The service tops the wallet's payer account up to 1000 tUSDC (testnet, not real money)
+once a day and, once the ETH tab is on, sends 0.05 GIWA Sepolia ETH only to wallets
+with Ethereum mainnet history (once a week, one per IP and three per subnet a day, a
+daily wei cap and a floor kept for mint gas). The claim ledger writes the signed bytes
+to disk before broadcasting, so a restart finishes the same transaction.
 
 ## Agent automation (MCP)
 

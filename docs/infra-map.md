@@ -47,6 +47,7 @@ flowchart TB
         FAC["apps/facilitator-erc7710 :8081<br/>x402 검증·정산"]
         SELLER["apps/delegated-seller :3001<br/>402 발행, 데모 벤더"]
         BOOT["apps/account-bootstrap :8083<br/>계정 배포 대납"]
+        FAUCET["apps/faucet :8084<br/>테스트넷 토큰 지급"]
         REVO["apps/revocation-submitter :8082<br/>회수 대납 — 라이브"]
     end
 
@@ -65,12 +66,14 @@ flowchart TB
     TUNNEL --> CFD
     CFD -->|"path ^/bootstrap"| BOOT
     CFD -->|"path ^/revoke"| REVO
+    CFD -->|"path ^/faucet (Worker만, Bearer)"| FAUCET
     CFD -->|"facilitator.mapae.io 나머지"| FAC
     CFD -->|"seller.mapae.io"| SELLER
     SELLER -->|"loopback /verify /settle"| FAC
     FAC -->|"redeemDelegations"| DM
     DM --> USDC
     BOOT -->|"CREATE2 배포"| PAYER
+    FAUCET -->|"tUSDC mint · ETH 전송"| USDC
     REVO -->|"depositTo + handleOps"| EP
     EP -->|"disableDelegation"| DM
 ```
@@ -88,13 +91,16 @@ D1–D2 EOA 흐름 개발용)와 delegation-lab(fork 시뮬레이션·e2e). 어�
 | `apps/facilitator-erc7710` | 미니 | 8081 | `facilitator.mapae.io` | **정산 서명자** | ERC-7710 결제를 검증하고 `redeemDelegations`로 정산. 가스를 대신 낸다. IP당 시간 제한(`FACILITATOR_RATE_PER_HOUR`)과 payer별 일일 가스 몫(`RELAYER_PAYER_DAILY_WEI`)이 총 예산(`RELAYER_DAILY_WEI`) 앞에 선다. 거부된 정산 행은 7일·최신 5만 건만 보존 |
 | `apps/delegated-seller` | 미니 | 3001 | `seller.mapae.io` | 없음 (수취 주소는 상점 파일의 판매자 행) | 호스티드 상점. `/s/:slug` 매니페스트, `/s/:slug/:key` 402 → 티켓, `/s/:slug/tickets/:code` 티켓 재조회, `/metrics`(`METRICS_TOKEN`). 정산은 루프백 `FACILITATOR_URL`로 하고 매니페스트·`/health`가 알리는 주소는 `PUBLIC_FACILITATOR_URL`(공개 `BASE_URL`이면 필수, 없으면 기동 거부). 판매자·상품·주문은 `STORE_PATH`의 SQLite 파일이고 시드는 `bun run seed`. 받기만 하므로 키가 없다 |
 | `apps/account-bootstrap` | 미니 | 8083 | `facilitator.mapae.io/bootstrap` | **부트스트랩 스폰서** | 서명만 있고 배포 안 된 payer 계정을 스폰서 가스로 배포. IP당 시간 제한(`BOOTSTRAP_RATE_PER_HOUR`)이 일일 예산 앞에 선다 |
+| `apps/faucet` | 미니 | 8084 | `facilitator.mapae.io/faucet` (faucet.mapae.io Worker만 Bearer로 부른다) | **faucet 지갑** | 지불 계정에 tUSDC(테스트넷, 실제 돈 아님) 목표 잔액 보충, 운영자가 켜면 지갑에 GIWA Sepolia ETH 0.05. 청구 원장은 `STORE_PATH` SQLite. 절차는 `apps/faucet/README.md` |
 | `apps/revocation-submitter` | 미니 | 8082 | `facilitator.mapae.io/revoke` (라이브, 2026-08-04) | **서브미터 릴레이어 + 회수 스폰서** | 오너가 서명한 회수 UserOp을 EntryPoint에 실어 보낸다 |
 | Worker `mapae` / `mapae-app` | Cloudflare | — | `mapae.io` / `app.mapae.io` | 없음 | 랜딩 / Studio. 브라우저 코드만 서빙, 키 없음. 가디언 이미지 API만 서버에서 체인을 읽는데, Worker 비밀 `GIWA_SEPOLIA_RPC_URL`(유료 전용 RPC, 공개 RPC는 Cloudflare 출구를 자주 거절)로 읽고 공개된 그림은 Cache API에 둔다 |
+| Worker faucet (`faucet.mapae.io`) | Cloudflare | — | `faucet.mapae.io` | 없음 | faucet 페이지와 `/api/faucet/*`. SIWE(이 오리진에 묶임)·Turnstile·IP/서브넷 HMAC 뒤에 faucet 서비스를 부른다. 비밀 `FAUCET_SERVICE_TOKEN`·`FAUCET_IP_SALT`·`TURNSTILE_SECRET_KEY`·`TURNSTILE_SITE_KEY` 중 하나라도 없으면 `faucet_off` |
 | Worker `mapae-docs` | Cloudflare | — | `docs.mapae.io` | 없음 | 기술 문서. 스크립트 없이 정적 파일만 서빙 |
 | Worker `mapae-docs-legacy` | Cloudflare | — | `gitbook.mapae.io` | 없음 | GitBook 시절 주소를 경로째 301로 넘긴다. 제출 폼에 적힌 링크가 여기로 온다 |
 
-같은 도메인(`facilitator.mapae.io`) 아래 세 서비스가 사는 이유: cloudflared가
-**경로 규칙**으로 가른다. `^/bootstrap` → 8083, `^/revoke` → 8082, 나머지 → 8081.
+같은 도메인(`facilitator.mapae.io`) 아래 네 서비스가 사는 이유: cloudflared가
+**경로 규칙**으로 가른다. `^/bootstrap` → 8083, `^/revoke` → 8082, `^/faucet` → 8084,
+나머지 → 8081.
 경로 규칙이 호스트 전역 규칙보다 위에 있어야 하고, 경로는 그대로 전달된다. 그래서
 부트스트랩과 서브미터의 `/health`는 밖에서 닿지 않지만, 퍼실리테이터의 `/health`는
 "나머지" 규칙을 타고 **공개**다 — 2026-09-06 감사에서 `curl facilitator.mapae.io/health`가
@@ -135,7 +141,7 @@ flowchart LR
     C1 -->|"mUSDC 입금"| RECV
 ```
 
-### 3.2 표 — 일곱 지갑, 키가 사는 곳
+### 3.2 표 — 여덟 지갑, 키가 사는 곳
 
 | # | 역할 | 주소 | 키 위치 | 가스 | 겹치면 무엇이 죽나 |
 |---|---|---|---|---|---|
@@ -144,6 +150,7 @@ flowchart LR
 | ③ | 부트스트랩 스폰서 | `0x11E188f7E5beea0BdE3016D0dcCB2b91226c3211` | `apps/account-bootstrap/.env` `BOOTSTRAP_PRIVATE_KEY` | **낸다** | 온보딩 + 잔고 합쳐짐 |
 | ④ | 서브미터 릴레이어 | `0x226B24364e573162Fa68fB0752748B5eE6312822` | `apps/revocation-submitter/.env` `REVOCATION_RELAYER_PRIVATE_KEY` | **낸다** | ②와 겹치면 정산이 죽는다 |
 | ⑤ | 회수 스폰서 | `0x3306EC395Aefa0c0d78d10fCFB45c4390a8eDB33` | `apps/revocation-submitter/.env` `REVOCATION_SPONSOR_PRIVATE_KEY` | **낸다** | ④와 겹치면 자력 회수까지 죽는다 |
+| ⑧ | faucet 지갑 | 운영자가 새로 만든다 | `apps/faucet/.env` `FAUCET_PRIVATE_KEY` | **낸다** (tUSDC 민팅 가스 + ETH 지급) | 다른 키와 겹치면 기동 거부 (`assertFundedKeySeparation`) |
 | ⑥ | Payer 스마트계정 | `0xA4e4d00E5860d3700aF2247fFa818Fb62BDDF382` 등 | **키 없음** — 오너가 지갑에서 서명 | **0** | — |
 | ⑦ | 수취 (`PAY_TO`) | 벤더별 | **키 없음** — 주소만 | — | — |
 
@@ -219,7 +226,7 @@ sequenceDiagram
     O-->>B: 서명 (tx 아님, 가스 0)
     B->>BS: POST /bootstrap { permissionContext }
     BS->>BS: 서명에서 오너 복원 → CREATE2 주소 일치 확인
-    BS->>C: 계정 배포 + mUSDC 민팅 (가스: ③)
+    BS->>C: 계정 배포 (가스: ③)
     C-->>BS: 배포 후 ERC-1271이 그 서명을 소급 검증
     BS-->>B: 계정 주소 + 영수증
 ```
@@ -283,7 +290,8 @@ sequenceDiagram
 
 | 종류 | 지갑 | 트랜잭션 | 자산 이동 |
 |---|---|---|---|
-| 온보딩·회수 | ③ ④ ⑤ | 계정 배포 CREATE2·faucet 민팅(4.2), 회수 `depositTo`·`handleOps`(4.3) | 사용자 자산을 옮기는 트랜잭션이 아니다. faucet은 테스트 토큰을 사용자 계정에 직접 발행하며(마패 지갑을 거치지 않음), 배포 아티팩트의 chain id가 테스트넷일 때만 켜진다 |
+| 온보딩·회수 | ③ ④ ⑤ | 계정 배포 CREATE2(4.2), 회수 `depositTo`·`handleOps`(4.3) | 사용자 자산을 옮기는 트랜잭션이 아니다 |
+| 테스트넷 faucet | ⑧ | 테스트 토큰 `mint`, GIWA Sepolia ETH 전송 | 실가치 없는 테스트넷 자산만. 테스트 토큰은 사용자 지불 계정에 직접 발행하고(마패 지갑을 거치지 않음), 서비스는 GIWA Sepolia 배포 아티팩트가 아니면 기동하지 않는다 |
 | 정산 릴레이 | ② | `redeemDelegations`(4.1) | 그 트랜잭션 안에서 payer → 판매자 주소. 마패 지갑은 경로 밖이고 가스만 낸다 |
 
 가르는 이유는 규제 질문이 붙는 자리가 다르기 때문이다. 온보딩·회수 스폰서는 위임

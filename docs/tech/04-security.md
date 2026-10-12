@@ -93,7 +93,8 @@ facilitator와 같은 공개 호스트는 `/bootstrap` 경로로 온보딩 스�
 | 중복 settle | canonical 결제 조건과 context 바이트의 `paymentIntentId`로 단일화, broadcast tx hash를 receipt보다 먼저 저장 |
 | 복잡한 delegation gas DoS | estimate 후 설정 gas cap 초과 거절 |
 | 비인가 relayer | leaf의 `RedeemerEnforcer`와 402 `facilitatorAddresses` 교집합 강제 |
-| 온보딩 그리핑 (배포 요청 반복) | IP당 시간 제한(과속방지턱) + 계정당 24시간 1회 faucet 창 + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
+| 온보딩 그리핑 (배포 요청 반복) | IP당 시간 제한(과속방지턱) + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
+| 테스트넷 faucet 파밍 (지갑·계정을 바꿔 가며 받기) | faucet.mapae.io 오리진의 SIWE + Turnstile + HMAC한 IP·서브넷 한도 + 지갑당 창; ETH는 메인넷 거래 기록 1건 이상, 하루 wei 상한, 바닥 잔액 — 별도 faucet 지갑이라 정산·배포 키와 무관 |
 | 정산 그리핑 (무료 tUSDC로 자기 자신에게 결제 반복) | IP당 시간 제한 + payer별 일일 가스 몫(`RELAYER_PAYER_DAILY_WEI`)을 총 예산보다 먼저 잡는다 — 한 payer가 제 몫을 다 써도 다른 판매자는 그날 계속 정산된다. 거부된 정산 행은 원장에 7일·최신 5만 건까지만 남긴다(부팅 때와 매시간 정리) — sqlite 파일이 거절만으로 끝없이 자라지 않는다 |
 | 배포 대상 주소 지명 | 요청 본문은 `{permissionContext}`뿐 — owner는 서명에서 복원, 계정은 `CREATE2(owner)`이며 delegator와 일치해야 함 |
 | 비-canonical 서명 (high-s, `v ∉ {27,28}`) | 오프라인 canonical 검사 후에만 배포 — viem은 수락하지만 OZ `ECDSA`는 revert하므로, 검사 없이는 모든 grant가 revert하는 계정을 돈 내고 배포하게 된다 |
