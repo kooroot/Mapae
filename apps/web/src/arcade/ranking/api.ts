@@ -81,7 +81,7 @@ const uint = (v: unknown): v is number => typeof v === "number" && Number.isSafe
 const score = (v: unknown): v is number => uint(v) && v <= MAX_SCORE;
 const instant = (v: unknown): v is number => uint(v) && v <= 8_640_000_000_000_000;
 /** An earlier rank: a place on a board, or null for no entry there. With no comparison every one is null. */
-const previous = (v: unknown, moves: boolean): v is number | null => v === null || (moves && uint(v) && v >= 1 && v <= GUARDIAN_MAX_SUPPLY);
+const earlierRank = (v: unknown, moves: boolean): v is number | null => v === null || (moves && uint(v) && v >= 1 && v <= GUARDIAN_MAX_SUPPLY);
 
 function row(v: unknown): RankingRow | null {
     if (!object(v) || !uint(v.rank) || v.rank < 1 || !validRankingTokenId(v.tokenId) || typeof v.seed !== "string" || !isHash(v.seed) || !score(v.score)) return null;
@@ -108,14 +108,15 @@ export function parseRankingBoard(v: unknown, board: RankingBoardId, period: Ran
     const list = rows(v.rows, BOARD_ROWS, board === "devotion"), moves = v.moves;
     if (!list || list.length > v.entrants || (list.length > 0 && list[0]!.rank !== 1) || (list.length < BOARD_ROWS && list.length !== v.entrants) ||
         (board === "devotion" && list.some(r => r.score > DEVOTION_DAYS))) return null;
-    const prevs = (v.rows as Record<string, unknown>[]).map(r => r.prev);
-    if (!prevs.every(p => previous(p, moves))) return null;
+    // Only devotion shares places, so on any other board two rows never held the same earlier place.
+    const prevs = (v.rows as Record<string, unknown>[]).map(r => r.prev), held = prevs.filter(p => p !== null);
+    if (!prevs.every(p => earlierRank(p, moves)) || (board !== "devotion" && new Set(held).size !== held.length)) return null;
     return {board, period, from: v.from, to: v.to, closesAt: v.closesAt, entrants: v.entrants, moves, rows: list.map((r, i) => ({...r, prev: prevs[i] as number | null}))};
 }
 
 function standing(v: unknown, tokenId: string): RankingStanding | null {
     if (!object(v) || !uint(v.rank) || v.rank < 1 || !score(v.score) || !uint(v.entrants) || v.entrants < v.rank || !score(v.leader) || v.leader < v.score ||
-        typeof v.moves !== "boolean" || !previous(v.prev, v.moves)) return null;
+        typeof v.moves !== "boolean" || !earlierRank(v.prev, v.moves)) return null;
     const nearby = rows(v.nearby, NEARBY_SPAN * 2 + 1, false), above = v.above === null ? null : row(v.above);
     const self = nearby?.find(r => r.tokenId === tokenId);
     if (!nearby || !self || self.rank !== v.rank || self.score !== v.score || (v.rank === 1) !== (above === null) || (v.rank === 1 && v.leader !== v.score) ||

@@ -91,10 +91,14 @@ describe("strict copies", () => {
             // Movement: a flag on every board, an earlier rank only while it compares, and a real place when given.
             {...board(), moves: undefined}, {...board(), moves: "yes"}, board([{...rowOf(1), prev: 2}], false),
             ...[undefined, 0, "2", 1.5, 10_001].map(prev => ({...board(), entrants: 1, rows: [{...rowOf(1), prev}]})),
+            board([{...rowOf(1), prev: 3}, {...rowOf(2), prev: 3}]),
         ];
         for (const value of bad) expect(parseRankingBoard(value, "race", "today")).toBeNull();
         const devotion = {board: "devotion", period: "28d", from: "2026-09-17", to: "2026-10-14", closesAt: null, entrants: 3, moves: false, rows: still(rowOf(1, "1", 5), rowOf(1, "2", 5), rowOf(3, "3", 2))};
         expect(parseRankingBoard(devotion, "devotion", "28d")?.rows.map(r => r.rank)).toEqual([1, 1, 3]);
+        // Devotion shares places, so two guardians tied yesterday both carry that earlier place.
+        const tied = {...devotion, moves: true, rows: devotion.rows.map((r, i) => ({...r, prev: i < 2 ? 2 : null}))};
+        expect(parseRankingBoard(tied, "devotion", "28d")?.rows.map(r => r.prev)).toEqual([2, 2, null]);
         for (const rows of [still(rowOf(1, "1", 5), rowOf(2, "2", 5)), still(rowOf(1, "1", 5), rowOf(3, "2", 2)), still(rowOf(1, "1", 29))]) expect(parseRankingBoard({...devotion, rows, entrants: rows.length}, "devotion", "28d")).toBeNull();
     });
     test("standings: the requested guardians in order, with consistent ranks, attempts, streaks and titles", () => {
