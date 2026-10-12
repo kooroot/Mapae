@@ -96,12 +96,12 @@ NFT 소유권과 영구 성장
 - 청구 시 성공 영수증과 정확한 Transfer를 다시 검사하고 GIWA safe 블록 이하의
   canonical 블록 해시를 확인한 뒤 EIP-712 결과에 서명한다. safe 조회가 지원되지 않거나
   불확실하면 청구는 확인 대기로 남는다. latest 성공 영수증만으로 서명하지 않는다.
-- 사용자가 claimResult 트랜잭션을 제출한다. 실패·새로고침·응답 소실 시 같은 resultId를
-  다시 조회한다. 결제나 게임을 새로 실행하지 않는다. 토큰 이전 후에도 과거 유효 결과는
+- 사용자가 claim 트랜잭션 하나로 결과와 칭호·출석을 함께 제출한다. 실패·새로고침·응답
+  소실 시 같은 결과를 다시 조회한다. 결제나 게임을 새로 실행하지 않는다. 토큰 이전 후에도 과거 유효 결과는
   같은 NFT에 반영되며 원래 actor/epoch가 서명에 남는다. 키 교체 시 같은 결과만 재서명한다.
 - /arcade/guardians는 기존 서버 bearer로만 접근한다. GET / 는 소유 NFT 목록,
-  GET /:tokenId?before=<cursor> 는 40개씩 영구 결과, POST /results/:id/claim 은
-  저장된 결과만 선택한다. 다른 소유자의 비공개 결제 기록은 결과 목록에서 숨긴다.
+  GET /:tokenId?before=<cursor> 는 40개씩 영구 결과, POST /:tokenId/claims 는
+  저장된 결과만 골라 한 번의 claim 묶음으로 서명한다. 다른 소유자의 비공개 결제 기록은 결과 목록에서 숨긴다.
 - GuardianLedger.metrics는 완료한 서버 입장/서로 다른 결제 트랜잭션/운영 지갑 집계다.
   아직 시뮬레이션이 완료되지 않은 결제는 seller 주문 저널에서 확인한다. 이 집계는
   인간 DAU가 아니며 웹 D1의 foreground 이용 이벤트와 분리한다.

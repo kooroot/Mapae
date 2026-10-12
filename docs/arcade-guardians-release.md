@@ -156,28 +156,76 @@ bun run deploy:app
 3. 새 구현을 배포·verify한다(생성자 인수 동일). 링크된 `GuardianMetadata` 주소가 검증된 라이브러리 bytecode의 CREATE2 주소와 같은지 확인한다. `tokenURI`는 이 라이브러리를 DELEGATECALL하므로 잘못 링크된 주소는 프록시 저장소에서 실행된다. fork 시뮬레이션에서 `upgradeToAndCall`을 실행해 기존 토큰의 `tokenURI`를 비교한 뒤 관리자 지갑으로 실제 호출한다. 추가 초기화가 필요하면 `reinitializer(2)` 함수를 `data`로 함께 호출한다.
 4. `Upgraded(implementation)` 이벤트와 preflight의 `implementation` 출력이 새 주소인지 확인한다. 프록시 주소는 바뀌지 않으므로 Worker·seller 설정은 그대로 둔다.
 
-### 묶음 성장 기록(`claimResults`) 적용
+### 칭호·출석 기록과 묶음 기록(`claim`) 적용
 
-`claimResults(Result[], bytes[])`는 검증된 결과를 최대 32개(`MAX_CLAIM_BATCH`)까지 한 트랜잭션으로 NFT에 기록한다. 각 결과는 `claimResult`와 같은 검사를 거치고, 하나라도 잘못되면 묶음 전체가 되돌려진다. 이미 기록된 결제는 서명과 필드를 검증한 뒤 건너뛰며, 하나도 기록하지 못하면 `AlreadyClaimed`로 되돌려진다. 저장 구조는 바뀌지 않으므로 기존 프록시에 구현만 바꾸면 되고, 이미 발급된 결과 서명도 그대로 쓸 수 있다. 결과 32개를 묶으면 따로 기록할 때보다 가스가 약 49% 줄어든다(감사 문서 부록 참고). 다음은 운영자가 직접 실행한다.
+이번 업그레이드는 한 번에 두 가지를 적용한다.
 
-1. 저장소 루트에서 `make -C contracts test`, `(cd contracts && forge fmt --check)`, `bun run typecheck`가 통과하는지 확인한다. 최초 배포의 `broadcast/DeployGuardians.s.sol/91342/run-latest.json`에서 `.libraries`의 `GuardianMetadata` 주소를 복사한다. 이번 변경은 라이브러리를 건드리지 않으므로 같은 주소를 그대로 링크한다.
-2. 비공개 환경을 셸에 로드한 뒤 새 구현을 배포한다. 첫 명령은 시뮬레이션이고 `--broadcast`가 붙은 두 번째만 실제로 전송한다. 생성자 인수는 최초 배포와 같은 Entropy·provider 주소다.
+- **묶음 기록.** `claim(results, resultSignatures, honors, honorSignatures)`는 검증된 모험 결과와 전령의 칭호·출석을 한 트랜잭션으로 NFT에 기록한다.
+  - 결과와 칭호를 합쳐 최대 32개(`MAX_CLAIM_BATCH`)까지 담는다.
+  - 결과를 먼저 기록하고 칭호를 그다음에 기록한다.
+  - 하나라도 잘못되면 전체가 되돌려진다.
+  - 이미 기록된 결제와 이미 반영된 주차의 칭호는 검사를 통과한 뒤 건너뛴다.
+  - 하나도 기록하지 못하면 `AlreadyClaimed`로 되돌려진다.
+- **칭호·출석.** 칭호(게임별 장원·급제·입격 횟수)와 최장 출석은 서버가 서명한 누적값이다. 지난주는 화요일 0시(한국 시간)에 확정되고, 그 전에는 컨트랙트가 받지 않는다. `tokenURI`에는 게임별 칭호 3개와 `Longest streak`, `Streak milestone`이 더해진다.
+
+**지워진 함수.** `claimResult`와 `claimResults`는 배포된 적이 없어 지웠다. 이 업그레이드 뒤에는 `claim`만 남는다.
+
+**저장 구조.** `GuardiansStorage` 끝에 전령마다 한 칸(`honors`)이 붙는다. 기존 상태와 이미 발급된 결과 서명은 그대로 유효하다.
+
+**바뀐 부분.** 메타데이터 라이브러리 `GuardianMetadata`가 바뀌었다. 그래서 새 라이브러리 배포, 새 구현 배포, `upgradeToAndCall` 한 번이 필요하다. 근거와 가스는 감사 문서의 칭호 부록에 있다.
+
+모든 단계는 운영자가 직접 실행한다. 각 배포 명령은 `--broadcast` 없이 시뮬레이션을 먼저 하고, `--broadcast`가 붙은 두 번째 명령만 실제로 전송한다.
+
+1. **검사.** 저장소 루트에서 다음이 모두 통과하는지 확인한다.
+   - `make -C contracts test`
+   - `(cd contracts && forge fmt --check)`
+   - `bun run typecheck`
+   - `(cd contracts && forge build --sizes)`: `MapaeGuardians` 런타임이 24,576바이트보다 작아야 한다. 현재 21,002바이트다.
+2. **새 라이브러리 배포.** 비공개 환경을 셸에 로드한 뒤 새 `GuardianMetadata`를 배포한다. 출력의 `Deployed to:` 주소를 `<새_라이브러리>`로 기록하고, 위 `forge verify-contract $VERIFY <새_라이브러리> src/GuardianMetadata.sol:GuardianMetadata`로 verify한다. 최초 배포의 라이브러리 주소는 이제 쓰지 않는다. 예전 라이브러리는 새 `Progress` 형식을 모르므로, 예전 주소를 링크하면 `tokenURI`가 깨진다.
 
    ```sh
    cd contracts
-   IMPL_ARGS="--rpc-url giwa_sepolia --libraries src/GuardianMetadata.sol:GuardianMetadata:<라이브러리_주소> --constructor-args 0x0708325268dF9F66270F1401206434524814508b 0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344"
+   LIB_ARGS="--rpc-url giwa_sepolia"
+   forge create src/GuardianMetadata.sol:GuardianMetadata $LIB_ARGS --private-key "$GUARDIAN_DEPLOYER_PRIVATE_KEY"
+   forge create src/GuardianMetadata.sol:GuardianMetadata $LIB_ARGS --private-key "$GUARDIAN_DEPLOYER_PRIVATE_KEY" --broadcast
+   ```
+
+3. **새 구현 배포.** 새 라이브러리를 링크해 구현을 배포한다. 생성자 인수는 최초 배포와 같은 Entropy·provider 주소다.
+
+   ```sh
+   IMPL_ARGS="--rpc-url giwa_sepolia --libraries src/GuardianMetadata.sol:GuardianMetadata:<새_라이브러리> --constructor-args 0x0708325268dF9F66270F1401206434524814508b 0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344"
    forge create src/MapaeGuardians.sol:MapaeGuardians $IMPL_ARGS --private-key "$GUARDIAN_DEPLOYER_PRIVATE_KEY"
    forge create src/MapaeGuardians.sol:MapaeGuardians $IMPL_ARGS --private-key "$GUARDIAN_DEPLOYER_PRIVATE_KEY" --broadcast
    ```
 
-3. 새 구현 주소를 위 `forge verify-contract` 명령(`--libraries` 포함)으로 Blockscout에서 verify한다. `cast call <새_구현> "MAX_CLAIM_BATCH()(uint256)" --rpc-url giwa_sepolia`가 `32`를 돌려주는지 확인한다.
-4. 관리자 주소로 업그레이드를 먼저 시뮬레이션한다. `cast call <프록시_주소> "upgradeToAndCall(address,bytes)" <새_구현> 0x --from <관리자> --rpc-url giwa_sepolia`가 되돌려지지 않아야 한다.
-5. 관리자 지갑(Rabby 또는 Blockscout의 Write as Proxy)으로 프록시의 `upgradeToAndCall(<새_구현>, 0x)`를 실행한다. 추가 초기화가 없으므로 `data`는 비워 둔다.
-6. `bun --no-env-file scripts/arcade-guardians-preflight.ts --collection <프록시_주소>`의 `implementation`이 새 구현 주소인지 확인하고, `Upgraded`·`BatchMetadataUpdate(1, 10000)` 이벤트를 explorer에서 확인한다. 기존 전령의 `progress`와 `tokenURI`가 업그레이드 전과 같은지 비교하고, 업그레이드 해시를 배포 기록에 남긴다.
+4. **구현 verify와 확인.** 새 구현 주소를 위 구현용 `forge verify-contract` 명령으로 verify한다. 이때 `--libraries`에는 `<새_라이브러리>`를 넣는다. 그다음 아래 값을 확인한다.
+   - `cast call <새_구현> "HONOR_TYPEHASH()(bytes32)" --rpc-url giwa_sepolia`가 `cast keccak "Honor(uint256 tokenId,uint16 week,uint16 longestStreak,uint144 titles)"`와 같아야 한다.
+   - `cast call <새_구현> "MAX_CLAIM_BATCH()(uint256)" --rpc-url giwa_sepolia`가 `32`를 돌려줘야 한다.
+5. **업그레이드.** 먼저 관리자 주소로 시뮬레이션한다. `cast call <프록시_주소> "upgradeToAndCall(address,bytes)" <새_구현> 0x --from <관리자> --rpc-url giwa_sepolia`가 되돌려지지 않아야 한다. 그다음 관리자 지갑(Rabby 또는 Blockscout의 Write as Proxy)으로 프록시의 `upgradeToAndCall(<새_구현>, 0x)`를 실행한다. 추가 초기화가 없으므로 `data`는 비워 둔다.
+6. **사후 확인.** 다음을 차례로 확인한다.
+   - **구현 주소와 이벤트.** `bun --no-env-file scripts/arcade-guardians-preflight.ts --collection <프록시_주소>`의 `implementation`이 새 구현 주소여야 한다. explorer에 `Upgraded`와 `BatchMetadataUpdate(1, 10000)` 이벤트가 있어야 한다.
+   - **기존 전령의 성장.** `cast call <프록시_주소> "progress(uint256)" <토큰_ID> --rpc-url giwa_sepolia`에서 플레이·승리·최고 점수가 업그레이드 전과 같아야 한다.
+   - **`tokenURI`.** 이번에는 업그레이드 전과 같지 않다. 기존 속성은 그대로이고, 칭호·출석 속성 11개가 0으로 새로 보여야 한다.
+   - 업그레이드 해시와 새 라이브러리·구현 주소를 배포 기록에 남긴다.
+7. **seller 재시작.** seller를 재시작해 새 `progress` 형식과 칭호 서명을 쓰게 한다. 업그레이드 전에 재시작하면 seller가 예전 구현의 `progress`를 읽지 못하므로, 반드시 6단계 뒤에 한다.
+8. **웹 배포.** `bun run deploy:app`으로 웹을 배포한다.
 
-웹이 `claimResults`를 호출하는 배포는 이 업그레이드가 끝난 뒤에 한다. 업그레이드 전 구현에는 이 함수가 없어, 모험 기록 화면은 `MAX_CLAIM_BATCH` 읽기가 되돌려지는 것을 보고 업그레이드 대기 안내만 띄운다(결과 하나씩 기록하는 예전 경로로 돌아가지 않는다).
+**업그레이드 전 웹.** 웹이 `claim`을 호출하는 배포는 업그레이드가 끝난 뒤에 한다. 업그레이드 전 구현에서는 `HONOR_TYPEHASH` 읽기가 되돌려진다. 그러면 모험 기록 화면은 업그레이드 대기 안내만 띄우고, 결과를 하나씩 기록하던 예전 경로로 돌아가지 않는다.
 
-결과 서명도 묶음으로 바뀐다. seller의 `POST /arcade/guardians/:tokenId/claims`가 현재 소유자의 아직 기록되지 않은 결과를 오래된 순서로 최대 32개까지 서명해 돌려주고, 웹 Worker는 `POST /api/arcade/profile/guardians/:tokenId/claims`로 이를 중계한다. 결과 하나를 서명하던 `/results/:id/claim` 경로는 seller와 Worker 모두에서 지웠다. 그래서 순서는 ① 구현 업그레이드 ② seller 재시작(새 경로) ③ `bun run deploy:app`이다. seller는 체인에서 기록됨을 확인한 결과를 DB에 표시해 두고 다시 묻지 않으므로, 모험 기록 목록의 RPC 읽기도 줄어든다.
+**서명 경로.** seller의 `POST /arcade/guardians/:tokenId/claims`가 서명을 한 번에 돌려준다.
+- 결과: 현재 소유자의 아직 기록되지 않은 것을 오래된 순서로.
+- 칭호: 체인보다 새 주차의 누적값이 있을 때만 하나.
+
+웹 Worker는 `POST /api/arcade/profile/guardians/:tokenId/claims`로 이를 중계한다.
+
+**순서 요약.** 순서는 다음과 같다.
+1. 새 라이브러리 배포
+2. 새 구현 배포
+3. `upgradeToAndCall`
+4. seller 재시작
+5. `bun run deploy:app`
+
+seller는 체인에서 기록됨을 확인한 결과를 DB에 표시해 두고 다시 묻지 않는다. 칭호는 따로 저장하지 않고, 체인의 `progress`에서 마지막으로 기록한 주차를 읽는다.
 
 구현이 UUPS가 아니면(`proxiableUUID` 없음) 업그레이드가 되돌려진다. 업그레이드 권한을 잃지 않도록 관리자 키를 잃어버리거나 `renounceOwnership`을 호출하지 않는다. 호출하면 이후 업그레이드는 불가능하다.
 

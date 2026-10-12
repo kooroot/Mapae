@@ -299,3 +299,107 @@ The batch saves the per-transaction base cost and cold storage access for every 
 - `make -C contracts test`: 68 Foundry tests passed (54 `MapaeGuardiansTest`, including 7 new batch and upgrade tests, plus 11 + 3 in the other suites).
 - `forge fmt --check`: exit 0.
 - `packages/arcade/src/guardian-abi.ts` was regenerated from the Foundry artifact. The only additions are `claimResults`, `MAX_CLAIM_BATCH` and the `InvalidBatch` error.
+
+## Addendum: guardian honors (2026-10-12)
+
+Weekly ranking titles (장원 #1, 급제 #2–3, 입격 #4–10 per game) and attendance were computed off-chain on every read and never reached the NFT. This change records them in `tokenURI`. It ships in the same pending upgrade as the batch claim above, and that upgrade has not been applied yet, so the batch ABI never went live. `claimResult` and `claimResults` are therefore removed outright. The single entry point is now:
+
+```solidity
+function claim(Result[] results, bytes[] resultSignatures, Honor[] honors, bytes[] honorSignatures)
+    returns (uint256 applied)
+struct Honor { uint256 tokenId; uint16 week; uint16 longestStreak; uint144 titles; }
+// HONOR_TYPEHASH = keccak256("Honor(uint256 tokenId,uint16 week,uint16 longestStreak,uint144 titles)")
+```
+
+`InvalidResultSignature` is renamed `InvalidSignature` because results and honors share it. `GuardianMetadata` changes too, so the upgrade also needs a new library deployment.
+
+### Semantics
+
+- **Storage.** One new `mapping(uint256 => uint256) honors` is appended to `GuardiansStorage` (namespace slot base+8). Each token's word has 16-bit lanes:
+  - lane 0: the week of the latest applied honor (0 = none);
+  - lane 1: the longest attendance streak in days;
+  - lane `2 + game * 3 + tier`: weekly titles won.
+
+  Lanes 11–15 stay zero. `Honor.titles` holds lanes 2–10 shifted down by 32 bits.
+- **Week index.** `(daysSinceEpoch(Monday) - 4) / 7`. Week 0 starts Monday 1970‑01‑05, and week 2961 is 2026‑10‑05 to 10‑11 KST. A `uint16` lasts until about the year 3226.
+- **Cumulative honors.** The signer attests one honor per token: the totals as of the latest sealed week. The newest honor covers every older one, so skipped or out-of-order weeks lose nothing, and the stored week doubles as the replay guard. No per-week claimed map is needed.
+- **Lane maximum.** An honor is applied only when its week is newer than the stored one. The contract then keeps the lane-wise maximum of the stored and incoming values. Title counts and the longest streak never shrink, so a correct honor is never below the stored value, and a wrong one can never lower anything.
+- **Seal.** The contract refuses week 0 and any week before `(week * 7 + 11) days - 9 hours + HONOR_GRACE`, which is Tuesday 00:00 KST after the week closes (`HONOR_GRACE = 1 days`). A signer bug can therefore never attest an open week. Week 2961 seals at unix 1791817200.
+- **Milestones.** These are not stored. `GuardianMetadata` derives the highest of 3/7/14/30/100 reached from the longest streak, mirroring `STREAK_MILESTONES`. The 28-day devotion rank is left out because it is a rolling rank that can fall, so there is no final value to attest.
+- **Checks per honor, in order.**
+  1. The token exists and is revealed (`ERC721NonexistentToken`, `PendingDraw`).
+  2. The week is sealed (`InvalidHonor`).
+  3. The signature recovers to the current result signer (`InvalidSignature`).
+  4. A week not newer than the stored one is skipped. As with claimed results, the skip happens only after the checks above pass.
+- **Ownership.** Honors carry no ownership epoch. They belong to the token and survive transfer.
+- **Claim order and limits.**
+  - `claim` applies all results first, then all honors.
+  - `MAX_CLAIM_BATCH = 32` counts both kinds together.
+  - An empty claim, more than 32 entries, or a signature list whose length differs from its entries reverts `InvalidBatch`.
+  - Any invalid entry reverts the whole call.
+  - The call reverts `AlreadyClaimed` when nothing was applied.
+- **Events.** An applied honor emits `HonorRecorded(tokenId, week)` and `MetadataUpdate(tokenId)`.
+- **`progress()`.** The return value gains `honorWeek`, `longestStreak`, `champion[3]`, `podium[3]` and `top10[3]`, so clients read honors without an extra call.
+- **`tokenURI`.** For revealed tokens, each game gets `"<Game> champion titles"`, `"<Game> podium titles"` and `"<Game> top 10 titles"` after its best score. These are followed by `"Longest streak"` and `"Streak milestone"`. That makes 11 new attributes, all at zero until an honor is recorded.
+
+### Threat analysis
+
+| Concern | Result |
+|---|---|
+| Replay | The stored week is the guard. Replaying an honor, or another honor of the same or an older week, is skipped, and the call reverts `AlreadyClaimed` when it applies nothing else. Covered by `test_honorStaleSameWeekSkippedAndAloneReverts`. |
+| Out of order | An older week after a newer one is a no-op. A newer honor with one lower lane keeps the stored maximum and still raises the other lanes. Covered by `test_honorOutOfOrderKeepsLaneMaxima`. |
+| Open week or grace period | The contract checks the seal itself, from week 0, one second before the seal, at the seal and for the next open week. Covered by `test_honorRejectsZeroOpenAndGraceWeeks`. |
+| Signer bug | A wrong honor can only raise lanes, never lower them, and it cannot name an open week. The signer is already trusted for results (I-09), and the owner can rotate it. |
+| Permissionless griefing | Anyone may relay a signed honor, as with results. The worst a front-runner can do is record a true value early. The owner's own call then skips that honor and still applies its results; it reverts only if nothing else was applied. Covered by `test_honorIsPermissionlessAndSurvivesTransfer`. |
+| Tampering and malleability | Every field is bound by the digest. Wrong signers, malformed signatures, high-s twins and EIP-2098 compact signatures are refused. Result and honor typehashes differ, so neither signature verifies as the other. Covered by `test_honorForgedTamperedWrongSignerRejected`. |
+| Signer rotation | Outstanding honor signatures stop verifying, as for results (I-11 applies unchanged). |
+| Ruleset bump during grace | This is enforced off-chain. The seller freezes a closed week's board at its seal (`created_at <` cutoff), and it uses the ruleset that week was played under. A deploy that bumps the ruleset during the grace day therefore cannot rewrite last week's titles. |
+| Reentrancy | `claim` is `nonReentrant`. `_honor` makes no external calls. |
+
+### Storage layout and upgrade
+
+The only layout change is the appended `honors` mapping. The pinned layout test keeps every earlier assertion and adds one: after an honor, `keccak256(abi.encode(id, base + 8))` holds exactly `week | streak << 16 | lane L << (32 + 16L)`.
+
+`test_firstHonorWritesOneSlot` confirms that a first honor writes a single slot. `test_upgradeToHonorsImplementationPreservesState` upgrades a proxy that already holds a claimed result and a transferred token. It checks that every piece of state and `tokenURI` are unchanged, that the honors slot reads zero, and that results signed before the upgrade claim afterwards in the same call as a first honor (3 applied).
+
+That test upgrades to the same source. The live implementation predates the batch claim. Its `GuardiansStorage` is the first eight fields unchanged and never writes the base+8 mapping, so the two upgrades are equivalent for layout.
+
+### Gas and size
+
+Gas is measured by `test_gasBatchedClaimVersusSingleClaims` and counts the whole transaction: 21,000 base, EIP-2028 calldata, and cold-storage execution.
+
+| Results | N one-result `claim`s | One `claim` | One `claim` plus a first honor |
+|---|---|---|---|
+| 1 | 119,521 | 119,524 | 156,139 |
+| 8 | 716,725 | 401,627 | 438,409 |
+| 31 | 2,687,508 | 1,338,942 | 1,377,103 |
+
+A first honor adds about 37k gas, most of it the zero-to-nonzero write of its slot. A full claim of 31 results and one honor stays under 1.4M gas. `test_claimBoundsCombinedBatch` asserts under 2M.
+
+| Contract | Runtime before | Runtime after |
+|---|---|---|
+| `MapaeGuardians` | 19,507 B | 21,002 B (3,574 under EIP-170) |
+| `GuardianMetadata` | 7,572 B | 8,496 B |
+
+Slither 0.11.5 (101 detectors, `src/MapaeGuardians.sol`) adds one result: `timestamp` on the seal check. It is accepted, because the bound is a day wide and validator drift cannot move a week across it.
+
+### Verification
+
+- `make -C contracts test`: 78 Foundry tests passed (64 `MapaeGuardiansTest`, plus 11 + 3 in the other suites). The new tests are:
+  - `test_claimRecordsHonorAndRendersAttributes`, which covers all 11 attributes and the milestones at streaks of 2, 3, 6, 7, 13, 14, 29, 99 and 100;
+  - the five honor tests named in the threat table;
+  - `test_honorRequiresRevealedExistingToken`;
+  - `test_claimMixedBatchAppliesResultsThenHonors`;
+  - `test_claimBoundsCombinedBatch`;
+  - `test_firstHonorWritesOneSlot`;
+  - `test_fixedTypeScriptHonorVector`.
+
+  The batch tests now run through `claim`.
+- `test_fixedTypeScriptHonorVector` pins this vector (cross-checked with viem `hashTypedData`):
+  - Domain: "Mapae Guardians", "1", chain 91342, verifying contract `0x1111…1111`.
+  - Honor: `{tokenId: 1, week: 2961, longestStreak: 7, titles: 0x500000004000000030000000200000001}`, which is lanes `[1,0,2,0,3,0,4,0,5]`.
+  - Digest: `0x001abf80aceaef48a8dde8319e0edab78ddb0a02f99e6dd7b3933d374e6d568c`.
+- `forge fmt --check`: exit 0.
+- `packages/arcade/src/guardian-abi.ts` was regenerated from the Foundry artifact.
+  - Removed: `claimResult`, `claimResults` and `InvalidResultSignature`.
+  - Added: `claim`, `honorDigest`, `HONOR_TYPEHASH`, `HONOR_GRACE`, `HonorRecorded`, `InvalidHonor`, `InvalidSignature` and the new `progress` fields.
