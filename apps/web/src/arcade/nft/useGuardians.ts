@@ -89,22 +89,23 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         const simulation=await publicClient.simulateContract({address:roster.collection,abi:guardianAbi,functionName:'mint',args:[contribution,fee],value:fee,account:owner});
         await wallet();const hash=await writeContract(w,simulation.request);await recorded(hash,'mint');
     });}
-    /** Records the oldest unclaimed results (one contract batch) in a single transaction; the rest wait for the next batch. */
+    /** Records the oldest unclaimed results and any newly sealed honors (one contract batch) in a single transaction; the rest wait for the next batch. */
     async function claimAll(){await perform(async()=>{
         if(!owner||!roster?.collection||!detail||transaction)throw Error('claim_unavailable');
         const collection=roster.collection,token=detail.guardian;
         // An implementation without claim reverts this read: report the pending upgrade, never fall back.
         try{await publicClient.readContract({address:collection,abi:guardianAbi,functionName:'HONOR_TYPEHASH'});}
         catch(e){if(e instanceof BaseError&&e.walk(x=>x instanceof ContractFunctionRevertedError||x instanceof ContractFunctionZeroDataError))throw Error('batch_unavailable');throw e;}
-        setPhase(ko?'기록할 모험에 서명 받는 중…':'Collecting signed results…');
+        setPhase(ko?'기록할 모험과 칭호에 서명 받는 중…':'Collecting signed records…');
         const batch=await profileRequest(owner,`/guardians/${token.tokenId}/claims`,'POST') as GuardianClaimBatch;
         const signer=await publicClient.readContract({address:collection,abi:guardianAbi,functionName:'resultSigner'});
-        const {results,signatures}=await verifiedClaims(batch,{collection,signer,token,known:detail.results});
-        if(!results.length)throw Error('claims_waiting');
-        setPhase(ko?`${results.length}건 기록을 지갑에서 확인해 주세요`:`Confirm ${results.length} in your wallet`);
+        const {results,signatures,honors,honorSignatures}=await verifiedClaims(batch,{collection,signer,token,known:detail.results});
+        if(!results.length&&!honors.length)throw Error('claims_waiting');
+        setPhase(ko?`${[results.length?`모험 ${results.length}건`:'',honors.length?'칭호·출석':''].filter(Boolean).join('과 ')} 기록을 지갑에서 확인해 주세요`
+            :`Confirm ${[results.length?`${results.length} ${results.length===1?'outing':'outings'}`:'',honors.length?'honors':''].filter(Boolean).join(' and ')} in your wallet`);
         const w=await wallet();
         // A revert here means nothing was sent; say so rather than pointing at a transaction that does not exist.
-        const simulation=await publicClient.simulateContract({address:collection,abi:guardianAbi,functionName:'claim',args:[results,signatures,[],[]],account:owner})
+        const simulation=await publicClient.simulateContract({address:collection,abi:guardianAbi,functionName:'claim',args:[results,signatures,honors,honorSignatures],account:owner})
             .catch((e:unknown)=>{if(e instanceof BaseError&&e.walk(x=>x instanceof ContractFunctionRevertedError))throw Error('claim_rejected');throw e;});
         await wallet();await recorded(await writeContract(w,simulation.request),'claim',token.tokenId);
     });}

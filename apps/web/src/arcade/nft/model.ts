@@ -1,4 +1,7 @@
-import {guardianName, guardianTraits, guardianTraitsHash, guardianResultDomain, GUARDIAN_CLAIM_BATCH, GUARDIAN_RESULT_TYPES, guardianResultFromJson, type GuardianResult} from '@mapae/arcade/guardians';
+import {
+    guardianHonorFromJson, guardianHonorsOf, guardianName, guardianTraits, guardianTraitsHash, guardianResultDomain, honorAdvances, GUARDIAN_CLAIM_BATCH, GUARDIAN_HONOR_TYPES,
+    GUARDIAN_RESULT_TYPES, GUARDIAN_TITLE_TIERS, guardianResultFromJson, type GuardianHonor, type GuardianHonors, type GuardianResult,
+} from '@mapae/arcade/guardians';
 import type {AgentGoal} from '@mapae/arcade';
 import {isAddress,isHash,recoverTypedDataAddress,type Address,type Hex} from 'viem';
 import type {GuardianClaimBatch,GuardianToken,Progress,VerifiedResult} from '../profile/guardians';
@@ -34,10 +37,11 @@ export function refreshedDetail(previous:import('../profile/guardians').Guardian
 }
 /**
  * Verifies a signed batch before any wallet request: every entry is this token's, signed by the live result signer, and agrees
- * with the journal row whenever that row is loaded. The contract re-checks all of it; this only refuses to ask for a doomed signature.
+ * with the journal row whenever that row is loaded; the honor is newer than the NFT's, raises it and lowers no lane. The contract
+ * re-checks all of it; this only refuses to ask for a doomed signature.
  */
 export async function verifiedClaims(batch:GuardianClaimBatch,expected:{collection:Address;signer:Address;token:GuardianToken;known:readonly VerifiedResult[]}) {
-    if(!sameAddress(batch.collection,expected.collection)||!sameAddress(batch.signer,expected.signer)||batch.claims.length>GUARDIAN_CLAIM_BATCH)throw Error('claim_mismatch');
+    if(!sameAddress(batch.collection,expected.collection)||!sameAddress(batch.signer,expected.signer)||batch.claims.length+(batch.honor?1:0)>GUARDIAN_CLAIM_BATCH)throw Error('claim_mismatch');
     const results:GuardianResult[]=[],signatures:Hex[]=[],seen=new Set<string>();
     for(const {result:r,signature} of batch.claims){
         const e=expected.known.find(k=>k.id.toLowerCase()===r.resultId.toLowerCase());
@@ -51,7 +55,22 @@ export async function verifiedClaims(batch:GuardianClaimBatch,expected:{collecti
         if(!sameAddress(await recoverTypedDataAddress({domain:guardianResultDomain(expected.collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:result,signature}),expected.signer))throw Error('claim_signature');
         results.push(result);signatures.push(signature);
     }
-    return {results,signatures};
+    const honors:GuardianHonor[]=[],honorSignatures:Hex[]=[];
+    if(batch.honor){
+        const {honor:json,signature}=batch.honor,stored=expected.token.honors;
+        if(json.tokenId!==expected.token.tokenId)throw Error('claim_mismatch');
+        const honor=guardianHonorFromJson(json),next=guardianHonorsOf(honor);
+        if(!honorAdvances(stored,next)||next.longestStreak<stored.longestStreak||next.titles.some((game,g)=>GUARDIAN_TITLE_TIERS.some(tier=>game[tier]<stored.titles[g]![tier])))throw Error('claim_mismatch');
+        if(!sameAddress(await recoverTypedDataAddress({domain:guardianResultDomain(expected.collection),types:GUARDIAN_HONOR_TYPES,primaryType:'Honor',message:honor,signature}),expected.signer))throw Error('claim_signature');
+        honors.push(honor);honorSignatures.push(signature);
+    }
+    return {results,signatures,honors,honorSignatures};
+}
+/** Honors the seller sealed that the NFT does not carry yet: new titles, and the longest streak when it grew. */
+export function pendingHonors(chain:GuardianHonors,sealed:GuardianHonors|null):{titles:number;longestStreak:number|null;any:boolean}{
+    if(!sealed||!honorAdvances(chain,sealed))return {titles:0,longestStreak:null,any:false};
+    const titles=sealed.titles.reduce((sum,game,g)=>sum+GUARDIAN_TITLE_TIERS.reduce((n,tier)=>n+Math.max(0,game[tier]-chain.titles[g]![tier]),0),0);
+    return {titles,longestStreak:sealed.longestStreak>chain.longestStreak?sealed.longestStreak:null,any:true};
 }
 /** Growth the seller verified but the NFT does not carry yet: the whole history, not just the loaded page. */
 export function pendingGrowth(onChain:Progress,earned:Progress){

@@ -1,9 +1,9 @@
 import {afterEach,expect,test} from 'bun:test';
 import {privateKeyToAccount} from 'viem/accounts';
 import {encodePacked,keccak256,toHex,type Address,type Hex} from 'viem';
-import {emptyHonors,guardianName,guardianResultDomain,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash} from '@mapae/arcade/guardians';
+import {emptyHonors,guardianHonorFromJson,guardianHonorJson,guardianName,guardianResultDomain,GUARDIAN_HONOR_TYPES,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash,type GuardianHonors} from '@mapae/arcade/guardians';
 import type {GuardianClaimBatch,GuardianToken,VerifiedResult} from '../profile/guardians';
-import {nftCompanion,verifiedClaims,pendingGrowth,guardianPortrait,refreshedDetail,verifyReplacement} from './model';
+import {nftCompanion,verifiedClaims,pendingGrowth,pendingHonors,guardianPortrait,refreshedDetail,verifyReplacement} from './model';
 import {assertNftTransactionStorage,saveNftTransaction,readNftTransaction,clearNftTransaction} from './transaction-store';
 import {verifyRevelation} from './recovery';
 import {activeGuardianOuting} from './outing-model';
@@ -33,7 +33,7 @@ test('a signed batch, including results earned before a transfer, becomes contra
     const batch=await signed({},{resultId:word(5),paymentTx:word(6),ownershipEpoch:'3',game:0,score:7,victory:false});
     const verified=await verifiedClaims(batch,expected);
     expect(verified.results.map(r=>r.ownershipEpoch)).toEqual([1n,3n]);expect(verified.results[0]!.tokenId).toBe(7n);expect(verified.signatures).toEqual(batch.claims.map(c=>c.signature));
-    expect(await verifiedClaims({...batch,claims:[]},expected)).toEqual({results:[],signatures:[]});
+    expect(await verifiedClaims({...batch,claims:[]},expected)).toEqual({results:[],signatures:[],honors:[],honorSignatures:[]});
     await expect(verifiedClaims(batch,{...expected,signer:owner})).rejects.toThrow();
     await expect(verifiedClaims(batch,{...expected,collection:owner})).rejects.toThrow();
     await expect(verifiedClaims(batch,{...expected,token:{...token,seed:word(43)}})).rejects.toThrow();
@@ -49,6 +49,33 @@ test('tampered signed claim fields and wrong displayed results never reach trans
     const batch=await signed();
     await expect(verifiedClaims({...batch,claims:[{...claim!,signature:word(1)}]},expected)).rejects.toThrow();
     for(const patch of [{score:99},{ownershipEpoch:'2'},{tokenId:'8'},{claimed:true}])await expect(verifiedClaims(batch,{...expected,known:[{...result,...patch}]})).rejects.toThrow();
+});
+const sealed:GuardianHonors={week:2961,longestStreak:7,titles:[{champion:1,podium:0,top10:2},{champion:0,podium:3,top10:0},{champion:4,podium:0,top10:5}]};
+const signHonor=async(tokenId:string,honors:GuardianHonors,key=account)=>{const honor=guardianHonorJson(tokenId,honors);
+    return {honor,signature:await key.signTypedData({domain:guardianResultDomain(collection),types:GUARDIAN_HONOR_TYPES,primaryType:'Honor',message:guardianHonorFromJson(honor)})};};
+test('a signed honor joins the same claim; it must be this token, newer, higher and never lower a lane',async()=>{
+    const batch={...(await signed()),honor:await signHonor('7',sealed)};
+    const verified=await verifiedClaims(batch,expected);
+    expect(verified.results).toHaveLength(1);expect(verified.honors).toEqual([guardianHonorFromJson(batch.honor.honor)]);expect(verified.honorSignatures).toEqual([batch.honor.signature]);
+    expect((await verifiedClaims({...batch,claims:[]},expected)).honors).toHaveLength(1);
+    const onChain=(honors:GuardianHonors)=>({...expected,token:{...token,honors}});
+    for(const [b,e] of [
+        [{...batch,honor:await signHonor('8',sealed)},expected],
+        [batch,onChain(sealed)],
+        [batch,onChain({...sealed,week:2960,longestStreak:8})],
+        // Raises the streak but would lower a title lane: the signer's totals disagree with the NFT.
+        [batch,onChain({...sealed,week:2960,longestStreak:3,titles:[sealed.titles[0]!,sealed.titles[1]!,{...sealed.titles[2]!,top10:6}]})],
+        [{...batch,honor:{...batch.honor,honor:{...batch.honor.honor,longestStreak:8}}},expected],
+        [{...batch,honor:await signHonor('7',sealed,privateKeyToAccount(toHex(654321n,{size:32})))},expected],
+        [{...batch,claims:Array.from({length:32},()=>batch.claims[0]!)},expected],
+    ] as const)await expect(verifiedClaims(b,e)).rejects.toThrow();
+});
+test('pending honors are the new titles and a longer streak, only for a newer week that raises the NFT',()=>{
+    expect(pendingHonors(emptyHonors(),sealed)).toEqual({titles:15,longestStreak:7,any:true});
+    expect(pendingHonors(emptyHonors(),null)).toEqual({titles:0,longestStreak:null,any:false});
+    expect(pendingHonors({...sealed,week:2960,longestStreak:9,titles:[{champion:1,podium:0,top10:1},sealed.titles[1]!,sealed.titles[2]!]},sealed)).toEqual({titles:1,longestStreak:null,any:true});
+    expect(pendingHonors({...sealed,week:2960},sealed)).toEqual({titles:0,longestStreak:null,any:false});
+    expect(pendingHonors(sealed,{...sealed,longestStreak:9})).toEqual({titles:0,longestStreak:null,any:false});
 });
 test('pending growth counts the whole verified history against the NFT, never below zero',()=>{
     expect(pendingGrowth(token.progress,{...token.progress,plays:28,experience:405})).toEqual({plays:26,experience:380});
