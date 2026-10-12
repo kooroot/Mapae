@@ -3,7 +3,8 @@
 .rank-line>svg{flex:none;margin-top:3px;color:#ad3a30}
 .arc-entry-dock .rank-line>svg{color:var(--arc-gold)}
 .rank-line>b{font-weight:650}
-.rank-line>span:not(.rank-medal){flex:1;min-width:min(200px,100%)}
+.rank-line>span:not(.rank-medal,.rank-move){flex:1;min-width:min(200px,100%)}
+.rank-line>.rank-move{margin-top:3px}
 .rank-line>.rank-medal{margin-top:1px}
 .rank-titles{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0;padding:0;list-style:none}
 .rank-titles li{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:0 10px;border:1px solid var(--medal-rim);border-radius:var(--r-pill);background:var(--medal-light);color:var(--medal-ink);font-size:12px;font-weight:700}
@@ -19,6 +20,13 @@
 .rank-medal:not(.is-plain)>b{position:relative;z-index:1;text-shadow:0 1px 0 #ffffff8c}
 .rank-medal.is-lg:not(.is-plain)::after{content:"";position:absolute;z-index:-1;left:50%;top:calc(100% - 6px);width:18px;height:14px;transform:translateX(-50%);background:var(--ribbon);clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)}
 .rank-medal.is-plain{border:1px solid var(--card-hair);background:var(--card-2);color:#5d4c36;font:700 13px var(--mono);box-shadow:inset 0 -2px 0 #0000000f}
+
+/* Movement since the earlier board: jade up, vermilion down, a muted dash, a gold NEW pill. Text first, colour second. */
+.rank-move{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px;height:18px;padding:0 5px;border-radius:var(--r-pill);font:700 11px/1 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rank-move.is-up{background:var(--jade-wash);color:var(--jade-ink)}
+.rank-move.is-down{background:var(--vermilion-wash);color:var(--vermilion)}
+.rank-move.is-same{color:var(--card-muted)}
+.rank-move.is-new{border:1px solid var(--medal-gold-rim);background:var(--medal-gold-light);color:var(--medal-gold-ink);font:800 9px/1 var(--sans);letter-spacing:.06em}
 
 /* The board: game tabs on the dark shell, then the board on paper with its chips, period control, podium and rows. */
 .rank-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:18px 0 0}
@@ -55,16 +63,19 @@
 .rank-portrait .arc-guardian-portrait{width:80px;height:80px;margin:0}
 .rank-step.is-pos-1 .rank-portrait .arc-guardian-portrait{width:112px;height:112px}
 .rank-portrait>.rank-medal{position:absolute;left:-10px;bottom:-6px}
+.rank-portrait>.rank-move{position:absolute;right:-12px;bottom:-4px;box-shadow:0 0 0 2px var(--medal-card,var(--card))}
+.rank-portrait>.rank-move.is-same{border:1px solid var(--card-hair);background:var(--medal-card,var(--card))}
 .rank-card strong{margin-top:6px;font-size:15px;line-height:1.35;word-break:keep-all;overflow-wrap:anywhere}
 .rank-score{font:700 18px var(--display);font-variant-numeric:tabular-nums;color:var(--medal-ink,var(--card-ink))}
 .rank-lead{font-size:12px;font-weight:600;color:var(--medal-gold-ink)}
 .rank-riser{height:12px;border:2px solid var(--medal-rim,var(--card-hair));border-top:0;border-radius:0 0 var(--r-sm) var(--r-sm);background:linear-gradient(180deg,var(--medal),var(--medal-rim))}
 .rank-step.is-pos-1 .rank-riser{height:40px}.rank-step.is-pos-2 .rank-riser{height:24px}
 .rank-list{margin:20px 0 0;padding:0;list-style:none}
-.rank-row{display:grid;grid-template-columns:32px 40px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:56px;padding:6px 10px;border-top:1px solid var(--card-hair);border-radius:var(--r-sm);font-variant-numeric:tabular-nums}
+.rank-row{display:grid;grid-template-columns:36px 40px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:56px;padding:6px 10px;border-top:1px solid var(--card-hair);border-radius:var(--r-sm);font-variant-numeric:tabular-nums}
 .rank-row:hover{background:var(--card-2)}
 .rank-row .arc-guardian-portrait{width:40px;height:40px;margin:0}
-.rank-row>span{min-width:0;font-size:15px;word-break:keep-all;overflow-wrap:anywhere}
+.rank-place{display:flex;flex-direction:column;align-items:center;gap:3px}
+.rank-row>span:not(.rank-place){min-width:0;font-size:15px;word-break:keep-all;overflow-wrap:anywhere}
 .rank-row>strong{font:700 16px var(--display)}
 .rank-row.is-mine{box-shadow:inset 3px 0 0 var(--jade)}
 .rank-mine-tag{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:var(--r-pill);background:var(--jade);color:#fff;font-size:11px;font-weight:700;vertical-align:1px}
@@ -106,7 +117,7 @@
     .rank-portrait .arc-guardian-portrait{width:56px;height:56px}.rank-step.is-pos-1 .rank-portrait .arc-guardian-portrait{width:72px;height:72px}
     .rank-portrait>.rank-medal.is-lg{width:30px;height:30px;font-size:15px;left:-8px}
     .rank-card strong{font-size:13px}.rank-score{font-size:15px}.rank-lead{font-size:11px}
-    .rank-row{grid-template-columns:28px 36px minmax(0,1fr) auto;gap:8px;padding:6px 4px}.rank-row .arc-guardian-portrait{width:36px;height:36px}
+    .rank-row{grid-template-columns:34px 36px minmax(0,1fr) auto;gap:8px;padding:6px 4px}.rank-row .arc-guardian-portrait{width:36px;height:36px}
     .rank-games>li{grid-template-columns:minmax(0,1fr);padding:6px 0}.rank-games .arc-text-button{justify-self:start;margin-left:15px}
     .rank-nearby{margin-left:0}.rank-ghost{gap:10px}.rank-ghost li{width:64px}
 }

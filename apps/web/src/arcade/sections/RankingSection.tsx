@@ -15,6 +15,7 @@ import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {useRankingBoard} from '../ranking/client';
 import {boardScore, countdown, placeLabel, points, resetClock, streakCopy, titlesOnNft} from '../ranking/format';
 import {RankMedal} from '../ranking/RankMedal';
+import {RankMove} from '../ranking/RankMove';
 import {GameThumb} from '../Characters';
 import {arcadeSectionLink} from '../sections';
 import {RankLine, TitleChips} from '../ranking/RankLine';
@@ -106,7 +107,7 @@ function Board({board, mine, locale}: {board: RankingBoard; mine: ReadonlySet<st
                 <div className="rank-card">
                     {mine.has(row.tokenId) && <MineTag ko={ko} />}
                     {row.rank === 1 && <Crown className="rank-crown" size={22} aria-hidden="true" />}
-                    <div className="rank-portrait"><Portrait row={row} /><RankMedal rank={row.rank} locale={locale} size="lg" /></div>
+                    <div className="rank-portrait"><Portrait row={row} /><RankMedal rank={row.rank} locale={locale} size="lg" /><Move board={board} row={row} locale={locale} /></div>
                     <strong>{guardianName(row.tokenId, locale)}</strong>
                     <span className="rank-score">{boardScore(board.board, row.score, locale)}</span>
                     {i === 0 && lead > 0 && <small className="rank-lead">{ko ? `2위보다 ${boardScore(board.board, lead, locale)} 앞섬` : `${boardScore(board.board, lead, locale)} ahead`}</small>}
@@ -116,11 +117,13 @@ function Board({board, mine, locale}: {board: RankingBoard; mine: ReadonlySet<st
         </ol>
         {rest.length > 0 && <ol className="rank-list" aria-label={ko ? '4위부터' : 'From fourth place'}>
             {rest.map(row => <li key={row.tokenId} className={`rank-row${mine.has(row.tokenId) ? ' is-mine' : ''}`}>
-                <RankMedal rank={row.rank} locale={locale} /><Portrait row={row} /><span>{guardianName(row.tokenId, locale)}{mine.has(row.tokenId) && <MineTag ko={ko} />}</span><strong>{boardScore(board.board, row.score, locale)}</strong>
+                <span className="rank-place"><RankMedal rank={row.rank} locale={locale} /><Move board={board} row={row} locale={locale} /></span><Portrait row={row} /><span>{guardianName(row.tokenId, locale)}{mine.has(row.tokenId) && <MineTag ko={ko} />}</span><strong>{boardScore(board.board, row.score, locale)}</strong>
             </li>)}
         </ol>}
     </>;
 }
+const Move = ({board, row, locale}: {board: RankingBoard; row: RankingBoard['rows'][number]; locale: Locale}) =>
+    <RankMove rank={row.rank} move={{moves: board.moves, prev: row.prev}} period={board.period} locale={locale} />;
 function Portrait({row}: {row: RankingRow}) {
     const {appearance, color} = guardianPortrait(row.seed);
     return <GuardianAvatar appearance={appearance} color={color} portrait />;
@@ -180,6 +183,7 @@ function Rules({locale}: {locale: Locale}) {
         '지난주 1위는 장원, 2–3위는 급제, 4–10위는 입격 칭호를 달아요. 칭호는 꾸밈일 뿐이에요.',
         '지난주 칭호와 최장 출석은 화요일 0시(한국 시간)에 확정되고, 모험 기록에서 NFT에 함께 남겨요.',
         '같은 점수면 먼저 낸 기록이 앞서요. 순위는 한국 시간 자정과 월요일 0시에 새로 시작해요.',
+        '순위 옆 ▲▼는 어제(주간 순위는 지난주)보다 오르내린 계단 수, NEW는 그때 기록이 없던 전령이에요. 놀이 규칙이 바뀐 직후에는 비교하지 않아요.',
         '무료 체험과 연습 점수는 들어가지 않아요. 검증된 외출 결과만 올라가요. 테스트 토큰만 써요.',
     ] : [
         `In each game, the first ${RANKED_ATTEMPTS} rounds of a Korean-time day are ranked. Later rounds still grow your guardian but stay off the boards.`,
@@ -189,6 +193,7 @@ function Rules({locale}: {locale: Locale}) {
         'Last week’s #1 is Champion, #2–3 Podium and #4–10 Top 10. Titles are cosmetic.',
         'Last week’s titles and your longest streak are final at Tuesday 00:00 KST; record them on the NFT from the journal with your outings.',
         'On equal scores the earlier record leads. Boards restart at midnight KST, and weekly ones on Monday 00:00 KST.',
+        '▲▼ beside a place count the places gained or lost since yesterday (last week on weekly boards); NEW marks a guardian with no record then. Right after a rules change nothing is compared.',
         'Free play and practice scores never count; only verified outing results reach the boards. Test tokens only.',
     ];
     return <details className="rank-rules"><summary>{ko ? '랭킹 규칙' : 'How rankings work'}</summary><ul>{items.map(item => <li key={item}>{item}</li>)}</ul></details>;

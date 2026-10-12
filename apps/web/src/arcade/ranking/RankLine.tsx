@@ -5,9 +5,10 @@ import type {Locale} from '../../lib/i18n';
 import {GAME_NAMES} from '../game-names';
 import {rankLine, titleName} from './format';
 import {RankMedal} from './RankMedal';
+import {RankMove} from './RankMove';
 import './ranking.css';
 
-/** One game's rank line for a guardian: today's place, the gap above, and the ranked tries left. Nothing until standings load. */
+/** One game's rank line for a guardian: today's place and its move since yesterday, the gap above, and the ranked tries left. Nothing until standings load. */
 export function RankLine({locale, game, guardian, leader, named = true, aptitude}: {
     locale: Locale; game: GameId; guardian: GuardianStanding | undefined; leader: number | null; named?: boolean;
     /** The guardian's born aptitude for this game, marked when it is their strongest. */
@@ -19,6 +20,7 @@ export function RankLine({locale, game, guardian, leader, named = true, aptitude
     return <p className="rank-line">{today && today.rank <= 3 ? <RankMedal rank={today.rank} locale={locale} size="sm" decorative /> : <Trophy size={15} aria-hidden="true" />}
         {named && <b>{GAME_NAMES[locale][game]}</b>}
         {aptitude && <small className={`rank-aptitude${aptitude.best ? ' is-best' : ''}`}>{locale === 'ko' ? '적성' : 'Aptitude'} {aptitude.value}/6</small>}
+        {today && <RankMove rank={today.rank} move={today} period="today" locale={locale} />}
         <span>{rankLine({locale, attemptsUsed, standing: today, leader})}</span>
     </p>;
 }
