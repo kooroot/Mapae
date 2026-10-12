@@ -96,6 +96,20 @@ describe("document security policy", () => {
         expect(policy).not.toContain("style-src-attr");
     });
 
+    test("only the faucet's documents admit Turnstile, as a script and a frame and nothing more", () => {
+        const plain = createContentSecurityPolicy(NONCE);
+        expect(plain).not.toContain("challenges.cloudflare.com");
+        expect(plain).not.toContain("frame-src");
+
+        const faucet = createContentSecurityPolicy(NONCE, {turnstile: true});
+        expect(sources(faucet, "script-src")).toEqual(["'self'", `'nonce-${NONCE}'`, "https://challenges.cloudflare.com"]);
+        expect(sources(faucet, "frame-src")).toEqual(["https://challenges.cloudflare.com"]);
+        // The page never fetches Cloudflare itself; siteverify is the Worker's call.
+        expect(sources(faucet, "connect-src")).toEqual(sources(plain, "connect-src"));
+        expect(sources(faucet, "style-src")).toEqual(sources(plain, "style-src"));
+        expect(faucet).toContain("frame-ancestors 'none'");
+    });
+
     test("rejects values that could alter the response header", () => {
         expect(() => createContentSecurityPolicy("bad'; script-src *")).toThrow(
             "CSP nonce must be a 128-bit URL-safe value",

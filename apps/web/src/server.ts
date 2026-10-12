@@ -16,19 +16,22 @@ import {
 } from "@tanstack/react-start/server";
 import {createServerEntry} from "@tanstack/react-start/server-entry";
 import {createContentSecurityPolicy} from "./lib/security";
+import {siteSurface} from "./lib/config";
 import {arcadeProductionApi} from "./arcade/production-api";
 
 // One policy for every page: the landing, the arcade and the Studio share an origin,
-// so no route may loosen it. Only the nonce varies, per response.
+// so no route may loosen it. Only the nonce varies, per response — and the faucet's own
+// origin adds Turnstile, which a local dev server allows on its faucet page alone.
 const streamWithSecurityHeaders = defineHandlerCallback((context) => {
     const nonce = context.router.options.ssr?.nonce;
     if (!nonce) {
         throw new Error("SSR router did not provide a CSP nonce");
     }
+    const turnstile = siteSurface === "faucet" || (import.meta.env.DEV && /^(\/ko)?\/faucet\/?$/.test(new URL(context.request.url).pathname));
 
     context.responseHeaders.set(
         "Content-Security-Policy",
-        createContentSecurityPolicy(nonce),
+        createContentSecurityPolicy(nonce, {turnstile}),
     );
     // A document is valid only with its own nonce, and only alongside the bundles of the deploy that rendered it. Without this,
     // Back after a deploy restored the previous release's page from the browser cache under the new URL scheme.

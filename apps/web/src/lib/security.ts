@@ -40,7 +40,7 @@ export function createSsrNonce(): string | undefined {
 }
 
 /**
- * The policy for one response — the same for every surface and route.
+ * The policy for one response — the same for every route of the landing and the Studio.
  *
  * The landing and Arcade share mapae.io's origin and therefore its sessionStorage.
  * A pending Arcade payment is a bearer authorization in that storage. Even though the
@@ -67,8 +67,16 @@ export function createSsrNonce(): string | undefined {
  * one that ships. A nonce cannot bless a `style="…"` attribute — CSP has no such
  * mechanism short of `'unsafe-hashes'` — so the app renders none: the three that
  * existed went to the stylesheet and the CSSOM, which the policy does not police.
+ *
+ * `turnstile` is the one exception, and it is why the faucet is its own origin. The
+ * faucet's bot check is Cloudflare Turnstile: a script and an iframe from
+ * {@link TURNSTILE_ORIGIN}. Only faucet.mapae.io's documents (and the faucet page of a
+ * local dev server) carry it, so no page on mapae.io or app.mapae.io ever runs a
+ * third-party script beside the arcade's payments or the Studio's agent key.
  */
-export function createContentSecurityPolicy(nonce: string): string {
+export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+
+export function createContentSecurityPolicy(nonce: string, {turnstile = false}: {turnstile?: boolean} = {}): string {
     if (!CSP_NONCE_PATTERN.test(nonce)) {
         throw new Error("CSP nonce must be a 128-bit URL-safe value");
     }
@@ -77,7 +85,9 @@ export function createContentSecurityPolicy(nonce: string): string {
         [
             "script-src 'self'",
             `'nonce-${nonce}'`,
+            ...(turnstile ? [TURNSTILE_ORIGIN] : []),
         ].join(" "),
+        ...(turnstile ? [`frame-src ${TURNSTILE_ORIGIN}`] : []),
         `style-src 'self' 'nonce-${nonce}'`,
         "font-src 'self'",
         "img-src 'self' data:",
