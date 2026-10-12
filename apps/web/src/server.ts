@@ -7,6 +7,7 @@ import {engagementRepository} from "./arcade/engagement/repository";
 import {guardiansApi} from "./arcade/profile/guardians";
 import {guardianArtApi} from "./arcade/guardian-art/api";
 import {rankingApi} from "./arcade/ranking/api";
+import {faucetApi} from "./faucet/api";
 import type {ExecutionContext, ScheduledController} from "@cloudflare/workers-types";
 import {
     createStartHandler,
@@ -49,6 +50,11 @@ const entry = createServerEntry({fetch: (request, options) => {
         const profiles = profileRepository(env.ARCADE_DB);
         return rankingApi(request, {receiptToken: env.ARCADE_RECEIPT_TOKEN, cache: caches.open("mapae-ranking"), rateLimit: (bucket, until, limit) => profiles.rateLimit(bucket, until, limit)});
     }
+    // Every surface routes it; only the faucet origin (or a loopback dev server) is answered.
+    if (path.startsWith("/api/faucet/")) return faucetApi(request, {
+        repo: profileRepository(env.ARCADE_DB), development: import.meta.env.DEV, cache: caches.open("mapae-faucet"),
+        serviceToken: env.FAUCET_SERVICE_TOKEN, ipSalt: env.FAUCET_IP_SALT, turnstileSecret: env.TURNSTILE_SECRET_KEY, siteKey: env.TURNSTILE_SITE_KEY,
+    });
     if (path.startsWith("/api/arcade/profile")) {
         const profiles = profileRepository(env.ARCADE_DB);
         return profileApi(request, profiles, {

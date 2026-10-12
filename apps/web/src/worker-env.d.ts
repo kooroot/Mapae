@@ -6,6 +6,10 @@ interface __BaseEnv_Env {
 	ARCADE_DB: D1Database;
 	ARCADE_RECEIPT_TOKEN?: string;
 	GIWA_SEPOLIA_RPC_URL?: string;
+	FAUCET_SERVICE_TOKEN?: string;
+	FAUCET_IP_SALT?: string;
+	TURNSTILE_SECRET_KEY?: string;
+	TURNSTILE_SITE_KEY?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
@@ -24,6 +28,14 @@ declare namespace Cloudflare {
 		ARCADE_DB: D1Database;
 	ARCADE_RECEIPT_TOKEN?: string;
 	GIWA_SEPOLIA_RPC_URL?: string;
+	}
+	interface FaucetEnv {
+		ASSETS: Fetcher;
+		ARCADE_DB: D1Database;
+		FAUCET_SERVICE_TOKEN?: string;
+		FAUCET_IP_SALT?: string;
+		TURNSTILE_SECRET_KEY?: string;
+		TURNSTILE_SITE_KEY?: string;
 	}
 	interface Env extends __BaseEnv_Env {}
 }
