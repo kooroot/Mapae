@@ -25,7 +25,9 @@ const token={tokenId:'1',owner,ownershipEpoch:'1',revealed:true,seed,sequence:'1
 const roster:GuardianRoster={enabled:true,chainId:91342,collection:other,signer:other,mintFee:'12',minted:1,pendingTokenId:null,guardians:[token]};
 const response=(value:unknown)=>async()=>Response.json(value);
 const result={resultId:id,tokenId:'1',actor:owner,ownershipEpoch:'1',paymentTx:id,traitsHash:guardianTraitsHash(seed),inputsHash:seed,ruleset:ARCADE_RULESET_VERSION,seed:1,game:0,score:10,victory:false};
-const claim={collection:other,signer:other,claims:[{result,signature:`0x${'11'.repeat(65)}`}]};
+const claim={collection:other,signer:other,claims:[{result,signature:`0x${'11'.repeat(65)}`}],honor:null};
+const honors={week:2961,longestStreak:7,titles:[{champion:1,podium:0,top10:2},{champion:0,podium:3,top10:0},{champion:4,podium:0,top10:5}]};
+const honor={honor:{tokenId:'1',week:2961,longestStreak:7,titles:String(0x500000004000000030000000200000001n)},signature:`0x${'22'.repeat(65)}`};
 describe('authenticated guardian bridge',()=>{
     test('auth, CSRF, methods and rate limits precede any trusted seller call',async()=>{
         const repo=await repository();let calls=0;
@@ -41,7 +43,7 @@ describe('authenticated guardian bridge',()=>{
     });
     test('exact token cursor path passes and generic queries/targets fail closed',async()=>{
         const repo=await repository();let target='',headers:HeadersInit|undefined;
-        const options={now,guardians:(r:Request,a:Address,v:unknown)=>guardiansApi(r,a,v,{receiptToken,fetcher:async(url,init)=>{target=url;headers=init?.headers;return Response.json({guardian:token,earned:emptyProgress(),results:[],nextCursor:null});}})};
+        const options={now,guardians:(r:Request,a:Address,v:unknown)=>guardiansApi(r,a,v,{receiptToken,fetcher:async(url,init)=>{target=url;headers=init?.headers;return Response.json({guardian:token,earned:emptyProgress(),honors:null,results:[],nextCursor:null});}})};
         expect((await profileApi(request('/1?before=10'),repo,options)).status).toBe(200);
         expect(target).toBe('https://seller.mapae.io/arcade/guardians/1?before=10');
         expect(new Headers(headers).get('X-Mapae-Owner')).toBe(owner);expect(new Headers(headers).get('Authorization')).toBe('Bearer '+receiptToken);
@@ -98,6 +100,28 @@ describe('authenticated guardian bridge',()=>{
             expect((await batch({...claim,claims:[{...claim.claims[0],result:{...result,...patch}}]})).status).toBe(503);
         for(const value of [{...claim,claims:[{...claim.claims[0],signature:'0x11'}]},{...claim,claims:[claim.claims[0],claim.claims[0]]},{...claim,claims:Array.from({length:33},(_,i)=>({...claim.claims[0],result:{...result,resultId:`0x${i.toString(16).padStart(64,'0')}`,paymentTx:`0x${i.toString(16).padStart(64,'1')}`}}))},{...claim,signer:'nope'}])
             expect((await batch(value)).status).toBe(503);
+    });
+    test('honors: token, detail and signed honor shapes are exact uint16 lanes of the requested guardian',async()=>{
+        const detail={guardian:{...token,honors},earned:emptyProgress(),honors:{...honors,week:2962},results:[],nextCursor:null};
+        const get=(value:unknown)=>guardiansApi(request('/1'),owner,null,{receiptToken,fetcher:response(value)});
+        const ok=await get({...detail,honors:{...detail.honors,secret:'hidden',titles:detail.honors.titles.map(t=>({...t,secret:'hidden'}))}});
+        expect(ok.status).toBe(200);expect(await ok.json<unknown>()).toEqual(detail);
+        expect((await get({...detail,honors:null})).status).toBe(200);
+        for(const bad of [{week:0},{week:65536},{longestStreak:-1},{longestStreak:1.5},{titles:honors.titles.slice(1)},{titles:[{champion:65536,podium:0,top10:0},...honors.titles.slice(1)]},{titles:[{champion:1},...honors.titles.slice(1)]}]){
+            expect((await get({...detail,honors:{...honors,...bad}})).status).toBe(503);
+            if(!('week' in bad&&bad.week===0))expect((await get({...detail,guardian:{...token,honors:{...honors,...bad}}})).status).toBe(503);
+        }
+        expect((await get({...detail,honors:undefined})).status).toBe(503);
+        expect((await guardiansApi(request(),owner,null,{receiptToken,fetcher:response({...roster,guardians:[{...token,honors:undefined}]})})).status).toBe(503);
+        const batch=(value:unknown)=>guardiansApi(request('/1/claims','POST'),owner,null,{receiptToken,fetcher:response(value)});
+        const signed=await batch({...claim,honor:{...honor,extra:'secret',honor:{...honor.honor,owner:'secret'}}});
+        expect(signed.status).toBe(200);expect(await signed.json<unknown>()).toEqual({...claim,honor});
+        for(const patch of [{tokenId:'2'},{week:0},{week:65536},{longestStreak:65536},{titles:(1n<<144n).toString()},{titles:'0x10'},{titles:'01'},{titles:1}])
+            expect((await batch({...claim,honor:{...honor,honor:{...honor.honor,...patch}}})).status).toBe(503);
+        for(const value of [{...claim,honor:{...honor,signature:'0x22'}},{...claim,honor:undefined},
+            {...claim,honor,claims:Array.from({length:32},(_,i)=>({...claim.claims[0],result:{...result,resultId:`0x${i.toString(16).padStart(64,'0')}`,paymentTx:`0x${i.toString(16).padStart(64,'1')}`}}))}])
+            expect((await batch(value)).status).toBe(503);
+        expect((await batch({...claim,claims:[],honor})).status).toBe(200);
     });
     test('disabled, redirect, oversized, non-JSON and private upstream errors never leak',async()=>{
         expect(await (await guardiansApi(request(),owner,null,{})).json()).toMatchObject({enabled:false,collection:null});

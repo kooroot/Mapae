@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {privateKeyToAccount} from 'viem/accounts';
 import {recoverTypedDataAddress,type Address,type Hex,type Log} from 'viem';
-import {guardianTraitsHash,guardianResultFromJson,guardianResultDomain,GUARDIAN_CLAIM_BATCH,GUARDIAN_RESULT_TYPES,type GuardianSnapshot} from '@mapae/arcade/guardians';
+import {emptyHonors,guardianHonorFromJson,guardianTraitsHash,guardianResultFromJson,guardianResultDomain,GUARDIAN_CLAIM_BATCH,GUARDIAN_HONOR_TYPES,GUARDIAN_RESULT_TYPES,type GuardianHonors,type GuardianSnapshot} from '@mapae/arcade/guardians';
 import {runArcadeSimulation} from '@mapae/arcade/simulation';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
 import {kstDay,kstWeek,rankedSeed} from '@mapae/arcade/ranking';
@@ -25,7 +25,8 @@ const tx=`0x${'44'.repeat(32)}` as Hex, blockHash=`0x${'55'.repeat(32)}` as Hex;
 const env={ARCADE_OUTINGS_ENABLED:'true',ARCADE_GUARDIAN_ADDRESS:collection,ARCADE_RESULT_PRIVATE_KEY:`0x${'88'.repeat(32)}`,ARCADE_AGENT_PRIVATE_KEY:`0x${'22'.repeat(32)}`};
 const config=readGuardianConfig(env)!, now=2_000_000_000_000;
 const snapshot=(tokenId='1'):GuardianSnapshot=>({chainId:91342,collection,tokenId,owner,ownershipEpoch:'1',seed,traitsHash:guardianTraitsHash(seed),ruleset:ARCADE_RULESET_VERSION});
-const token=(tokenId='1'):GuardianToken=>({tokenId,owner,ownershipEpoch:'1',seed,sequence:'1',revealed:true,progress:emptyProgress()});
+const token=(tokenId='1'):GuardianToken=>({tokenId,owner,ownershipEpoch:'1',seed,sequence:'1',revealed:true,progress:emptyProgress(),honors:emptyHonors()});
+const noHonors={honor:()=>null};
 const reader:GuardianReader={collection,inspect:async id=>snapshot(id),token:async id=>token(id),claimed:async()=>false,
     roster:async()=>({enabled:true,chainId:91342,collection,signer:config.signer.address,mintFee:'1',minted:1,pendingTokenId:null,guardians:[token()]})};
 const stores:OutingStore[]=[],dirs:string[]=[];
@@ -94,7 +95,7 @@ describe('permanent authoritative growth',()=>{
 describe('canonical safe payment before attestation',()=>{
     const sig=(claim:{result:Parameters<typeof guardianResultFromJson>[0];signature:Hex})=>recoverTypedDataAddress({domain:guardianResultDomain(collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:guardianResultFromJson(claim.result),signature:claim.signature});
     test('safe receipt persists evidence and the batch recovers the dedicated typed signer',async()=>{
-        const s=store(),row=await complete(s),claim=createGuardianClaims(config,s.guardians,reader,client());
+        const s=store(),row=await complete(s),claim=createGuardianClaims(config,s.guardians,reader,noHonors,client());
         const first=await claim(owner,'1'),second=await claim(owner,'1');
         expect(second).toEqual(first);expect(first.claims).toHaveLength(1);expect(first.claims[0]!.result).toEqual(row.result);
         expect(await sig(first.claims[0]!)).toBe(config.signer.address);
@@ -106,7 +107,7 @@ describe('canonical safe payment before attestation',()=>{
         for(let i=0;i<34;i++)await complete(s,`guardian-outing-${i}`,'1',`0x${i.toString(16).padStart(64,'a')}` as Hex);
         await complete(s,'other-guardian-outing','2',`0x${'bb'.repeat(32)}` as Hex);
         const claimedTx=new Set<string>([`0x${(0).toString(16).padStart(64,'a')}`]);
-        const batch=await createGuardianClaims(config,s.guardians,{...reader,claimed:async tx=>claimedTx.has(tx)},client())(owner,'1');
+        const batch=await createGuardianClaims(config,s.guardians,{...reader,claimed:async tx=>claimedTx.has(tx)},noHonors,client())(owner,'1');
         expect(batch.claims).toHaveLength(GUARDIAN_CLAIM_BATCH);
         expect(batch.claims.every(c=>c.result.tokenId==='1')).toBe(true);
         expect(batch.claims[0]!.result.paymentTx).toBe(`0x${(1).toString(16).padStart(64,'a')}`);
@@ -115,24 +116,24 @@ describe('canonical safe payment before attestation',()=>{
     test('a spent time budget returns the claims signed so far, never an empty batch',async()=>{
         const s=store();
         for(let i=0;i<3;i++)await complete(s,`guardian-outing-${i}`,'1',`0x${i.toString(16).padStart(64,'a')}` as Hex);
-        const batch=await createGuardianClaims(config,s.guardians,reader,client(),0)(owner,'1');
+        const batch=await createGuardianClaims(config,s.guardians,reader,noHonors,client(),0)(owner,'1');
         expect(batch.claims).toHaveLength(1);expect(batch.claims[0]!.result.paymentTx).toBe(`0x${(0).toString(16).padStart(64,'a')}`);
     });
     test('wrong chain and missing safe head fail; unsafe, orphaned, reverted and wrong Transfer wait unsigned',async()=>{
         const s=store(),row=await complete(s);
         for(const c of [client({getChainId:async()=>1}),client({getBlock:async()=>{throw Error('safe not supported');}})])
-            await expect(createGuardianClaims(config,s.guardians,reader,c)(owner,'1')).rejects.toThrow();
+            await expect(createGuardianClaims(config,s.guardians,reader,noHonors,c)(owner,'1')).rejects.toThrow();
         for(const c of [
             client({getBlock:async()=>({number:9n,hash:blockHash})}),
             client({getBlock:async()=>({number:20n,hash:tx})}),
             client({getTransactionReceipt:async()=>({status:'reverted',logs,blockNumber:10n,blockHash})}),
             client({getTransactionReceipt:async()=>({status:'success',logs:[],blockNumber:10n,blockHash})}),
-        ])expect((await createGuardianClaims(config,s.guardians,reader,c)(owner,'1')).claims).toEqual([]);
+        ])expect((await createGuardianClaims(config,s.guardians,reader,noHonors,c)(owner,'1')).claims).toEqual([]);
         expect(s.guardians.get(row.result.resultId)?.signature).toBeNull();
     });
     test('only the current owner batches, including results the previous owner earned',async()=>{
         const s=store(),row=await complete(s),transferred={...reader,token:async()=>({...token(),owner:receiver,ownershipEpoch:'2'})};
-        const claim=createGuardianClaims(config,s.guardians,transferred,client());
+        const claim=createGuardianClaims(config,s.guardians,transferred,noHonors,client());
         const batch=await claim(receiver,'1');
         expect(batch.claims[0]!.result.ownershipEpoch).toBe('1');expect(batch.claims[0]!.result.actor).toBe(owner);
         for(const stranger of [owner,agent])await expect(claim(stranger,'1')).rejects.toThrow('not_found');
@@ -142,18 +143,53 @@ describe('canonical safe payment before attestation',()=>{
     test('a confirmed claim is marked once and never signed again; signer mismatch closes',async()=>{
         const s=store(),row=await complete(s);let reads=0;
         const confirmed={...reader,claimed:async()=>{reads++;return true;}};
-        expect((await createGuardianClaims(config,s.guardians,confirmed,client())(owner,'1')).claims).toEqual([]);
+        expect((await createGuardianClaims(config,s.guardians,confirmed,noHonors,client())(owner,'1')).claims).toEqual([]);
         expect(s.guardians.get(row.result.resultId)?.claimed).toBe(true);expect(s.guardians.get(row.result.resultId)?.signature).toBeNull();
-        await createGuardianClaims(config,s.guardians,confirmed,client())(owner,'1');expect(reads).toBe(1);
-        await expect(createGuardianClaims(config,s.guardians,reader,client({readContract:async()=>agent}))(owner,'1')).rejects.toThrow('guardian_unavailable');
+        await createGuardianClaims(config,s.guardians,confirmed,noHonors,client())(owner,'1');expect(reads).toBe(1);
+        await expect(createGuardianClaims(config,s.guardians,reader,noHonors,client({readContract:async()=>agent}))(owner,'1')).rejects.toThrow('guardian_unavailable');
     });
     test('key rotation reissues the exact immutable payload, never another earned result',async()=>{
         const s=store();await complete(s);
-        const before=(await createGuardianClaims(config,s.guardians,reader,client())(owner,'1')).claims[0]!;
+        const before=(await createGuardianClaims(config,s.guardians,reader,noHonors,client())(owner,'1')).claims[0]!;
         const next=readGuardianConfig({...env,ARCADE_RESULT_PRIVATE_KEY:`0x${'99'.repeat(32)}`})!;
-        const after=(await createGuardianClaims(next,s.guardians,reader,client({readContract:async()=>next.signer.address}))(owner,'1')).claims[0]!;
+        const after=(await createGuardianClaims(next,s.guardians,reader,noHonors,client({readContract:async()=>next.signer.address}))(owner,'1')).claims[0]!;
         expect(after.result).toEqual(before.result);expect(after.signature).not.toBe(before.signature);
         expect(s.guardians.progress(collection,'1').plays).toBe(1);
+    });
+});
+describe('signed honors ride the same batch',()=>{
+    const sealed:GuardianHonors={week:2961,longestStreak:7,titles:[{champion:1,podium:0,top10:2},{champion:0,podium:3,top10:0},{champion:4,podium:0,top10:5}]};
+    const book=(value:GuardianHonors|null=sealed)=>({honor:()=>value});
+    const onChain=(honors:GuardianHonors,revealed=true)=>({...reader,token:async()=>({...token(),honors,revealed})});
+    test('a newer sealed honor that raises a lane is signed by the result signer as the contract Honor',async()=>{
+        const s=store(),batch=await createGuardianClaims(config,s.guardians,reader,book(),client())(owner,'1');
+        expect(batch.claims).toEqual([]);
+        expect(batch.honor?.honor).toEqual({tokenId:'1',week:2961,longestStreak:7,titles:String(0x500000004000000030000000200000001n)});
+        expect(await recoverTypedDataAddress({domain:guardianResultDomain(collection),types:GUARDIAN_HONOR_TYPES,primaryType:'Honor',message:guardianHonorFromJson(batch.honor!.honor),signature:batch.honor!.signature}))
+            .toBe(config.signer.address);
+    });
+    test('no honor when the NFT already holds the week, nothing would rise, nothing is sealed, or the token is unrevealed',async()=>{
+        const s=store();
+        for(const [r,b] of [[onChain(sealed),book()],[onChain({...sealed,week:2960}),book()],[onChain({...sealed,week:2960,longestStreak:9}),book({...sealed,longestStreak:3})],
+            [reader,book(null)],[onChain(emptyHonors(),false),book()]] as const)
+            expect((await createGuardianClaims(config,s.guardians,r,b,client())(owner,'1')).honor).toBeNull();
+        // A newer week that raises just one lane is worth a claim; the contract keeps the other lanes' maxima.
+        expect((await createGuardianClaims(config,s.guardians,onChain({...sealed,week:2960}),book({...sealed,longestStreak:8}),client())(owner,'1')).honor?.honor.week).toBe(2961);
+    });
+    test('an attached honor takes one place in the batch and survives a spent results budget',async()=>{
+        const s=store();
+        for(let i=0;i<34;i++)await complete(s,`guardian-outing-${i}`,'1',`0x${i.toString(16).padStart(64,'a')}` as Hex);
+        const full=await createGuardianClaims(config,s.guardians,reader,book(),client())(owner,'1');
+        expect(full.claims).toHaveLength(GUARDIAN_CLAIM_BATCH-1);expect(full.honor).not.toBeNull();
+        const rushed=await createGuardianClaims(config,s.guardians,reader,book(),client(),0)(owner,'1');
+        expect(rushed.claims).toHaveLength(1);expect(rushed.honor?.honor.week).toBe(2961);
+    });
+    test('the owner-only detail carries the seller sealed totals next to the NFT honors',async()=>{
+        const s=store(),bridge='private-bridge-token'.repeat(3),headers={Authorization:`Bearer ${bridge}`,'X-Mapae-Owner':owner};
+        const detail=async(honors?:{honor:()=>GuardianHonors|null})=>(await createGuardianApp({token:bridge,reader,ledger:s.guardians,...(honors?{honors}:{})}).request('/1',{headers})).json() as Promise<{honors:unknown;guardian:{honors:unknown}}>;
+        expect(await detail(book())).toMatchObject({honors:sealed,guardian:{honors:emptyHonors()}});
+        expect((await detail()).honors).toBeNull();
+        expect((await createGuardianApp({token:bridge,reader,ledger:s.guardians,honors:book()}).request('/1',{headers:{...headers,'X-Mapae-Owner':receiver}})).status).toBe(404);
     });
 });
 describe('guardian chain runtime and routes',()=>{
@@ -168,17 +204,19 @@ describe('guardian chain runtime and routes',()=>{
         const c=client({readContract:async(v:{functionName:string;blockNumber:bigint})=>{
             calls.push(v);switch(v.functionName){
                 case'ownerOf':return owner;case'ownershipEpoch':return 1n;case'birth':return[seed,1n,revealed];
-                case'progress':return{plays:0n,victories:0n,experience:0n,gamePlays:[0n,0n,0n],gameVictories:[0n,0n,0n],bestScores:[0,0,0]};
+                case'progress':return{plays:0n,victories:0n,experience:0n,gamePlays:[0n,0n,0n],gameVictories:[0n,0n,0n],bestScores:[0,0,0],
+                    honorWeek:2961,longestStreak:7,champion:[1,0,4],podium:[0,3,0],top10:[2,0,5]};
                 case'balanceOf':case'mintedBy':case'mintFee':return 1n;case'pendingMint':return 0n;case'resultSigner':return config.signer.address;case'tokensOfOwner':return[1n];case'claimedPayments':return false;
             }throw Error('unexpected getter');}});
         const chain=createGuardianReader(config,c);expect(await chain.inspect('1')).toEqual(snapshot());
+        expect((await chain.token('1')).honors).toEqual({week:2961,longestStreak:7,titles:[{champion:1,podium:0,top10:2},{champion:0,podium:3,top10:0},{champion:4,podium:0,top10:5}]});
         expect(calls.every(v=>(v as {blockNumber:bigint}).blockNumber===20n)).toBe(true);
         expect((await chain.roster(owner)).guardians).toHaveLength(1);
         revealed=false;await expect(chain.inspect('1')).rejects.toThrow('guardian_unavailable');
     });
     test('private roster/details/claims expose neither bearer nor permission context',async()=>{
         const s=store(),row=await complete(s),bridge='private-bridge-token'.repeat(3);
-        const app=createGuardianApp({token:bridge,reader,ledger:s.guardians,claim:createGuardianClaims(config,s.guardians,reader,client())});
+        const app=createGuardianApp({token:bridge,reader,ledger:s.guardians,claim:createGuardianClaims(config,s.guardians,reader,noHonors,client())});
         const headers={Authorization:`Bearer ${bridge}`,'X-Mapae-Owner':owner};
         expect((await app.request('/')).status).toBe(401);
         expect((await app.request('/',{headers:{...headers,Authorization:'Bearer bad'}})).status).toBe(401);

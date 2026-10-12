@@ -1,5 +1,5 @@
 import {isAddress,isHash,type Address} from 'viem';
-import {guardianName,guardianTokenId,guardianTraitsHash,validGuardianHonors,GUARDIAN_CLAIM_BATCH,type GuardianHonors} from '@mapae/arcade/guardians';
+import {guardianHonorFromJson,guardianName,guardianTokenId,guardianTraitsHash,validGuardianHonors,GUARDIAN_CLAIM_BATCH,type GuardianHonorJson,type GuardianHonors} from '@mapae/arcade/guardians';
 import {rankedSeed,validRankedAttempt} from '@mapae/arcade/ranking';
 import type {GuardianClaimBatch,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
 export type {GuardianClaimBatch,GuardianDetail,GuardianRoster,GuardianToken,Progress,VerifiedResult} from '../../../../delegated-seller/guardians/types';
@@ -52,6 +52,12 @@ function claimEntry(v:unknown,tokenId:string):GuardianClaimBatch['claims'][numbe
         !uint(r.ruleset)||r.ruleset<3||!uint(r.seed)||r.seed>0xffffffff||!uint(r.game)||r.game>2||!uint(r.score)||r.score>1_000_000_000||typeof r.victory!=='boolean')throw Error();
     return {signature:v.signature as `0x${string}`,result:{resultId:r.resultId,tokenId,actor:r.actor,ownershipEpoch:r.ownershipEpoch,paymentTx:r.paymentTx,traitsHash:r.traitsHash,inputsHash:r.inputsHash,ruleset:r.ruleset,seed:r.seed,game:r.game,score:r.score,victory:r.victory}};
 }
+/** The signed honor of the requested guardian, projected to exactly the contract's Honor fields. */
+function honorEntry(v:unknown,tokenId:string):NonNullable<GuardianClaimBatch['honor']>{
+    if(!object(v)||typeof v.signature!=='string'||!/^0x[0-9a-fA-F]{130}$/.test(v.signature)||!object(v.honor)||v.honor.tokenId!==tokenId)throw Error();
+    const h=guardianHonorFromJson(v.honor as GuardianHonorJson);
+    return {signature:v.signature as `0x${string}`,honor:{tokenId,week:h.week,longestStreak:h.longestStreak,titles:h.titles.toString()}};
+}
 const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
 export type GuardianDependencies={receiptToken?:string;fetcher?:(url:string,init?:RequestInit)=>Promise<Response>};
 /** Caller is profileApi, which already authenticates SIWE, Origin, wallet and rate limits. */
@@ -81,14 +87,16 @@ export async function guardiansApi(request:Request,owner:Address,_input:unknown,
         if(suffix===''){if(!roster(v)||v.guardians.some(g=>g.owner.toLowerCase()!==owner.toLowerCase())||new Set(v.guardians.map(g=>g.tokenId)).size!==v.guardians.length)throw Error();
             return json({enabled:v.enabled,chainId:v.chainId,collection:v.collection,signer:v.signer,mintFee:v.mintFee,minted:v.minted,pendingTokenId:v.pendingTokenId,guardians:v.guardians.map(copyToken)});}
         else if(detail){
-            if(!object(v)||!token(v.guardian)||v.guardian.tokenId!==detail[1]||v.guardian.owner.toLowerCase()!==owner.toLowerCase()||!progress(v.earned)||!Array.isArray(v.results)||v.results.length>40||!(v.nextCursor===null||typeof v.nextCursor==='string'&&/^[1-9][0-9]{0,15}$/.test(v.nextCursor)&&Number.isSafeInteger(Number(v.nextCursor))))throw Error();
+            if(!object(v)||!token(v.guardian)||v.guardian.tokenId!==detail[1]||v.guardian.owner.toLowerCase()!==owner.toLowerCase()||!progress(v.earned)||
+                !(v.honors===null||validGuardianHonors(v.honors)&&v.honors.week>=1)||!Array.isArray(v.results)||v.results.length>40||!(v.nextCursor===null||typeof v.nextCursor==='string'&&/^[1-9][0-9]{0,15}$/.test(v.nextCursor)&&Number.isSafeInteger(Number(v.nextCursor))))throw Error();
             const results=v.results.map(r=>copyResult(r,detail[1]!));if(new Set(results.map(r=>r.id)).size!==results.length)throw Error();
-            return json({guardian:copyToken(v.guardian),earned:copyProgress(v.earned),results,nextCursor:v.nextCursor});
+            return json({guardian:copyToken(v.guardian),earned:copyProgress(v.earned),honors:v.honors===null?null:copyHonors(v.honors),results,nextCursor:v.nextCursor});
         }else{
-            if(!object(v)||typeof v.collection!=='string'||!isAddress(v.collection)||typeof v.signer!=='string'||!isAddress(v.signer)||!Array.isArray(v.claims)||v.claims.length>GUARDIAN_CLAIM_BATCH)throw Error();
-            const claims=v.claims.map(c=>claimEntry(c,claim![1]!));
+            if(!object(v)||typeof v.collection!=='string'||!isAddress(v.collection)||typeof v.signer!=='string'||!isAddress(v.signer)||!Array.isArray(v.claims)||
+                v.claims.length+(v.honor===null?0:1)>GUARDIAN_CLAIM_BATCH)throw Error();
+            const claims=v.claims.map(c=>claimEntry(c,claim![1]!)),honor=v.honor===null?null:honorEntry(v.honor,claim![1]!);
             if(new Set(claims.map(c=>c.result.resultId.toLowerCase())).size!==claims.length||new Set(claims.map(c=>c.result.paymentTx.toLowerCase())).size!==claims.length)throw Error();
-            return json({collection:v.collection,signer:v.signer,claims});
+            return json({collection:v.collection,signer:v.signer,claims,honor});
         }
     }catch{return json({error:{code:'guardian_unavailable'}},503);}
 }
