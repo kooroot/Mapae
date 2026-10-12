@@ -8,7 +8,6 @@ import {
     buildPrefundDepositCall,
     buildSponsoredRevocationApproval,
     costOfReceipt,
-    ipBucket,
     isDelegationRevoked,
     judgeCorsRequest,
     SPONSORED_BROWSER_ORIGINS,
@@ -27,6 +26,7 @@ import {
 import {
     GIWA_SEPOLIA_CAIP2,
     giwaSepolia,
+    ipBucket,
     isLoopbackHost,
     parseNodeRpcUrl,
     redactForLog,

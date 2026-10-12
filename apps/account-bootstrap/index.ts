@@ -8,7 +8,6 @@ import {
     assertFundedKeySeparation,
     buildSponsoredBootstrapApproval,
     costOfReceipt,
-    ipBucket,
     judgeCorsRequest,
     parseActiveDeploymentArtifactJson,
     parseBootstrapOrigins,
@@ -28,6 +27,7 @@ import {
     GIWA_SEPOLIA_CAIP2,
     MOCK_USDC,
     giwaSepolia,
+    ipBucket,
     parseNodeRpcUrl,
     redactForLog,
 } from "@mapae/shared";

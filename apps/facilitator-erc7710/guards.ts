@@ -18,12 +18,11 @@ import {
     SETTLEMENT_PENDING,
     UNEXPECTED_SETTLE_ERROR,
     UNEXPECTED_VERIFY_ERROR,
-    ipBucket,
     isRateLimitError,
     type Erc7710SettleResponse,
     type Erc7710VerifyResponse,
 } from "@mapae/delegation";
-import {GIWA_SEPOLIA_CAIP2} from "@mapae/shared";
+import {GIWA_SEPOLIA_CAIP2, ipBucket} from "@mapae/shared";
 import {SettlementBudgetExceeded} from "@mapae/store";
 import type {MiddlewareHandler} from "hono";
 import {
