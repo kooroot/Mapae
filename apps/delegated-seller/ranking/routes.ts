@@ -1,6 +1,6 @@
 import {createHash, timingSafeEqual} from 'node:crypto';
 import {Hono} from 'hono';
-import {parseRankingIds, validRankingBoard, type RankingPeriod} from '@mapae/arcade/ranking';
+import {parseRankingIds, parseRankingPageOffset, validRankingBoard, type RankingPeriod} from '@mapae/arcade/ranking';
 import {OutingError} from '../outings/validation';
 import type {RankingReader} from './board';
 
@@ -20,6 +20,14 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
         if (!validRankingBoard(board, period)) throw new OutingError('invalid_request');
         if (!options.reader) throw new OutingError('disabled');
         return c.json(options.reader.board(board, period as RankingPeriod));
+    });
+    /** The whole board below the top rows, a page at a time: from an offset, or around the caller's guardians (one to three). */
+    app.get('/board/:board/:period/:by/:at', c => {
+        const {board, period, by, at} = c.req.param();
+        const offset = by === 'from' ? parseRankingPageOffset(at) : null, around = by === 'around' ? parseRankingIds(at) : null;
+        if (!validRankingBoard(board, period) || (offset === null && !around)) throw new OutingError('invalid_request');
+        if (!options.reader) throw new OutingError('disabled');
+        return c.json(options.reader.page(board, period as RankingPeriod, around ? {around} : {offset: offset!}));
     });
     app.get('/guardians/:ids', c => {
         const ids = parseRankingIds(c.req.param('ids'));

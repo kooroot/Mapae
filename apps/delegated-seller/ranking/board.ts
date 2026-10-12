@@ -2,8 +2,8 @@ import type {Database} from 'bun:sqlite';
 import type {Address} from 'viem';
 import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
 import {
-    addDays, BOARD_ROWS, DEVOTION_DAYS, guardianStreak, kstDay, kstWeek, NEARBY_SPAN, nextReset, RANKED_GAMES, WEEKLY_COUNTED_DAYS, weekCutoff,
-    type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings,
+    addDays, BOARD_ROWS, DEVOTION_DAYS, guardianStreak, kstDay, kstWeek, NEARBY_SPAN, nextReset, RANKED_GAMES, RANKING_PAGE_ROWS, rankingPageOffset, WEEKLY_COUNTED_DAYS, weekCutoff,
+    type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings,
 } from '@mapae/arcade/ranking';
 import type {OutingStore} from '../outings/store';
 
@@ -62,6 +62,9 @@ function previousRanks(current: Window, earlier: Window): Moves {
     return earlier.rows.length && earlier.ruleset === current.ruleset ? new Map(earlier.rows.map(row => [row.tokenId, row.rank])) : null;
 }
 const move = (moves: Moves, tokenId: string) => ({moves: moves !== null, prev: moves?.get(tokenId) ?? null});
+/** `count` rows of a whole board from the 0-based place `offset`, each with its earlier rank. */
+const placed = (rows: RankingRow[], offset: number, count: number, moves: Moves) =>
+    rows.slice(offset, offset + count).map(row => ({...row, prev: moves?.get(row.tokenId) ?? null}));
 
 /**
  * Public leaderboards read from verified ranked rows only. Every board is derived on read; nothing here is stored, so a
@@ -75,7 +78,21 @@ export class RankingReader {
     board(board: RankingBoardId, period: RankingPeriod): RankingBoard {
         const at = this.now(), window = this.window(board, period, at), moves = previousRanks(window, this.window(board, period, at, 1));
         return {board, period, from: window.from, to: window.to, closesAt: window.closesAt, entrants: window.rows.length, moves: moves !== null,
-            rows: window.rows.slice(0, BOARD_ROWS).map(row => ({...row, prev: moves?.get(row.tokenId) ?? null}))};
+            rows: placed(window.rows, 0, BOARD_ROWS, moves)};
+    }
+
+    /**
+     * One page of the whole board below the top rows: the page at `offset`, or the page holding the best placed of the `around`
+     * guardians below the top rows (the first page when none is). The page is sliced from the whole board in memory rather than
+     * read with SQL LIMIT/OFFSET: the entrant count and every earlier rank already need both whole windows, and the window
+     * functions rank every entrant before any LIMIT could apply, so a SQL page would only save copying rows this request reads.
+     */
+    page(board: RankingBoardId, period: RankingPeriod, at: {offset: number} | {around: readonly string[]}): RankingPage {
+        const now = this.now(), window = this.window(board, period, now), moves = previousRanks(window, this.window(board, period, now, 1));
+        const found = 'around' in at ? window.rows.findIndex((row, index) => index >= BOARD_ROWS && at.around.includes(row.tokenId)) : -1;
+        const offset = 'offset' in at ? at.offset : rankingPageOffset(found);
+        return {board, period, from: window.from, to: window.to, entrants: window.rows.length, moves: moves !== null, offset,
+            focus: found < 0 ? null : window.rows[found]!.tokenId, rows: placed(window.rows, offset, RANKING_PAGE_ROWS, moves)};
     }
 
     /** Where each named guardian stands on every current board, computing each window once for the whole request. */

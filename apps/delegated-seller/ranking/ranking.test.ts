@@ -2,7 +2,7 @@ import {afterEach, describe, expect, test} from 'bun:test';
 import type {Address, Hex} from 'viem';
 import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
 import {guardianTraitsHash} from '@mapae/arcade/guardians';
-import {addDays, kstWeek, rankedSeed, type RankingBoard, type RankingStandings} from '@mapae/arcade/ranking';
+import {addDays, kstWeek, rankedSeed, type RankingBoard, type RankingPage, type RankingStandings} from '@mapae/arcade/ranking';
 import {OutingStore} from '../outings/store';
 import {RankingReader} from './board';
 import {GuardianHonorBook} from './honors';
@@ -123,6 +123,54 @@ describe('movement', () => {
     });
 });
 
+describe('whole board pages', () => {
+    /** 137 entrants today, token n at #n; yesterday the same tokens in reverse, so token n was #(138 − n). */
+    function crowd() {
+        const s = setup();
+        for (let i = 1; i <= 137; i++) {s.add(String(i), 'race', '2026-10-14', 1, 1000 - i); s.add(String(i), 'race', '2026-10-13', 1, 1000 + i);}
+        return s;
+    }
+    const places = (page: RankingPage) => page.rows.map(r => r.rank);
+    test('fifty rows from an offset below the top ten, a short last page, and nothing past the end', () => {
+        const {reader} = crowd();
+        const first = reader.page('race', 'today', {offset: 10});
+        expect(first).toMatchObject({board: 'race', period: 'today', from: '2026-10-14', to: '2026-10-14', entrants: 137, moves: true, offset: 10, focus: null});
+        expect(places(first)).toEqual(Array.from({length: 50}, (_, i) => 11 + i));
+        expect(first.rows[0]).toEqual({rank: 11, tokenId: '11', seed: seedOf('11'), score: 989, prev: 127});
+        expect(places(reader.page('race', 'today', {offset: 110}))).toEqual(Array.from({length: 27}, (_, i) => 111 + i));
+        expect(reader.page('race', 'today', {offset: 160})).toMatchObject({entrants: 137, offset: 160, rows: []});
+        // The top board and the first page meet without a gap or an overlap.
+        expect(reader.board('race', 'today').rows.at(-1)!.rank).toBe(10);
+        expect(reader.page('stamp', 'today', {offset: 10})).toMatchObject({entrants: 0, moves: false, rows: []});
+    });
+    test('around finds the page of the best placed named guardian below the top ten', () => {
+        const {reader} = crowd();
+        const mid = reader.page('race', 'today', {around: ['74']});
+        expect(mid).toMatchObject({offset: 60, focus: '74'}); expect(mid.rows.find(r => r.tokenId === '74')).toMatchObject({rank: 74, prev: 64});
+        // A guardian in the top ten is already on the board; the next one below it decides the page.
+        expect(reader.page('race', 'today', {around: ['5', '74', '120']})).toMatchObject({offset: 60, focus: '74'});
+        expect(reader.page('race', 'today', {around: ['11']})).toMatchObject({offset: 10, focus: '11'});
+        expect(reader.page('race', 'today', {around: ['137']})).toMatchObject({offset: 110, focus: '137'});
+        for (const around of [['5'], ['500']]) expect(reader.page('race', 'today', {around})).toMatchObject({offset: 10, focus: null, rows: expect.any(Array)});
+        expect(places(reader.page('race', 'today', {around: ['500']}))[0]).toBe(11);
+    });
+    test('devotion pages keep shared places across the page edge', () => {
+        const {add, reader} = setup();
+        // Tokens 1–8 played three days, 9–15 two days, 16 one day: places 1, 9 (shared by seven) and 16.
+        for (let i = 1; i <= 16; i++) for (const day of ['2026-10-14', '2026-10-13', '2026-10-12'].slice(0, i <= 8 ? 3 : i <= 15 ? 2 : 1)) add(String(i), 'race', day, 1, 1);
+        const page = reader.page('devotion', '28d', {offset: 10});
+        expect(page.rows.map(r => [r.tokenId, r.rank, r.score])).toEqual([['11', 9, 2], ['12', 9, 2], ['13', 9, 2], ['14', 9, 2], ['15', 9, 2], ['16', 16, 1]]);
+        expect(reader.page('devotion', '28d', {around: ['16']})).toMatchObject({offset: 10, focus: '16'});
+    });
+    test('no movement on any page after a ruleset change', () => {
+        const {add, reader} = setup(), old = ARCADE_RULESET_VERSION - 1;
+        for (let i = 1; i <= 12; i++) {add(String(i), 'shop', '2026-10-06', 1, 100 + i, 1, old); add(String(i), 'shop', '2026-10-13', 1, 100 - i);}
+        expect(reader.page('shop', 'week', {offset: 10})).toMatchObject({moves: false, rows: [{rank: 11, prev: null}, {rank: 12, prev: null}]});
+        // Last week against the week before it: both under the older ruleset, but the week before had nobody, so no comparison either.
+        expect(reader.page('shop', 'lastweek', {offset: 10})).toMatchObject({moves: false, rows: [{rank: 11, tokenId: '2', prev: null}, {rank: 12, tokenId: '1', prev: null}]});
+    });
+});
+
 describe('sealed weeks', () => {
     const late = (day: string) => (Date.parse('2026-10-13T03:00:00Z') - at(day)) / 60_000; // settled Tuesday 12:00 KST, past last week's seal
     test('a round settled after the cutoff never changes the closed week board', () => {
@@ -217,13 +265,19 @@ describe('routes', () => {
         expect((await app.request('/guardians/1,2', {headers: auth})).status).toBe(200);
         for (const path of ['/board/xp/today', '/board/race/28d', '/board/devotion/today', '/guardians/2,1', '/guardians/1,1', '/guardians/1,2,3,4', '/guardians/0', '/guardians/10001'])
             expect((await app.request(path, {headers: auth})).status).toBe(400);
+        expect((await app.request('/board/race/today/from/10', {headers: auth})).status).toBe(200);
+        expect((await app.request('/board/devotion/28d/around/1,3', {headers: auth})).status).toBe(200);
+        for (const path of ['/board/race/today/from/0', '/board/race/today/from/9', '/board/race/today/from/11', '/board/race/today/from/010', '/board/race/today/from/10010',
+            '/board/race/today/around/2,1', '/board/race/today/around/0', '/board/race/today/at/10', '/board/race/28d/from/10', '/board/xp/today/around/1'])
+            expect((await app.request(path, {headers: auth})).status).toBe(400);
         expect((await createRankingApp({token}).request('/board/race/today', {headers: auth})).status).toBe(503);
+        expect((await createRankingApp({token}).request('/board/race/today/from/10', {headers: auth})).status).toBe(503);
         expect((await createRankingApp({}).request('/board/race/today', {headers: auth})).status).toBe(401);
     });
     test('responses never carry an actor, payer, payment or owner', async () => {
         const {add, reader} = setup(); add('1', 'race', '2026-10-14', 1, 50); add('1', 'race', '2026-10-06', 1, 50);
         const app = createRankingApp({token, reader});
-        for (const path of ['/board/race/today', '/board/race/lastweek', '/board/devotion/28d', '/guardians/1']) {
+        for (const path of ['/board/race/today', '/board/race/lastweek', '/board/devotion/28d', '/board/race/today/from/10', '/board/race/today/around/1', '/guardians/1']) {
             const body = await (await app.request(path, {headers: auth})).text();
             for (const key of ['actor', 'payer', 'transaction', 'paymentTx', 'payment_tx', 'owner', '0x1111']) expect(body).not.toContain(key);
         }
