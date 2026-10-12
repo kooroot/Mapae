@@ -1,0 +1,202 @@
+import {Tabs} from "@base-ui/react/tabs";
+import {FAUCET_KINDS, type FaucetClaimView, type FaucetKind, type FaucetMissionId} from "@mapae/delegation/faucet-policy";
+import {MOCK_USDC} from "@mapae/shared";
+import {useQuery} from "@tanstack/react-query";
+import {ChevronDown, Coins, Flame, Plus} from "lucide-react";
+import {useCallback, useEffect, useRef, useState} from "react";
+import type {Address} from "viem";
+import {useAccount, useDisconnect, useSignMessage, useSwitchChain, useWatchAsset} from "wagmi";
+import {Lockup} from "../brand/marks";
+import {WalletPicker} from "../components/WalletPicker";
+import {Web3Providers} from "../dapp/Web3Providers";
+import {appUrl, chain, docsUrl, faucetUrl, landingUrl} from "../lib/config";
+import {shortAddress} from "../lib/dial";
+import {localizeUrl} from "../lib/i18n";
+import {LocaleSwitch, useLocale} from "../lib/locale";
+import {ClaimPanel} from "./ClaimPanel";
+import {claimFaucet, FaucetError, loginFaucet, readFaucetAccount, readFaucetStatus} from "./client";
+import {FAUCET_COPY, formatAmount} from "./copy";
+import {markMissions, readMissions} from "./mission-store";
+import "./faucet.css";
+
+/**
+ * faucet.mapae.io: testnet tokens behind a wallet sign-in, a follow and a bot check.
+ *
+ * The page holds the wallet's standing — where each kind lands and the latest claim of
+ * each — and refreshes it from the session; each tab's panel holds only its own claim in
+ * progress. Nothing here decides an amount or a window: the service does, and the page
+ * shows what it was told.
+ */
+export function FaucetPage() {
+    return <Web3Providers><FaucetScreen /></Web3Providers>;
+}
+
+type Views = Record<FaucetKind, FaucetClaimView | null>;
+const NO_VIEWS: Views = {musdc: null, eth: null};
+/** A pending claim is re-read this often, and for this long before the page says it is slow. */
+const POLL_MS = 4_000, POLL_LIMIT_MS = 120_000;
+
+function FaucetScreen() {
+    const {locale} = useLocale(), t = FAUCET_COPY[locale];
+    const {address, chainId, status: walletStatus} = useAccount();
+    const {disconnect} = useDisconnect();
+    const {switchChain, isPending: switching} = useSwitchChain();
+    const {signMessageAsync} = useSignMessage();
+    const status = useQuery({queryKey: ["faucet-status"], queryFn: readFaucetStatus, staleTime: 30_000, retry: 1});
+
+    const [tab, setTab] = useState<FaucetKind>("musdc");
+    const [views, setViews] = useState<Views>(NO_VIEWS);
+    const [recipient, setRecipient] = useState<Address>();
+    const [signedIn, setSignedIn] = useState(false);
+    const [fresh, setFresh] = useState<Record<FaucetKind, boolean>>({musdc: false, eth: false});
+    const [pendingLong, setPendingLong] = useState(false);
+    const [missions, setMissions] = useState<FaucetMissionId[]>([]);
+    // A follow opened before a wallet is connected is kept for the wallet that connects next.
+    const unclaimedMissions = useRef<FaucetMissionId[]>([]);
+    const current = useRef<Address | undefined>(undefined);
+
+    const refresh = useCallback(async (owner: Address) => {
+        try {
+            const account = await readFaucetAccount(owner);
+            if (current.current !== owner) return;
+            setViews({musdc: account.musdc, eth: account.eth});
+            setRecipient(account.recipients.musdc);
+            setSignedIn(true);
+        } catch (e) {
+            if (current.current === owner && e instanceof FaucetError && e.code === "login_required") setSignedIn(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        current.current = address;
+        setViews(NO_VIEWS); setRecipient(undefined); setSignedIn(false); setFresh({musdc: false, eth: false}); setPendingLong(false);
+        if (!address) {setMissions(unclaimedMissions.current); return;}
+        setMissions(unclaimedMissions.current.length ? markMissions(address, unclaimedMissions.current) : readMissions(address));
+        unclaimedMissions.current = [];
+        void refresh(address);
+    }, [address, refresh]);
+
+    const anyPending = views.musdc?.state === "pending" || views.eth?.state === "pending";
+    useEffect(() => {
+        if (!address || !anyPending) {setPendingLong(false); return;}
+        const started = Date.now();
+        const timer = setInterval(() => {
+            if (Date.now() - started > POLL_LIMIT_MS) {setPendingLong(true); clearInterval(timer); return;}
+            void refresh(address);
+        }, POLL_MS);
+        return () => clearInterval(timer);
+    }, [address, anyPending, refresh]);
+
+    const onMission = (id: FaucetMissionId) => {
+        if (address) {setMissions(markMissions(address, [id])); return;}
+        unclaimedMissions.current = [...new Set([...unclaimedMissions.current, id])];
+        setMissions(unclaimedMissions.current);
+    };
+
+    const ensureSession = async () => {
+        if (!address) throw new FaucetError("login_required");
+        if (signedIn) return;
+        await loginFaucet(address, (message) => signMessageAsync({message}));
+        setSignedIn(true);
+        await refresh(address);
+    };
+
+    const submit = async (input: {kind: FaucetKind; turnstile: string; missions: FaucetMissionId[]}) => {
+        if (!address) throw new FaucetError("login_required");
+        try {
+            const view = await claimFaucet(address, input);
+            if (current.current !== address) return;
+            setViews((previous) => ({...previous, [input.kind]: view}));
+            setFresh((previous) => ({...previous, [input.kind]: true}));
+            if (input.kind === "musdc") setRecipient(view.recipient);
+        } catch (e) {
+            if (e instanceof FaucetError && e.code === "login_required") setSignedIn(false);
+            throw e;
+        }
+    };
+
+    const wallet = address ? (
+        <div className="fct-wallet">
+            <div className="fct-wallet-row">
+                <span className="fct-chip"><i aria-hidden="true" />{t.connected} · <code>{shortAddress(address)}</code></span>
+                <button type="button" className="fct-text-button" onClick={() => disconnect()}>{t.disconnect}</button>
+            </div>
+            {chainId !== chain.id && <div className="fct-chain"><span>{t.wrongChain}</span><button type="button" className="fct-action fct-action-secondary fct-action-small" disabled={switching} onClick={() => switchChain({chainId: chain.id})}>{t.switchChain}</button></div>}
+        </div>
+    ) : <WalletPicker context="faucet" reconnecting={walletStatus === "reconnecting" || walletStatus === "connecting"} />;
+
+    const ethAmount = formatAmount(status.data?.eth.amountWei ?? "50000000000000000", "eth");
+    const arcadeHref = localizeUrl(`${landingUrl.replace(/\/$/, "")}/arcade`, locale);
+    return (
+        <div className="fct-page">
+            <header className="fct-header">
+                <a className="fct-home" href={localizeUrl(faucetUrl, locale)} aria-label="Mapae Faucet"><Lockup /><span className="fct-tag">Faucet</span></a>
+                <nav className="fct-nav">
+                    <a href={arcadeHref}>{t.nav.arcade}</a>
+                    <a href={localizeUrl(appUrl, locale)}>{t.nav.studio}</a>
+                    <LocaleSwitch />
+                </nav>
+            </header>
+            <main className="fct-main">
+                <div className="fct-hero">
+                    <p className="fct-eyebrow">GIWA SEPOLIA · TESTNET</p>
+                    <h1>{t.title}</h1>
+                    <p>{t.subline}</p>
+                </div>
+                <Tabs.Root className="fct-tabs" value={tab} onValueChange={(value) => setTab(value as FaucetKind)}>
+                    <Tabs.List className="fct-tablist" aria-label={t.tabsLabel}>
+                        {FAUCET_KINDS.map((kind) => (
+                            <Tabs.Tab key={kind} value={kind} className="fct-tab">
+                                {kind === "musdc" ? <Coins size={17} aria-hidden="true" /> : <Flame size={17} aria-hidden="true" />}
+                                <span>{t.tabs[kind]}</span>
+                                {kind === "eth" && status.data && !status.data.eth.enabled && <span className="fct-badge">{t.soon}</span>}
+                            </Tabs.Tab>
+                        ))}
+                    </Tabs.List>
+                    {FAUCET_KINDS.map((kind) => (
+                        <Tabs.Panel key={kind} value={kind} className="fct-card">
+                            <ClaimPanel
+                                kind={kind} status={status.data} statusFailed={status.isError} owner={address} wallet={wallet}
+                                recipient={kind === "eth" ? address : recipient} view={views[kind]} fresh={fresh[kind]} pendingLong={pendingLong}
+                                missionsDone={missions} onMission={onMission} ensureSession={ensureSession} submit={submit}
+                            />
+                            {kind === "eth" && <div className="fct-rules"><h3>{t.ethRules.title}</h3><ul>{t.ethRules.items(ethAmount).map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                        </Tabs.Panel>
+                    ))}
+                </Tabs.Root>
+                <section className="fct-faq" aria-labelledby="fct-faq-title">
+                    <h2 id="fct-faq-title">{t.howTo.title}</h2>
+                    {t.howTo.items.map((item) => (
+                        <details key={item.id} className="fct-faq-item">
+                            <summary>{item.q}<ChevronDown size={18} aria-hidden="true" /></summary>
+                            <p>{item.a}</p>
+                            {item.id === "wallet" && address && <WatchToken />}
+                        </details>
+                    ))}
+                </section>
+            </main>
+            <footer className="fct-foot">
+                <span>{t.footer}</span>
+                <a href={arcadeHref}>{t.nav.arcade}</a>
+                <a href={localizeUrl(appUrl, locale)}>{t.nav.studio}</a>
+                <a href={docsUrl} target="_blank" rel="noopener noreferrer">Docs</a>
+                <a href="https://x.com/mapae_io" target="_blank" rel="noopener noreferrer">X @mapae_io</a>
+            </footer>
+        </div>
+    );
+}
+
+/** `wallet_watchAsset` for the test stablecoin — the wallet shows the address's own balance, said plainly. */
+function WatchToken() {
+    const {locale} = useLocale(), t = FAUCET_COPY[locale];
+    const {watchAssetAsync, isPending, isSuccess} = useWatchAsset();
+    return (
+        <div className="fct-watch">
+            <button type="button" className="fct-action fct-action-secondary fct-action-small" disabled={isPending}
+                onClick={() => void watchAssetAsync({type: "ERC20", options: {address: MOCK_USDC.address, symbol: MOCK_USDC.symbol, decimals: MOCK_USDC.decimals}}).catch(() => {/* Declined in the wallet: nothing to say. */})}>
+                <Plus size={15} aria-hidden="true" />{t.watchAsset}
+            </button>
+            <small>{isSuccess ? t.watchAssetDone : t.watchAssetNote}</small>
+        </div>
+    );
+}

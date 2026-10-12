@@ -2,7 +2,7 @@ import {Dialog} from "@base-ui/react/dialog";
 import {ArrowRight, Check, LoaderCircle, Wallet, X} from "lucide-react";
 import {useEffect, useState} from "react";
 import {useConnect} from "wagmi";
-import {appUrl} from "../lib/config";
+import {appUrl, faucetUrl} from "../lib/config";
 import {localizePath, localizeUrl} from "../lib/i18n";
 import "./wallet-picker.css";
 import "./brand-controls.css";
@@ -11,9 +11,9 @@ import {useLocale} from "../lib/locale";
 /** A single entry point; discovered wallets belong inside the chooser. */
 /**
  * In the arcade: `primary` where connecting is the next step, `secondary` beside a free-play primary, and `header` as the
- * compact primary in the wide header.
+ * compact primary in the wide header. Studio and the faucet each use their own primary button.
  */
-export function WalletPicker({reconnecting = false, context = "arcade", variant = "primary"}: {reconnecting?: boolean; context?: "arcade" | "studio"; variant?: "primary" | "secondary" | "header"}) {
+export function WalletPicker({reconnecting = false, context = "arcade", variant = "primary"}: {reconnecting?: boolean; context?: "arcade" | "studio" | "faucet"; variant?: "primary" | "secondary" | "header"}) {
     const {locale} = useLocale(); const ko = locale === "ko";
     const {connectors, connectAsync, isPending} = useConnect();
     const [open, setOpen] = useState(false);
@@ -29,18 +29,18 @@ export function WalletPicker({reconnecting = false, context = "arcade", variant 
     }, [injected]);
     const wallets = named.length ? named : browserWallet && injected ? [injected] : [];
     const busy = isPending || reconnecting;
-    const destination = context === "arcade" ? `https://mapae.io${localizePath("/arcade", locale)}` : localizeUrl(appUrl, locale);
-    const mobileDestination = destination.startsWith("https://") ? destination.slice(8) : `app.mapae.io${localizePath("/", locale)}`;
+    const destination = context === "arcade" ? `https://mapae.io${localizePath("/arcade", locale)}` : localizeUrl(context === "faucet" ? faucetUrl : appUrl, locale);
+    const mobileDestination = destination.startsWith("https://") ? destination.slice(8) : `${context === "faucet" ? "faucet" : "app"}.mapae.io${localizePath("/", locale)}`;
     return <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Trigger className={context === "studio" ? "mapae-action mapae-action-primary" : variant === "header" ? "arc-button arc-header-connect" : `arc-button arc-entry-connect${variant === "secondary" ? " arc-button-paper" : ""}`} disabled={busy}>
+        <Dialog.Trigger className={context === "studio" ? "mapae-action mapae-action-primary" : context === "faucet" ? "fct-action fct-action-primary" : variant === "header" ? "arc-button arc-header-connect" : `arc-button arc-entry-connect${variant === "secondary" ? " arc-button-paper" : ""}`} disabled={busy}>
             {busy ? <LoaderCircle size={variant === "header" ? 17 : 19} className="mapae-spinner" /> : <Wallet size={variant === "header" ? 17 : 19} />}
             {busy ? ko ? "지갑 연결 확인 중…" : "Connecting…" : ko ? "지갑 연결" : "Connect wallet"}{variant !== "header" && <ArrowRight size={19} />}
         </Dialog.Trigger>
         <Dialog.Portal className="arc-ui-theme"><Dialog.Backdrop className="mapae-dialog-backdrop" />
             <Dialog.Popup className="arc-wallet-dialog">
-                <div className="arc-wallet-dialog-top"><span>MAPAE{context === "arcade" ? " ARCADE" : " STUDIO"}</span><Dialog.Close aria-label={ko ? "닫기" : "Close"}><X size={20} /></Dialog.Close></div>
+                <div className="arc-wallet-dialog-top"><span>MAPAE {context.toUpperCase()}</span><Dialog.Close aria-label={ko ? "닫기" : "Close"}><X size={20} /></Dialog.Close></div>
                 <Dialog.Title>{ko ? "어떤 지갑으로 들어갈까요?" : "Choose your wallet"}</Dialog.Title>
-                <Dialog.Description>{context === "arcade" ? ko ? "같은 지갑이면, 어디서든 나의 전령들과 이어서." : "The same wallet brings your guardians to every device." : ko ? "연결한 지갑으로 결제 권한을 만들고 관리해요." : "Connect to create and manage spending permissions."}</Dialog.Description>
+                <Dialog.Description>{context === "arcade" ? ko ? "같은 지갑이면, 어디서든 나의 전령들과 이어서." : "The same wallet brings your guardians to every device." : context === "faucet" ? ko ? "연결한 지갑 주소로 받을 곳을 정해요. 연결만으로는 아무것도 보내지 않아요." : "Your wallet address decides where tokens arrive. Connecting sends nothing." : ko ? "연결한 지갑으로 결제 권한을 만들고 관리해요." : "Connect to create and manage spending permissions."}</Dialog.Description>
                 {wallets.length > 0 && <div className="arc-wallet-list">{wallets.map(wallet => <button key={wallet.uid} disabled={busy} onClick={async () => {
                     setSelected(wallet.uid); setError("");
                     try {await connectAsync({connector: wallet}); setOpen(false);}

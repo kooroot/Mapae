@@ -22,6 +22,9 @@ import {resolveLocale, useLocale} from "../lib/locale";
 const LazyStudio = lazy(() =>
     import("../dapp/Studio").then(({Studio}) => ({default: Studio})),
 );
+const LazyFaucet = lazy(() =>
+    import("../faucet/FaucetPage").then(({FaucetPage}) => ({default: FaucetPage})),
+);
 
 /*
  * Exported because `routes/ko/index.tsx` mounts the same surface at `/ko`. They must be
@@ -52,6 +55,13 @@ export const Route = createFileRoute("/")({
 });
 
 export function RootSurface() {
+    if (siteSurface === "faucet") {
+        return (
+            <Suspense fallback={null}>
+                <LazyFaucet />
+            </Suspense>
+        );
+    }
     return siteSurface === "app" ? (
         <Suspense fallback={<StudioEntryLoading />}>
             <LazyStudio />

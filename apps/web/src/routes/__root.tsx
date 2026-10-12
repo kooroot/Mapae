@@ -1,7 +1,7 @@
 import {HeadContent, Scripts, createRootRoute, useRouter} from "@tanstack/react-router";
 import type {ReactNode} from "react";
-import {appUrl, landingUrl, siteSurface} from "../lib/config";
-import {LOCALE_PATH_PREFIX, pick} from "../lib/i18n";
+import {appUrl, faucetUrl, landingUrl, siteSurface} from "../lib/config";
+import {LOCALE_PATH_PREFIX, localizeUrl, pick} from "../lib/i18n";
 import {arcadeSectionFromPath, arcadeSectionPath, SECTION_COPY} from "../arcade/sections";
 import {LocaleProvider, resolveLocale, useLocale} from "../lib/locale";
 import {DOCUMENT_SECURITY_HEADERS} from "../lib/security";
@@ -30,8 +30,11 @@ export const Route = createRootRoute({
     head: ({matches}) => {
         const isApp = siteSurface === "app";
         // Every arcade section is its own page, so each names its own address in both locales.
-        const section = arcadeSectionFromPath(matches.at(-1)?.pathname ?? "");
+        const pathname = matches.at(-1)?.pathname ?? "";
+        const section = arcadeSectionFromPath(pathname);
         const isArcade = section !== null;
+        // The faucet's own site, or its page on a combined dev server.
+        const isFaucet = !isArcade && (siteSurface === "faucet" || /^(\/ko)?\/faucet\/?$/.test(pathname));
         const locale = resolveLocale();
         // Each surface publishes the same page at two addresses, so every response has
         // to say which one it is (`canonical`) and where the other lives (`alternate`).
@@ -40,9 +43,12 @@ export const Route = createRootRoute({
         // English base because that is what an unprefixed request renders for a visitor
         // carrying no cookie — which is every crawler.
         const origin = (isApp ? appUrl : landingUrl).replace(/\/$/, "");
-        const enHref = `${origin}${section ? arcadeSectionPath(section, "en") : "/"}`;
-        const koHref = `${origin}${section ? arcadeSectionPath(section, "ko") : LOCALE_PATH_PREFIX}`;
-        const title = section && section !== "lobby" ? `${SECTION_COPY[locale][section].label} · Mapae Arcade` : isArcade ? pick(locale, {
+        const enHref = isFaucet ? localizeUrl(faucetUrl, "en") : `${origin}${section ? arcadeSectionPath(section, "en") : "/"}`;
+        const koHref = isFaucet ? localizeUrl(faucetUrl, "ko") : `${origin}${section ? arcadeSectionPath(section, "ko") : LOCALE_PATH_PREFIX}`;
+        const title = isFaucet ? pick(locale, {
+            en: "Mapae Faucet — Get GIWA Sepolia test tokens",
+            ko: "Mapae Faucet — GIWA Sepolia 테스트 토큰 받기",
+        }) : section && section !== "lobby" ? `${SECTION_COPY[locale][section].label} · Mapae Arcade` : isArcade ? pick(locale, {
             en: "Mapae Arcade — Send your agent out",
             ko: "Mapae Arcade — 에이전트의 자유 시간",
         }) : isApp
@@ -51,7 +57,10 @@ export const Route = createRootRoute({
                   en: "Mapae — Limit the authority. Let the agent act.",
                   ko: "Mapae — 권한은 좁게, 행동은 에이전트에게.",
               });
-        const description = section && section !== "lobby" ? SECTION_COPY[locale][section].description : isArcade
+        const description = isFaucet ? pick(locale, {
+            en: "Follow @mapae_io and claim test tokens for the Mapae arcade and Studio, sent to your payer account on GIWA Sepolia. Testnet only — not real money.",
+            ko: "@mapae_io를 팔로우하고 마패 아케이드와 Studio에서 쓸 테스트 토큰을 GIWA Sepolia 지불 계정으로 받으세요. 테스트넷 전용이라 실제 돈이 아니에요.",
+        }) : section && section !== "lobby" ? SECTION_COPY[locale][section].description : isArcade
             ? pick(locale, {
                   en: "Connect your wallet, create a guardian and send them racing, trading or stamping with a bounded GIWA Sepolia test-token allowance. Free manual practice is available.",
                   ko: "지갑을 연결하고 나만의 십이지신 친구를 만드세요. GIWA 테스트 용돈 안에서 경주와 흥정, 도장찍기를 즐겨요. 직접 하는 연습은 무료예요.",
@@ -72,7 +81,7 @@ export const Route = createRootRoute({
                 {name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover"},
                 {title},
                 {name: "description", content: description},
-                {name: "theme-color", content: isArcade ? "#0e0c0a" : "#050505"},
+                {name: "theme-color", content: isArcade ? "#0e0c0a" : isFaucet ? "#f2ede2" : "#050505"},
                 {property: "og:title", content: title},
                 {property: "og:description", content: description},
                 {property: "og:type", content: "website"},
