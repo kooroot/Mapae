@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
-    "./arcade": "./src/arcade.ts"
+    "./arcade": "./src/arcade.ts",
+    "./faucet": "./src/faucet.ts"
   }
 }
