@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {privateKeyToAccount} from 'viem/accounts';
 import {recoverTypedDataAddress,type Address,type Hex,type Log} from 'viem';
-import {emptyHonors,guardianHonorFromJson,guardianTraitsHash,guardianResultFromJson,guardianResultDomain,GUARDIAN_CLAIM_BATCH,GUARDIAN_HONOR_TYPES,GUARDIAN_RESULT_TYPES,type GuardianHonors,type GuardianSnapshot} from '@mapae/arcade/guardians';
+import {emptyHonors,guardianHonorFromJson,guardianHonorsOf,guardianTraitsHash,guardianResultFromJson,guardianResultDomain,GUARDIAN_CLAIM_BATCH,GUARDIAN_HONOR_TYPES,GUARDIAN_RESULT_TYPES,type GuardianHonors,type GuardianSnapshot} from '@mapae/arcade/guardians';
 import {runArcadeSimulation} from '@mapae/arcade/simulation';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
 import {kstDay,kstWeek,rankedSeed} from '@mapae/arcade/ranking';
@@ -176,13 +176,23 @@ describe('signed honors ride the same batch',()=>{
         // A newer week that raises just one lane is worth a claim; the contract keeps the other lanes' maxima.
         expect((await createGuardianClaims(config,s.guardians,onChain({...sealed,week:2960}),book({...sealed,longestStreak:8}),client())(owner,'1')).honor?.honor.week).toBe(2961);
     });
+    test('the signed honor carries the lane-wise maxima, never a lane below the NFT',async()=>{
+        const chain:GuardianHonors={week:2960,longestStreak:9,titles:[{champion:2,podium:0,top10:0},{champion:0,podium:0,top10:0},{champion:0,podium:0,top10:6}]};
+        const signed=(await createGuardianClaims(config,store().guardians,onChain(chain),book(),client())(owner,'1')).honor!;
+        expect(guardianHonorsOf(guardianHonorFromJson(signed.honor))).toEqual({week:2961,longestStreak:9,
+            titles:[{champion:2,podium:0,top10:2},{champion:0,podium:3,top10:0},{champion:4,podium:0,top10:6}]});
+        expect(await recoverTypedDataAddress({domain:guardianResultDomain(collection),types:GUARDIAN_HONOR_TYPES,primaryType:'Honor',message:guardianHonorFromJson(signed.honor),signature:signed.signature}))
+            .toBe(config.signer.address);
+    });
     test('an attached honor takes one place in the batch and survives a spent results budget',async()=>{
         const s=store();
         for(let i=0;i<34;i++)await complete(s,`guardian-outing-${i}`,'1',`0x${i.toString(16).padStart(64,'a')}` as Hex);
         const full=await createGuardianClaims(config,s.guardians,reader,book(),client())(owner,'1');
         expect(full.claims).toHaveLength(GUARDIAN_CLAIM_BATCH-1);expect(full.honor).not.toBeNull();
         const rushed=await createGuardianClaims(config,s.guardians,reader,book(),client(),0)(owner,'1');
-        expect(rushed.claims).toHaveLength(1);expect(rushed.honor?.honor.week).toBe(2961);
+        // With an honor in hand a spent budget stops before the first result, so the batch still returns in time.
+        expect(rushed.claims).toHaveLength(0);expect(rushed.honor?.honor.week).toBe(2961);
+        expect((await createGuardianClaims(config,s.guardians,reader,noHonors,client(),0)(owner,'1')).claims).toHaveLength(1);
     });
     test('the owner-only detail carries the seller sealed totals next to the NFT honors',async()=>{
         const s=store(),bridge='private-bridge-token'.repeat(3),headers={Authorization:`Bearer ${bridge}`,'X-Mapae-Owner':owner};

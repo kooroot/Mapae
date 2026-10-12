@@ -93,7 +93,7 @@ export async function safeReceipt(client: GuardianClient, row: StoredResult, saf
  * Signs the current owner's oldest unclaimed results of one guardian and, when the sealed honor totals would raise the NFT's, one
  * honor: together at most one claim batch. Unsafe payments wait for a later batch. The honor is local SQL and is signed first; each
  * result row costs serialized RPC reads (paced on the public endpoint), so signing stops once `budgetMs` has passed with at least
- * one result: the web proxy gives up after 20 s, and the rest simply follow in the next batch.
+ * one entry: the web proxy gives up after 20 s, and the rest simply follow in the next batch.
  */
 export function createGuardianClaims(config: Config, ledger: GuardianLedger, reader: GuardianReader, honors: Pick<GuardianHonorBook, 'honor'>,
     client: GuardianClient = createPublicClient({chain:giwaSepolia,transport:throttledHttp(config.rpcUrl, {}, {timeout:15_000,retryCount:1})}), budgetMs = 10_000) {
@@ -108,12 +108,15 @@ export function createGuardianClaims(config: Config, ledger: GuardianLedger, rea
         const sealed = token.revealed ? honors.honor(tokenId, Date.now()) : null;
         let honor: GuardianClaimBatch['honor'] = null;
         if (sealed && honorAdvances(token.honors, sealed)) {
-            const json = guardianHonorJson(tokenId, sealed);
+            // Sign the lane-wise maxima the contract will store, so the honor never shows a lane below the NFT's own.
+            const json = guardianHonorJson(tokenId, {...sealed, longestStreak: Math.max(sealed.longestStreak, token.honors.longestStreak),
+                titles: sealed.titles.map((game, g) => ({champion: Math.max(game.champion, token.honors.titles[g]!.champion),
+                    podium: Math.max(game.podium, token.honors.titles[g]!.podium), top10: Math.max(game.top10, token.honors.titles[g]!.top10)}))});
             honor = {honor: json, signature: await config.signer.signTypedData({domain:guardianResultDomain(config.collection),types:GUARDIAN_HONOR_TYPES,primaryType:'Honor',message:guardianHonorFromJson(json)})};
         }
         const claims: GuardianClaimBatch['claims'] = [], cap = GUARDIAN_CLAIM_BATCH - (honor ? 1 : 0);
         for (const row of ledger.unclaimed(config.collection, tokenId)) {
-            if (claims.length === cap || claims.length && Date.now() >= deadline) break;
+            if (claims.length === cap || (claims.length || honor) && Date.now() >= deadline) break;
             if (await reader.claimed(row.result.paymentTx)) {ledger.markClaimed(row.result.resultId); continue;}
             // Recheck canonical provenance even when a previous signature exists.
             let evidence: ReceiptEvidence;

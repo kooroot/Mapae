@@ -34,7 +34,7 @@ export class GuardianHonorBook {
                 for (const game of RANKED_GAMES) for (const row of weekBoard(this.db, this.collection, game, week, at).slice(0, BOARD_ROWS)) title.run(c, week, game, row.tokenId, row.rank);
                 mark.run(c, week);
             }
-        })();
+        }).immediate();
         return sealed;
     }
 
