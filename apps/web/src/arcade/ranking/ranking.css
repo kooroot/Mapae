@@ -7,6 +7,7 @@
 .rank-line>.rank-medal{margin-top:1px}
 .rank-titles{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0;padding:0;list-style:none}
 .rank-titles li{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:0 10px;border:1px solid var(--medal-rim);border-radius:var(--r-pill);background:var(--medal-light);color:var(--medal-ink);font-size:12px;font-weight:700}
+.rank-title-nft{display:inline-flex;margin-left:2px;color:var(--jade-ink)}
 
 /* Medals: one coin for every place 1–3 (podium, rows, rank lines, titles). The palette comes from the place, never the position. */
 .is-place-1{--medal:var(--medal-gold);--medal-rim:var(--medal-gold-rim);--medal-light:var(--medal-gold-light);--medal-ink:var(--medal-gold-ink);--medal-card:var(--medal-gold-card);--ribbon:var(--vermilion)}

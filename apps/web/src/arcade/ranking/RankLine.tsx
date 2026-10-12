@@ -1,4 +1,4 @@
-import {Crown, Trophy} from 'lucide-react';
+import {Check, Crown, Trophy} from 'lucide-react';
 import type {GameId} from '@mapae/arcade';
 import type {GuardianStanding} from '@mapae/arcade/ranking';
 import type {Locale} from '../../lib/i18n';
@@ -23,12 +23,14 @@ export function RankLine({locale, game, guardian, leader, named = true, aptitude
     </p>;
 }
 
-/** Last week's places as titles (장원 · 급제 · 입격) in gold, silver and bronze, one per game; cosmetic only. */
-export function TitleChips({locale, titles}: {locale: Locale; titles: GuardianStanding['titles']}) {
+/** Last week's places as titles (장원 · 급제 · 입격) in gold, silver and bronze, one per game; cosmetic, and checked once on the NFT. */
+export function TitleChips({locale, titles, onNft = false}: {locale: Locale; titles: GuardianStanding['titles']; onNft?: boolean}) {
     if (!titles.length) return null;
+    const recorded = locale === 'ko' ? 'NFT에 기록됨' : 'On the NFT';
     return <ul className="rank-titles" aria-label={locale === 'ko' ? '지난주 칭호' : 'Last week’s titles'}>
         {titles.map(t => <li key={t.game} className={`is-place-${t.place === 1 ? 1 : t.place <= 3 ? 2 : 3}`}>
             {t.place === 1 && <Crown size={13} aria-hidden="true" />}{titleName(t.place, locale)} · {GAME_NAMES[locale][t.game]}
+            {onNft && <span className="rank-title-nft" title={recorded}><Check size={13} aria-hidden="true" /><span className="sr-only">{recorded}</span></span>}
         </li>)}
     </ul>;
 }

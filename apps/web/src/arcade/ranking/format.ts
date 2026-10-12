@@ -1,7 +1,7 @@
 import type {GameId} from "@mapae/arcade";
-import {guardianName} from "@mapae/arcade/guardians";
+import {guardianName, type GuardianHonors} from "@mapae/arcade/guardians";
 import {
-    RANKED_ATTEMPTS, RANKED_GAMES, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
+    addDays, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
     type GuardianStreak, type RankingBoardId, type RankingStanding, type RankingStandings,
 } from "@mapae/arcade/ranking";
 import type {Locale} from "../../lib/i18n";
@@ -112,6 +112,11 @@ export const TITLE_NAMES: Record<Locale, Record<"champion" | "podium" | "top10",
 export function titleName(place: number, locale: Locale): string | null {
     const title = titlePlace(place);
     return title ? TITLE_NAMES[locale][title] : null;
+}
+
+/** Whether the NFT already carries last week's titles: its honors reach the week before `standingsWeek` (this week's Monday). */
+export function titlesOnNft(honors: GuardianHonors, standingsWeek: string): boolean {
+    return honors.week >= rankingWeekIndex(addDays(standingsWeek, -7));
 }
 
 /** Ranked tries the crew has left today across every game: the menu's nudge. */

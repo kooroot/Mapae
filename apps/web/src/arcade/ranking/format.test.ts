@@ -1,7 +1,7 @@
 import {describe, expect, test} from "bun:test";
-import {guardianName} from "@mapae/arcade/guardians";
+import {emptyHonors, guardianName} from "@mapae/arcade/guardians";
 import type {RankingStanding, RankingStandings} from "@mapae/arcade/ranking";
-import {attemptsBadge, attemptsLeft, boardScore, countdown, freshestGame, medalName, rankLine, resetClock, streakCopy, titleName} from "./format";
+import {attemptsBadge, attemptsLeft, boardScore, countdown, freshestGame, medalName, rankLine, resetClock, streakCopy, titleName, titlesOnNft} from "./format";
 
 const seed = `0x${"1".padStart(64, "0")}` as const;
 const row = (rank: number, tokenId: string, score: number) => ({rank, tokenId, seed, score});
@@ -80,4 +80,12 @@ describe("reset clock and medals", () => {
         expect(medalName(1, "en")).toBe("Gold medal");
         expect(medalName(4, "ko")).toBeNull(); expect(medalName(0, "en")).toBeNull();
     });
+});
+
+test("last week's titles read as on the NFT once its honors reach that week", () => {
+    // Standings for the week of 2026-10-12 show the titles of week 2961 (2026-10-05).
+    expect(titlesOnNft(emptyHonors(), "2026-10-12")).toBe(false);
+    expect(titlesOnNft({...emptyHonors(), week: 2960}, "2026-10-12")).toBe(false);
+    expect(titlesOnNft({...emptyHonors(), week: 2961}, "2026-10-12")).toBe(true);
+    expect(titlesOnNft({...emptyHonors(), week: 2961}, "2026-10-19")).toBe(false);
 });

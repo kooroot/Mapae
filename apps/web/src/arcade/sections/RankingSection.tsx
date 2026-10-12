@@ -13,7 +13,7 @@ import {GuardianAvatar} from '../GuardianAvatar';
 import {guardianPortrait} from '../nft/model';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {useRankingBoard} from '../ranking/client';
-import {boardScore, countdown, placeLabel, points, resetClock, streakCopy} from '../ranking/format';
+import {boardScore, countdown, placeLabel, points, resetClock, streakCopy, titlesOnNft} from '../ranking/format';
 import {RankMedal} from '../ranking/RankMedal';
 import {GameThumb} from '../Characters';
 import {arcadeSectionLink} from '../sections';
@@ -144,7 +144,7 @@ function MyGuardians({desk, onSendOuting}: {desk: GuardianDesk; onSendOuting: (g
                         : ko ? `최근 ${DEVOTION_DAYS}일 중 ${standing.devotion.days}일 · 꾸준함 ${standing.devotion.rank}위` : `${standing.devotion.days} of the last ${DEVOTION_DAYS} days · devotion #${standing.devotion.rank}`;
                     return <li key={token.tokenId} className="rank-guardian">
                         <GuardianAvatar appearance={member?.appearance} color={member?.color} portrait />
-                        <div><h3>{guardianName(token.tokenId, locale)}</h3><p className="rank-line">{streak.title}</p><small>{streak.detail} · {devotion}</small><TitleChips locale={locale} titles={standing.titles} /></div>
+                        <div><h3>{guardianName(token.tokenId, locale)}</h3><p className="rank-line">{streak.title}</p><small>{streak.detail} · {devotion}</small><TitleChips locale={locale} titles={standing.titles} onNft={titlesOnNft(token.honors, standings.week)} /></div>
                         <ul className="rank-games">
                             {RANKED_GAMES.map(game => {
                                 const left = RANKED_ATTEMPTS - standing.games[game].attemptsUsed, today = standing.games[game].today;
@@ -178,6 +178,7 @@ function Rules({locale}: {locale: Locale}) {
         `오늘 순위는 그날 가장 좋은 점수, 주간 순위는 7일 중 가장 좋은 ${WEEKLY_COUNTED_DAYS}일의 점수를 더해요. 이틀은 쉬어도 괜찮아요.`,
         `출석 도장은 랭크 도전을 한 날마다 하나씩 찍혀요. ${STREAK_FREEZE_EVERY}일마다 쉼표가 하나 생겨(최대 ${STREAK_FREEZE_MAX}개) 빠진 하루를 지켜 줘요.`,
         '지난주 1위는 장원, 2–3위는 급제, 4–10위는 입격 칭호를 달아요. 칭호는 꾸밈일 뿐이에요.',
+        '지난주 칭호와 최장 출석은 화요일 0시(한국 시간)에 확정되고, 모험 기록에서 NFT에 함께 남겨요.',
         '같은 점수면 먼저 낸 기록이 앞서요. 순위는 한국 시간 자정과 월요일 0시에 새로 시작해요.',
         '무료 체험과 연습 점수는 들어가지 않아요. 검증된 외출 결과만 올라가요. 테스트 토큰만 써요.',
     ] : [
@@ -186,6 +187,7 @@ function Rules({locale}: {locale: Locale}) {
         `Today’s board takes the day’s best score; the weekly board adds the best ${WEEKLY_COUNTED_DAYS} of 7 daily bests, so two days off cost nothing.`,
         `Every day with a ranked round stamps your streak. Every ${STREAK_FREEZE_EVERY} days earn a rest day (up to ${STREAK_FREEZE_MAX}) that covers a missed day.`,
         'Last week’s #1 is Champion, #2–3 Podium and #4–10 Top 10. Titles are cosmetic.',
+        'Last week’s titles and your longest streak are final at Tuesday 00:00 KST; record them on the NFT from the journal with your outings.',
         'On equal scores the earlier record leads. Boards restart at midnight KST, and weekly ones on Monday 00:00 KST.',
         'Free play and practice scores never count; only verified outing results reach the boards. Test tokens only.',
     ];
