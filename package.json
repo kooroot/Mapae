@@ -31,6 +31,7 @@
     "build:web": "cd apps/web && bun run build",
     "deploy:landing": "cd apps/web && bun run deploy:landing",
     "deploy:app": "cd apps/web && bun run deploy:app",
+    "deploy:faucet": "cd apps/web && bun run deploy:faucet",
     "test:e2e:recovery": "bun run scripts/recovery-e2e.ts",
     "test:scheduler": "bun test apps/payment-scheduler",
     "dev:arcade": "bun run --filter @mapae/arcade-service dev"

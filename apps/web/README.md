@@ -68,12 +68,34 @@ bun run deploy:landing
 # app.mapae.io
 bun run build:app
 bun run deploy:app
+
+# faucet.mapae.io
+bun run build:faucet
+bun run deploy:faucet
 ```
 
-두 빌드 명령은 `VITE_SITE_SURFACE`와 `CLOUDFLARE_ENV`를 같이 고정한다. 따라서
-`mapae` Worker의 `/`는 항상 랜딩이고, `mapae-app` Worker의 `/`는 항상 Studio다.
+세 빌드 명령은 `VITE_SITE_SURFACE`와 `CLOUDFLARE_ENV`를 같이 고정한다. 따라서
+`mapae` Worker의 `/`는 항상 랜딩, `mapae-app` Worker의 `/`는 항상 Studio,
+`mapae-faucet` Worker의 `/`는 항상 테스트 토큰 페이지다.
 각 환경의 `routes[].custom_domain`도 `wrangler.jsonc`에 고정되어 있어 배포할 때
-Cloudflare가 `mapae.io`와 `app.mapae.io`의 DNS 레코드와 인증서를 관리한다.
+Cloudflare가 `mapae.io`, `app.mapae.io`, `faucet.mapae.io`의 DNS 레코드와 인증서를 관리한다.
+
+faucet은 별도 출처라서 Turnstile 스크립트(`challenges.cloudflare.com`)를 CSP에 여는
+문서는 faucet.mapae.io뿐이다(개발 서버는 `/faucet`, `/ko/faucet`). 첫 배포 전에
+Cloudflare 대시보드에서 호스트명 `faucet.mapae.io`의 Turnstile 위젯(Managed)을 만들고
+`--env faucet`에 비밀 네 개를 넣는다. 하나라도 없으면 `/api/faucet/*`가 모두 503
+`faucet_off`로 답하고 페이지는 "지금은 쉬고 있어요"를 보인다.
+
+```bash
+cd apps/web
+bunx wrangler secret put TURNSTILE_SITE_KEY --env faucet
+bunx wrangler secret put TURNSTILE_SECRET_KEY --env faucet
+bunx wrangler secret put FAUCET_SERVICE_TOKEN --env faucet   # apps/faucet/.env와 같은 값
+bunx wrangler secret put FAUCET_IP_SALT --env faucet         # 32자 이상 무작위
+```
+
+키를 쥔 faucet 서비스와 터널 경로 규칙은 `apps/faucet/README.md`를 따른다. 랜딩·아케이드·Studio의
+테스트 토큰 링크는 `VITE_FAUCET_URL`(기본 `https://faucet.mapae.io`, 개발 서버는 `/faucet`)을 쓴다.
 `workers.dev` 및 버전별 preview URL은 공개하지 않는다.
 
 랜딩의 Studio CTA는 `VITE_APP_URL`, Studio의 Mapae 링크는
