@@ -46,6 +46,7 @@ export const SUITES = [
             "packages/store/src",
             "apps/facilitator-erc7710",
             "apps/delegated-seller",
+            "apps/faucet",
             "apps/payment-scheduler",
             "scripts",
         ],
