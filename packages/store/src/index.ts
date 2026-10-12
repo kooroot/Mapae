@@ -320,26 +320,12 @@ export interface PaymentIdentifiers {
     prune(retention: PaymentIdentifierRetention): number;
 }
 
-/**
- * The faucet's per-account windows on disk.
- *
- * Structurally the `FaucetWindowStore` that `@mapae/delegation`'s `FaucetGate` takes, so
- * the gate keeps one code path and the service decides where its windows live.
- */
-export interface FaucetWindows {
-    lastMintedAt(account: string): number | undefined;
-    record(account: string, at: number): void;
-    sweep(before: number): void;
-    count(): number;
-}
-
 export interface MapaeStore {
     readonly path: string;
     readonly ledger: Ledger;
     readonly settlements: SettlementJournal;
     schedules: ScheduleStore;
     readonly budget: Budget;
-    readonly faucetWindows: FaucetWindows;
     readonly sellers: Sellers;
     readonly items: Items;
     readonly orders: Orders;
@@ -404,20 +390,6 @@ const SCOPE = /^[\x21-\x7e]{1,128}$/;
 function scopeKey(value: unknown): string {
     if (typeof value !== "string" || !SCOPE.test(value)) {
         throw new TypeError("scope must be 1–128 printable ASCII characters without whitespace");
-    }
-    return value;
-}
-
-const LOWER_ADDRESS = /^0x[0-9a-f]{40}$/;
-
-/**
- * The faucet window's key. `FaucetGate` lowercases before it gets here, and the whole point
- * of that is that one account cannot draw twice by re-casing its address — so a key that
- * arrives mixed-case is a bug upstream, not a row to write.
- */
-function accountKey(value: unknown): string {
-    if (typeof value !== "string" || !LOWER_ADDRESS.test(value)) {
-        throw new TypeError("account must be a lowercase 0x-prefixed address");
     }
     return value;
 }
@@ -592,34 +564,6 @@ function createBudget(db: Database): Budget {
         ...series(TOTAL_SCOPE),
         scoped(scope) {
             return series(scopeKey(scope));
-        },
-    };
-}
-
-// ── Faucet windows ──────────────────────────────────────────────────────────────────
-
-function createFaucetWindows(db: Database): FaucetWindows {
-    const select = db.query<{minted_at: number}, Params>(
-        `SELECT minted_at FROM faucet_windows WHERE account = $account`,
-    );
-    const upsert = db.query<never, Params>(
-        `INSERT INTO faucet_windows (account, minted_at) VALUES ($account, $mintedAt)
-         ON CONFLICT (account) DO UPDATE SET minted_at = excluded.minted_at`,
-    );
-    const drop = db.query<never, Params>(`DELETE FROM faucet_windows WHERE minted_at <= $before`);
-    const total = db.query<{n: number}, []>(`SELECT COUNT(*) AS n FROM faucet_windows`);
-    return {
-        lastMintedAt(account) {
-            return select.get({account: accountKey(account)})?.minted_at;
-        },
-        record(account, at) {
-            upsert.run({account: accountKey(account), mintedAt: millis(at, "at")});
-        },
-        sweep(before) {
-            drop.run({before: millis(before, "before")});
-        },
-        count() {
-            return total.get()?.n ?? 0;
         },
     };
 }
@@ -1111,7 +1055,6 @@ export function openStore(path: string): MapaeStore {
         settlements: createSettlementJournal(db, ledger),
         schedules: createScheduleStore(db),
         budget: createBudget(db),
-        faucetWindows: createFaucetWindows(db),
         sellers: createSellers(db),
         items: createItems(db),
         orders: createOrders(db),

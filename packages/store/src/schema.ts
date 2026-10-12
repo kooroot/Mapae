@@ -32,6 +32,9 @@
  * attempt a buyer makes under an identifier, including every attempt that never became an
  * order, and an order exists only after money moved. Because that includes attempts nobody
  * verified, the unsettled rows are pruned like the ledger's refusals — `orders` is not.
+ * The testnet faucet's `faucet_windows` left with the faucet (its ledger is
+ * `./faucet.ts`, a file of its own); a version-7 file that still has the table opens
+ * unchanged and nothing reads it.
  *
  * A file written by an earlier build is refused rather than migrated (`index.ts`
  * `migrate`), which for an operator means: move the old store aside and re-seed. The
@@ -102,14 +105,6 @@ CREATE TABLE budget_days (
     spent_wei TEXT NOT NULL,
     PRIMARY KEY (scope, day)
 );
-
--- One row per account that drew from the faucet, dated from the mint that landed. The
--- window has to outlive the process: a bound a restart clears is not a bound.
-CREATE TABLE faucet_windows (
-    account TEXT PRIMARY KEY,
-    minted_at INTEGER NOT NULL
-);
-CREATE INDEX faucet_windows_minted_at ON faucet_windows (minted_at);
 
 -- kind is the seller's, not the item's: a hosted seller's items are all served by the
 -- shop, an external seller's all by its own base_url. The two facts travel together —

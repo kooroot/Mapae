@@ -153,7 +153,6 @@ describe("openStore", () => {
         expect(rawUserVersion(path)).toBe(SCHEMA_VERSION);
         expect(rawTableNames(path)).toEqual([
             "budget_days",
-            "faucet_windows",
             "items",
             "orders",
             "payment_identifiers",
@@ -965,63 +964,6 @@ describe("orders", () => {
         expect(store.orders.summary({sinceMs: T0 + 2 * HOUR})).toEqual({total: 1, bySeller: {cafe: 1}});
         expect(store.orders.summary({sinceMs: T0 + 2 * HOUR + 1})).toEqual({total: 0, bySeller: {}});
         expect(() => store.orders.summary({sinceMs: -1})).toThrow(TypeError);
-    });
-});
-
-describe("faucet windows", () => {
-    const LOWER = ALICE.toLowerCase();
-
-    test("round-trips a window and reports nothing for an account that never drew", () => {
-        const store = open();
-        expect(store.faucetWindows.lastMintedAt(LOWER)).toBeUndefined();
-
-        store.faucetWindows.record(LOWER, T0);
-        expect(store.faucetWindows.lastMintedAt(LOWER)).toBe(T0);
-        expect(store.faucetWindows.count()).toBe(1);
-
-        // A second mint moves the window rather than adding a row.
-        store.faucetWindows.record(LOWER, T0 + HOUR);
-        expect(store.faucetWindows.lastMintedAt(LOWER)).toBe(T0 + HOUR);
-        expect(store.faucetWindows.count()).toBe(1);
-    });
-
-    test("sweep drops windows at or before the cutoff and keeps the rest", () => {
-        const store = open();
-        store.faucetWindows.record(ALICE.toLowerCase(), T0);
-        store.faucetWindows.record(BOB.toLowerCase(), T0 + HOUR);
-        expect(store.faucetWindows.count()).toBe(2);
-
-        store.faucetWindows.sweep(T0);
-        expect(store.faucetWindows.count()).toBe(1);
-        expect(store.faucetWindows.lastMintedAt(ALICE.toLowerCase())).toBeUndefined();
-        expect(store.faucetWindows.lastMintedAt(BOB.toLowerCase())).toBe(T0 + HOUR);
-    });
-
-    /**
-     * The whole reason the windows are on disk: a restart used to hand every account a
-     * fresh day, which made the operator's own redeploy the cheapest way to drain the
-     * faucet.
-     */
-    test("a window survives closing and reopening the file", () => {
-        const path = join(tempDir(), "faucet.sqlite");
-        const first = open(path);
-        first.faucetWindows.record(LOWER, T0);
-        first.close();
-
-        expect(open(path).faucetWindows.lastMintedAt(LOWER)).toBe(T0);
-    });
-
-    test("refuses a key that is not a lowercase address, and a timestamp that is not epoch ms", () => {
-        const store = open();
-        // The gate lowercases before it gets here; a checksummed key means an upstream bug.
-        const mixed = "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa";
-        expect(() => store.faucetWindows.lastMintedAt(mixed)).toThrow(TypeError);
-        expect(() => store.faucetWindows.record(mixed, T0)).toThrow(TypeError);
-        expect(() => store.faucetWindows.record("0x1234", T0)).toThrow(TypeError);
-        expect(() => store.faucetWindows.record("alice", T0)).toThrow(TypeError);
-        expect(() => store.faucetWindows.record(LOWER, -1)).toThrow(TypeError);
-        expect(() => store.faucetWindows.record(LOWER, 1.5)).toThrow(TypeError);
-        expect(() => store.faucetWindows.sweep(-1)).toThrow(TypeError);
     });
 });
 
