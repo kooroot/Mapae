@@ -18,7 +18,7 @@ const claimJson=(patch:Record<string,unknown>={})=>({resultId:result.id as Hex,t
 const sign=(r:ReturnType<typeof claimJson>)=>account.signTypedData({domain:guardianResultDomain(collection),types:GUARDIAN_RESULT_TYPES,primaryType:'Result',message:guardianResultFromJson(r)});
 async function signed(...patches:Record<string,unknown>[]):Promise<GuardianClaimBatch>{
     const claims=await Promise.all((patches.length?patches:[{}]).map(async p=>{const r=claimJson(p);return {result:r,signature:await sign(r)};}));
-    return {collection,signer:account.address,claims};
+    return {collection,signer:account.address,claims,honor:null};
 }
 const expected={collection,signer:account.address,token,known:[result]};
 test('NFT render traits only follow chain birth; objectives and allowances never reroll them',()=>{
@@ -44,7 +44,7 @@ test('tampered signed claim fields and wrong displayed results never reach trans
     const [claim]=(await signed()).claims;
     for(const patch of [{tokenId:'8'},{resultId:word(4)},{paymentTx:word(4)},{actor:collection},{ownershipEpoch:'4'},{ownershipEpoch:'0'},
         {traitsHash:word(9)},{inputsHash:word(9)},{inputsHash:word(0)},{seed:124},{ruleset:4},{game:0},{score:43},{victory:false}]){
-        await expect(verifiedClaims({collection,signer:account.address,claims:[{...claim!,result:{...claim!.result,...patch}}]},expected)).rejects.toThrow();
+        await expect(verifiedClaims({collection,signer:account.address,claims:[{...claim!,result:{...claim!.result,...patch}}],honor:null},expected)).rejects.toThrow();
     }
     const batch=await signed();
     await expect(verifiedClaims({...batch,claims:[{...claim!,signature:word(1)}]},expected)).rejects.toThrow();
@@ -87,7 +87,7 @@ test('unwritable, occupied or malformed transaction storage blocks a fresh walle
 test('replacement requires original sender and nonce; loaded history survives polling without carrying across ownership epoch',()=>{
     expect(()=>verifyReplacement(owner,3,{from:owner,nonce:3})).not.toThrow();
     expect(()=>verifyReplacement(owner,3,{from:collection,nonce:3})).toThrow();expect(()=>verifyReplacement(owner,3,{from:owner,nonce:4})).toThrow();
-    const first={guardian:token,earned:token.progress,results:[result],nextCursor:'latest'},old={...result,id:word(4)};
+    const first={guardian:token,earned:token.progress,honors:null,results:[result],nextCursor:'latest'},old={...result,id:word(4)};
     const previous={...first,results:[result,old],nextCursor:null};
     expect(refreshedDetail(previous,{...first,results:[{...result,claimed:true}]})).toEqual({...previous,results:[{...result,claimed:true},old]});
     expect(refreshedDetail(previous,{...first,guardian:{...token,ownershipEpoch:'4'}}).results).toEqual([result]);

@@ -10,6 +10,7 @@ import {OutingRunner} from "./outings/runner";
 import {createOutingPayment, readOutingConfig} from "./outings/runtime";
 import {createOutingApp, OUTING_BODY_LIMIT} from "./outings/routes";
 import {RankingReader} from "./ranking/board";
+import {GuardianHonorBook} from "./ranking/honors";
 import {createRankingApp} from "./ranking/routes";
 
 /**
@@ -144,8 +145,9 @@ const outingStore = outingsConfig ? new OutingStore(STORE_PATH) : undefined;
 const outingRunner = outingsConfig && outingStore && guardianReader
     ? new OutingRunner(outingStore, outingsConfig.account.address, createOutingPayment(outingsConfig, request => app.fetch(request)), guardianReader) : undefined;
 app.route("/arcade/outing", createOutingApp({token: ARCADE_RECEIPT_TOKEN, store: outingStore, runner: outingRunner}));
-app.route("/arcade/guardians", createGuardianApp({token: ARCADE_RECEIPT_TOKEN, reader: guardianReader, ledger: outingStore?.guardians,
-    claim: guardianConfig && guardianReader && outingStore ? createGuardianClaims(guardianConfig, outingStore.guardians, guardianReader) : undefined}));
+const guardianHonors = outingStore && guardianReader ? new GuardianHonorBook(outingStore.db, guardianReader.collection) : undefined;
+app.route("/arcade/guardians", createGuardianApp({token: ARCADE_RECEIPT_TOKEN, reader: guardianReader, ledger: outingStore?.guardians, honors: guardianHonors,
+    claim: guardianConfig && guardianReader && outingStore && guardianHonors ? createGuardianClaims(guardianConfig, outingStore.guardians, guardianReader, guardianHonors) : undefined}));
 app.route("/arcade/ranking", createRankingApp({token: ARCADE_RECEIPT_TOKEN, reader: outingStore && guardianReader ? new RankingReader(outingStore, guardianReader.collection) : undefined}));
 outingRunner?.start();
 

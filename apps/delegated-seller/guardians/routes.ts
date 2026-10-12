@@ -3,10 +3,11 @@ import {Hono} from 'hono';
 import {getAddress, isAddress, type Address} from 'viem';
 import {OutingError, validTokenId} from '../outings/validation';
 import {resultView, type GuardianLedger} from './ledger';
+import type {GuardianHonorBook} from '../ranking/honors';
 import type {GuardianClaimBatch, GuardianDetail, GuardianReader, GuardianRoster} from './types';
 
 export function createGuardianApp(options: {
-    token?: string; reader?: GuardianReader; ledger?: GuardianLedger;
+    token?: string; reader?: GuardianReader; ledger?: GuardianLedger; honors?: Pick<GuardianHonorBook,'honor'>;
     claim?: (owner:Address,tokenId:string)=>Promise<GuardianClaimBatch>;
 }) {
     const app = new Hono<{Variables:{owner:Address}}>(), digest = (v:string)=>createHash('sha256').update(v).digest();
@@ -34,7 +35,7 @@ export function createGuardianApp(options: {
             if(claimed&&!r.claimed) options.ledger!.markClaimed(r.result.resultId);
             return resultView(r,owner,claimed);
         }));
-        return c.json({guardian:token,earned:options.ledger.progress(options.reader.collection,id),results,
+        return c.json({guardian:token,earned:options.ledger.progress(options.reader.collection,id),honors:options.honors?.honor(id,Date.now())??null,results,
             nextCursor:rows.length===40?options.ledger.cursor(rows.at(-1)!.result.resultId):null} satisfies GuardianDetail);
     });
     app.post('/:tokenId/claims',async c=>{

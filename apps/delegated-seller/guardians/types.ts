@@ -1,5 +1,5 @@
 import type {Address, Hex} from 'viem';
-import type {GuardianHonors, GuardianSnapshot, GuardianResult} from '@mapae/arcade/guardians';
+import type {GuardianHonorJson, GuardianHonors, GuardianSnapshot, GuardianResult} from '@mapae/arcade/guardians';
 import type {OutingResult} from '@mapae/arcade/outings';
 
 export type {GuardianSnapshot};
@@ -21,9 +21,16 @@ export type VerifiedResult = Omit<OutingResult,'transaction'> & {
     tokenId: string; actor: Address | null; ownershipEpoch: string; ruleset: number;
     score: number; victory: boolean; claimed: boolean;
 };
-export type GuardianDetail = {guardian: GuardianToken; earned: Progress; results: VerifiedResult[]; nextCursor: string | null};
-/** Signed, still-unclaimed results of one guardian, oldest first: exactly the arguments of one claimResults transaction. */
-export type GuardianClaimBatch = {collection: Address; signer: Address; claims: {result: ResultJson; signature: Hex}[]};
+/** `honors` are the seller's sealed honor totals (null when there is nothing to attest yet); `guardian.honors` is what the NFT carries. */
+export type GuardianDetail = {guardian: GuardianToken; earned: Progress; honors: GuardianHonors | null; results: VerifiedResult[]; nextCursor: string | null};
+/**
+ * Signed, still-unclaimed results of one guardian, oldest first, and its signed honor when the sealed totals would raise the NFT's:
+ * exactly the arguments of one claim transaction.
+ */
+export type GuardianClaimBatch = {
+    collection: Address; signer: Address; claims: {result: ResultJson; signature: Hex}[];
+    honor: {honor: GuardianHonorJson; signature: Hex} | null;
+};
 export interface GuardianReader {
     readonly collection: Address;
     inspect(tokenId: string): Promise<GuardianSnapshot>;

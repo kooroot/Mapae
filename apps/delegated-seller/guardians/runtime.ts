@@ -5,10 +5,13 @@ import {giwaSepolia, parseNodeRpcUrl, MOCK_USDC} from '@mapae/shared';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
 import {ARCADE_PAY_TO, ARCADE_REDEEMER, ARCADE_TICKET_AMOUNT} from '@mapae/arcade/tickets';
 import {guardianAbi} from '@mapae/arcade/guardian-abi';
-import {guardianTraitsHash, guardianResultDomain, guardianResultFromJson, GUARDIAN_CLAIM_BATCH, GUARDIAN_RESULT_TYPES} from '@mapae/arcade/guardians';
+import {
+    guardianHonorFromJson, guardianHonorJson, guardianTraitsHash, guardianResultDomain, guardianResultFromJson, honorAdvances, GUARDIAN_CLAIM_BATCH, GUARDIAN_HONOR_TYPES, GUARDIAN_RESULT_TYPES,
+} from '@mapae/arcade/guardians';
 import {OutingError, validTokenId} from '../outings/validation';
 import {type GuardianReader, type GuardianToken, type GuardianRoster, type GuardianSnapshot, type GuardianClaimBatch, type Progress, type ReceiptEvidence} from './types';
 import type {GuardianLedger, StoredResult} from './ledger';
+import type {GuardianHonorBook} from '../ranking/honors';
 
 export function readGuardianConfig(env: Record<string,string | undefined> = process.env) {
     if (env.ARCADE_OUTINGS_ENABLED !== 'true') return null;
@@ -87,23 +90,30 @@ export async function safeReceipt(client: GuardianClient, row: StoredResult, saf
     return {blockNumber:receipt.blockNumber.toString(),blockHash:receipt.blockHash};
 }
 /**
- * Signs the current owner's oldest unclaimed results of one guardian, at most one claimResults batch. Unsafe payments wait for a later batch.
- * Each row costs serialized RPC reads (paced on the public endpoint), so signing stops once `budgetMs` has passed with at least one claim:
- * the web proxy gives up after 20 s, and the rest simply follow in the next batch.
+ * Signs the current owner's oldest unclaimed results of one guardian and, when the sealed honor totals would raise the NFT's, one
+ * honor: together at most one claim batch. Unsafe payments wait for a later batch. The honor is local SQL and is signed first; each
+ * result row costs serialized RPC reads (paced on the public endpoint), so signing stops once `budgetMs` has passed with at least
+ * one result: the web proxy gives up after 20 s, and the rest simply follow in the next batch.
  */
-export function createGuardianClaims(config: Config, ledger: GuardianLedger, reader: GuardianReader,
+export function createGuardianClaims(config: Config, ledger: GuardianLedger, reader: GuardianReader, honors: Pick<GuardianHonorBook, 'honor'>,
     client: GuardianClient = createPublicClient({chain:giwaSepolia,transport:throttledHttp(config.rpcUrl, {}, {timeout:15_000,retryCount:1})}), budgetMs = 10_000) {
     return async (owner: Address, tokenId: string): Promise<GuardianClaimBatch> => {
-        const deadline = Date.now() + budgetMs;
-        if ((await reader.token(tokenId)).owner.toLowerCase() !== owner.toLowerCase()) throw new OutingError('not_found');
+        const deadline = Date.now() + budgetMs, token = await reader.token(tokenId);
+        if (token.owner.toLowerCase() !== owner.toLowerCase()) throw new OutingError('not_found');
         const signer = await client.readContract({address:config.collection,abi:guardianAbi,functionName:'resultSigner'});
         if (getAddress(signer as Address) !== config.signer.address) throw new OutingError('guardian_unavailable');
         if (await client.getChainId() !== 91342) throw new OutingError('receipt_unconfirmed');
         const safe = (await client.getBlock({blockTag:'safe'})).number;
         if (safe === null) throw new OutingError('receipt_unconfirmed');
-        const claims: GuardianClaimBatch['claims'] = [];
+        const sealed = token.revealed ? honors.honor(tokenId, Date.now()) : null;
+        let honor: GuardianClaimBatch['honor'] = null;
+        if (sealed && honorAdvances(token.honors, sealed)) {
+            const json = guardianHonorJson(tokenId, sealed);
+            honor = {honor: json, signature: await config.signer.signTypedData({domain:guardianResultDomain(config.collection),types:GUARDIAN_HONOR_TYPES,primaryType:'Honor',message:guardianHonorFromJson(json)})};
+        }
+        const claims: GuardianClaimBatch['claims'] = [], cap = GUARDIAN_CLAIM_BATCH - (honor ? 1 : 0);
         for (const row of ledger.unclaimed(config.collection, tokenId)) {
-            if (claims.length === GUARDIAN_CLAIM_BATCH || claims.length && Date.now() >= deadline) break;
+            if (claims.length === cap || claims.length && Date.now() >= deadline) break;
             if (await reader.claimed(row.result.paymentTx)) {ledger.markClaimed(row.result.resultId); continue;}
             // Recheck canonical provenance even when a previous signature exists.
             let evidence: ReceiptEvidence;
@@ -112,6 +122,6 @@ export function createGuardianClaims(config: Config, ledger: GuardianLedger, rea
             ledger.attest(row.result.resultId,evidence,config.signer.address,signature);
             claims.push({result:row.result,signature});
         }
-        return {collection:config.collection,signer:config.signer.address,claims};
+        return {collection:config.collection,signer:config.signer.address,claims,honor};
     };
 }
