@@ -5,6 +5,7 @@ interface __BaseEnv_Env {
 	ARCADE_GUARDIAN_ADDRESS?: string;
 	ARCADE_DB: D1Database;
 	ARCADE_RECEIPT_TOKEN?: string;
+	GIWA_SEPOLIA_RPC_URL?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
@@ -15,12 +16,14 @@ declare namespace Cloudflare {
 		ARCADE_GUARDIAN_ADDRESS?: string;
 		ARCADE_DB: D1Database;
 	ARCADE_RECEIPT_TOKEN?: string;
+	GIWA_SEPOLIA_RPC_URL?: string;
 	}
 	interface AppEnv {
 		ASSETS: Fetcher;
 		ARCADE_GUARDIAN_ADDRESS?: string;
 		ARCADE_DB: D1Database;
 	ARCADE_RECEIPT_TOKEN?: string;
+	GIWA_SEPOLIA_RPC_URL?: string;
 	}
 	interface Env extends __BaseEnv_Env {}
 }

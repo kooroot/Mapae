@@ -39,7 +39,9 @@ const start = createStartHandler(streamWithSecurityHeaders);
 
 const entry = createServerEntry({fetch: (request, options) => {
     const path = new URL(request.url).pathname;
-    if (path.startsWith("/api/arcade/guardians/")) return guardianArtApi(request, {collection: env.ARCADE_GUARDIAN_ADDRESS, assets: env.ASSETS});
+    if (path.startsWith("/api/arcade/guardians/")) return guardianArtApi(request, {
+        collection: env.ARCADE_GUARDIAN_ADDRESS, rpcUrl: env.GIWA_SEPOLIA_RPC_URL, assets: env.ASSETS, cache: caches.open("mapae-guardian-art"),
+    });
     if (path === "/api/arcade/engagement") return engagementApi(request, engagementRepository(env.ARCADE_DB), {
         development: import.meta.env.DEV, resolveOwner: r => profileSessionOwner(r, profileRepository(env.ARCADE_DB)),
     });
