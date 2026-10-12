@@ -199,7 +199,7 @@ const COPY: Record<
         capLegend: (amount) => `Cap ${amount} ${MOCK_USDC.symbol}`,
         noCapCaveat: "This delegation has no period cap caveat.",
         faucetAction: "Get testnet tokens",
-        faucetHint: `${MOCK_USDC.symbol} (testnet, not real money) for this payer account comes from the Mapae faucet. Sign in there with the owner wallet.`,
+        faucetHint: `${MOCK_USDC.symbol} (testnet, not real money) for this payer account comes from faucet.mapae.io: connect the owner wallet there and follow @mapae_io.`,
         metricsAria: "Key permission details",
         payerAccount: "Payer account",
         payerAccountDetail: "The smart account holding the funds",
@@ -296,7 +296,7 @@ const COPY: Record<
         capLegend: (amount) => `한도 ${amount} ${MOCK_USDC.symbol}`,
         noCapCaveat: "이 위임에는 주기 한도 caveat이 없습니다.",
         faucetAction: "테스트넷 토큰 받기",
-        faucetHint: `이 지불 계정에 넣을 ${MOCK_USDC.symbol}(테스트넷, 실제 돈 아님)는 Mapae faucet에서 받습니다. 그곳에서 소유자 지갑으로 로그인하세요.`,
+        faucetHint: `이 지불 계정에 넣을 ${MOCK_USDC.symbol}(테스트넷, 실제 돈 아님)는 faucet.mapae.io에서 받아요. 소유자 지갑을 연결하고 @mapae_io를 팔로우하면 돼요.`,
         metricsAria: "권한 핵심 정보",
         payerAccount: "지불 계정",
         payerAccountDetail: "자금이 보관된 스마트 계정",
@@ -831,7 +831,7 @@ function Overview({
                         </div>
                     )}
                     <div className="studio-topup">
-                        <a className="mapae-action mapae-action-secondary" href={faucetUrl} target="_blank" rel="noreferrer noopener">
+                        <a className="mapae-action mapae-action-secondary" href={localizeUrl(faucetUrl, locale)} target="_blank" rel="noreferrer noopener">
                             <Droplets size={14} />
                             {t.faucetAction}
                         </a>

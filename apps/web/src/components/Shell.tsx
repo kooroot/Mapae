@@ -2,7 +2,7 @@ import {Dialog} from "@base-ui/react/dialog";
 import {Menu, X} from "lucide-react";
 import "./brand-controls.css";
 import {Lockup, PassEmblem, Tagline, Wordmark} from "../brand/marks";
-import {appUrl, docsUrl, githubUrl, sellerGuideUrl} from "../lib/config";
+import {appUrl, docsUrl, faucetUrl, githubUrl, sellerGuideUrl} from "../lib/config";
 import {localizePath, localizeUrl, type Locale} from "../lib/i18n";
 import {LocaleSwitch, useLocale} from "../lib/locale";
 
@@ -22,6 +22,7 @@ const COPY: Record<
         security: string;
         evidence: string;
         arcade: string;
+        faucet: string;
         docs: string;
         sellerGuide: string;
         githubAria: string;
@@ -46,6 +47,7 @@ const COPY: Record<
         security: "Security",
         evidence: "Evidence",
         arcade: "Arcade",
+        faucet: "Test tokens",
         docs: "Docs",
         sellerGuide: "Seller guide",
         githubAria: "Open the Mapae GitHub repository",
@@ -69,6 +71,7 @@ const COPY: Record<
         security: "보안",
         evidence: "증거",
         arcade: "오락실",
+        faucet: "테스트 토큰",
         docs: "문서",
         sellerGuide: "셀러 가이드",
         githubAria: "Mapae GitHub 저장소 열기",
@@ -101,18 +104,20 @@ function sectionLinks(locale: Locale): NavLink[] {
     ];
 }
 
-function outboundLinks(locale: Locale): {arcade: NavLink; docs: NavLink; github: NavLink} {
+function outboundLinks(locale: Locale): {arcade: NavLink; faucet: NavLink; docs: NavLink; github: NavLink} {
     const t = COPY[locale];
     return {
         arcade: {href: localizePath("/arcade", locale), label: t.arcade, external: true},
+        faucet: {href: localizeUrl(faucetUrl, locale), label: t.faucet, external: true},
         docs: {href: locale === "ko" ? `${docsUrl}/readme.ko` : docsUrl, label: t.docs, external: true},
         github: {href: githubUrl, label: "GitHub", external: true},
     };
 }
 
-/** Mapae's own surfaces (the arcade, Studio) open in place; other origins open in a new tab. */
+/** Mapae's own surfaces (the arcade, Studio, the faucet) open in place; other origins open in a new tab. */
 function targetProps(href: string) {
-    return href.startsWith("/") || href.startsWith(appUrl.replace(/\/$/, "")) ? {} : {target: "_blank", rel: "noreferrer noopener"};
+    const own = [appUrl, faucetUrl].map(url => url.replace(/\/$/, ""));
+    return href.startsWith("/") || own.some(url => href.startsWith(url)) ? {} : {target: "_blank", rel: "noreferrer noopener"};
 }
 
 function GitHubMark() {
@@ -135,8 +140,8 @@ function GitHubMark() {
 export function Nav() {
     const {locale} = useLocale();
     const t = COPY[locale];
-    const {arcade, docs, github} = outboundLinks(locale);
-    const menu = [...sectionLinks(locale), arcade, docs, github];
+    const {arcade, faucet, docs, github} = outboundLinks(locale);
+    const menu = [...sectionLinks(locale), arcade, faucet, docs, github];
     return (
         <header className="nav">
             <div className="wrap nav-inner">
@@ -198,9 +203,10 @@ export function Nav() {
 export function Footer() {
     const {locale} = useLocale();
     const t = COPY[locale];
-    const {arcade, docs, github} = outboundLinks(locale);
+    const {arcade, faucet, docs, github} = outboundLinks(locale);
     const links: NavLink[] = [
         {href: localizeUrl(appUrl, locale), label: "Studio"},
+        faucet,
         {href: sellerGuideUrl, label: t.sellerGuide, external: true},
         docs,
         arcade,
