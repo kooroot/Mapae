@@ -125,4 +125,5 @@
 @media(prefers-reduced-motion:reduce){.rank-pulse{animation:none}}
 .rank-aptitude{display:inline-flex;align-self:center;align-items:center;min-height:20px;padding:0 7px;border:1px solid #d8cab1;border-radius:999px;font:600 11px/1 var(--sans);color:#76654e;white-space:nowrap;font-variant-numeric:tabular-nums}.rank-aptitude.is-best{border-color:#9cc3b6;background:var(--jade-wash);color:#2d6457}
 .rank-week{display:inline-flex;align-items:center;flex:none;margin-top:1px;font-size:12px;color:var(--card-muted);white-space:nowrap}.rank-week>.rank-move{margin-left:6px}
-@media (max-width:640px){.rank-week{flex-basis:100%}}
+/* Its own row wherever the line is narrow: phones, and the outings column at every width. */
+.nft-daily .rank-week{flex-basis:100%}@media (max-width:640px){.rank-week{flex-basis:100%}}
