@@ -115,6 +115,7 @@
 
 .fct-rules{margin-top:24px;padding-top:20px;border-top:1px solid var(--hair)}
 .fct-rules h3{font:600 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:0 0 12px}
+:lang(ko) .fct-rules h3{font-family:var(--sans);letter-spacing:.02em}
 .fct-rules ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}
 .fct-rules li{position:relative;padding-left:18px;font-size:14px;line-height:1.6;color:var(--ink-2)}
 .fct-rules li::before{content:"";position:absolute;left:2px;top:.62em;width:6px;height:6px;border-radius:1px;background:var(--red);transform:rotate(45deg)}
