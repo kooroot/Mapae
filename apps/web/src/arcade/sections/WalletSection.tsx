@@ -1,6 +1,6 @@
-import {ExternalLink} from 'lucide-react';
+import {ArrowUpRight, Droplets, ExternalLink} from 'lucide-react';
 import {MOCK_USDC} from '@mapae/shared';
-import {appUrl, explorerAddressUrl} from '../../lib/config';
+import {explorerAddressUrl, faucetUrl} from '../../lib/config';
 import {shortAddress} from '../../lib/dial';
 import {localizeUrl} from '../../lib/i18n';
 import {ArcadeRevocations} from '../ArcadeRevocations';
@@ -28,8 +28,12 @@ function Wallet({desk}: {desk: GuardianDesk}) {
             <dl>
                 <div><dt>{ko ? '소유자 지갑' : 'Owner wallet'}</dt><dd>{address(owner)}{giwa.walletName && <small>{giwa.walletName}</small>}</dd></div>
                 <div><dt>{ko ? '외출 결제용 스마트 계정' : 'Outing smart account'}</dt><dd>{giwa.payer ? address(giwa.payer) : <small>{ko ? '로그인하면 확인할 수 있어요' : 'Shown after you sign in'}</small>}</dd></div>
-                <div><dt>{ko ? '스마트 계정 잔액' : 'Smart-account balance'}</dt><dd><strong>{giwa.balance ?? '—'} {MOCK_USDC.symbol}</strong><a className="arc-inline-link" href={localizeUrl(appUrl, locale)}>{ko ? '테스트 토큰 충전' : 'Get test tokens'}<ExternalLink size={14} aria-hidden="true" /></a></dd></div>
+                <div><dt>{ko ? '스마트 계정 잔액' : 'Smart-account balance'}</dt><dd><strong>{giwa.balance ?? '—'} {MOCK_USDC.symbol}</strong></dd></div>
             </dl>
+            <div className="arc-wallet-faucet">
+                <a className="arc-button arc-button-paper" href={localizeUrl(faucetUrl, locale)}><Droplets size={18} aria-hidden="true" />{ko ? '테스트 토큰 받기' : 'Get test tokens'}<ArrowUpRight size={17} aria-hidden="true" /></a>
+                <small>{ko ? `faucet.mapae.io에서 @mapae_io를 팔로우하면 하루에 한 번 ${MOCK_USDC.symbol}(테스트넷, 실제 돈 아님)를 받아요.` : `Follow @mapae_io on faucet.mapae.io to get ${MOCK_USDC.symbol} (testnet, not real money) once a day.`}</small>
+            </div>
         </section>
         <ArcadeRevocations grants={giwa.grants} ko={ko} onRevoked={giwa.revoked} />
     </>;

@@ -11,7 +11,7 @@ import {AllowanceAmount} from './AllowanceAmount';
 import {GuardianAvatar} from './GuardianAvatar';
 import {GUARDIAN_NAMES} from './guardian';
 import type {Companion} from './state';
-import {appUrl} from '../lib/config';
+import {faucetUrl} from '../lib/config';
 import {localizeUrl} from '../lib/i18n';
 import {arcadeSectionLink} from './sections';
 import './allowance.css';
@@ -32,7 +32,7 @@ export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,authenti
         <span className="arc-overline">{ko?'용돈 쥐여 보내기':'SEND THEM OUT'}</span>
         <h2 id="allowance-heading">{ko?'다녀와, 우리 친구!':'Off on a little adventure'}</h2>
         <p>{ko?'용돈과 놀이를 정하면 화면을 닫아도 계속해요. 돌아오면 모험첩을 펼쳐 보세요.':'Set their allowance and games. They keep going after you leave. Come back to their stories.'}</p>
-        <div className="arc-allowance-balance"><span>{ko?'스마트 계정 잔액':'Smart-account balance'}</span><strong>{giwa.balance??'—'} {MOCK_USDC.symbol}</strong><a className="arc-inline-link" href={localizeUrl(appUrl,ko?'ko':'en')}>{ko?'테스트 토큰 충전':'Get test tokens'}<ExternalLink size={14} aria-hidden="true"/></a></div>
+        <div className="arc-allowance-balance"><span>{ko?'스마트 계정 잔액':'Smart-account balance'}</span><strong>{giwa.balance??'—'} {MOCK_USDC.symbol}</strong><a className="arc-inline-link" href={localizeUrl(faucetUrl,ko?'ko':'en')}>{ko?'테스트 토큰 받기':'Get test tokens'}<ExternalLink size={14} aria-hidden="true"/></a></div>
         <div className="arc-friend-allowances">{members.map(c=>{
             const active=giwa.jobs.some(j=>activeGuardianOuting(j,c.nft));
             return <div className="arc-friend-allowance" key={c.id}><div className="arc-friend-identity"><GuardianAvatar appearance={c.appearance} color={c.color} portrait/><div><strong>{c.name}</strong><small>{active?(ko?'외출 기록에서 확인해요':'Check their outing below'):`${c.appearance?`${GUARDIAN_NAMES[ko?'ko':'en'][c.appearance.zodiac]} · `:''}${TEMPERAMENT_NAMES[ko?'ko':'en'][c.temperament]}`}</small></div></div>
@@ -40,7 +40,7 @@ export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,authenti
         })}</div>
         {!members.length&&<p>{ko?'함께할 친구를 먼저 골라 주세요.':'Choose a friend first.'}</p>}
         <p className="arc-allowance-summary"><b>{ko?`이번 외출 최대 ${total} ${MOCK_USDC.symbol}`:`Up to ${total} ${MOCK_USDC.symbol}`}</b><small>{ko?'빠른 자동 진행 · 1회 1 mUSDC · 권한은 2시간 뒤 만료':'Fast automatic rounds · 1 mUSDC each · Permission expires in 2 hours'}</small></p>
-        {short&&<p role="status" className="arc-notice arc-allowance-short"><CircleAlert size={16} aria-hidden="true"/>{ko?`잔액이 이번 외출 최대 ${total} ${MOCK_USDC.symbol}보다 적어요. 테스트 토큰을 먼저 충전하면 끝까지 다녀와요.`:`Your balance is below this outing’s ${total} ${MOCK_USDC.symbol}. Top up test tokens first so they can finish.`}</p>}
+        {short&&<p role="status" className="arc-notice arc-allowance-short"><CircleAlert size={16} aria-hidden="true"/>{ko?`잔액이 이번 외출 최대 ${total} ${MOCK_USDC.symbol}보다 적어요. 테스트 토큰을 먼저 받으면 끝까지 다녀와요.`:`Your balance is below this outing’s ${total} ${MOCK_USDC.symbol}. Get test tokens first so they can finish.`}</p>}
         {!giwa.available&&<p role="status" className="arc-notice">{ko?'자동 외출은 잠시 준비 중이에요. 직접 연습은 무료로 즐길 수 있어요.':'Away outings are currently unavailable. You can still practice for free.'}</p>}
         {giwa.error&&<p role="alert" className="arc-notice">{giwa.error}</p>}
         {giwa.busy && giwa.phase !== 'idle'?<AllowanceProgress phase={giwa.phase} walletName={giwa.walletName} target={giwa.approvalTarget} ko={ko}/>:<button className="arc-button arc-approve-button" disabled={giwa.busy||!canLaunch||!valid||!authenticated} onClick={()=>{if(giwa.submission)onLaunch();else void giwa.approve(members.map(c=>({...c.nft,goal:c.agent.goal,name:guardianName(c.nft.tokenId,'ko'),admissions:c.agent.rounds})),choice);}}>{giwa.busy?(ko?'외출 상태 확인 중…':'Checking outing…'):giwa.submission?(ko?'외출 요청 확인':'Recover outing request'):(ko?'승인하고 놀러 보내기':'Approve and send')}<ArrowRight size={18}/></button>}
