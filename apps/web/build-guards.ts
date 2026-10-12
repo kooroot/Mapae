@@ -30,13 +30,13 @@ export const PUBLIC_GIWA_HOST = "sepolia-rpc.giwa.io";
  */
 export const PUBLIC_BOOTSTRAP_HOST = "facilitator.mapae.io";
 export const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1", "[::1]"];
-export const SITE_SURFACES = new Set(["combined", "landing", "app"]);
+export const SITE_SURFACES = new Set(["combined", "landing", "app", "faucet"]);
 
 export function assertSiteSurface(raw: string | undefined): void {
     const value = raw?.trim();
     if (!value || SITE_SURFACES.has(value)) return;
     throw new Error(
-        `VITE_SITE_SURFACE must be one of combined, landing, or app; got "${value}".`,
+        `VITE_SITE_SURFACE must be one of combined, landing, app, or faucet; got "${value}".`,
     );
 }
 

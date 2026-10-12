@@ -6,22 +6,24 @@ import {createPublicClient, http} from "viem";
 import frameworkArtifact from "../../../../deployments/giwa-sepolia.framework.json";
 import type {Locale} from "./i18n";
 
-export type SiteSurface = "combined" | "landing" | "app";
+export type SiteSurface = "combined" | "landing" | "app" | "faucet";
 
 function readSiteSurface(raw: string | undefined): SiteSurface {
     const value = raw?.trim();
     if (!value) return "combined";
-    if (value === "combined" || value === "landing" || value === "app") return value;
+    if (value === "combined" || value === "landing" || value === "app" || value === "faucet") return value;
     return "combined";
 }
 
 /**
- * One codebase, two public products.
+ * One codebase, three public sites.
  *
- * Local development keeps both `/` and `/app`. Production builds select a
- * surface so `mapae.io/` is the landing and `app.mapae.io/` is the product
- * root. URLs stay configurable for previews without teaching components about
- * deployment environments.
+ * Local development keeps `/`, `/app` and `/faucet` on one server. Production
+ * builds select a surface so `mapae.io/` is the landing, `app.mapae.io/` is the
+ * product root and `faucet.mapae.io/` hands out testnet tokens. The faucet is its
+ * own origin on purpose: its Turnstile script never runs beside the arcade's
+ * session storage. URLs stay configurable for previews without teaching
+ * components about deployment environments.
  */
 export const siteSurface = readSiteSurface(import.meta.env["VITE_SITE_SURFACE"]);
 export const landingUrl =
@@ -34,8 +36,10 @@ export const docsUrl =
     import.meta.env["VITE_DOCS_URL"]?.trim() || "https://docs.mapae.io";
 export const githubUrl =
     import.meta.env["VITE_GITHUB_URL"]?.trim() || "https://github.com/kooroot/Mapae";
-/** Testnet tokens live on their own site; the Studio and the arcade link there. */
-export const faucetUrl = import.meta.env["VITE_FAUCET_URL"]?.trim() || "https://faucet.mapae.io";
+/** Testnet tokens live on their own site; the Studio, the arcade and the landing link there. */
+export const faucetUrl =
+    import.meta.env["VITE_FAUCET_URL"]?.trim() ||
+    (import.meta.env.DEV ? "/faucet" : "https://faucet.mapae.io");
 /** The builder's front door — the guide stays in the public tree on purpose. */
 export const sellerGuideUrl = `${githubUrl}/blob/main/docs/seller-guide.md`;
 

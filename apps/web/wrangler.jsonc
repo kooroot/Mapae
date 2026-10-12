@@ -51,6 +51,25 @@
                     "database_id": "4b131cc7-83a4-4980-b53e-1460f7706fc0"
                 }
             ]
+        },
+        "faucet": {
+            "name": "mapae-faucet",
+            "assets": {"binding": "ASSETS"},
+            "workers_dev": false,
+            "preview_urls": false,
+            "routes": [
+                {
+                    "pattern": "faucet.mapae.io",
+                    "custom_domain": true
+                }
+            ],
+            "d1_databases": [
+                {
+                    "binding": "ARCADE_DB",
+                    "database_name": "mapae-arcade-profiles",
+                    "database_id": "4b131cc7-83a4-4980-b53e-1460f7706fc0"
+                }
+            ]
         }
     },
     "d1_databases": [

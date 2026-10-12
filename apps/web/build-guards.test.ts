@@ -183,7 +183,7 @@ describe("assertPublicSubmitterEndpoint", () => {
 });
 
 describe("assertSiteSurface", () => {
-    test.each(["combined", "landing", "app"])("accepts %s", (surface) => {
+    test.each(["combined", "landing", "app", "faucet"])("accepts %s", (surface) => {
         expect(() => assertSiteSurface(surface)).not.toThrow();
     });
 

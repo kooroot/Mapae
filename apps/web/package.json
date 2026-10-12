@@ -7,9 +7,11 @@
     "build": "vite build",
     "build:landing": "CLOUDFLARE_ENV=landing VITE_SITE_SURFACE=landing vite build",
     "build:app": "CLOUDFLARE_ENV=app VITE_SITE_SURFACE=app vite build",
+    "build:faucet": "CLOUDFLARE_ENV=faucet VITE_SITE_SURFACE=faucet vite build",
     "preview": "vite preview",
     "deploy:landing": "bun run build:landing && wrangler deploy --env landing",
-    "deploy:app": "bun run build:app && wrangler deploy --env app"
+    "deploy:app": "bun run build:app && wrangler deploy --env app",
+    "deploy:faucet": "bun run build:faucet && wrangler deploy --env faucet"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
