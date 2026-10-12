@@ -1,8 +1,7 @@
 /**
  * Boot `apps/account-bootstrap` for real and drive sponsored onboarding through it.
  *
- * The unit tests cover `validateAccountBootstrap`, `SpendBudget` and the faucet policy
- * (`planTopUp`, `FaucetGate`) as pure functions. None of that starts the service, and none
+ * The unit tests cover `validateAccountBootstrap` and `SpendBudget` as pure functions. None of that starts the service, and none
  * of it proves the claim the whole design rests on: that a root signed *before* the payer
  * account exists is still the signature the deployed account accepts. That claim is only
  * settled by deploying the account from the signature and then verifying ERC-1271 against
@@ -19,7 +18,6 @@
  * sponsor's real GIWA nonce is read before and after to prove nothing was broadcast.
  */
 import {
-    FAUCET_TARGET_BASE,
     FRAMEWORK_COMPOSITION_ID,
     OWNER_ACCOUNT_SALT,
     buildD3Policies,
@@ -40,12 +38,10 @@ import {
     concatHex,
     createPublicClient,
     defineChain,
-    encodeFunctionData,
     getAddress,
     hashTypedData,
     http,
     keccak256,
-    numberToHex,
     parseAbi,
     stringToHex,
     type Address,
@@ -68,10 +64,6 @@ const MOCK_USDC = getAddress("0xcfeb694719A09caeb80798e2011298F29CDa4e92");
 
 const ERC1271_ABI = parseAbi([
     "function isValidSignature(bytes32 hash, bytes signature) view returns (bytes4)",
-]);
-const ERC20_ABI = parseAbi([
-    "function balanceOf(address account) view returns (uint256)",
-    "function transfer(address to, uint256 value) returns (bool)",
 ]);
 
 /**
@@ -158,9 +150,6 @@ interface BootstrapBody {
     status?: string;
     account?: string;
     transaction?: string;
-    fundingTransaction?: string;
-    mintedBase?: string;
-    targetBase?: string;
     reason?: string;
 }
 
@@ -196,7 +185,6 @@ const ALLOWED_REASONS = new Set([
     "bootstrap_disabled",
     "malformed_request",
     "rate_limited",
-    "faucet_recently_used",
     "budget_exhausted",
     "sponsor_unfunded",
     "fee_too_high",
@@ -228,10 +216,8 @@ async function main(): Promise<void> {
 
     // A store this run owns. The service's default is `./data/bootstrap.sqlite` under its
     // own directory — the operator's live file on a machine that runs the service — and
-    // what it keeps is exactly what the cases below drive into: the day's charged gas,
-    // and a 24-hour faucet window per account whose keys are the same on every run. On a
-    // shared file a rerun inside a day found G's account inside its window and J saw no
-    // mint; a file from an older schema stops the child at boot. Every restart in this
+    // what it keeps is exactly what the cases below drive into: the day's charged gas. A
+    // file from an older schema stops the child at boot. Every restart in this
     // run reopens the one file, as a restart of the real service would.
     storeDir = mkdtempSync(join(tmpdir(), "mapae-bootstrap-e2e-"));
     const storePath = join(storeDir, "bootstrap.sqlite");
@@ -378,7 +364,6 @@ async function main(): Promise<void> {
         env: childEnv({
             BOOTSTRAP_ENABLED: "true",
             BOOTSTRAP_APPROVAL: approval,
-            BOOTSTRAP_FAUCET_ENABLED: "true",
             FACILITATOR_SIGNER_ADDRESS: privateKeyToAccount(signerKey("someone-else")).address,
         }),
         stdout: "pipe",
@@ -452,13 +437,6 @@ async function main(): Promise<void> {
 
     // ── G. the real thing: deploy from a signature made before the account existed ────
     const sponsorBefore = await publicClient.getBalance({address: sponsor.address});
-    // The keys are deterministic, so the counterfactual address is the same on every run and
-    // MockUSDC.mint is permissionless: the fork inherits whatever balance real GIWA holds
-    // there. J can only prove a top-up from below the target.
-    const tokensBefore = await tokenBalance(account);
-    if (tokensBefore >= FAUCET_TARGET_BASE) {
-        throw new Error(`${account} already holds ${tokensBefore} base units — J cannot prove a top-up`);
-    }
     const ok = await postBootstrap({permissionContext});
     if (ok.status !== 200 || ok.body.status !== "deployed") {
         throw new Error(`bootstrap failed: ${ok.status} ${ok.raw}`);
@@ -503,31 +481,16 @@ async function main(): Promise<void> {
         `gas            sponsor -${sponsorBefore - sponsorAfter} wei, payer still 0 ETH`,
     );
 
-    // ── J. the testnet faucet leg topped the account up to the target, not by a fixed sum ─
-    if (!ok.body.fundingTransaction) throw new Error("faucet was enabled but no mint happened");
-    const shortfall = FAUCET_TARGET_BASE - tokensBefore;
-    if (ok.body.mintedBase !== String(shortfall) || ok.body.targetBase !== String(FAUCET_TARGET_BASE)) {
-        throw new Error(`faucet reported minted=${ok.body.mintedBase} target=${ok.body.targetBase}, expected ${shortfall}/${FAUCET_TARGET_BASE}`);
-    }
-    const balance = await tokenBalance(account);
-    if (balance !== FAUCET_TARGET_BASE) {
-        throw new Error(`balance is ${balance} base units after the top-up, expected ${FAUCET_TARGET_BASE}`);
-    }
-    passed("J", `faucet         +${shortfall} base units, balance now ${balance} (the target)`);
-
-    // ── K. idempotency: a second request at the target spends and mints nothing ──────
+    // ── K. idempotency: a second request spends nothing ──────────────────────────────
     const balanceBeforeRepeat = await publicClient.getBalance({address: sponsor.address});
     const again = await postBootstrap({permissionContext});
     if (again.status !== 200 || again.body.status !== "already_deployed") {
         throw new Error(`expected already_deployed, got ${again.status} ${again.raw}`);
     }
-    if (again.body.mintedBase !== "0" || again.body.fundingTransaction !== undefined) {
-        throw new Error(`a repeat at the target still minted: ${again.raw}`);
-    }
     if ((await publicClient.getBalance({address: sponsor.address})) !== balanceBeforeRepeat) {
         throw new Error("a repeat request spent gas");
     }
-    passed("K", "idempotent     already_deployed, minted 0, zero spend");
+    passed("K", "idempotent     already_deployed, zero spend");
 
     // ── L. concurrency: five identical requests deploy exactly once ───────────────────
     // Against a fresh account, so `already_deployed` cannot mask a missing single-flight.
@@ -564,8 +527,7 @@ async function main(): Promise<void> {
      * receive the identical response — every one of them reads `"deployed"`. Counting
      * statuses therefore proves nothing. The question is how many transactions the chain
      * saw, so that is what this asserts: one distinct hash, and a sponsor nonce that
-     * advanced by exactly the number of transactions one bootstrap is allowed to make
-     * (deploy, plus the mint when the testnet faucet is on).
+     * advanced by exactly the one deploy a bootstrap is allowed to make.
      */
     const nonceBeforeBurst = await publicClient.getTransactionCount({address: sponsor.address});
     const burst = await Promise.all(
@@ -583,10 +545,8 @@ async function main(): Promise<void> {
     }
     const nonceAfterBurst = await publicClient.getTransactionCount({address: sponsor.address});
     const spentNonces = nonceAfterBurst - nonceBeforeBurst;
-    if (spentNonces !== 2) {
-        throw new Error(
-            `sponsor sent ${spentNonces} transactions for one account (expected 2: deploy + faucet mint)`,
-        );
+    if (spentNonces !== 1) {
+        throw new Error(`sponsor sent ${spentNonces} transactions for one account (expected 1: the deploy)`);
     }
     passed("L", `concurrency    5 requests → 1 tx, sponsor nonce +${spentNonces}`);
 
@@ -637,46 +597,6 @@ async function main(): Promise<void> {
         );
     }
 
-    async function tokenBalance(holder: Address): Promise<bigint> {
-        return publicClient.readContract({
-            address: MOCK_USDC,
-            abi: ERC20_ABI,
-            functionName: "balanceOf",
-            args: [holder],
-        });
-    }
-
-    /**
-     * Empty the payer's token balance so the next request would mint again.
-     *
-     * The payer is a deployed smart account, so the transfer is sent from it under Anvil
-     * impersonation — the same way the MCP suite revokes from the payer. Its ETH is put back
-     * to zero afterwards; nothing here must leave the payer looking funded.
-     */
-    async function drainTokens(payer: Address): Promise<void> {
-        const held = await tokenBalance(payer);
-        await rpc(forkRpc, "anvil_setBalance", [payer, numberToHex(10n ** 18n)]);
-        await rpc(forkRpc, "anvil_impersonateAccount", [payer]);
-        const hash = (await rpc(forkRpc, "eth_sendTransaction", [
-            {
-                from: payer,
-                to: MOCK_USDC,
-                data: encodeFunctionData({
-                    abi: ERC20_ABI,
-                    functionName: "transfer",
-                    args: [sponsor.address, held],
-                }),
-                gas: numberToHex(100_000n),
-            },
-        ])) as Hex;
-        const receipt = await publicClient.waitForTransactionReceipt({hash});
-        await rpc(forkRpc, "anvil_stopImpersonatingAccount", [payer]);
-        await rpc(forkRpc, "anvil_setBalance", [payer, "0x0"]);
-        if (receipt.status !== "success") throw new Error(`draining ${payer} reverted`);
-        const left = await tokenBalance(payer);
-        if (left !== 0n) throw new Error(`${payer} still holds ${left} base units after draining`);
-    }
-
     /** The same service, restarted — optionally with one bound turned down far enough to hit. */
     async function restart(overrides: Record<string, string>) {
         const proc = Bun.spawn([process.execPath, "--env-file=/dev/null", "run", "index.ts"], {
@@ -684,7 +604,6 @@ async function main(): Promise<void> {
             env: childEnv({
                 BOOTSTRAP_ENABLED: "true",
                 BOOTSTRAP_APPROVAL: approval,
-                BOOTSTRAP_FAUCET_ENABLED: "true",
                 ...overrides,
             }),
             stdout: "pipe",
@@ -700,36 +619,12 @@ async function main(): Promise<void> {
     await waitForPortRelease();
 
     /**
-     * M and N exist because deleting either bound left every other test green.
-     *
-     * The faucet window and the daily budget were only ever exercised as classes. K repeats
-     * a request at the target, which the window never sees, and two deploys run against a
-     * budget that allows thousands, so `if (!faucetGate.allows(...)) throw` or
-     * `if (!budget.reserve(...)) throw` could stop refusing and nothing would notice —
-     * while the live griefing ceiling silently became the sponsor's whole balance. Both
-     * cases below drive the service into the bound, which is the only way the wiring is
-     * asserted at all.
+     * N exists because deleting the bound left every other test green: two deploys run
+     * against a budget that allows thousands, so `if (!budget.reserve(...)) throw` could
+     * stop refusing and nothing would notice. Driving the service into the bound is the
+     * only way the wiring is asserted at all.
      */
     const third = await signedRootFor(signerKey("owner-3"));
-
-    // The window opens from the deploy's mint. Draining the account afterwards makes the
-    // second request one that WOULD mint — the only case the window is allowed to refuse.
-    const gated = await restart({});
-    const firstTopUp = await postBootstrap({permissionContext: third.context});
-    if (firstTopUp.status !== 200 || firstTopUp.body.mintedBase === "0") {
-        throw new Error(`the first top-up did not mint: ${firstTopUp.status} ${firstTopUp.raw}`);
-    }
-    await drainTokens(third.account);
-    const overWindow = await postBootstrap({permissionContext: third.context});
-    if (overWindow.status !== 429 || overWindow.body.reason !== "faucet_recently_used") {
-        throw new Error(`faucet window is not wired: ${overWindow.status} ${overWindow.raw}`);
-    }
-    assertEnumOnly("faucet window", overWindow.raw, overWindow.body);
-    if ((await tokenBalance(third.account)) !== 0n) throw new Error("a refused top-up still minted");
-    passed("M", "faucet window  drained account, 2nd top-up in 24h → 429 faucet_recently_used");
-    gated.kill();
-    await waitForPortRelease();
-
     const fourth = await signedRootFor(signerKey("owner-4"));
     // One wei of daily budget: enough to construct, never enough to reserve a deploy.
     const broke = await restart({BOOTSTRAP_DAILY_WEI: "1"});

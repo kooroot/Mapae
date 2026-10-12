@@ -16,16 +16,9 @@ import {
     type AccountBootstrapPolicy,
     type ValidatedAccountBootstrap,
 } from "@mapae/delegation";
-import {
-    FAUCET_WINDOW_MS,
-    FaucetGate,
-    planTopUp,
-    readFaucetConfig,
-} from "@mapae/delegation/faucet-policy";
 import {openStore} from "@mapae/store";
 import {
     GIWA_SEPOLIA_CAIP2,
-    MOCK_USDC,
     giwaSepolia,
     ipBucket,
     parseNodeRpcUrl,
@@ -34,10 +27,8 @@ import {
 import {
     createPublicClient,
     createWalletClient,
-    encodeFunctionData,
     getAddress,
     isAddress,
-    parseAbi,
     publicActions,
     zeroAddress,
     type Address,
@@ -64,8 +55,6 @@ import {privateKeyToAccount, nonceManager} from "viem/accounts";
  */
 const MAX_BODY_BYTES = 200_000;
 const MAX_BODY_CHARACTERS = 150_000;
-const MINT_ABI = parseAbi(["function mint(address to, uint256 value)"]);
-const BALANCE_ABI = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
 
 /**
  * Every refusal this service can emit, as a closed set.
@@ -86,7 +75,6 @@ type BootstrapRefusal =
     | "bootstrap_disabled"
     | "malformed_request"
     | "rate_limited"
-    | "faucet_recently_used"
     | "budget_exhausted"
     | "sponsor_unfunded"
     | "fee_too_high"
@@ -96,6 +84,11 @@ type BootstrapRefusal =
 // These obsolete names once referred to different wallets in different services.
 for (const name of ["RELAYER_ADDRESS", "RELAYER_PRIVATE_KEY"]) {
     if (process.env[name]?.trim()) throw new Error(`${name} is obsolete; use FACILITATOR_SIGNER_*`);
+}
+// The testnet top-up moved to apps/faucet (faucet.mapae.io). A leftover setting here would
+// read as "still minting" to whoever finds it, so it stops the boot instead.
+for (const name of ["BOOTSTRAP_FAUCET_ENABLED", "BOOTSTRAP_FAUCET_TARGET_BASE", "MAX_BOOTSTRAP_MINT_GAS"]) {
+    if (process.env[name]?.trim()) throw new Error(`${name} is obsolete; the testnet top-up is apps/faucet`);
 }
 
 function readPort(): number {
@@ -234,7 +227,6 @@ const policy: AccountBootstrapPolicy = {
 
 /** 1.32x the measured 189,374 for a HybridDeleGator proxy. Larger is a different shape. */
 const MAX_DEPLOY_GAS = readPositiveInteger("MAX_BOOTSTRAP_GAS", 250_000n);
-const MAX_MINT_GAS = readPositiveInteger("MAX_BOOTSTRAP_MINT_GAS", 100_000n);
 /** ~50x the measured 1,000,266 wei. A fee spike above this is the operator's call. */
 const MAX_FEE_PER_GAS = readPositiveInteger("MAX_BOOTSTRAP_FEE_PER_GAS", 50_000_000n);
 /**
@@ -262,9 +254,8 @@ const DAILY_BUDGET = readPositiveInteger("BOOTSTRAP_DAILY_WEI", 500_000_000_000_
  * shared office NAT was refused — the commit that removed it records two people in one
  * office being blocked. That was right about what a per-IP gate cannot do and wrong
  * about what it can. With no gate, one machine behind one address posts fresh keypairs
- * until `BOOTSTRAP_DAILY_WEI` is gone — a deploy plus its mint settles at roughly 2.4e11
- * wei (189,374 measured deploy gas, a quarter-size mint, 1,000,266 wei/gas), so the
- * 5e14 default is ~2,000 accounts, and nothing in the path ever asked that machine to
+ * until `BOOTSTRAP_DAILY_WEI` is gone — a deploy settles at roughly 1.9e11 wei (189,374
+ * measured gas at 1,000,266 wei/gas), so the 5e14 default is ~2,600 accounts, and nothing in the path ever asked that machine to
  * wait: the drain fits in well under an hour. Thirty an hour is a speed bump for exactly
  * that single-machine drain — the same address now needs ~70 hours — while the daily
  * budget remains the bound, and an office of thirty still gets through. The key is the
@@ -275,37 +266,17 @@ const RATE_PER_HOUR = Number(readPositiveInteger("BOOTSTRAP_RATE_PER_HOUR", 30n)
 const RECEIPT_TIMEOUT_MS = Number(readPositiveInteger("BOOTSTRAP_RECEIPT_TIMEOUT_MS", 60_000n));
 /**
  * Bun closes a connection after `idleTimeout` seconds without bytes, and its default is 10 s.
- * A sponsored request can wait out two receipts (deployment, then the top-up), so the
- * server has to out-wait both or Cloudflare answers the browser with a CORS-less 502 and
+ * A sponsored request waits out the deployment's receipt, so the server has to out-wait it or Cloudflare answers the browser with a CORS-less 502 and
  * the owner reads "unreachable" while the transaction still lands. Bun caps it at 255 s;
  * the browser's own timeout (`AbortSignal.timeout` in apps/web) sits outside this one.
  */
-const IDLE_TIMEOUT_SECONDS = 2 * Math.ceil(RECEIPT_TIMEOUT_MS / 1000) + 15;
-if (IDLE_TIMEOUT_SECONDS > 255) throw new Error("BOOTSTRAP_RECEIPT_TIMEOUT_MS must leave two receipt waits under Bun's 255 s idle timeout");
+const IDLE_TIMEOUT_SECONDS = Math.ceil(RECEIPT_TIMEOUT_MS / 1000) + 15;
+if (IDLE_TIMEOUT_SECONDS > 255) throw new Error("BOOTSTRAP_RECEIPT_TIMEOUT_MS must leave the receipt wait under Bun's 255 s idle timeout");
 /** `:memory:` is accepted for dry runs; anything else is a file whose directory is created. */
 const STORE_PATH = process.env.STORE_PATH?.trim() || "./data/bootstrap.sqlite";
 if (ENABLED && STORE_PATH === ":memory:") {
     throw new Error("enabled bootstrap requires a persistent STORE_PATH");
 }
-
-/**
- * The testnet faucet leg: on by default, and pinned to the testnet by the artifact.
- *
- * `MockUSDC.mint` is permissionless, so this grants no authority the caller lacks — it
- * only spends our gas. It exists because a deployed account with an empty token balance
- * still cannot pay, and "your account exists now" is a useless kind of done. On mainnet
- * there is no mint: the user funds the account with real value, which they can do at the
- * counterfactual address before deployment because an ERC-20 balance is the token
- * contract's storage.
- *
- * The pin is the *deployment artifact's* chain id compared against the chain this service
- * signs for — not a literal. A mainnet artifact would fail to parse today, and if that
- * ever changes the faucet turns itself off here rather than needing someone to remember a
- * number. The policy itself (target, window, defaults) lives in `faucet-policy.ts`.
- */
-const FAUCET = readFaucetConfig(process.env);
-const FAUCET_ENABLED = FAUCET.enabled && deployment.chainId === giwaSepolia.id;
-const FAUCET_TARGET = FAUCET_ENABLED ? FAUCET.target : 0n;
 
 const publicClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
 const sponsorClient = createWalletClient({
@@ -314,12 +285,10 @@ const sponsorClient = createWalletClient({
     transport: throttledHttp(RPC_URL),
 }).extend(publicActions);
 
-// The day's charged gas and the faucet's per-account windows live in the store, so a
-// redeploy resumes both instead of resetting them — a bound a restart clears is not a
-// bound, and the operator's own restart was the cheapest way to drain the faucet.
+// The day's charged gas lives in the store, so a redeploy resumes it instead of resetting
+// it — a bound a restart clears is not a bound.
 const store = openStore(STORE_PATH);
 const budget = new SpendBudget(DAILY_BUDGET, Date.now(), store.budget);
-const faucetGate = new FaucetGate(FAUCET_WINDOW_MS, store.faucetWindows);
 const limiter = new FixedWindowLimiter(RATE_PER_HOUR, 3_600_000);
 const singleFlight = new PaymentIntentSingleFlight<BootstrapResponse>();
 
@@ -331,22 +300,8 @@ interface BootstrapResponse {
     status: "deployed" | "already_deployed";
     account: Address;
     transaction?: Hex;
-    fundingTransaction?: Hex;
-    /** Base units this request minted; `"0"` when the balance already met the target or the faucet is off. */
-    mintedBase: string;
-    /** The balance the faucet tops up to, in base units; `"0"` when the faucet is off. */
-    targetBase: string;
     network: typeof GIWA_SEPOLIA_CAIP2;
 }
-
-/** What one mint attempt came to. `minted` is `0n` unless the receipt confirmed it. */
-interface Funding {
-    hash?: Hex;
-    minted: bigint;
-    charged: bigint;
-}
-
-const NOT_FUNDED: Funding = {minted: 0n, charged: 0n};
 
 class Refused extends Error {
     constructor(readonly refusal: BootstrapRefusal, readonly httpStatus: number) {
@@ -366,17 +321,8 @@ class Refused extends Error {
  */
 async function bootstrap(validated: ValidatedAccountBootstrap): Promise<BootstrapResponse> {
     const existing = await publicClient.getCode({address: validated.account});
-    if (existing && existing !== "0x") {
-        const funded = await topUp(validated.account);
-        return {
-            status: "already_deployed",
-            account: validated.account,
-            fundingTransaction: funded.hash,
-            mintedBase: String(funded.minted),
-            targetBase: String(FAUCET_TARGET),
-            network: GIWA_SEPOLIA_CAIP2,
-        };
-    }
+    // Already deployed is what the caller asked for: answered without spending anything.
+    if (existing && existing !== "0x") return {status: "already_deployed", account: validated.account, network: GIWA_SEPOLIA_CAIP2};
 
     const [balance, block] = await Promise.all([
         publicClient.getBalance({address: sponsor.address}),
@@ -403,9 +349,7 @@ async function bootstrap(validated: ValidatedAccountBootstrap): Promise<Bootstra
     }
     if (deployGas > MAX_DEPLOY_GAS) throw new Refused("gas_estimate_rejected", 400);
 
-    const mintReservation = FAUCET_ENABLED ? MAX_MINT_GAS * MAX_FEE_PER_GAS : 0n;
-    const deployReservation = deployGas * MAX_FEE_PER_GAS;
-    const reservation = deployReservation + mintReservation;
+    const reservation = deployGas * MAX_FEE_PER_GAS;
 
     // The node's own upfront rule is `balance >= gasLimit * maxFeePerGas`, which is exactly
     // the reservation. Checking only MIN_SPONSOR_BALANCE (a floor, not a cost) left a band
@@ -430,151 +374,6 @@ async function bootstrap(validated: ValidatedAccountBootstrap): Promise<Bootstra
         // transaction that still mines, so the pessimistic charge goes in *now* and the
         // measured one replaces it. Settling 0 for a broadcast we merely failed to observe
         // is how a daily cap quietly stops bounding anything.
-        charged = deployReservation;
-        const receipt = await publicClient.waitForTransactionReceipt({
-            hash,
-            confirmations: 1,
-            timeout: RECEIPT_TIMEOUT_MS,
-        });
-        charged = costOfReceipt(receipt, deployReservation);
-        if (receipt.status !== "success") throw new Refused("bootstrap_unavailable", 502);
-
-        // The same plan as the recovery path: a counterfactual address can already hold
-        // tokens, so a fresh deploy tops up the shortfall rather than minting a fixed grant.
-        // Anything the plan refuses is not a refusal of *this* request — the account is
-        // deployed, which is what the caller asked for — so it is reported as "0 minted".
-        let funded = NOT_FUNDED;
-        const plan = await planFaucet(validated.account, Date.now());
-        if (plan.kind === "mint") {
-            funded = await fund(validated.account, plan.amount, mintReservation);
-            charged += funded.charged;
-        }
-
-        return {
-            status: "deployed",
-            account: validated.account,
-            transaction: hash,
-            fundingTransaction: funded.hash,
-            mintedBase: String(funded.minted),
-            targetBase: String(FAUCET_TARGET),
-            network: GIWA_SEPOLIA_CAIP2,
-        };
-    } finally {
-        budget.settle(hold, charged, Date.now());
-    }
-}
-
-type FaucetPlan =
-    | {kind: "off"}
-    /** The token balance could not be read; nothing is decided, and nothing is minted. */
-    | {kind: "unreadable"}
-    /** The balance already meets the target. */
-    | {kind: "satisfied"}
-    /** The account drew its top-up within the last window. */
-    | {kind: "recently_used"}
-    | {kind: "mint"; amount: bigint};
-
-/**
- * What the faucet policy says about `account` right now.
- *
- * One reading for both branches, so a fresh deploy and a returning account cannot drift
- * about what "topped up" means. The gate is consulted only once a shortfall exists — an
- * account at its target is never told to wait, because it was never going to be minted to.
- */
-async function planFaucet(account: Address, now: number): Promise<FaucetPlan> {
-    if (!FAUCET_ENABLED) return {kind: "off"};
-    let balance: bigint;
-    try {
-        balance = await publicClient.readContract({
-            address: MOCK_USDC.address,
-            abi: BALANCE_ABI,
-            functionName: "balanceOf",
-            args: [account],
-        });
-    } catch (error) {
-        console.warn(`[bootstrap] balance read failed, no top-up — ${redactForLog(error)}`);
-        return {kind: "unreadable"};
-    }
-    const amount = planTopUp({balance, target: FAUCET_TARGET});
-    if (amount === 0n) return {kind: "satisfied"};
-    if (!faucetGate.allows(account, now)) return {kind: "recently_used"};
-    return {kind: "mint", amount};
-}
-
-/**
- * Bring a deployed account back up to the target.
- *
- * This is the branch Studio's "get testnet balance" button lands on, and the retry path
- * for a mint that failed after a successful deploy — the payer holds no ETH by design, so
- * it has no way to fund itself. `MockUSDC.mint` is permissionless, so this grants no
- * authority the caller lacks; it spends our gas, bounded by the per-account window and
- * the daily budget, and the mint costs a quarter of the deploy the caller could already
- * ask for.
- *
- * Here the top-up *is* the request, so what the deploy branch reports as "0 minted" is
- * refused out loud: a closed window is a 429 the user can read as "tomorrow", and a budget
- * or sponsor that cannot pay is the same refusal a deploy would get. An onboarding retry
- * lands here too and is unharmed by that: Studio judges a bootstrap by the account's code,
- * not by this status.
- */
-async function topUp(account: Address): Promise<Funding> {
-    const now = Date.now();
-    const plan = await planFaucet(account, now);
-    switch (plan.kind) {
-        case "off":
-        case "satisfied":
-            return NOT_FUNDED;
-        case "unreadable":
-            throw new Refused("bootstrap_unavailable", 503);
-        case "recently_used":
-            throw new Refused("faucet_recently_used", 429);
-        case "mint":
-            break;
-    }
-
-    const reservation = MAX_MINT_GAS * MAX_FEE_PER_GAS;
-    const sponsorBalance = await publicClient.getBalance({address: sponsor.address});
-    if (sponsorBalance < MIN_SPONSOR_BALANCE + reservation) throw new Refused("sponsor_unfunded", 503);
-    const hold = budget.reserve(reservation, now);
-    if (!hold) throw new Refused("budget_exhausted", 503);
-    let charged = 0n;
-    try {
-        const funded = await fund(account, plan.amount, reservation);
-        charged = funded.charged;
-        if (funded.hash === undefined) throw new Refused("bootstrap_unavailable", 502);
-        return funded;
-    } finally {
-        budget.settle(hold, charged, Date.now());
-    }
-}
-
-/**
- * Mint `amount` to the account, and never let the attempt's failure escape.
- *
- * On the deploy path the deploy is the expensive, irreversible half: throwing from here
- * used to turn a mined account into a 502, and the retry then took the `already_deployed`
- * path — which is what {@link topUp} now handles on purpose. So this reports rather than
- * throws, and the caller decides what a mint that did not land means for its request.
- *
- * The per-account window opens only on a confirmed receipt. Opening it at broadcast would
- * lock an account out for a day after a reverted or unobserved mint, which on a testnet is
- * the one outcome worse than minting twice.
- */
-async function fund(account: Address, amount: bigint, reservation: bigint): Promise<Funding> {
-    let charged = 0n;
-    try {
-        const hash = await sponsorClient.sendTransaction({
-            to: MOCK_USDC.address,
-            data: encodeFunctionData({
-                abi: MINT_ABI,
-                functionName: "mint",
-                args: [account, amount],
-            }),
-            value: 0n,
-            gas: MAX_MINT_GAS,
-            maxFeePerGas: MAX_FEE_PER_GAS,
-            maxPriorityFeePerGas: PRIORITY_FEE_PER_GAS,
-        });
         charged = reservation;
         const receipt = await publicClient.waitForTransactionReceipt({
             hash,
@@ -582,14 +381,10 @@ async function fund(account: Address, amount: bigint, reservation: bigint): Prom
             timeout: RECEIPT_TIMEOUT_MS,
         });
         charged = costOfReceipt(receipt, reservation);
-        // A reverted mint is not a funding. Reporting its hash as `fundingTransaction`
-        // would tell the user their account is funded while the balance is unchanged.
-        if (receipt.status !== "success") return {minted: 0n, charged};
-        faucetGate.record(account, Date.now());
-        return {hash, minted: amount, charged};
-    } catch (error) {
-        console.warn(`[bootstrap] faucet leg failed — ${redactForLog(error)}`);
-        return {minted: 0n, charged};
+        if (receipt.status !== "success") throw new Refused("bootstrap_unavailable", 502);
+        return {status: "deployed", account: validated.account, transaction: hash, network: GIWA_SEPOLIA_CAIP2};
+    } finally {
+        budget.settle(hold, charged, Date.now());
     }
 }
 
@@ -623,16 +418,12 @@ app.options("/bootstrap", (c) => {
  */
 app.get("/health", (c) => {
     const now = Date.now();
-    faucetGate.sweep(now);
     limiter.sweep(now);
     return c.json({
         ok: ENABLED,
         enabled: ENABLED,
         network: GIWA_SEPOLIA_CAIP2,
         sponsor: sponsor.address,
-        faucet: FAUCET_ENABLED,
-        faucetTargetBase: String(FAUCET_TARGET),
-        faucetAccountsInWindow: faucetGate.size,
         rateLimiterKeys: limiter.size,
         budgetRemainingWei: String(budget.remaining(now)),
         spentTodayWei: String(budget.spentToday(now)),
@@ -646,12 +437,11 @@ app.post("/bootstrap", async (c) => {
     // `CF-Connecting-IP` on everything that crosses the tunnel, and the tunnel is the only
     // public path, so a request without it came over loopback — the operator's own curl or
     // the fork e2e, which the cap must not trip — and is not counted. The cap is sized in
-    // the comment on `RATE_PER_HOUR`; the per-account faucet window and the daily budget
-    // are still the bounds once a request proves it owns an account.
+    // the comment on `RATE_PER_HOUR`; the daily budget is still the bound once a request
+    // proves it owns an account.
     const requester = c.req.header("cf-connecting-ip");
     const now = Date.now();
     limiter.sweep(now);
-    faucetGate.sweep(now);
     if (requester !== undefined && !limiter.tryConsume(`ip:${ipBucket(requester)}`, now)) {
         return refuse(c, "rate_limited", 429);
     }
@@ -667,7 +457,7 @@ app.post("/bootstrap", async (c) => {
     try {
         const response = await singleFlight.run(validated.account, () => bootstrap(validated));
         console.log(
-            `[bootstrap] ${response.status} account=${response.account} tx=${response.transaction ?? "-"} minted=${response.mintedBase}`,
+            `[bootstrap] ${response.status} account=${response.account} tx=${response.transaction ?? "-"}`,
         );
         return c.json(response);
     } catch (error) {
@@ -702,7 +492,6 @@ console.log(`account bootstrap listening on ${HOST}:${PORT}`);
 console.log(`  network   ${GIWA_SEPOLIA_CAIP2}`);
 console.log(`  enabled   ${ENABLED}`);
 console.log(`  sponsor   ${sponsor.address}`);
-console.log(`  faucet    ${FAUCET_ENABLED} (target ${FAUCET_TARGET} base, one top-up per account per day)`);
 console.log(`  daily     ${DAILY_BUDGET} wei`);
 console.log(`  rate      ${RATE_PER_HOUR}/hour per IP (loopback exempt)`);
 console.log(`  store     ${STORE_PATH}`);
