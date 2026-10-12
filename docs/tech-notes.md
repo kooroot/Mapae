@@ -25,7 +25,8 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 | `apps/agent-mcp` | 결제 루프를 MCP tool로 노출 | Bun + MCP SDK (stdio) |
 | `apps/payment-scheduler` | 같은 판매자 리소스를 고정 간격으로 구매 — 슬롯·예산·실행 이력·재시도를 DB에 들고 claim 단위로 결제 | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` — 핀(단일 payer·loopback) / 스폰서드(공개, 예치금 대납) 두 모드 | Bun + Hono |
-| `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 + mUSDC 민팅 | Bun + Hono |
+| `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 | Bun + Hono |
+| `apps/faucet` | faucet.mapae.io 뒤의 테스트넷 지급: 지불 계정 tUSDC 목표 잔액 보충, 운영자가 켜면 지갑에 GIWA Sepolia ETH 0.05 | Bun + Hono + SQLite |
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
 | `apps/web` | 공개 랜딩 + Studio (스폰서드 온보딩·위임 발급·조회·회수) | TanStack Start + Cloudflare |
 
@@ -278,18 +279,24 @@ OZ `ECDSA`가 revert하는 서명도 수락하므로, 이 검사가 없으면 �
 revert하는 계정을 돈 내고 배포하게 된다.
 
 계정 단위 중복방지는 예산이 아니라 신원이다 — 키페어는 오프라인에서 공짜이므로,
-그리핑의 실제 상한은 계정당 24시간 1회의 faucet 창, 일일 가스 예산
+그리핑의 실제 상한은 일일 가스 예산
 (`BOOTSTRAP_DAILY_WEI`), 그리고 일부러 작게 유지하는 스폰서 잔액이다. IP당
 시간 제한(`BOOTSTRAP_RATE_PER_HOUR`, 기본 30, IPv6는 /64 단위)은 그 위에 얹은
 과속방지턱이다 — IP는 공유되고 키는 공짜라 그리퍼를 막지는 못하지만, 상한이
 없으면 기계 한 대가 한 주소에서 새 키페어를 계속 보내 하루 예산을 한 시간 안에
-비울 수 있었다. faucet은 잔액이 1000 tUSDC(테스트넷, 실제 돈 아님) 미만인
-계정을 목표까지 채운다(`packages/delegation/src/faucet-policy.ts`). 스폰서에는
-위임 권한이 없어 payer 자금·한도·정산에는 닿지 못한다. 검증은
-`bun run test:e2e:bootstrap` — GIWA fork에서 16케이스(킬 스위치·승인 불일치·
-relayer 공유 거부·타인 서명·high-s·배포·late binding·가스 회계·faucet 목표
-보충·중복·동시성·faucet 24시간 창·예산 소진·체인 실패 누출 가드·IP당 시간
-제한과 무주소 면제) 16/16.
+비울 수 있었다. 스폰서에는 위임 권한이 없어 payer 자금·한도·정산에는 닿지
+못한다. 검증은 `bun run test:e2e:bootstrap` — GIWA fork에서 14케이스(킬 스위치·
+승인 불일치·relayer 공유 거부·타인 서명·high-s·배포·late binding·가스 회계·
+중복·동시성·예산 소진·체인 실패 누출 가드·IP당 시간 제한과 무주소 면제) 14/14.
+
+테스트넷 토큰은 faucet.mapae.io가 따로 준다(`apps/faucet`). Worker가 그 오리진에
+묶인 SIWE 세션, Turnstile(호스트·청구 종류·지갑에 묶임), IP·서브넷을 비밀 소금으로
+HMAC한 키를 확인한 뒤 Bearer로 서비스를 부른다. 서비스는 tUSDC(테스트넷, 실제
+돈 아님)를 지갑의 지불 계정에 1000까지 채우고(24시간 1회), ETH 탭이 켜지면
+이더리움 메인넷 거래 기록이 있는 지갑에만 GIWA Sepolia ETH 0.05를 보낸다(7일
+1회, IP당 하루 1건·서브넷 3건, 하루 wei 상한, 민팅 가스용 바닥 잔액). 청구
+원장은 서명한 바이트를 방송 전에 디스크에 남겨 재시작 뒤에도 같은 거래로
+마무리한다.
 
 ### 에이전트 자동화 (MCP)
 
@@ -914,7 +921,8 @@ facilitator와 같은 공개 호스트는 `/bootstrap` 경로로 온보딩 스�
 | 중복 settle | canonical 결제 조건과 context 바이트의 `paymentIntentId`로 단일화, broadcast tx hash를 receipt보다 먼저 저장 |
 | 복잡한 delegation gas DoS | estimate 후 설정 gas cap 초과 거절 |
 | 비인가 relayer | leaf의 `RedeemerEnforcer`와 402 `facilitatorAddresses` 교집합 강제 |
-| 온보딩 그리핑 (배포 요청 반복) | IP당 시간 제한(과속방지턱) + 계정당 24시간 1회 faucet 창 + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
+| 온보딩 그리핑 (배포 요청 반복) | IP당 시간 제한(과속방지턱) + 일일 가스 예산 + 소액 전용 스폰서 지갑 — 소진 시 그날의 온보딩만 멈추고 정산·자금과 무관 |
+| 테스트넷 faucet 파밍 (지갑·계정을 바꿔 가며 받기) | faucet.mapae.io 오리진의 SIWE + Turnstile + HMAC한 IP·서브넷 한도 + 지갑당 창; ETH는 메인넷 거래 기록 1건 이상, 하루 wei 상한, 바닥 잔액 — 별도 faucet 지갑이라 정산·배포 키와 무관 |
 | 정산 그리핑 (무료 tUSDC로 자기 자신에게 결제 반복) | IP당 시간 제한 + payer별 일일 가스 몫(`RELAYER_PAYER_DAILY_WEI`)을 총 예산보다 먼저 잡는다 — 한 payer가 제 몫을 다 써도 다른 판매자는 그날 계속 정산된다. 거부된 정산 행은 원장에 7일·최신 5만 건까지만 남긴다(부팅 때와 매시간 정리) — sqlite 파일이 거절만으로 끝없이 자라지 않는다 |
 | 배포 대상 주소 지명 | 요청 본문은 `{permissionContext}`뿐 — owner는 서명에서 복원, 계정은 `CREATE2(owner)`이며 delegator와 일치해야 함 |
 | 비-canonical 서명 (high-s, `v ∉ {27,28}`) | 오프라인 canonical 검사 후에만 배포 — viem은 수락하지만 OZ `ECDSA`는 revert하므로, 검사 없이는 모든 grant가 revert하는 계정을 돈 내고 배포하게 된다 |

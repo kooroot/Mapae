@@ -25,7 +25,8 @@ gate in `bun run check` refuses any mismatch between the generated output and th
 | `apps/agent-mcp` | Exposes the payment loop as an MCP tool | Bun + MCP SDK (stdio) |
 | `apps/payment-scheduler` | Buys the same seller resource at a fixed interval — slots, budget, run history and retries live in a DB, and each claim is one payment | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | Receives an owner-signed revocation UserOp → `handleOps` — two modes: pinned (single payer, loopback) / sponsored (public, sponsor-funded deposit) | Bun + Hono |
-| `apps/account-bootstrap` | Recovers the owner from a pre-deployment signature → sponsored CREATE2 deploy of the payer account + mUSDC mint | Bun + Hono |
+| `apps/account-bootstrap` | Recovers the owner from a pre-deployment signature → sponsored CREATE2 deploy of the payer account | Bun + Hono |
+| `apps/faucet` | Testnet tokens behind faucet.mapae.io: tops the payer account's tUSDC up to a target and, once the operator turns it on, sends 0.05 GIWA Sepolia ETH to the wallet | Bun + Hono + SQLite |
 | `apps/delegation-lab` | Deployment previews, negative-path and e2e suites, fork orchestration | Bun |
 | `apps/web` | Public landing + Studio (sponsored onboarding; grant, inspect, and revoke a delegation) | TanStack Start + Cloudflare |
 
@@ -301,20 +302,27 @@ signatures that OZ `ECDSA` reverts on, so without this check we would pay to dep
 accounts whose every grant reverts forever.
 
 Per-account idempotency is identity, not a budget — keypairs are free offline, so
-the real bounds on a griefing run are the faucet window (one top-up per account per
-24 hours), the daily gas budget (`BOOTSTRAP_DAILY_WEI`), and the sponsor balance
+the real bounds on a griefing run are the daily gas budget (`BOOTSTRAP_DAILY_WEI`)
+and the sponsor balance
 kept deliberately small. The hourly per-IP cap (`BOOTSTRAP_RATE_PER_HOUR`, default
 30, IPv6 counted per /64) is a speed bump on top of those: IPs are shared and keys
 are free, so it cannot stop a griefer, but without any cap one machine could drain
 the day's budget from one address in under an hour by sending fresh keypairs. The
-faucet tops any account below 1000 tUSDC (testnet, not real money) up to that
-target (`packages/delegation/src/faucet-policy.ts`). The sponsor holds no
-delegation authority, so it cannot reach payer funds, caps, or settlement.
-Verification is `bun run test:e2e:bootstrap` — 16 cases on a GIWA fork (kill
-switch, approval mismatch, shared-relayer refusal, foreign signer, high-s,
-deployment, late binding, gas accounting, faucet top-up to target, idempotency,
-concurrency, faucet 24-hour window, budget exhaustion, chain-failure leak guard,
-hourly per-IP cap with the header-less exemption), 16/16.
+sponsor holds no delegation authority, so it cannot reach payer funds, caps, or
+settlement. Verification is `bun run test:e2e:bootstrap` — 14 cases on a GIWA fork
+(kill switch, approval mismatch, shared-relayer refusal, foreign signer, high-s,
+deployment, late binding, gas accounting, idempotency, concurrency, budget
+exhaustion, chain-failure leak guard, hourly per-IP cap with the header-less
+exemption), 14/14.
+
+Testnet tokens come from faucet.mapae.io instead (`apps/faucet`). The Worker checks a
+SIWE session bound to that origin, Turnstile (bound to the hostname, the claim's kind
+and the wallet) and HMAC'd IP and subnet keys, then calls the service with a bearer.
+The service tops the wallet's payer account up to 1000 tUSDC (testnet, not real money)
+once a day and, once the ETH tab is on, sends 0.05 GIWA Sepolia ETH only to wallets
+with Ethereum mainnet history (once a week, one per IP and three per subnet a day, a
+daily wei cap and a floor kept for mint gas). The claim ledger writes the signed bytes
+to disk before broadcasting, so a restart finishes the same transaction.
 
 ### Agent automation (MCP)
 
@@ -1003,7 +1011,8 @@ griefing spread into a settlement outage.
 | Duplicate settle | Deduplicated by a `paymentIntentId` over the canonical payment terms and the context bytes; the broadcast tx hash is stored before the receipt |
 | Gas DoS via complex delegations | Estimate first, then refuse anything above the configured gas cap |
 | Unauthorized relayer | The intersection of the leaf's `RedeemerEnforcer` and the 402's `facilitatorAddresses` is enforced |
-| Onboarding griefing (repeated deploy requests) | Hourly per-IP cap (a speed bump) + faucet window (one top-up per account per 24 hours) + daily gas budget + a small dedicated sponsor wallet — exhaustion stops only that day's onboarding and never touches settlement or funds |
+| Onboarding griefing (repeated deploy requests) | Hourly per-IP cap (a speed bump) + daily gas budget + a small dedicated sponsor wallet — exhaustion stops only that day's onboarding and never touches settlement or funds |
+| Testnet faucet farming (rotating wallets or accounts) | SIWE on the faucet.mapae.io origin + Turnstile + HMAC'd IP and subnet limits + a per-wallet window; ETH also needs one or more mainnet transactions, a daily wei cap and a balance floor — a separate faucet wallet, unrelated to settlement or deploy keys |
 | Settlement griefing (paying oneself repeatedly with free tUSDC) | Hourly per-IP cap + a per-payer daily gas share (`RELAYER_PAYER_DAILY_WEI`) reserved before the day's total — one payer exhausting its share leaves every other seller settling for the rest of the day. Rejected settle rows are kept in the ledger for 7 days and at most the newest 50,000 (pruned at boot and hourly), so refusals alone cannot grow the sqlite file without bound |
 | Nominating the deploy target address | The request body is `{permissionContext}` only — the owner is recovered from the signature, and the account is `CREATE2(owner)`, which must match the delegator |
 | Non-canonical signatures (high-s, `v ∉ {27,28}`) | Deploy only after an offline canonical-form check — viem accepts them but OZ `ECDSA` reverts, so without the check we would pay to deploy an account whose every grant reverts |
