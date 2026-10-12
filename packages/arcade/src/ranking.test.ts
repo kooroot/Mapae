@@ -2,7 +2,7 @@ import {describe, expect, test} from "bun:test";
 import {dailyChallenge} from "./challenge";
 import {ARCADE_RULESET_VERSION} from "./contracts";
 import {
-    addDays, fnv1a, guardianStreak, kstDay, kstWeek, nextReset, parseRankingIds, rankedSeed, rankingWeekIndex, rankingWeekOf, sealedWeek,
+    addDays, fnv1a, guardianStreak, kstDay, kstWeek, nextReset, parseRankingIds, parseRankingPageOffset, rankedSeed, rankingPageOffset, rankingWeekIndex, rankingWeekOf, sealedWeek,
     streakMilestone, titlePlace, validRankedAttempt, validRankingBoard, weekCutoff,
 } from "./ranking";
 
@@ -63,6 +63,11 @@ describe("request shapes", () => {
     test("standing ids are one to three ascending unique guardians", () => {
         expect(parseRankingIds("1,20,300")).toEqual(["1", "20", "300"]);
         for (const v of ["", "0", "01", "2,1", "1,1", "1,2,3,4", "10001", "1,,2", "1 ,2"]) expect(parseRankingIds(v)).toBeNull();
+    });
+    test("pages of fifty start at #11, and an offset must sit on that grid inside the largest board", () => {
+        expect([0, 9, 10, 59, 60, 73, 110, 9999].map(rankingPageOffset)).toEqual([10, 10, 10, 10, 60, 60, 110, 9960]);
+        expect(["10", "60", "110", "9960"].map(parseRankingPageOffset)).toEqual([10, 60, 110, 9960]);
+        for (const v of ["", "0", "9", "11", "50", "010", "10010", "100000", "60 ", "-10", "1e2"]) expect(parseRankingPageOffset(v)).toBeNull();
     });
 });
 

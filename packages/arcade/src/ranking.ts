@@ -15,6 +15,8 @@ export const STREAK_FREEZE_EVERY = 7;
 export const STREAK_FREEZE_MAX = 2;
 export const STREAK_MILESTONES = [3, 7, 14, 30, 100] as const;
 export const BOARD_ROWS = 10;
+/** Past the top BOARD_ROWS, the whole board reads in pages this long, starting at #11, #61, #111, … */
+export const RANKING_PAGE_ROWS = 50;
 /** How many places either side of a guardian its standing lists. */
 export const NEARBY_SPAN = 2;
 export const RANKED_GAMES = ["stamp", "race", "shop"] as const satisfies readonly GameId[];
@@ -38,6 +40,12 @@ export type RankingBoard = {
     /** When the window closes (epoch ms); null once it has. */
     closesAt: number | null; entrants: number; moves: boolean; rows: (RankingRow & Pick<RankingMove, "prev">)[];
 };
+/**
+ * One page of a whole board: its rows from the 0-based place `offset` (offset 10 starts at #11), with movement against the same
+ * earlier board the top rows use. `focus` is the guardian an `around` lookup found on the page; null for a page asked by offset,
+ * or when none of the named guardians places below the top rows.
+ */
+export type RankingPage = Omit<RankingBoard, "closesAt"> & {offset: number; focus: string | null};
 export type RankingStanding = RankingMove & {rank: number; score: number; entrants: number; leader: number; above: RankingRow | null; nearby: RankingRow[]};
 export type GuardianStreak = {current: number; best: number; freezes: number; playedToday: boolean};
 export type GuardianStanding = {
@@ -133,6 +141,16 @@ export function validRankingTokenId(value: unknown): value is string {
 /** The board/period pairs that exist. */
 export function validRankingBoard(board: string, period: string): board is RankingBoardId {
     return board === "devotion" ? period === "28d" : (RANKED_GAMES as readonly string[]).includes(board) && (GAME_PERIODS as readonly string[]).includes(period);
+}
+/** The page offset holding a 0-based place below the top rows. */
+export function rankingPageOffset(index: number): number {
+    return BOARD_ROWS + Math.floor(Math.max(0, index - BOARD_ROWS) / RANKING_PAGE_ROWS) * RANKING_PAGE_ROWS;
+}
+/** A page offset from a path: below the top rows, on the page grid, and inside the largest board there can be. */
+export function parseRankingPageOffset(value: string): number | null {
+    if (!/^[1-9]\d{1,4}$/.test(value)) return null;
+    const offset = Number(value);
+    return offset < GUARDIAN_MAX_SUPPLY && rankingPageOffset(offset) === offset ? offset : null;
 }
 /** A standings request names one to three guardians, ascending and unique, like a roster does. */
 export function parseRankingIds(value: string): string[] | null {
