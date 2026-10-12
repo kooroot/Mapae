@@ -16,8 +16,9 @@ import {GuardianMetadata} from "./GuardianMetadata.sol";
 
 /// @notice GIWA testnet guardians. NFT custody never grants authority over any owner's funds.
 /// @dev Birth traits come only from the Pyth reveal and no function of this implementation rewrites them. The
-/// owner can upgrade the implementation, so every piece of state (birth, growth, ownership) ultimately trusts
-/// the owner key. A separate server signer attests verified paid game results; the owner can rotate it.
+/// owner can upgrade the implementation, so every piece of state (birth, growth, honors, ownership) ultimately
+/// trusts the owner key. A separate server signer attests verified paid game results and sealed weekly ranking
+/// honors; the owner can rotate it.
 /// Deployed behind an ERC-1967 UUPS proxy; the proxy address is the collection address everywhere
 /// (EIP-712 verifyingContract, birth seed, Pyth requester). The Pyth contract and provider are
 /// implementation immutables: changing either requires deploying a new implementation and upgrading.
@@ -40,11 +41,15 @@ contract MapaeGuardians is
     uint32 public constant MIN_RULESET = 3;
     uint32 public constant MAX_SCORE = 1_000_000_000;
     uint32 public constant CALLBACK_GAS_LIMIT = 500_000;
-    /// @dev Bounds a `claimResults` batch's gas (about 1.4M at the cap) well under the block gas limit.
+    /// @dev Bounds a `claim`'s gas well under the block gas limit; counts results and honors together.
     uint256 public constant MAX_CLAIM_BATCH = 32;
+    /// @dev Late settlements may still land in a closed ranking week for this long; after it the week is sealed.
+    uint256 public constant HONOR_GRACE = 1 days;
     bytes32 public constant RESULT_TYPEHASH = keccak256(
         "Result(bytes32 resultId,uint256 tokenId,address actor,uint64 ownershipEpoch,bytes32 paymentTx,bytes32 traitsHash,bytes32 inputsHash,uint32 ruleset,uint32 seed,uint8 game,uint32 score,bool victory)"
     );
+    bytes32 public constant HONOR_TYPEHASH =
+        keccak256("Honor(uint256 tokenId,uint16 week,uint16 longestStreak,uint144 titles)");
 
     string private constant NAME = "Mapae Guardians";
     string private constant DOMAIN_VERSION = "1";
@@ -70,6 +75,16 @@ contract MapaeGuardians is
         uint8 game;
         uint32 score;
         bool victory;
+    }
+
+    /// @dev A guardian's cumulative ranking honors as of the sealed KST ranking week `week`, counted from week 0
+    /// (Monday 1970-01-05). `titles` holds nine 16-bit lanes, lane game * 3 + tier, tier 0 champion (#1),
+    /// 1 podium (#2-3), 2 top 10 (#4-10). Every honor carries the full totals, so the newest one covers all older.
+    struct Honor {
+        uint256 tokenId;
+        uint16 week;
+        uint16 longestStreak;
+        uint144 titles;
     }
 
     /// @dev One slot per account, written together on mint and by `_update` on every ownership change.
@@ -118,6 +133,10 @@ contract MapaeGuardians is
         /// @dev Lazy Fisher-Yates pool over token IDs, sixteen 16-bit lanes per word.
         /// A zero lane holds its default ID `slot + 1`.
         mapping(uint256 => uint256) idPool;
+        /// @dev One slot per token, 16-bit lanes: [0] week of the latest honor applied (0 = none), [1] longest
+        /// attendance streak in days, [2 + game * 3 + tier] weekly titles won. Lanes 11..15 stay zero.
+        /// Lanes 1..10 only grow: each applied honor keeps the lane-wise maximum.
+        mapping(uint256 => uint256) honors;
     }
 
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
@@ -132,7 +151,8 @@ contract MapaeGuardians is
     error WrongFee(uint256 required, uint256 supplied, uint256 maximum);
     error InvalidEntropyRequest();
     error InvalidResult();
-    error InvalidResultSignature();
+    error InvalidHonor();
+    error InvalidSignature();
     error AlreadyClaimed();
     error InvalidBatch();
 
@@ -142,6 +162,7 @@ contract MapaeGuardians is
     );
     event BirthRevealed(uint256 indexed tokenId, uint64 indexed sequence, bytes32 seed);
     event ResultClaimed(bytes32 indexed resultId, uint256 indexed tokenId, bytes32 indexed paymentTx, address actor);
+    event HonorRecorded(uint256 indexed tokenId, uint16 week);
     event ResultSignerChanged(address indexed previousSigner, address indexed newSigner);
     event MintPauseChanged(bool paused);
     event MetadataUpdate(uint256 tokenId);
@@ -342,13 +363,31 @@ contract MapaeGuardians is
 
     function progress(uint256 tokenId) external view returns (GuardianMetadata.Progress memory) {
         _requireOwned(tokenId);
-        return _progress(_guardians().growth[tokenId]);
+        return _progress(_guardians(), tokenId);
     }
 
-    function _progress(Growth storage g) private view returns (GuardianMetadata.Progress memory p) {
+    function _progress(GuardiansStorage storage $, uint256 tokenId)
+        private
+        view
+        returns (GuardianMetadata.Progress memory p)
+    {
+        Growth storage g = $.growth[tokenId];
         uint256 counters = g.counters;
         uint256 scores = g.bestScores;
+        uint256 honors = $.honors[tokenId];
+        // Honor lanes are 16 bits wide; truncation to the lane is the point of each uint16 cast.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        p.honorWeek = uint16(honors);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        p.longestStreak = uint16(honors >> 16);
         for (uint256 game; game < 3; ++game) {
+            uint256 titles = honors >> (32 + game * 48);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            p.champion[game] = uint16(titles);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            p.podium[game] = uint16(titles >> 16);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            p.top10[game] = uint16(titles >> 32);
             // Lanes are 40 and 32 bits wide, so both casts are lossless.
             // forge-lint: disable-next-line(unsafe-typecast)
             p.gamePlays[game] = uint64((counters >> (game * 40)) & 0xffffffffff);
@@ -381,35 +420,43 @@ contract MapaeGuardians is
         return _hashTypedDataV4(keccak256(abi.encode(RESULT_TYPEHASH, result)));
     }
 
-    /// @notice Grows a revealed guardian from a signer-attested paid result. The contract only enforces that the
-    /// result's ownershipEpoch is not in the future; `actor`, the epoch at departure, `ruleset` validity above
-    /// MIN_RULESET, `seed` and `inputsHash` are attestations owned by the signer. Anyone may relay a signature.
-    /// Each paymentTx grows at most one result.
-    function claimResult(Result calldata result, bytes calldata signature) external nonReentrant {
-        if (!_claim(_guardians(), result, signature)) revert AlreadyClaimed();
+    function honorDigest(Honor calldata honor) public view returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(HONOR_TYPEHASH, honor)));
     }
 
-    /// @notice Claims up to MAX_CLAIM_BATCH results in one transaction, each under exactly the checks of
-    /// `claimResult`. Any invalid entry (bad signature, field, token or pending birth) reverts the whole batch;
-    /// an entry whose paymentTx is already claimed, earlier in the batch or elsewhere, is skipped, but only after
-    /// its own signature and fields have been verified. Reverts AlreadyClaimed when nothing was applied.
-    function claimResults(Result[] calldata results, bytes[] calldata signatures)
-        external
-        nonReentrant
-        returns (uint256 applied)
-    {
-        uint256 count = results.length;
-        if (count == 0 || count > MAX_CLAIM_BATCH || signatures.length != count) revert InvalidBatch();
+    /// @notice Records up to MAX_CLAIM_BATCH signer-attested entries in one transaction: paid results, which grow a
+    /// revealed guardian, then ranking honors. Anyone may relay the signatures, and claims ignore the mint pause.
+    /// Any invalid entry (bad signature, field, token, pending birth or unsealed week) reverts the whole claim. A
+    /// result whose paymentTx is already claimed, earlier in the call or elsewhere, and an honor whose week is not
+    /// newer than the token's latest are skipped, but only after their own checks pass. Reverts AlreadyClaimed when
+    /// nothing was applied.
+    function claim(
+        Result[] calldata results,
+        bytes[] calldata resultSignatures,
+        Honor[] calldata honors,
+        bytes[] calldata honorSignatures
+    ) external nonReentrant returns (uint256 applied) {
+        uint256 count = results.length + honors.length;
+        if (
+            count == 0 || count > MAX_CLAIM_BATCH || resultSignatures.length != results.length
+                || honorSignatures.length != honors.length
+        ) revert InvalidBatch();
         GuardiansStorage storage $ = _guardians();
-        for (uint256 i; i < count; ++i) {
-            if (_claim($, results[i], signatures[i])) ++applied;
+        for (uint256 i; i < results.length; ++i) {
+            if (_result($, results[i], resultSignatures[i])) ++applied;
+        }
+        for (uint256 i; i < honors.length; ++i) {
+            if (_honor($, honors[i], honorSignatures[i])) ++applied;
         }
         if (applied == 0) revert AlreadyClaimed();
     }
 
     /// @dev Verifies one result completely, then applies it unless its paymentTx is already claimed. Returns
     /// whether it was applied; verification failures always revert, so a skip never hides an invalid result.
-    function _claim(GuardiansStorage storage $, Result calldata result, bytes calldata signature)
+    /// The contract only enforces that the result's ownershipEpoch is not in the future; `actor`, the epoch at
+    /// departure, `ruleset` validity above MIN_RULESET, `seed` and `inputsHash` are attestations owned by the signer.
+    /// Each paymentTx grows at most one result.
+    function _result(GuardiansStorage storage $, Result calldata result, bytes calldata signature)
         private
         returns (bool)
     {
@@ -422,8 +469,7 @@ contract MapaeGuardians is
                 || result.ownershipEpoch > token.ownershipEpoch || result.game > 2 || result.ruleset < MIN_RULESET
                 || result.score > MAX_SCORE || result.traitsHash != keccak256(abi.encode(token.seed))
         ) revert InvalidResult();
-        (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(resultDigest(result), signature);
-        if (error != ECDSA.RecoverError.NoError || recovered != $.resultSigner) revert InvalidResultSignature();
+        _checkSigner($, resultDigest(result), signature);
         if ($.claimedPayments[result.paymentTx]) return false;
         // Historical valid results survive transfer. The signer attests the actor/epoch at departure.
         $.claimedPayments[result.paymentTx] = true;
@@ -440,6 +486,40 @@ contract MapaeGuardians is
         emit ResultClaimed(result.resultId, result.tokenId, result.paymentTx, result.actor);
         emit MetadataUpdate(result.tokenId);
         return true;
+    }
+
+    /// @dev Verifies one honor, then keeps the lane-wise maximum of it and the stored honors unless its week is not
+    /// newer than the stored one. The contract refuses a week before it is sealed (its Monday-to-Sunday KST window
+    /// plus HONOR_GRACE), so no signer bug can attest an open week; lane values are the signer's attestation, and the
+    /// maximum rule means a wrong honor can raise them but never lower them. Honors belong to the token and survive
+    /// transfer, so they carry no ownership epoch.
+    function _honor(GuardiansStorage storage $, Honor calldata honor, bytes calldata signature) private returns (bool) {
+        _requireOwned(honor.tokenId);
+        if (!$.tokens[honor.tokenId].revealed) revert PendingDraw();
+        uint256 week = honor.week;
+        // Week w runs from Monday (4 + 7w) days after the epoch, 00:00 KST (UTC+9), for seven days. The seal is a
+        // day-scale bound, so validator timestamp drift cannot matter.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (week == 0 || block.timestamp < (week * 7 + 11) * 1 days - 9 hours + HONOR_GRACE) revert InvalidHonor();
+        _checkSigner($, honorDigest(honor), signature);
+        uint256 stored = $.honors[honor.tokenId];
+        if (week <= (stored & 0xffff)) return false;
+        uint256 incoming = (uint256(honor.longestStreak) << 16) | (uint256(honor.titles) << 32);
+        uint256 next = week;
+        for (uint256 shift = 16; shift < 176; shift += 16) {
+            uint256 a = (stored >> shift) & 0xffff;
+            uint256 b = (incoming >> shift) & 0xffff;
+            next |= (a > b ? a : b) << shift;
+        }
+        $.honors[honor.tokenId] = next;
+        emit HonorRecorded(honor.tokenId, honor.week);
+        emit MetadataUpdate(honor.tokenId);
+        return true;
+    }
+
+    function _checkSigner(GuardiansStorage storage $, bytes32 digest, bytes calldata signature) private view {
+        (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(digest, signature);
+        if (error != ECDSA.RecoverError.NoError || recovered != $.resultSigner) revert InvalidSignature();
     }
 
     function setMintPaused(bool paused) external onlyOwner {
@@ -542,8 +622,7 @@ contract MapaeGuardians is
         _requireOwned(tokenId);
         GuardiansStorage storage $ = _guardians();
         Token storage token = $.tokens[tokenId];
-        return
-            GuardianMetadata.tokenURI(tokenId, $.imageBaseURI, token.revealed, token.seed, _progress($.growth[tokenId]));
+        return GuardianMetadata.tokenURI(tokenId, $.imageBaseURI, token.revealed, token.seed, _progress($, tokenId));
     }
 
     /// @dev Same digest as EIP712Upgradeable, with the constant name and version hashes precomputed. The

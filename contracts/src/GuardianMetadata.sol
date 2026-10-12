@@ -18,6 +18,11 @@ library GuardianMetadata {
         uint64[3] gamePlays;
         uint64[3] gameVictories;
         uint32[3] bestScores;
+        uint16 honorWeek; // ranking week of the latest honor applied, 0 = none
+        uint16 longestStreak; // days
+        uint16[3] champion; // weekly titles by game: #1
+        uint16[3] podium; // #2-3
+        uint16[3] top10; // #4-10
     }
 
     function tokenURI(uint256 tokenId, string memory imageBase, bool revealed, bytes32 seed, Progress memory p)
@@ -93,7 +98,33 @@ library GuardianMetadata {
                 ",",
                 _number(string.concat(names[i], " best score"), p.bestScores[i])
             );
+            attributes = string.concat(
+                attributes,
+                ",",
+                _number(string.concat(names[i], " champion titles"), p.champion[i]),
+                ",",
+                _number(string.concat(names[i], " podium titles"), p.podium[i]),
+                ",",
+                _number(string.concat(names[i], " top 10 titles"), p.top10[i])
+            );
         }
+        attributes = string.concat(
+            attributes,
+            ",",
+            _number("Longest streak", p.longestStreak),
+            ",",
+            _number("Streak milestone", _milestone(p.longestStreak))
+        );
+    }
+
+    /// @dev Highest attendance milestone the streak has reached, 0 if none; mirrors STREAK_MILESTONES in
+    /// packages/arcade/src/ranking.ts.
+    function _milestone(uint256 streak) private pure returns (uint256) {
+        if (streak >= 100) return 100;
+        if (streak >= 30) return 30;
+        if (streak >= 14) return 14;
+        if (streak >= 7) return 7;
+        return streak >= 3 ? 3 : 0;
     }
 
     function _text(string memory name, string memory value) private pure returns (string memory) {

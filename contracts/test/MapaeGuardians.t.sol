@@ -155,6 +155,9 @@ contract MapaeGuardiansTest is Test {
     uint256 internal constant SIGNER_KEY = 0x123456;
     uint256 internal constant FEE = 15_000_000_000_001;
     string internal constant IMAGE_BASE = "https://mapae.io/api/arcade/guardians/";
+    /// @dev Ranking week 2961 runs 2026-10-05 to 10-11 KST and seals at 2026-10-13 00:00 KST (HONOR_GRACE after).
+    uint16 internal constant WEEK = 2961;
+    uint256 internal constant SEALED = 1_791_817_200;
 
     function setUp() public {
         vm.chainId(91342);
@@ -222,7 +225,47 @@ contract MapaeGuardiansTest is Test {
     }
 
     function _claim(MapaeGuardians.Result memory r) internal {
-        nft.claimResult(r, _sign(r, SIGNER_KEY));
+        _claimWith(r, _sign(r, SIGNER_KEY));
+    }
+
+    /// @dev A one-result claim; makes no other external call, so it can follow vm.expectRevert or vm.prank.
+    function _claimWith(MapaeGuardians.Result memory r, bytes memory signature) internal returns (uint256) {
+        MapaeGuardians.Result[] memory results = new MapaeGuardians.Result[](1);
+        bytes[] memory signatures = new bytes[](1);
+        (results[0], signatures[0]) = (r, signature);
+        return _claimAll(results, signatures);
+    }
+
+    function _claimAll(MapaeGuardians.Result[] memory results, bytes[] memory signatures) internal returns (uint256) {
+        return nft.claim(results, signatures, new MapaeGuardians.Honor[](0), new bytes[](0));
+    }
+
+    /// @dev A one-honor claim with no results; makes no other external call.
+    function _claimHonor(MapaeGuardians.Honor memory h, bytes memory signature) internal returns (uint256) {
+        MapaeGuardians.Honor[] memory honors = new MapaeGuardians.Honor[](1);
+        bytes[] memory signatures = new bytes[](1);
+        (honors[0], signatures[0]) = (h, signature);
+        return nft.claim(new MapaeGuardians.Result[](0), new bytes[](0), honors, signatures);
+    }
+
+    function _honor(uint256 id, uint16 week, uint16 streak, uint144 titles)
+        internal
+        pure
+        returns (MapaeGuardians.Honor memory)
+    {
+        return MapaeGuardians.Honor({tokenId: id, week: week, longestStreak: streak, titles: titles});
+    }
+
+    function _signHonor(MapaeGuardians.Honor memory h, uint256 key) internal view returns (bytes memory) {
+        (uint8 v, bytes32 a, bytes32 b) = vm.sign(key, nft.honorDigest(h));
+        return abi.encodePacked(a, b, v);
+    }
+
+    /// @dev Packs weekly title counts, lane game * 3 + tier (tier 0 champion, 1 podium, 2 top 10).
+    function _titles(uint16[9] memory lanes) internal pure returns (uint144 packed) {
+        for (uint256 i; i < 9; ++i) {
+            packed |= uint144(lanes[i]) << (16 * i);
+        }
     }
 
     function _json(uint256 id) internal view returns (string memory) {
@@ -492,12 +535,12 @@ contract MapaeGuardiansTest is Test {
         assertTrue(nft.claimedPayments(first.paymentTx));
         bytes memory duplicateSignature = _sign(first, SIGNER_KEY);
         vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
-        nft.claimResult(first, duplicateSignature);
+        _claimWith(first, duplicateSignature);
         MapaeGuardians.Result memory duplicatePayment = _result(_ready(BOB), 5, 1, 60, true);
         duplicatePayment.paymentTx = first.paymentTx;
         duplicateSignature = _sign(duplicatePayment, SIGNER_KEY);
         vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
-        nft.claimResult(duplicatePayment, duplicateSignature);
+        _claimWith(duplicatePayment, duplicateSignature);
         assertEq(nft.progress(duplicatePayment.tokenId).plays, 0);
     }
 
@@ -507,7 +550,7 @@ contract MapaeGuardiansTest is Test {
         MapaeGuardians.Result memory r = _result(id, 1, 2, 20, true);
         bytes memory sig = _sign(r, SIGNER_KEY);
         vm.record();
-        nft.claimResult(r, sig);
+        _claimWith(r, sig);
         (, bytes32[] memory writes) = vm.accesses(address(nft));
         assertEq(_distinct(writes), 3);
         GuardianMetadata.Progress memory p = nft.progress(id);
@@ -556,12 +599,12 @@ contract MapaeGuardiansTest is Test {
         bytes memory sig = _sign(r, SIGNER_KEY);
         vm.prank(ALICE);
         nft.transferFrom(ALICE, BOB, id);
-        nft.claimResult(r, sig);
+        _claimWith(r, sig);
         vm.prank(BOB);
         nft.transferFrom(BOB, ALICE, id);
         assertEq(nft.ownershipEpoch(id), 3);
         vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
-        nft.claimResult(r, sig);
+        _claimWith(r, sig);
         r = _result(id, 2, 2, 30, true);
         r.ownershipEpoch = 1;
         _claim(r);
@@ -573,12 +616,12 @@ contract MapaeGuardiansTest is Test {
         MapaeGuardians.Result memory r = _result(id, 1, 0, 20, true);
         bytes memory oldSig = _sign(r, SIGNER_KEY);
         nft.setResultSigner(vm.addr(888));
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResult(r, oldSig);
-        nft.claimResult(r, _sign(r, 888));
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimWith(r, oldSig);
+        _claimWith(r, _sign(r, 888));
         nft.setResultSigner(vm.addr(SIGNER_KEY));
         vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
-        nft.claimResult(r, oldSig);
+        _claimWith(r, oldSig);
     }
 
     function test_tamperingEverySignedFieldCannotEarnGrowth() public {
@@ -593,7 +636,7 @@ contract MapaeGuardiansTest is Test {
             changed[field * 32 + 31] = bytes1(uint8(changed[field * 32 + 31]) ^ 1);
             MapaeGuardians.Result memory tampered = abi.decode(changed, (MapaeGuardians.Result));
             vm.expectRevert();
-            nft.claimResult(tampered, sig);
+            _claimWith(tampered, sig);
             assertEq(nft.progress(id).plays, 0);
             assertFalse(nft.claimedPayments(r.paymentTx));
         }
@@ -619,7 +662,7 @@ contract MapaeGuardiansTest is Test {
             if (field == 9) r.traitsHash = bytes32(0);
             bytes memory sig = _sign(r, SIGNER_KEY);
             vm.expectRevert(MapaeGuardians.InvalidResult.selector);
-            nft.claimResult(r, sig);
+            _claimWith(r, sig);
             assertEq(nft.progress(id).plays, 0);
         }
     }
@@ -629,8 +672,8 @@ contract MapaeGuardiansTest is Test {
         MapaeGuardians.Result memory r = _result(id, 1, 0, 20, true);
         bytes memory sig = _sign(r, SIGNER_KEY);
         vm.chainId(1);
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResult(r, sig);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimWith(r, sig);
         vm.chainId(91342);
         address other = address(0x5555);
         _cloneProxyAt(other);
@@ -693,12 +736,21 @@ contract MapaeGuardiansTest is Test {
         assertEq(vm.parseJsonUint(after_, ".attributes[16].value"), 3);
         assertEq(vm.parseJsonUint(after_, ".attributes[17].value"), 3);
         assertEq(vm.parseJsonUint(after_, ".attributes[18].value"), 26);
-        assertEq(vm.parseJsonUint(after_, ".attributes[19].value"), 2);
-        assertEq(vm.parseJsonUint(after_, ".attributes[20].value"), 2);
-        assertEq(vm.parseJsonUint(after_, ".attributes[21].value"), 24);
         assertEq(vm.parseJsonUint(after_, ".attributes[22].value"), 2);
         assertEq(vm.parseJsonUint(after_, ".attributes[23].value"), 2);
-        assertEq(vm.parseJsonUint(after_, ".attributes[24].value"), 25);
+        assertEq(vm.parseJsonUint(after_, ".attributes[24].value"), 24);
+        assertEq(vm.parseJsonUint(after_, ".attributes[28].value"), 2);
+        assertEq(vm.parseJsonUint(after_, ".attributes[29].value"), 2);
+        assertEq(vm.parseJsonUint(after_, ".attributes[30].value"), 25);
+        // Honor attributes are present at zero until an honor is recorded.
+        for (uint256 game; game < 3; ++game) {
+            for (uint256 tier; tier < 3; ++tier) {
+                assertEq(vm.parseJsonUint(after_, _attribute(19 + game * 6 + tier)), 0);
+            }
+        }
+        assertEq(vm.parseJsonUint(after_, ".attributes[34].value"), 0);
+        assertEq(vm.parseJsonUint(after_, ".attributes[35].value"), 0);
+        assertFalse(vm.keyExistsJson(after_, ".attributes[36]"));
         assertTrue(nft.supportsInterface(0x49064906));
         assertTrue(nft.supportsInterface(0x01ffc9a7));
         assertTrue(nft.supportsInterface(0x80ac58cd));
@@ -707,6 +759,10 @@ contract MapaeGuardiansTest is Test {
         assertFalse(nft.supportsInterface(0xffffffff));
         vm.expectRevert();
         nft.tokenURI(999);
+    }
+
+    function _attribute(uint256 index) internal pure returns (string memory) {
+        return string.concat(".attributes[", vm.toString(index), "].value");
     }
 
     function testFuzz_aptitudesBalancedAndBounded(bytes32 seed) public pure {
@@ -893,7 +949,7 @@ contract MapaeGuardiansTest is Test {
         assertEq(nft.progress(revealed).bestScores[1], 77);
         assertTrue(nft.claimedPayments(bytes32(uint256(1001))));
         assertEq(keccak256(bytes(nft.tokenURI(revealed))), keccak256(uri));
-        nft.claimResult(unclaimed, unclaimedSignature);
+        _claimWith(unclaimed, unclaimedSignature);
         assertEq(nft.progress(revealed).plays, 2);
 
         // Pyth still calls the proxy; the new implementation's immutables accept it.
@@ -974,6 +1030,15 @@ contract MapaeGuardiansTest is Test {
         assertEq(uint256(vm.load(address(nft), bytes32(uint256(growth) + 1))), 77 << 32);
         // 6: claimedPayments
         assertEq(uint256(vm.load(address(nft), keccak256(abi.encode(bytes32(uint256(1001)), base + 6)))), 1);
+
+        // 8: honors => week | longestStreak << 16 | titles lane L (game * 3 + tier) << (32 + 16L)
+        vm.warp(SEALED);
+        MapaeGuardians.Honor memory h = _honor(id, WEEK, 9, _titles([uint16(1), 0, 2, 0, 3, 0, 4, 0, 65_535]));
+        _claimHonor(h, _signHonor(h, SIGNER_KEY));
+        assertEq(
+            uint256(vm.load(address(nft), keccak256(abi.encode(id, base + 8)))),
+            uint256(WEEK) | (9 << 16) | (1 << 32) | (2 << 64) | (3 << 96) | (4 << 128) | (uint256(65_535) << 160)
+        );
     }
 
     function test_twoStepOwnershipTransferControlsUpgrades() public {
@@ -1036,14 +1101,14 @@ contract MapaeGuardiansTest is Test {
         uint256 id = _ready(ALICE);
         MapaeGuardians.Result memory r = _result(id, 1, 0, 20, true);
         bytes memory signature = _sign(r, 999);
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResult(r, signature);
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResult(r, hex"01");
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimWith(r, signature);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimWith(r, hex"01");
         (uint256 pending,) = _mint(BOB);
         r.tokenId = pending;
         vm.expectRevert(MapaeGuardians.PendingDraw.selector);
-        nft.claimResult(r, signature);
+        _claimWith(r, signature);
         assertFalse(nft.claimedPayments(r.paymentTx));
         assertEq(nft.progress(pending).plays, 0);
     }
@@ -1279,12 +1344,12 @@ contract MapaeGuardiansTest is Test {
         (uint8 v, bytes32 rr, bytes32 s) = vm.sign(SIGNER_KEY, nft.resultDigest(r));
         uint256 n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
         bytes memory highS = abi.encodePacked(rr, bytes32(n - uint256(s)), v == 27 ? uint8(28) : uint8(27));
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResult(r, highS);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimWith(r, highS);
         bytes32 vs = bytes32(uint256(s) | (uint256(v - 27) << 255));
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResult(r, abi.encodePacked(rr, vs));
-        nft.claimResult(r, abi.encodePacked(rr, s, v));
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimWith(r, abi.encodePacked(rr, vs));
+        _claimWith(r, abi.encodePacked(rr, s, v));
         assertEq(nft.progress(id).plays, 1);
     }
 
@@ -1302,7 +1367,7 @@ contract MapaeGuardiansTest is Test {
         r.actor = address(0xDEAD);
         bytes memory sig = _sign(r, SIGNER_KEY);
         vm.prank(address(0xCAFE));
-        nft.claimResult(r, sig);
+        _claimWith(r, sig);
         assertEq(nft.progress(id).plays, 1);
     }
 
@@ -1348,7 +1413,7 @@ contract MapaeGuardiansTest is Test {
         }
     }
 
-    function test_claimResultsAppliesEachResultLikeSingleClaims() public {
+    function test_claimAppliesEachResultLikeSingleClaims() public {
         uint256 id = _ready(ALICE);
         uint256 other = _ready(BOB);
         MapaeGuardians.Result[] memory r = new MapaeGuardians.Result[](4);
@@ -1357,7 +1422,7 @@ contract MapaeGuardiansTest is Test {
         r[2] = _result(id, 3, 1, 75, true);
         r[3] = _result(other, 4, 2, 60, false);
         (, bytes[] memory sigs) = _batch(r);
-        // Permissionless like claimResult: any relayer may submit, and claims ignore the mint pause.
+        // Permissionless: any relayer may submit, and claims ignore the mint pause.
         nft.setMintPaused(true);
         for (uint256 i; i < r.length; ++i) {
             vm.expectEmit(address(nft));
@@ -1366,7 +1431,7 @@ contract MapaeGuardiansTest is Test {
             emit MapaeGuardians.MetadataUpdate(r[i].tokenId);
         }
         vm.prank(address(0xCAFE));
-        assertEq(nft.claimResults(r, sigs), 4);
+        assertEq(_claimAll(r, sigs), 4);
         GuardianMetadata.Progress memory p = nft.progress(id);
         assertEq(p.plays, 3);
         assertEq(p.victories, 2);
@@ -1382,7 +1447,7 @@ contract MapaeGuardiansTest is Test {
     }
 
     /// A paymentTx claimed elsewhere or earlier in the same batch is skipped rather than failing the batch.
-    function test_claimResultsSkipsAlreadyClaimedAndInBatchDuplicates() public {
+    function test_claimSkipsAlreadyClaimedAndInBatchDuplicates() public {
         uint256 id = _ready(ALICE);
         MapaeGuardians.Result memory claimed = _result(id, 1, 0, 50, true);
         _claim(claimed);
@@ -1393,7 +1458,7 @@ contract MapaeGuardiansTest is Test {
         (r[0], r[1], r[2], r[3]) = (claimed, fresh, fresh, samePayment);
         (, bytes[] memory sigs) = _batch(r);
         vm.recordLogs();
-        assertEq(nft.claimResults(r, sigs), 1);
+        assertEq(_claimAll(r, sigs), 1);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertEq(logs.length, 2);
         assertEq(logs[0].topics[0], MapaeGuardians.ResultClaimed.selector);
@@ -1403,11 +1468,11 @@ contract MapaeGuardiansTest is Test {
         assertEq(p.bestScores[2], 0);
         // Nothing left to apply: the batch reverts like a repeated single claim.
         vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
-        nft.claimResults(r, sigs);
+        _claimAll(r, sigs);
     }
 
     /// Skipping never hides an invalid entry: every entry is fully verified, and one failure reverts them all.
-    function test_claimResultsRevertsWholeBatchOnAnyInvalidEntry() public {
+    function test_claimRevertsWholeBatchOnAnyInvalidEntry() public {
         uint256 id = _ready(ALICE);
         MapaeGuardians.Result memory claimed = _result(id, 1, 0, 50, true);
         _claim(claimed);
@@ -1416,11 +1481,11 @@ contract MapaeGuardiansTest is Test {
 
         bytes memory good = sigs[1];
         sigs[1] = _sign(r[1], 999);
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResults(r, sigs);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimAll(r, sigs);
         sigs[1] = hex"01";
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResults(r, sigs);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimAll(r, sigs);
         sigs[1] = good;
 
         // An already-claimed entry with a forged signature is rejected, not skipped.
@@ -1428,37 +1493,37 @@ contract MapaeGuardiansTest is Test {
         (withClaimed[0], withClaimed[1]) = (r[0], claimed);
         bytes[] memory forged = new bytes[](2);
         (forged[0], forged[1]) = (sigs[0], _sign(claimed, 999));
-        vm.expectRevert(MapaeGuardians.InvalidResultSignature.selector);
-        nft.claimResults(withClaimed, forged);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimAll(withClaimed, forged);
 
         // A signed result from a future ownership epoch is invalid in a batch as in a single claim.
         uint64 epoch = r[2].ownershipEpoch;
         r[2].ownershipEpoch = epoch + 1;
         sigs[2] = _sign(r[2], SIGNER_KEY);
         vm.expectRevert(MapaeGuardians.InvalidResult.selector);
-        nft.claimResults(r, sigs);
+        _claimAll(r, sigs);
         r[2].ownershipEpoch = epoch;
         sigs[2] = _sign(r[2], SIGNER_KEY);
 
         (uint256 pending,) = _mint(BOB);
         r[2].tokenId = pending;
         vm.expectRevert(MapaeGuardians.PendingDraw.selector);
-        nft.claimResults(r, sigs);
+        _claimAll(r, sigs);
         r[2].tokenId = 9_999_999;
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 9_999_999));
-        nft.claimResults(r, sigs);
+        _claimAll(r, sigs);
         r[2].tokenId = id;
 
         assertEq(nft.progress(id).plays, 1);
         for (uint256 i; i < r.length; ++i) {
             assertFalse(nft.claimedPayments(r[i].paymentTx));
         }
-        assertEq(nft.claimResults(r, sigs), 3);
+        assertEq(_claimAll(r, sigs), 3);
         assertEq(nft.progress(id).plays, 4);
     }
 
     /// Historical results stay valid after a transfer, and a batch may carry the previous owner's results.
-    function test_claimResultsAcceptsHistoricalEpochsAfterTransfer() public {
+    function test_claimAcceptsHistoricalEpochsAfterTransfer() public {
         uint256 id = _ready(ALICE);
         MapaeGuardians.Result[] memory r = _results(id, 1, 2);
         (, bytes[] memory sigs) = _batch(r);
@@ -1466,30 +1531,46 @@ contract MapaeGuardiansTest is Test {
         nft.transferFrom(ALICE, BOB, id);
         assertEq(nft.ownershipEpoch(id), 2);
         vm.prank(BOB);
-        assertEq(nft.claimResults(r, sigs), 2);
+        assertEq(_claimAll(r, sigs), 2);
         assertEq(nft.progress(id).plays, 2);
     }
 
-    function test_claimResultsBoundsBatchSize() public {
+    /// The cap counts results and honors together, and each signature list must match its entries.
+    function test_claimBoundsCombinedBatch() public {
         uint256 id = _ready(ALICE);
+        vm.warp(SEALED);
         uint256 cap = nft.MAX_CLAIM_BATCH();
         assertEq(cap, 32);
+        MapaeGuardians.Honor[] memory honors = new MapaeGuardians.Honor[](1);
+        honors[0] = _honor(id, WEEK, 3, 1);
+        bytes[] memory honorSigs = new bytes[](1);
+        honorSigs[0] = _signHonor(honors[0], SIGNER_KEY);
         MapaeGuardians.Result[] memory empty;
         vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
-        nft.claimResults(empty, new bytes[](0));
+        nft.claim(empty, new bytes[](0), new MapaeGuardians.Honor[](0), new bytes[](0));
         (MapaeGuardians.Result[] memory over, bytes[] memory overSigs) = _batch(_results(id, 1, cap + 1));
         vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
-        nft.claimResults(over, overSigs);
-        bytes[] memory short = new bytes[](cap);
-        vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
-        nft.claimResults(over, short);
+        _claimAll(over, overSigs);
         (MapaeGuardians.Result[] memory full, bytes[] memory fullSigs) = _batch(_results(id, 1, cap));
+        vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
+        nft.claim(full, fullSigs, honors, honorSigs);
+        vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
+        nft.claim(full, new bytes[](cap - 1), new MapaeGuardians.Honor[](0), new bytes[](0));
+        vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
+        nft.claim(empty, new bytes[](0), honors, new bytes[](0));
+        vm.expectRevert(MapaeGuardians.InvalidBatch.selector);
+        nft.claim(empty, new bytes[](0), new MapaeGuardians.Honor[](0), honorSigs);
+
+        (MapaeGuardians.Result[] memory most, bytes[] memory mostSigs) = _batch(_results(id, 1, cap - 1));
         uint256 before = gasleft();
-        assertEq(nft.claimResults(full, fullSigs), cap);
+        assertEq(nft.claim(most, mostSigs, honors, honorSigs), cap);
         assertLt(before - gasleft(), 2_000_000);
         GuardianMetadata.Progress memory p = nft.progress(id);
-        assertEq(p.plays, cap);
-        assertEq(p.experience, 10 * cap + 5 * (cap / 2));
+        assertEq(p.plays, cap - 1);
+        assertEq(p.experience, 10 * (cap - 1) + 5 * (cap / 2));
+        assertEq(p.honorWeek, WEEK);
+        assertEq(p.longestStreak, 3);
+        assertEq(p.champion[0], 1);
     }
 
     /// Calldata gas under EIP-2028 (16 per nonzero byte, 4 per zero byte), for whole-transaction comparisons.
@@ -1499,11 +1580,26 @@ contract MapaeGuardiansTest is Test {
         }
     }
 
-    /// Records whole-transaction gas (21,000 base + calldata + cold execution) of N single claims against one
-    /// batch of the same N results, starting from identical state.
-    function test_gasClaimResultsVersusSingleClaims() public {
+    function _one(MapaeGuardians.Result memory r, bytes memory signature)
+        internal
+        pure
+        returns (MapaeGuardians.Result[] memory results, bytes[] memory signatures)
+    {
+        results = new MapaeGuardians.Result[](1);
+        signatures = new bytes[](1);
+        (results[0], signatures[0]) = (r, signature);
+    }
+
+    /// Records whole-transaction gas (21,000 base + calldata + cold execution) of N one-result claims against one
+    /// claim of the same N results, starting from identical state, and of a full claim that also carries an honor.
+    function test_gasBatchedClaimVersusSingleClaims() public {
         uint256 id = _ready(ALICE);
-        uint256[3] memory sizes = [uint256(1), 8, 32];
+        vm.warp(SEALED);
+        MapaeGuardians.Honor[] memory honors = new MapaeGuardians.Honor[](1);
+        honors[0] = _honor(id, WEEK, 7, _titles([uint16(1), 1, 1, 1, 1, 1, 1, 1, 1]));
+        bytes[] memory honorSigs = new bytes[](1);
+        honorSigs[0] = _signHonor(honors[0], SIGNER_KEY);
+        uint256[3] memory sizes = [uint256(1), 8, 31];
         for (uint256 k; k < sizes.length; ++k) {
             uint256 n = sizes[k];
             (MapaeGuardians.Result[] memory r, bytes[] memory sigs) = _batch(_results(id, 1000 * (k + 1), n));
@@ -1511,36 +1607,47 @@ contract MapaeGuardiansTest is Test {
             uint256 singles;
             for (uint256 i; i < n; ++i) {
                 vm.cool(address(nft));
-                bytes memory data = abi.encodeCall(MapaeGuardians.claimResult, (r[i], sigs[i]));
-                uint256 start = gasleft();
-                (bool ok,) = address(nft).call(data);
-                uint256 used = start - gasleft();
-                singles += used + 21_000 + _calldataGas(data);
-                assertTrue(ok);
+                (MapaeGuardians.Result[] memory one, bytes[] memory oneSig) = _one(r[i], sigs[i]);
+                bytes memory data =
+                    abi.encodeCall(MapaeGuardians.claim, (one, oneSig, new MapaeGuardians.Honor[](0), new bytes[](0)));
+                singles += _txGas(data);
             }
             vm.revertToState(snapshot);
-            vm.cool(address(nft));
-            bytes memory batchData = abi.encodeCall(MapaeGuardians.claimResults, (r, sigs));
-            uint256 begin = gasleft();
-            (bool success,) = address(nft).call(batchData);
-            uint256 batch = begin - gasleft();
-            batch += 21_000 + _calldataGas(batchData);
-            assertTrue(success);
+            uint256 batch =
+                _txGas(abi.encodeCall(MapaeGuardians.claim, (r, sigs, new MapaeGuardians.Honor[](0), new bytes[](0))));
             assertEq(nft.progress(id).plays, n);
+            vm.revertToState(snapshot);
+            uint256 mixed = _txGas(abi.encodeCall(MapaeGuardians.claim, (r, sigs, honors, honorSigs)));
+            assertEq(nft.progress(id).honorWeek, WEEK);
             emit log_named_uint(string.concat("claims ", vm.toString(n), ": singles total gas"), singles);
             emit log_named_uint(string.concat("claims ", vm.toString(n), ": batch total gas"), batch);
+            emit log_named_uint(string.concat("claims ", vm.toString(n), " + honor: total gas"), mixed);
             if (n > 1) assertLt(batch, singles);
             vm.revertToState(snapshot);
         }
     }
 
-    /// Upgrading the live proxy to an implementation with claimResults keeps every byte of state, and results
-    /// signed before the upgrade can be batched afterwards, skipping those already claimed singly.
-    function test_upgradeToBatchClaimImplementationPreservesState() public {
+    /// Whole-transaction gas of one successful call to the collection from cold storage.
+    function _txGas(bytes memory data) internal returns (uint256) {
+        vm.cool(address(nft));
+        uint256 start = gasleft();
+        (bool ok,) = address(nft).call(data);
+        uint256 used = start - gasleft();
+        assertTrue(ok);
+        return used + 21_000 + _calldataGas(data);
+    }
+
+    /// Upgrading the live proxy to the honors implementation keeps every byte of state: the appended honors slot
+    /// starts at zero, and results signed before the upgrade claim afterwards alongside a first honor, skipping
+    /// those already claimed.
+    function test_upgradeToHonorsImplementationPreservesState() public {
+        uint256 base = uint256(
+            keccak256(abi.encode(uint256(keccak256("mapae.storage.MapaeGuardians")) - 1)) & ~bytes32(uint256(0xff))
+        );
         uint256 id = _ready(ALICE);
         MapaeGuardians.Result[] memory r = _results(id, 1, 3);
         (, bytes[] memory sigs) = _batch(r);
-        nft.claimResult(r[0], sigs[0]);
+        _claimWith(r[0], sigs[0]);
         vm.prank(ALICE);
         nft.transferFrom(ALICE, BOB, id);
         string memory uri = nft.tokenURI(id);
@@ -1560,8 +1667,311 @@ contract MapaeGuardiansTest is Test {
         assertEq(nft.traitsHash(id), traits);
         assertEq(keccak256(bytes(nft.tokenURI(id))), keccak256(bytes(uri)));
         assertTrue(nft.claimedPayments(r[0].paymentTx));
+        assertEq(vm.load(address(nft), keccak256(abi.encode(id, base + 8))), bytes32(0));
+        assertEq(nft.progress(id).honorWeek, 0);
 
-        assertEq(nft.claimResults(r, sigs), 2);
+        vm.warp(SEALED);
+        MapaeGuardians.Honor[] memory honors = new MapaeGuardians.Honor[](1);
+        honors[0] = _honor(id, WEEK, 4, 1);
+        bytes[] memory honorSigs = new bytes[](1);
+        honorSigs[0] = _signHonor(honors[0], SIGNER_KEY);
+        assertEq(nft.claim(r, sigs, honors, honorSigs), 3);
         assertEq(nft.progress(id).plays, 3);
+        assertEq(nft.progress(id).champion[0], 1);
+    }
+
+    function test_claimRecordsHonorAndRendersAttributes() public {
+        uint256 id = _ready(ALICE);
+        vm.warp(SEALED + 20 weeks);
+        MapaeGuardians.Honor memory h = _honor(id, WEEK, 2, _titles([uint16(1), 2, 3, 4, 5, 6, 7, 8, 9]));
+        vm.expectEmit(address(nft));
+        emit MapaeGuardians.HonorRecorded(id, WEEK);
+        vm.expectEmit(address(nft));
+        emit MapaeGuardians.MetadataUpdate(id);
+        assertEq(_claimHonor(h, _signHonor(h, SIGNER_KEY)), 1);
+        GuardianMetadata.Progress memory p = nft.progress(id);
+        assertEq(p.honorWeek, WEEK);
+        assertEq(p.longestStreak, 2);
+        for (uint256 game; game < 3; ++game) {
+            assertEq(p.champion[game], 3 * game + 1);
+            assertEq(p.podium[game], 3 * game + 2);
+            assertEq(p.top10[game], 3 * game + 3);
+        }
+        // Honors leave growth alone.
+        assertEq(p.plays, 0);
+        assertEq(p.experience, 0);
+        string memory json = _json(id);
+        string[3] memory names = ["Stamp", "Race", "Shop"];
+        for (uint256 game; game < 3; ++game) {
+            uint256 at = 19 + game * 6;
+            string memory trait = string.concat(".attributes[", vm.toString(at), "].trait_type");
+            assertEq(vm.parseJsonString(json, trait), string.concat(names[game], " champion titles"));
+            trait = string.concat(".attributes[", vm.toString(at + 1), "].trait_type");
+            assertEq(vm.parseJsonString(json, trait), string.concat(names[game], " podium titles"));
+            trait = string.concat(".attributes[", vm.toString(at + 2), "].trait_type");
+            assertEq(vm.parseJsonString(json, trait), string.concat(names[game], " top 10 titles"));
+            for (uint256 tier; tier < 3; ++tier) {
+                assertEq(vm.parseJsonUint(json, _attribute(at + tier)), 3 * game + tier + 1);
+            }
+        }
+        assertEq(vm.parseJsonString(json, ".attributes[34].trait_type"), "Longest streak");
+        assertEq(vm.parseJsonUint(json, ".attributes[34].value"), 2);
+        assertEq(vm.parseJsonString(json, ".attributes[35].trait_type"), "Streak milestone");
+        assertEq(vm.parseJsonUint(json, ".attributes[35].value"), 0);
+        assertFalse(vm.keyExistsJson(json, ".attributes[36]"));
+
+        uint16[8] memory streaks = [uint16(3), 6, 7, 13, 14, 29, 99, 100];
+        uint256[8] memory milestones = [uint256(3), 3, 7, 7, 14, 14, 30, 100];
+        for (uint256 i; i < streaks.length; ++i) {
+            // forge-lint: disable-next-line(unsafe-typecast)
+            h = _honor(id, uint16(WEEK + 1 + i), streaks[i], 0);
+            _claimHonor(h, _signHonor(h, SIGNER_KEY));
+            assertEq(vm.parseJsonUint(_json(id), ".attributes[35].value"), milestones[i]);
+        }
+        assertEq(vm.parseJsonUint(_json(id), ".attributes[34].value"), 100);
+        // Lane maxima: the later honors carried zero titles, so the first honor's titles stay.
+        assertEq(nft.progress(id).top10[2], 9);
+    }
+
+    /// The watermark is the replay guard: a replay, another honor of the same week and an older week are skipped
+    /// after their checks pass, alone they revert AlreadyClaimed, and next to a fresh result they do not.
+    function test_honorStaleSameWeekSkippedAndAloneReverts() public {
+        uint256 id = _ready(ALICE);
+        vm.warp(SEALED + 1 weeks);
+        MapaeGuardians.Honor memory h = _honor(id, WEEK, 5, _titles([uint16(1), 0, 0, 0, 0, 0, 0, 0, 0]));
+        bytes memory sig = _signHonor(h, SIGNER_KEY);
+        _claimHonor(h, sig);
+        vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
+        _claimHonor(h, sig);
+        MapaeGuardians.Honor memory same = _honor(id, WEEK, 9, _titles([uint16(4), 4, 4, 0, 0, 0, 0, 0, 0]));
+        bytes memory sameSig = _signHonor(same, SIGNER_KEY);
+        vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
+        _claimHonor(same, sameSig);
+        MapaeGuardians.Honor memory older = _honor(id, WEEK - 1, 9, 9);
+        bytes memory olderSig = _signHonor(older, SIGNER_KEY);
+        vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
+        _claimHonor(older, olderSig);
+
+        (MapaeGuardians.Result[] memory r, bytes[] memory rSigs) = _batch(_results(id, 1, 1));
+        MapaeGuardians.Honor[] memory honors = new MapaeGuardians.Honor[](1);
+        honors[0] = same;
+        bytes[] memory honorSigs = new bytes[](1);
+        honorSigs[0] = sameSig;
+        vm.recordLogs();
+        assertEq(nft.claim(r, rSigs, honors, honorSigs), 1);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 2);
+        assertEq(logs[0].topics[0], MapaeGuardians.ResultClaimed.selector);
+        GuardianMetadata.Progress memory p = nft.progress(id);
+        assertEq(p.plays, 1);
+        assertEq(p.longestStreak, 5);
+        assertEq(p.champion[0], 1);
+        assertEq(p.podium[0], 0);
+    }
+
+    /// Honors are cumulative, so a newer one covers an older one, and every lane keeps its maximum.
+    function test_honorOutOfOrderKeepsLaneMaxima() public {
+        uint256 id = _ready(ALICE);
+        vm.warp(SEALED + 10 weeks);
+        MapaeGuardians.Honor memory w5 = _honor(id, WEEK + 5, 12, _titles([uint16(2), 1, 0, 0, 3, 0, 0, 0, 1]));
+        MapaeGuardians.Honor memory w3 = _honor(id, WEEK + 3, 20, _titles([uint16(9), 9, 9, 9, 9, 9, 9, 9, 9]));
+        bytes memory w3Sig = _signHonor(w3, SIGNER_KEY);
+        _claimHonor(w5, _signHonor(w5, SIGNER_KEY));
+        vm.expectRevert(MapaeGuardians.AlreadyClaimed.selector);
+        _claimHonor(w3, w3Sig);
+        assertEq(nft.progress(id).longestStreak, 12);
+        assertEq(nft.progress(id).champion[0], 2);
+
+        // A newer honor with one lower lane (a signer bug) cannot lower it; higher lanes still grow.
+        MapaeGuardians.Honor memory w6 = _honor(id, WEEK + 6, 11, _titles([uint16(1), 1, 0, 0, 4, 0, 0, 0, 2]));
+        _claimHonor(w6, _signHonor(w6, SIGNER_KEY));
+        GuardianMetadata.Progress memory p = nft.progress(id);
+        assertEq(p.honorWeek, WEEK + 6);
+        assertEq(p.longestStreak, 12);
+        assertEq(p.champion[0], 2);
+        assertEq(p.podium[0], 1);
+        assertEq(p.podium[1], 4);
+        assertEq(p.top10[2], 2);
+    }
+
+    /// Week 0 is never valid, and a week is accepted from its seal (Tuesday 00:00 KST after it closes) on.
+    function test_honorRejectsZeroOpenAndGraceWeeks() public {
+        uint256 id = _ready(ALICE);
+        MapaeGuardians.Honor memory zero = _honor(id, 0, 1, 1);
+        bytes memory zeroSig = _signHonor(zero, SIGNER_KEY);
+        MapaeGuardians.Honor memory h = _honor(id, WEEK, 1, 1);
+        bytes memory sig = _signHonor(h, SIGNER_KEY);
+        MapaeGuardians.Honor memory open = _honor(id, WEEK + 1, 2, 2);
+        bytes memory openSig = _signHonor(open, SIGNER_KEY);
+        vm.warp(SEALED + 50 weeks);
+        vm.expectRevert(MapaeGuardians.InvalidHonor.selector);
+        _claimHonor(zero, zeroSig);
+        // The week closes at Monday 2026-10-12 00:00 KST; the following grace day still refuses it.
+        vm.warp(SEALED - 1 days);
+        vm.expectRevert(MapaeGuardians.InvalidHonor.selector);
+        _claimHonor(h, sig);
+        vm.warp(SEALED - 1);
+        vm.expectRevert(MapaeGuardians.InvalidHonor.selector);
+        _claimHonor(h, sig);
+        vm.warp(SEALED);
+        vm.expectRevert(MapaeGuardians.InvalidHonor.selector);
+        _claimHonor(open, openSig);
+        assertEq(_claimHonor(h, sig), 1);
+        assertEq(nft.progress(id).honorWeek, WEEK);
+        assertEq(nft.HONOR_GRACE(), 1 days);
+    }
+
+    /// Every signed field is bound, a wrong or malformed signer is refused, and malleable twins are rejected.
+    function test_honorForgedTamperedWrongSignerRejected() public {
+        uint256 id = _ready(ALICE);
+        uint256 other = _ready(BOB);
+        vm.warp(SEALED + 1 weeks);
+        MapaeGuardians.Honor memory h = _honor(id, WEEK, 7, _titles([uint16(1), 0, 2, 0, 3, 0, 4, 0, 5]));
+        bytes memory sig = _signHonor(h, SIGNER_KEY);
+        bytes memory wrong = _signHonor(h, 999);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimHonor(h, wrong);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimHonor(h, hex"01");
+        for (uint256 field; field < 4; ++field) {
+            MapaeGuardians.Honor memory t = _honor(h.tokenId, h.week, h.longestStreak, h.titles);
+            if (field == 0) t.tokenId = other;
+            if (field == 1) t.week = WEEK - 1;
+            if (field == 2) t.longestStreak = 8;
+            if (field == 3) t.titles = h.titles ^ 1;
+            vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+            _claimHonor(t, sig);
+        }
+        (uint8 v, bytes32 rr, bytes32 s) = vm.sign(SIGNER_KEY, nft.honorDigest(h));
+        uint256 n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimHonor(h, abi.encodePacked(rr, bytes32(n - uint256(s)), v == 27 ? uint8(28) : uint8(27)));
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimHonor(h, abi.encodePacked(rr, bytes32(uint256(s) | (uint256(v - 27) << 255))));
+        // A result signature never verifies as an honor: the typehashes differ.
+        assertNotEq(nft.HONOR_TYPEHASH(), nft.RESULT_TYPEHASH());
+        assertEq(nft.progress(id).honorWeek, 0);
+        assertEq(nft.progress(other).honorWeek, 0);
+        _claimHonor(h, sig);
+        assertEq(nft.progress(id).top10[2], 5);
+        // Signer rotation retires outstanding honor signatures, as it does for results.
+        MapaeGuardians.Honor memory next = _honor(id, WEEK + 1, 8, h.titles);
+        bytes memory nextSig = _signHonor(next, SIGNER_KEY);
+        nft.setResultSigner(vm.addr(888));
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        _claimHonor(next, nextSig);
+    }
+
+    function test_honorRequiresRevealedExistingToken() public {
+        vm.warp(SEALED);
+        (uint256 pending,) = _mint(ALICE);
+        MapaeGuardians.Honor memory h = _honor(pending, WEEK, 3, 1);
+        bytes memory sig = _signHonor(h, SIGNER_KEY);
+        vm.expectRevert(MapaeGuardians.PendingDraw.selector);
+        _claimHonor(h, sig);
+        h.tokenId = 9_999_999;
+        sig = _signHonor(h, SIGNER_KEY);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 9_999_999));
+        _claimHonor(h, sig);
+    }
+
+    /// Anyone may relay an honor, and honors belong to the token: they survive transfer and need no epoch.
+    function test_honorIsPermissionlessAndSurvivesTransfer() public {
+        uint256 id = _ready(ALICE);
+        vm.warp(SEALED + 1 weeks);
+        MapaeGuardians.Honor memory h = _honor(id, WEEK, 4, _titles([uint16(0), 0, 0, 1, 0, 0, 0, 0, 0]));
+        bytes memory sig = _signHonor(h, SIGNER_KEY);
+        nft.setMintPaused(true);
+        vm.prank(address(0xCAFE));
+        assertEq(_claimHonor(h, sig), 1);
+        vm.prank(ALICE);
+        nft.transferFrom(ALICE, BOB, id);
+        GuardianMetadata.Progress memory p = nft.progress(id);
+        assertEq(p.honorWeek, WEEK);
+        assertEq(p.longestStreak, 4);
+        assertEq(p.champion[1], 1);
+        // An honor signed before the transfer still applies after it.
+        MapaeGuardians.Honor memory later = _honor(id, WEEK + 1, 5, h.titles);
+        bytes memory laterSig = _signHonor(later, SIGNER_KEY);
+        vm.prank(BOB);
+        nft.transferFrom(BOB, ALICE, id);
+        assertEq(_claimHonor(later, laterSig), 1);
+        assertEq(nft.progress(id).longestStreak, 5);
+    }
+
+    /// Results apply first, then honors; applied counts both, and skipped entries of either kind are not counted.
+    function test_claimMixedBatchAppliesResultsThenHonors() public {
+        uint256 id = _ready(ALICE);
+        uint256 other = _ready(BOB);
+        vm.warp(SEALED + 2 weeks);
+        MapaeGuardians.Result memory claimed = _result(id, 1, 0, 50, true);
+        _claim(claimed);
+        MapaeGuardians.Honor memory recorded = _honor(other, WEEK + 1, 3, 1);
+        _claimHonor(recorded, _signHonor(recorded, SIGNER_KEY));
+
+        MapaeGuardians.Result[] memory r = new MapaeGuardians.Result[](3);
+        (r[0], r[1], r[2]) = (claimed, _result(id, 2, 1, 75, true), _result(other, 3, 2, 60, false));
+        (, bytes[] memory rSigs) = _batch(r);
+        MapaeGuardians.Honor[] memory honors = new MapaeGuardians.Honor[](3);
+        honors[0] = _honor(id, WEEK + 1, 6, _titles([uint16(0), 0, 0, 0, 1, 0, 0, 0, 0]));
+        honors[1] = recorded;
+        honors[2] = _honor(other, WEEK, 9, 9);
+        bytes[] memory honorSigs = new bytes[](3);
+        for (uint256 i; i < 3; ++i) {
+            honorSigs[i] = _signHonor(honors[i], SIGNER_KEY);
+        }
+        vm.recordLogs();
+        assertEq(nft.claim(r, rSigs, honors, honorSigs), 3);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 6);
+        assertEq(logs[0].topics[0], MapaeGuardians.ResultClaimed.selector);
+        assertEq(logs[2].topics[0], MapaeGuardians.ResultClaimed.selector);
+        assertEq(logs[4].topics[0], MapaeGuardians.HonorRecorded.selector);
+        assertEq(logs[4].topics[1], bytes32(id));
+        GuardianMetadata.Progress memory p = nft.progress(id);
+        assertEq(p.plays, 2);
+        assertEq(p.longestStreak, 6);
+        assertEq(p.podium[1], 1);
+        p = nft.progress(other);
+        assertEq(p.plays, 1);
+        assertEq(p.honorWeek, WEEK + 1);
+        assertEq(p.longestStreak, 3);
+        // An invalid honor reverts the results with it.
+        honors[0].week = WEEK + 2;
+        honorSigs[0] = _signHonor(honors[0], SIGNER_KEY);
+        honors[2].longestStreak = 10;
+        r[2] = _result(other, 4, 0, 1, true);
+        rSigs[2] = _sign(r[2], SIGNER_KEY);
+        vm.expectRevert(MapaeGuardians.InvalidSignature.selector);
+        nft.claim(r, rSigs, honors, honorSigs);
+        assertEq(nft.progress(other).plays, 1);
+    }
+
+    /// A first honor writes exactly one storage slot: the token's honors word.
+    function test_firstHonorWritesOneSlot() public {
+        uint256 id = _ready(ALICE);
+        vm.warp(SEALED);
+        MapaeGuardians.Honor memory h = _honor(id, WEEK, 30, _titles([uint16(1), 1, 1, 1, 1, 1, 1, 1, 1]));
+        bytes memory sig = _signHonor(h, SIGNER_KEY);
+        vm.record();
+        _claimHonor(h, sig);
+        (, bytes32[] memory writes) = vm.accesses(address(nft));
+        assertEq(_distinct(writes), 1);
+        assertEq(nft.progress(id).longestStreak, 30);
+    }
+
+    function test_fixedTypeScriptHonorVector() public {
+        address collection = 0x1111111111111111111111111111111111111111;
+        _cloneProxyAt(collection);
+        assertEq(
+            nft.HONOR_TYPEHASH(), keccak256("Honor(uint256 tokenId,uint16 week,uint16 longestStreak,uint144 titles)")
+        );
+        uint144 titles = _titles([uint16(1), 0, 2, 0, 3, 0, 4, 0, 5]);
+        assertEq(uint256(titles), 0x500000004000000030000000200000001);
+        MapaeGuardians.Honor memory h = _honor(1, 2961, 7, titles);
+        assertEq(
+            MapaeGuardians(collection).honorDigest(h),
+            0x001abf80aceaef48a8dde8319e0edab78ddb0a02f99e6dd7b3933d374e6d568c
+        );
     }
 }
