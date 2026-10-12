@@ -5,17 +5,17 @@ import type {GameId} from '@mapae/arcade';
 import {guardianName} from '@mapae/arcade/guardians';
 import {
     BOARD_ROWS, DEVOTION_DAYS, GAME_PERIODS, RANKED_ATTEMPTS, RANKED_GAMES, STREAK_FREEZE_EVERY, STREAK_FREEZE_MAX, WEEKLY_COUNTED_DAYS,
-    type GamePeriod, type RankingBoard, type RankingBoardId, type RankingRow,
+    type GamePeriod, type RankingBoard, type RankingBoardId, type RankingRow, type RankingStandings,
 } from '@mapae/arcade/ranking';
 import type {Locale} from '../../lib/i18n';
 import {GAME_NAMES} from '../game-names';
 import {GuardianAvatar} from '../GuardianAvatar';
-import {guardianPortrait} from '../nft/model';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {useRankingBoard} from '../ranking/client';
 import {boardScore, countdown, placeLabel, points, resetClock, streakCopy, titlesOnNft} from '../ranking/format';
+import {BoardRow, MineTag, Move, Portrait} from '../ranking/BoardRow';
+import {FullBoard} from '../ranking/FullBoard';
 import {RankMedal} from '../ranking/RankMedal';
-import {RankMove} from '../ranking/RankMove';
 import {GameThumb} from '../Characters';
 import {arcadeSectionLink} from '../sections';
 import {RankLine, TitleChips} from '../ranking/RankLine';
@@ -36,8 +36,8 @@ const KST_OFFSET_MINUTES = 9 * 60;
 export function RankingSection({desk, walletWaiting, onSendOuting}: {desk: GuardianDesk; walletWaiting: boolean; onSendOuting: (game: GameId, tokenId: string) => void}) {
     const {ko, locale} = desk;
     const [board, setBoard] = useState<RankingBoardId>('stamp'), [period, setPeriod] = useState<GamePeriod>('today');
-    const remote = useRankingBoard(board, board === 'devotion' ? '28d' : period);
-    const mine = new Set(desk.revealed.map(t => t.tokenId));
+    const boardPeriod = board === 'devotion' ? '28d' : period, remote = useRankingBoard(board, boardPeriod);
+    const mine = desk.revealed.map(t => t.tokenId);
     return <div className="nft-arcade">
         <SectionHeading section="ranking" desk={desk} />
         <div className="rank-tabs" role="group" aria-label={ko ? '순위표 고르기' : 'Choose a board'}>
@@ -54,7 +54,8 @@ export function RankingSection({desk, walletWaiting, onSendOuting}: {desk: Guard
             {board !== 'devotion' && <div className="rank-periods" role="group" aria-label={ko ? '기간 고르기' : 'Choose a period'}>
                 {GAME_PERIODS.map(id => <button key={id} type="button" aria-pressed={period === id} onClick={() => setPeriod(id)}>{PERIOD_NAMES[locale][id]}</button>)}
             </div>}
-            {remote.value ? <Board board={remote.value} mine={mine} locale={locale} />
+            {remote.value ? <><Board board={remote.value} mine={new Set(mine)} locale={locale} />
+                <FullBoard key={`${board}:${boardPeriod}`} board={remote.value} mine={mine} mineBelow={placesBelow(desk.ranking.standings, board, period)} locale={locale} /></>
                 : remote.error ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '순위표를 불러오지 못했어요. 잠시 뒤 저절로 다시 읽어 와요.' : 'The board could not load. It will try again shortly.'}</p>
                     <button type="button" className="arc-button arc-button-paper" disabled={remote.loading} onClick={remote.retry}><RefreshCw size={16} aria-hidden="true" />{ko ? '지금 다시 불러오기' : 'Retry now'}</button></div>
                 : <p role="status" className="rank-empty"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true" /> {ko ? '순위표를 불러오고 있어요…' : 'Loading the board…'}</p>}
@@ -64,6 +65,12 @@ export function RankingSection({desk, walletWaiting, onSendOuting}: {desk: Guard
     </div>;
 }
 
+/** Whether one of the owner's guardians places below the top rows; null where the standings do not say (yesterday, last week). */
+function placesBelow(standings: RankingStandings | null, board: RankingBoardId, period: GamePeriod): boolean | null {
+    if (board === 'devotion') return standings && standings.guardians.some(g => (g.devotion.rank ?? 0) > BOARD_ROWS);
+    if (!standings || period === 'yesterday' || period === 'lastweek') return null;
+    return standings.guardians.some(g => (g.games[board][period]?.rank ?? 0) > BOARD_ROWS);
+}
 const span = (board: RankingBoard) => board.from === board.to ? board.from : `${board.from} – ${board.to}`;
 
 /** Entrants, and the reset as a ticking chip that turns urgent in the last hour; a closed window reads as final. */
@@ -116,19 +123,10 @@ function Board({board, mine, locale}: {board: RankingBoard; mine: ReadonlySet<st
             </li>)}
         </ol>
         {rest.length > 0 && <ol className="rank-list" aria-label={ko ? '4위부터' : 'From fourth place'}>
-            {rest.map(row => <li key={row.tokenId} className={`rank-row${mine.has(row.tokenId) ? ' is-mine' : ''}`}>
-                <span className="rank-place"><RankMedal rank={row.rank} locale={locale} /><Move board={board} row={row} locale={locale} /></span><Portrait row={row} /><span>{guardianName(row.tokenId, locale)}{mine.has(row.tokenId) && <MineTag ko={ko} />}</span><strong>{boardScore(board.board, row.score, locale)}</strong>
-            </li>)}
+            {rest.map(row => <BoardRow key={row.tokenId} board={board} row={row} mine={mine.has(row.tokenId)} locale={locale} />)}
         </ol>}
     </>;
 }
-const Move = ({board, row, locale}: {board: RankingBoard; row: RankingBoard['rows'][number]; locale: Locale}) =>
-    <RankMove rank={row.rank} move={{moves: board.moves, prev: row.prev}} period={board.period} locale={locale} />;
-function Portrait({row}: {row: RankingRow}) {
-    const {appearance, color} = guardianPortrait(row.seed);
-    return <GuardianAvatar appearance={appearance} color={color} portrait />;
-}
-const MineTag = ({ko}: {ko: boolean}) => <span className="rank-mine-tag">{ko ? '내 전령' : 'Mine'}</span>;
 
 function MyGuardians({desk, onSendOuting}: {desk: GuardianDesk; onSendOuting: (game: GameId, tokenId: string) => void}) {
     const {ko, locale, revealed, crew, ranking, busy} = desk, standings = ranking.standings;

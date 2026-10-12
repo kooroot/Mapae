@@ -80,6 +80,18 @@
 .rank-row>strong{font:700 16px var(--display)}
 .rank-row.is-mine{box-shadow:inset 3px 0 0 var(--jade)}
 .rank-mine-tag{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:var(--r-pill);background:var(--jade);color:#fff;font-size:11px;font-weight:700;vertical-align:1px}
+/* The whole board: a toggle and a jump under the top rows, then pages of fifty that step back and forth. A jump lands with the podium's jade ring. */
+.rank-full{margin:18px 0 0;padding-top:16px;border-top:1px dashed #e0d3bc}
+.rank-full-actions{display:flex;flex-wrap:wrap;gap:10px}
+.rank-full .arc-button{min-height:44px;padding:8px 18px;gap:8px}
+.rank-full-actions .is-jump{border-color:#9cc3b6;color:var(--jade-ink)}.rank-full-actions .is-jump:hover{background:var(--jade-wash)}
+.rank-full-page{margin:18px 0 0}
+.rank-full-page h3{margin:0;font-size:16px;font-variant-numeric:tabular-nums;scroll-margin-top:96px}
+.rank-full-page h3 small{display:inline;font-size:14px;font-weight:600;color:var(--card-muted)}
+.rank-full-page .rank-list{margin-top:10px}
+.rank-row.is-focus{outline:3px solid var(--jade);outline-offset:-3px;background:var(--jade-wash);scroll-margin:120px 0}
+.rank-full-note{display:flex;align-items:center;gap:8px;margin:10px 0 0;color:var(--card-muted);font-size:14px;line-height:1.6}
+.rank-full-pager{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 0}.rank-full-pager .is-next{margin-left:auto}
 .rank-empty{padding:28px 0 12px;text-align:center}
 .rank-empty p{margin:6px 0;color:var(--card-muted);font-size:14px;line-height:1.7}
 .rank-empty .arc-button{margin-top:14px}
