@@ -1,6 +1,11 @@
 import {describe, expect, test} from "bun:test";
-import {encodeAbiParameters, keccak256, pad, toHex} from "viem";
-import {GUARDIAN_APTITUDES, GUARDIAN_GIVEN_NAMES, GUARDIAN_MAX_SUPPLY, GUARDIAN_NAME_MODIFIERS, guardianName, guardianResultFromJson, guardianTokenId, guardianTraits, guardianTraitsHash, validGuardianAptitudes} from "./guardians";
+import {encodeAbiParameters, hashTypedData, keccak256, pad, toHex} from "viem";
+import {
+    emptyHonors, GUARDIAN_APTITUDES, GUARDIAN_GIVEN_NAMES, GUARDIAN_HONOR_TYPES, GUARDIAN_MAX_SUPPLY, GUARDIAN_NAME_MODIFIERS, guardianHonorFromJson, guardianHonorJson,
+    guardianHonorsOf, guardianName, guardianResultDomain, guardianResultFromJson, guardianTokenId, guardianTraits, guardianTraitsHash, honorAdvances, packGuardianTitles,
+    unpackGuardianTitles, validGuardianAptitudes, validGuardianHonors, type GuardianHonors,
+} from "./guardians";
+import {STREAK_MILESTONES} from "./ranking";
 
 describe("immutable guardian birth mapping", () => {
     test("all trait domains vary independently while aptitude budget stays balanced", () => {
@@ -56,5 +61,40 @@ describe("guardian display names", () => {
     });
     test("refuses IDs outside the minted range or not plain integers", () => {
         for (const bad of [0, 10_001, -1, 1.5, Number.NaN, "abc", "0", "01", "1.0", "10001", 0n, 10_001n]) expect(() => guardianName(bad, "ko")).toThrow();
+    });
+});
+
+describe("guardian honors", () => {
+    // Lanes [1,0,2,0,3,0,4,0,5]: stamp {1,0,2}, race {0,3,0}, shop {4,0,5}.
+    const honors: GuardianHonors = {week: 2961, longestStreak: 7, titles: [{champion: 1, podium: 0, top10: 2}, {champion: 0, podium: 3, top10: 0}, {champion: 4, podium: 0, top10: 5}]};
+    test("the typed-data digest matches MapaeGuardians.honorDigest (test_fixedTypeScriptHonorVector)", () => {
+        const honor = guardianHonorFromJson(guardianHonorJson("1", honors));
+        expect(honor).toEqual({tokenId: 1n, week: 2961, longestStreak: 7, titles: 0x500000004000000030000000200000001n});
+        expect(hashTypedData({domain: guardianResultDomain("0x1111111111111111111111111111111111111111"), types: GUARDIAN_HONOR_TYPES, primaryType: "Honor", message: honor}))
+            .toBe("0x001abf80aceaef48a8dde8319e0edab78ddb0a02f99e6dd7b3933d374e6d568c");
+        expect(guardianHonorsOf(honor)).toEqual(honors);
+    });
+    test("titles pack into nine 16-bit lanes, game * 3 + tier, and refuse anything wider", () => {
+        expect(packGuardianTitles(emptyHonors().titles)).toBe(0n);
+        expect(packGuardianTitles([{champion: 0, podium: 0, top10: 0}, {champion: 0, podium: 0, top10: 0}, {champion: 0, podium: 0, top10: 0xffff}])).toBe(0xffffn << 128n);
+        expect(unpackGuardianTitles(0xffffn << 128n)[2]).toEqual({champion: 0, podium: 0, top10: 0xffff});
+        for (const bad of [[], honors.titles.slice(0, 2), [{...honors.titles[0]!, champion: 0x10000}, honors.titles[1]!, honors.titles[2]!], [{...honors.titles[0]!, podium: -1}, honors.titles[1]!, honors.titles[2]!]])
+            expect(() => packGuardianTitles(bad)).toThrow();
+        expect(() => unpackGuardianTitles(1n << 144n)).toThrow();
+        for (const bad of [{week: 0}, {week: 65536}, {longestStreak: 65536}, {titles: (1n << 144n).toString()}, {titles: "01"}, {titles: "-1"}, {tokenId: "0"}])
+            expect(() => guardianHonorFromJson({...guardianHonorJson("1", honors), ...bad})).toThrow();
+        expect(validGuardianHonors(honors)).toBe(true);
+        for (const bad of [null, {...honors, week: -1}, {...honors, titles: honors.titles.slice(1)}, {...honors, titles: [{champion: 1.5, podium: 0, top10: 0}, honors.titles[1], honors.titles[2]]}])
+            expect(validGuardianHonors(bad)).toBe(false);
+    });
+    test("an honor advances only with a newer week that raises a lane", () => {
+        expect(honorAdvances(emptyHonors(), honors)).toBe(true);
+        expect(honorAdvances(honors, {...honors, week: 2962})).toBe(false);
+        expect(honorAdvances(honors, {...honors, week: 2962, longestStreak: 8})).toBe(true);
+        expect(honorAdvances(honors, {...honors, longestStreak: 8})).toBe(false);
+        expect(honorAdvances(honors, {...honors, week: 2962, titles: [honors.titles[0]!, honors.titles[1]!, {...honors.titles[2]!, podium: 1}]})).toBe(true);
+    });
+    test("GuardianMetadata's milestones are STREAK_MILESTONES", () => {
+        expect([...STREAK_MILESTONES]).toEqual([3, 7, 14, 30, 100]);
     });
 });

@@ -16,7 +16,7 @@ export const GUARDIAN_TEMPERAMENTS = ["curious", "bold", "calm"] as const;
 export const GUARDIAN_APTITUDES = [[4, 5, 6], [4, 6, 5], [5, 4, 6], [5, 6, 4], [6, 4, 5], [6, 5, 4]] as const;
 export type GuardianAptitudes = {stamp: number; race: number; shop: number};
 export const GUARDIAN_MAX_SUPPLY = 10_000;
-/** MapaeGuardians.MAX_CLAIM_BATCH: the most results one claimResults transaction may carry. */
+/** MapaeGuardians.MAX_CLAIM_BATCH: the most results and honors one claim transaction may carry together. */
 export const GUARDIAN_CLAIM_BATCH = 32;
 export const GUARDIAN_NAME_MODIFIERS: {ko: readonly string[]; en: readonly string[]} = {
     ko: ["졸린", "배고픈", "수줍은", "덤벙대는", "꼼꼼한", "콧노래 부르는", "엽전 세는", "신난", "느긋한", "부지런한", "호기심 많은", "용감한", "씩씩한", "얌전한", "장난스러운", "깜찍한", "꾀 많은", "춤추는", "노래하는", "낮잠 자는", "하품하는", "재채기하는", "딸꾹질하는", "떡 먹는", "엿 파는", "연 날리는", "팽이 돌리는", "제기 차는", "윷 던지는", "그네 타는", "별 세는", "달 보는", "구름 쫓는", "나비 쫓는", "개구리 잡는", "붓 든", "북 치는", "피리 부는", "장구 치는", "꽹과리 치는", "휘파람 부는", "꿈꾸는", "웃음 많은", "상냥한", "똑똑한", "엉뚱한", "명랑한", "의젓한", "발 빠른", "손 큰", "눈치 빠른", "코 고는", "반짝이는", "보송보송한", "말랑말랑한", "뒹구는", "깡충깡충 뛰는", "뒤뚱거리는", "살금살금 걷는", "두리번거리는", "수다스러운", "과묵한", "고집 센", "깜빡깜빡하는", "바쁜", "들뜬", "설레는", "뿌듯한", "꾸벅꾸벅 조는", "이불 덮은", "밥 짓는", "국수 삶는", "감자 굽는", "군밤 까는", "곶감 숨긴", "송편 빚는", "빨래하는", "물 긷는", "장작 패는", "짚신 삼는", "새끼 꼬는", "보따리 멘", "장터 가는", "편지 쓰는", "글 읽는", "수수께끼 내는", "숨바꼭질하는", "술래잡기하는", "도깨비 만난", "호랑이 놀린", "까치 반기는", "무지개 찾는", "눈사람 만드는", "꽃 따는", "도토리 모으는", "꼬리 흔드는", "늠름한", "다정한", "꿋꿋한", "쌩쌩한"],
@@ -80,4 +80,58 @@ export const guardianResultDomain = (collection: Address) => ({name: "Mapae Guar
 export function guardianResultFromJson(value: GuardianResultJson): GuardianResult {
     if (!guardianTokenId(value.tokenId) || !guardianTokenId(value.ownershipEpoch) || BigInt(value.ownershipEpoch) >= 1n << 64n) throw new Error("Invalid guardian result identity");
     return {...value, tokenId: BigInt(value.tokenId), ownershipEpoch: BigInt(value.ownershipEpoch)};
+}
+
+/** Weekly title counts of one game: 장원 (#1), 급제 (#2–3), 입격 (#4–10). */
+export type GuardianTitleCounts = {champion: number; podium: number; top10: number};
+export const GUARDIAN_TITLE_TIERS = ["champion", "podium", "top10"] as const satisfies readonly (keyof GuardianTitleCounts)[];
+/**
+ * A guardian's cumulative ranking honors as of the sealed ranking week `week` (0 = none): the longest attendance streak in days
+ * and the weekly titles per game, indexed stamp, race, shop. Every lane is a uint16 on-chain.
+ */
+export type GuardianHonors = {week: number; longestStreak: number; titles: GuardianTitleCounts[]};
+export const emptyHonors = (): GuardianHonors => ({week: 0, longestStreak: 0, titles: Array.from({length: 3}, () => ({champion: 0, podium: 0, top10: 0}))});
+export const GUARDIAN_HONOR_TYPES = {Honor: [
+    {name: "tokenId", type: "uint256"}, {name: "week", type: "uint16"}, {name: "longestStreak", type: "uint16"}, {name: "titles", type: "uint144"},
+]} as const;
+export type GuardianHonor = {tokenId: bigint; week: number; longestStreak: number; titles: bigint};
+export type GuardianHonorJson = Omit<GuardianHonor, "tokenId" | "titles"> & {tokenId: string; titles: string};
+const lane = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 0xffff;
+/** MapaeGuardians.Honor.titles: lane game * 3 + tier, 16 bits each. */
+export function packGuardianTitles(titles: readonly GuardianTitleCounts[]): bigint {
+    if (titles.length !== 3) throw new Error("Invalid guardian titles");
+    let packed = 0n;
+    titles.forEach((game, g) => GUARDIAN_TITLE_TIERS.forEach((tier, t) => {
+        if (!lane(game[tier])) throw new Error("Invalid guardian titles");
+        packed |= BigInt(game[tier]) << BigInt(16 * (g * 3 + t));
+    }));
+    return packed;
+}
+export function unpackGuardianTitles(packed: bigint): GuardianTitleCounts[] {
+    if (packed < 0n || packed >= 1n << 144n) throw new Error("Invalid guardian titles");
+    const at = (l: number) => Number((packed >> BigInt(16 * l)) & 0xffffn);
+    return [0, 1, 2].map(g => ({champion: at(g * 3), podium: at(g * 3 + 1), top10: at(g * 3 + 2)}));
+}
+export function validGuardianHonors(v: unknown): v is GuardianHonors {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+    const h = v as Record<string, unknown>;
+    return lane(h.week) && lane(h.longestStreak) && Array.isArray(h.titles) && h.titles.length === 3 &&
+        h.titles.every(t => !!t && typeof t === "object" && GUARDIAN_TITLE_TIERS.every(tier => lane((t as Record<string, unknown>)[tier])));
+}
+/** Whether `next` is worth a claim over `stored`: a newer week that raises at least one lane. The contract keeps lane maxima. */
+export function honorAdvances(stored: GuardianHonors, next: GuardianHonors): boolean {
+    return next.week > stored.week && (next.longestStreak > stored.longestStreak ||
+        next.titles.some((game, g) => GUARDIAN_TITLE_TIERS.some(tier => game[tier] > stored.titles[g]![tier])));
+}
+export function guardianHonorJson(tokenId: string, honors: GuardianHonors): GuardianHonorJson {
+    return {tokenId, week: honors.week, longestStreak: honors.longestStreak, titles: packGuardianTitles(honors.titles).toString()};
+}
+export function guardianHonorFromJson(value: GuardianHonorJson): GuardianHonor {
+    if (!guardianTokenId(value.tokenId) || !lane(value.week) || value.week < 1 || !lane(value.longestStreak) ||
+        typeof value.titles !== "string" || !/^(0|[1-9][0-9]{0,43})$/.test(value.titles) || BigInt(value.titles) >= 1n << 144n) throw new Error("Invalid guardian honor");
+    return {tokenId: BigInt(value.tokenId), week: value.week, longestStreak: value.longestStreak, titles: BigInt(value.titles)};
+}
+/** The on-chain honors an honor claim would leave: the shape `progress` reads back. */
+export function guardianHonorsOf(honor: GuardianHonor): GuardianHonors {
+    return {week: honor.week, longestStreak: honor.longestStreak, titles: unpackGuardianTitles(honor.titles)};
 }

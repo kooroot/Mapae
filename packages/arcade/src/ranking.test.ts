@@ -2,8 +2,8 @@ import {describe, expect, test} from "bun:test";
 import {dailyChallenge} from "./challenge";
 import {ARCADE_RULESET_VERSION} from "./contracts";
 import {
-    addDays, fnv1a, guardianStreak, kstDay, kstWeek, nextReset, parseRankingIds, rankedSeed, titlePlace,
-    validRankedAttempt, validRankingBoard,
+    addDays, fnv1a, guardianStreak, kstDay, kstWeek, nextReset, parseRankingIds, rankedSeed, rankingWeekIndex, rankingWeekOf, sealedWeek,
+    streakMilestone, titlePlace, validRankedAttempt, validRankingBoard, weekCutoff,
 } from "./ranking";
 
 describe("KST windows", () => {
@@ -98,4 +98,31 @@ describe("guardian streak", () => {
 
 test("weekly titles: champion, podium, top ten", () => {
     expect([1, 2, 3, 4, 10, 11, 0].map(titlePlace)).toEqual(["champion", "podium", "podium", "top10", "top10", null, null]);
+});
+
+describe("sealed weeks", () => {
+    test("week indexes count Mondays from 1970-01-05 and round-trip; only a Monday names a week", () => {
+        expect(rankingWeekIndex("1970-01-05")).toBe(0);
+        expect(rankingWeekIndex("2026-10-05")).toBe(2961);
+        expect(rankingWeekIndex("2026-10-12")).toBe(2962);
+        for (const index of [0, 1, 2961, 65535]) expect(rankingWeekIndex(rankingWeekOf(index))).toBe(index);
+        for (const bad of ["2026-10-06", "2026-10-11", "1969-12-29", "2026-13-01"]) expect(() => rankingWeekIndex(bad)).toThrow();
+        for (const bad of [-1, 1.5, Number.NaN]) expect(() => rankingWeekOf(bad)).toThrow();
+    });
+    test("a week seals at the following Tuesday 00:00 KST, the contract's bound", () => {
+        expect(weekCutoff("2026-10-05")).toBe(Date.parse("2026-10-12T15:00:00Z"));
+        expect(weekCutoff("2026-10-05")).toBe(1791817200_000);
+        expect(weekCutoff("2026-10-05")).toBe(((2961 * 7 + 11) * 86400 - 9 * 3600 + 86400) * 1000);
+        expect(() => weekCutoff("2026-10-07")).toThrow();
+    });
+    test("the sealed week turns at Tuesday 00:00 KST, not at the Monday reset", () => {
+        expect(sealedWeek(Date.parse("2026-10-12T14:59:59.999Z"))).toBe("2026-09-28"); // Monday 23:59 KST
+        expect(sealedWeek(Date.parse("2026-10-12T15:00:00Z"))).toBe("2026-10-05"); // Tuesday 00:00 KST
+        expect(sealedWeek(Date.parse("2026-10-18T14:59:59Z"))).toBe("2026-10-05");
+        expect(sealedWeek(Date.parse("1970-01-19T15:00:00Z"))).toBe("1970-01-12");
+        expect(sealedWeek(Date.parse("1970-01-19T14:59:59Z"))).toBeNull();
+    });
+    test("streak milestones: the highest one reached", () => {
+        expect([0, 2, 3, 6, 7, 13, 14, 29, 30, 99, 100, 400].map(streakMilestone)).toEqual([0, 0, 3, 3, 7, 7, 14, 14, 30, 30, 100, 100]);
+    });
 });

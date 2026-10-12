@@ -50,6 +50,10 @@ export type RankingStandings = {
 const KST_OFFSET = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** Monday of ranking week 0; MapaeGuardians counts honor weeks from the same day. */
+const WEEK_ZERO = "1970-01-05";
+/** Late settlements may still land in a closed week for this long; after it the week is sealed. MapaeGuardians.HONOR_GRACE mirrors it. */
+export const HONOR_GRACE_MS = DAY_MS;
 
 export function isRankingDay(value: unknown): value is string {
     return typeof value === "string" && DAY.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
@@ -74,6 +78,25 @@ export function kstWeek(day: string): string {
 export function nextReset(at: number, period: "day" | "week"): number {
     const today = kstDay(at);
     return dayStart(period === "day" ? addDays(today, 1) : addDays(kstWeek(today), 7)) - KST_OFFSET;
+}
+/** A KST week's index from week 0 (Monday 1970-01-05): the `week` an on-chain honor carries. Only a Monday names a week. */
+export function rankingWeekIndex(week: string): number {
+    if (kstWeek(week) !== week || week < WEEK_ZERO) throw new Error("Invalid ranking week");
+    return (dayStart(week) - dayStart(WEEK_ZERO)) / DAY_MS / 7;
+}
+export function rankingWeekOf(index: number): string {
+    if (!Number.isSafeInteger(index) || index < 0) throw new Error("Invalid ranking week");
+    return addDays(WEEK_ZERO, index * 7);
+}
+/** When a week seals (epoch ms): the next Tuesday 00:00 KST. Rows settled at or after it never change the week's board. */
+export function weekCutoff(week: string): number {
+    rankingWeekIndex(week);
+    return dayStart(addDays(week, 7)) - KST_OFFSET + HONOR_GRACE_MS;
+}
+/** The latest week sealed at `at`, or null before week 1 (the contract refuses week 0). */
+export function sealedWeek(at: number): string | null {
+    const week = addDays(kstWeek(kstDay(at - HONOR_GRACE_MS)), -7);
+    return week > WEEK_ZERO ? week : null;
 }
 /** 32-bit FNV-1a: the stable scenario hash behind daily challenges and ranked seeds. */
 export function fnv1a(key: string): number {
@@ -132,6 +155,10 @@ export function guardianStreak(days: readonly string[], today: string): Guardian
         }
     }
     return {current, best, freezes, playedToday: played.has(today)};
+}
+/** The highest attendance milestone a longest streak reached, 0 if none. GuardianMetadata mirrors STREAK_MILESTONES. */
+export function streakMilestone(best: number): number {
+    return STREAK_MILESTONES.findLast(m => best >= m) ?? 0;
 }
 /** Last week's cosmetic titles: 장원 (#1), 급제 (#2–3), 입격 (#4–10). */
 export function titlePlace(place: number): "champion" | "podium" | "top10" | null {
