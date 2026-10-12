@@ -1,8 +1,8 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import type {Hex} from "viem";
 import {ARCADE_RULESET_VERSION} from "@mapae/arcade";
-import {kstWeek, type RankingBoard, type RankingStanding, type RankingStandings} from "@mapae/arcade/ranking";
-import {parseRankingBoard, parseRankingStandings, rankingApi, type RankingDependencies} from "./api";
+import {kstWeek, type RankingBoard, type RankingPage, type RankingStanding, type RankingStandings} from "@mapae/arcade/ranking";
+import {parseRankingBoard, parseRankingPage, parseRankingStandings, rankingApi, type RankingDependencies} from "./api";
 
 const receiptToken = "ranking-receipt-token".repeat(3), now = Date.parse("2026-10-14T03:00:00Z");
 const origin = "https://app.mapae.io/api/arcade/ranking";
@@ -10,6 +10,9 @@ const seedOf = (tokenId: string) => `0x${tokenId.padStart(64, "0")}` as Hex;
 const rowOf = (rank: number, tokenId = String(rank), score = 100 - rank) => ({rank, tokenId, seed: seedOf(tokenId), score});
 const board = (rows: RankingBoard["rows"] = [{...rowOf(1), prev: 2}, {...rowOf(2), prev: null}], moves = true): RankingBoard =>
     ({board: "race", period: "today", from: "2026-10-14", to: "2026-10-14", closesAt: now + 1000, entrants: rows.length, moves, rows});
+/** Page `offset` of a 137-entrant race board, token n at #n and one place lower yesterday. */
+const page = (offset = 10, focus: string | null = null): RankingPage => ({board: "race", period: "today", from: "2026-10-14", to: "2026-10-14", entrants: 137, moves: true,
+    offset, focus, rows: Array.from({length: Math.max(0, Math.min(50, 137 - offset))}, (_, i) => ({...rowOf(offset + i + 1, String(offset + i + 1), 1000 - offset - i), prev: offset + i + 2}))});
 const still = (...rows: ReturnType<typeof rowOf>[]) => rows.map(r => ({...r, prev: null}));
 const empty = {attemptsUsed: 0, today: null, week: null};
 function standings(): RankingStandings {
@@ -38,9 +41,11 @@ describe("public ranking proxy", () => {
     test("exact paths, GET only, no query, and only sorted unique ids reach the seller", async () => {
         const {calls, call} = setup();
         expect((await call("/board/race/today", {method: "POST"})).status).toBe(405);
-        for (const path of ["/board/race/today?x=1", "/board/xp/today", "/board/devotion/today", "/board/race/28d", "/guardians/2,1", "/guardians/1,1", "/guardians/1,2,3,4", "/guardians/0", "/guardians/10001"])
+        for (const path of ["/board/race/today?x=1", "/board/xp/today", "/board/devotion/today", "/board/race/28d", "/guardians/2,1", "/guardians/1,1", "/guardians/1,2,3,4", "/guardians/0", "/guardians/10001",
+            "/board/race/today/from/0", "/board/race/today/from/11", "/board/race/today/from/010", "/board/race/today/from/10010", "/board/race/today/around/2,1",
+            "/board/race/today/around/1,2,3,4", "/board/race/today/from/10?x=1", "/board/race/28d/from/10", "/board/devotion/today/around/1"])
             expect((await call(path)).status).toBe(400);
-        for (const path of ["/board/race", "/guardians", "/board/race/today/extra", "/../profile/session"]) expect((await call(path)).status).toBe(404);
+        for (const path of ["/board/race", "/guardians", "/board/race/today/extra", "/board/race/today/at/10", "/board/race/today/from", "/board/race/today/from/10/x", "/../profile/session"]) expect((await call(path)).status).toBe(404);
         expect(calls).toHaveLength(0);
         const ok = await call("/board/race/today", {headers: {Cookie: "__Host-mapae-arcade-session=" + "a".repeat(64), Origin: "https://evil.test"}});
         expect(ok.status).toBe(200); expect(ok.headers.get("Access-Control-Allow-Origin")).toBeNull();
@@ -58,6 +63,19 @@ describe("public ranking proxy", () => {
         expect(calls).toHaveLength(1); expect(limits).toHaveLength(1); expect(limits[0]).not.toContain("203.0.113.9");
         const standing = setup(() => Response.json(standings()));
         expect((await standing.call("/guardians/2")).headers.get("Cache-Control")).toBe("public, max-age=10");
+    });
+    test("pages reach the seller on their own paths, are cached by the whole path, and spend the same per-IP budget", async () => {
+        const {calls, limits, entries, call} = setup(() => Response.json(page(60, "74")));
+        const ip = {headers: {"CF-Connecting-IP": "203.0.113.9"}};
+        const around = await call("/board/race/today/around/5,74", ip);
+        expect(around.status).toBe(200); expect(around.headers.get("Cache-Control")).toBe("public, max-age=30");
+        expect(await around.json<unknown>()).toEqual(page(60, "74"));
+        expect(calls[0]!.url).toBe("https://seller.mapae.io/arcade/ranking/board/race/today/around/5,74");
+        await call("/board/race/today/around/5,74", ip);
+        expect(calls).toHaveLength(1); expect(limits).toHaveLength(1);
+        expect([...entries.keys()]).toEqual(["https://app.mapae.io/api/arcade/ranking/board/race/today/around/5,74"]);
+        // The same page asked by offset is a different question: the answer must have no focus, so this one is refused.
+        expect((await call("/board/race/today/from/60", ip)).status).toBe(503); expect(limits).toHaveLength(2);
     });
     test("past 120 misses a minute from one address, callers wait", async () => {
         const {calls, call} = setup(() => Response.json(board()), {cache: undefined});
@@ -101,6 +119,28 @@ describe("strict copies", () => {
         expect(parseRankingBoard(tied, "devotion", "28d")?.rows.map(r => r.prev)).toEqual([2, 2, null]);
         for (const rows of [still(rowOf(1, "1", 5), rowOf(2, "2", 5)), still(rowOf(1, "1", 5), rowOf(3, "2", 2)), still(rowOf(1, "1", 29))]) expect(parseRankingBoard({...devotion, rows, entrants: rows.length}, "devotion", "28d")).toBeNull();
     });
+    test("pages: the asked offset or a found focus, consecutive places from it, and a length that fits the entrants", () => {
+        expect(parseRankingPage(page(), "race", "today", {offset: 10})).toEqual(page());
+        expect(parseRankingPage(page(110), "race", "today", {offset: 110})?.rows).toHaveLength(27);
+        expect(parseRankingPage(page(160), "race", "today", {offset: 160})?.rows).toEqual([]);
+        expect(parseRankingPage(page(60, "74"), "race", "today", {around: ["5", "74"]})?.focus).toBe("74");
+        expect(parseRankingPage(page(10), "race", "today", {around: ["5", "500"]})?.focus).toBeNull();
+        const shift = (p: RankingPage, change: (r: RankingPage["rows"]) => void) => {const rows = structuredClone(p.rows); change(rows); return {...p, rows};};
+        const bad: [unknown, Parameters<typeof parseRankingPage>[3]][] = [
+            [page(60), {offset: 10}], [page(10, "11"), {offset: 10}], [{...page(), offset: 11}, {offset: 10}], [{...page(), board: "shop"}, {offset: 10}],
+            [{...page(), entrants: 50}, {offset: 10}], [{...page(110), entrants: 120}, {offset: 110}], [{...page(), rows: page().rows.slice(1)}, {offset: 10}],
+            [shift(page(), r => {r[0]!.rank = 1;}), {offset: 10}], [shift(page(), r => {r[3]!.rank = 13;}), {offset: 10}], [shift(page(), r => {r[2]!.tokenId = "11";}), {offset: 10}],
+            [shift(page(), r => {r[1]!.prev = r[0]!.prev;}), {offset: 10}], [{...page(), moves: false}, {offset: 10}], [{...page(), rows: [...page().rows, page(60).rows[0]]}, {offset: 10}],
+            [page(60, "74"), {around: ["5"]}], [page(60, "200"), {around: ["200"]}], [page(60), {around: ["74"]}], [{...page(60, "74"), offset: 50}, {around: ["74"]}],
+        ];
+        for (const [value, at] of bad) expect(parseRankingPage(value, "race", "today", at)).toBeNull();
+        // Devotion pages may open on a place shared with the rows above them.
+        const devotion = {board: "devotion", period: "28d", from: "2026-09-17", to: "2026-10-14", entrants: 13, moves: false, offset: 10, focus: null,
+            rows: still(rowOf(9, "11", 2), rowOf(9, "12", 2), rowOf(13, "13", 1))};
+        expect(parseRankingPage(devotion, "devotion", "28d", {offset: 10})?.rows.map(r => r.rank)).toEqual([9, 9, 13]);
+        for (const rows of [still(rowOf(12, "11", 2), rowOf(12, "12", 2), rowOf(13, "13", 1)), still(rowOf(9, "11", 2), rowOf(9, "12", 2), rowOf(12, "13", 1))])
+            expect(parseRankingPage({...devotion, rows}, "devotion", "28d", {offset: 10})).toBeNull();
+    });
     test("standings: the requested guardians in order, with consistent ranks, attempts, streaks and titles", () => {
         expect(parseRankingStandings(standings(), ["2"])).toEqual(standings());
         const corrupt: ((s: RankingStandings) => void)[] = [
@@ -141,5 +181,14 @@ describe("real seller contract", () => {
         expect(mine.guardians[0]!.games.race.today).toMatchObject({rank: 12, entrants: 14, moves: true, prev: 1});
         const race = await (await rankingApi(new Request(origin + "/board/race/today"), deps)).json() as RankingBoard;
         expect(race.moves).toBe(true); expect(race.rows.map(r => r.prev)).toEqual(Array(10).fill(null)); expect(mine.guardians[0]!.streak).toMatchObject({current: 2});
+        // 75 entrants: a page past the top ten, a short last page, an empty one past the end, and around lookups.
+        for (let i = 15; i <= 75; i++) add(String(i), "race", "2026-10-14", 1, 100 - i);
+        for (const path of ["/board/race/today/from/10", "/board/race/today/from/60", "/board/race/today/from/110", "/board/race/today/around/3,70", "/board/race/today/around/40",
+            "/board/devotion/28d/from/10", "/board/shop/lastweek/around/12"]) {
+            const response = await rankingApi(new Request(origin + path), deps);
+            expect(response.status).toBe(200);
+        }
+        const around = await (await rankingApi(new Request(origin + "/board/race/today/around/3,70"), deps)).json() as RankingPage;
+        expect(around).toMatchObject({entrants: 75, offset: 60, focus: "70"}); expect(around.rows).toHaveLength(15);
     });
 });

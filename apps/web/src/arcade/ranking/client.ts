@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import type {RankingBoard, RankingBoardId, RankingPeriod, RankingStandings} from "@mapae/arcade/ranking";
+import type {RankingBoard, RankingBoardId, RankingPage, RankingPeriod, RankingStandings} from "@mapae/arcade/ranking";
 
 type Remote<T> = {value: T | null; loading: boolean; error: boolean};
 const REFRESH_MS = 60_000;
@@ -45,6 +45,16 @@ function useVisibleTick(): number {
 export function useRankingBoard(board: RankingBoardId, period: RankingPeriod): Remote<RankingBoard> & {retry: () => void} {
     const [attempt, setAttempt] = useState(0), tick = useVisibleTick();
     return {...useRemote<RankingBoard>(`/board/${board}/${period}`, `${tick}:${attempt}`), retry: () => setAttempt(a => a + 1)};
+}
+
+/** Which page of a whole board to read: one at an offset, or the one holding the best placed of up to three guardians. */
+export type RankingPageAt = {offset: number} | {around: readonly string[]};
+
+/** One page of a whole board below its top rows, kept current like the board itself; nothing while `at` is null. */
+export function useRankingPage(board: RankingBoardId, period: RankingPeriod, at: RankingPageAt | null): Remote<RankingPage> & {retry: () => void} {
+    const [attempt, setAttempt] = useState(0), tick = useVisibleTick();
+    const path = !at ? null : `/board/${board}/${period}/${"offset" in at ? `from/${at.offset}` : `around/${[...at.around].sort((a, b) => Number(a) - Number(b)).join(",")}`}`;
+    return {...useRemote<RankingPage>(path, `${tick}:${attempt}`), retry: () => setAttempt(a => a + 1)};
 }
 
 /**
