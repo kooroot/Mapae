@@ -34,6 +34,7 @@ import {
     buildSponsoredBootstrapApproval,
     costOfReceipt,
     isCanonicalSignature,
+    ownerPayerAccount,
     parseBootstrapOrigins,
     readReceiptFeeField,
     validateAccountBootstrap,
@@ -488,6 +489,22 @@ describe("FixedWindowLimiter", () => {
     test("refuses a nonsensical configuration rather than running unbounded", () => {
         expect(() => new FixedWindowLimiter(0, 1_000)).toThrow("limit");
         expect(() => new FixedWindowLimiter(1, 0)).toThrow("windowMs");
+    });
+});
+
+describe("ownerPayerAccount", () => {
+    test("is the counterfactual account Studio signs for, with the initcode that deploys it", async () => {
+        const expected = await counterfactual(owner.address);
+        const derived = await ownerPayerAccount(environment, owner.address);
+        expect(derived.address).toBe(getAddress(expected.address));
+        expect(derived.factoryData).toBe(expected.factoryData);
+    });
+
+    test("does not depend on the owner's casing and differs per owner", async () => {
+        const checksummed = await ownerPayerAccount(environment, owner.address);
+        const lower = await ownerPayerAccount(environment, owner.address.toLowerCase() as Address);
+        expect(lower.address).toBe(checksummed.address);
+        expect((await ownerPayerAccount(environment, AGENT)).address).not.toBe(checksummed.address);
     });
 });
 

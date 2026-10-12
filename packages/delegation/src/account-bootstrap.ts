@@ -260,6 +260,30 @@ export class FixedWindowLimiter {
 }
 
 /**
+ * The payer smart account an owner key controls, with the initcode that deploys it.
+ *
+ * CREATE2 over `[owner, [], [], []]` at {@link OWNER_ACCOUNT_SALT}: the one derivation
+ * Studio, the arcade, the bootstrap sponsor and the faucet all share, so they can never
+ * disagree about which account belongs to a wallet. The parameters are literals, not
+ * inputs. Accepting `keyIds`/`x`/`y` would install a P256 co-signer on an account the
+ * sponsor paid for; accepting a salt would both break the link to the signature and give
+ * one owner unlimited distinct accounts to fund.
+ */
+export async function ownerPayerAccount(
+    environment: SmartAccountsEnvironment,
+    owner: Address,
+): Promise<{address: Address; factoryData: Hex}> {
+    const derived = await getCounterfactualAccountData({
+        factory: getAddress(environment.SimpleFactory),
+        implementations: environment.implementations,
+        implementation: Implementation.Hybrid,
+        deployParams: [getAddress(owner), [], [], []],
+        deploySalt: OWNER_ACCOUNT_SALT,
+    });
+    return {address: getAddress(derived.address), factoryData: derived.factoryData};
+}
+
+/**
  * Read an OP-Stack receipt fee field that viem hands us untyped.
  *
  * `giwaSepolia` is a plain `defineChain` with no `viem/op-stack` formatter, and viem's
@@ -574,25 +598,16 @@ export async function validateAccountBootstrap(
         throw new Error("root signature does not recover to any address");
     }
 
-    const derived = await getCounterfactualAccountData({
-        factory: getAddress(policy.environment.SimpleFactory),
-        implementations: policy.environment.implementations,
-        implementation: Implementation.Hybrid,
-        // Literals, not request fields. Accepting `keyIds`/`x`/`y` would install a P256
-        // co-signer on an account we paid for; accepting a salt would both break the link
-        // to the signature and give one owner unlimited distinct accounts to fund.
-        deployParams: [getAddress(owner), [], [], []],
-        deploySalt: OWNER_ACCOUNT_SALT,
-    });
+    const derived = await ownerPayerAccount(policy.environment, owner);
 
-    if (getAddress(derived.address) !== getAddress(delegation.delegator)) {
+    if (derived.address !== getAddress(delegation.delegator)) {
         throw new Error(
             "the root signer does not own the account named as delegator; refusing to sponsor",
         );
     }
 
     return {
-        account: getAddress(derived.address),
+        account: derived.address,
         owner: getAddress(owner),
         salt: OWNER_ACCOUNT_SALT,
         factoryTarget: getAddress(policy.environment.SimpleFactory),

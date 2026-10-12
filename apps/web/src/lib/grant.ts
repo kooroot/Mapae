@@ -1,14 +1,9 @@
 import {buildRootDelegationTypedData, type PermissionArtifact} from "@mapae/delegation/signing";
-import {isCanonicalSignature} from "@mapae/delegation/account-bootstrap";
-import {DELEGATION_FRAMEWORK_VERSION, OWNER_ACCOUNT_SALT} from "@mapae/delegation/config";
+import {isCanonicalSignature, ownerPayerAccount} from "@mapae/delegation/account-bootstrap";
+import {DELEGATION_FRAMEWORK_VERSION} from "@mapae/delegation/config";
 import {readGrantsFromChain} from "@mapae/delegation/delegation-status";
 import {MOCK_USDC, giwaSepolia, toTokenAmount} from "@mapae/shared";
-import {Implementation} from "@metamask/smart-accounts-kit";
-import {
-    decodeDelegations,
-    encodeDelegations,
-    getCounterfactualAccountData,
-} from "@metamask/smart-accounts-kit/utils";
+import {decodeDelegations, encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {
     getAddress,
     hashTypedData,
@@ -457,14 +452,7 @@ async function verifyUndeployedPermissionArtifact(
     } catch {
         throw new Error(m.signatureUnreadable);
     }
-    const derived = await getCounterfactualAccountData({
-        factory: getAddress(deployment.environment.SimpleFactory),
-        implementations: deployment.environment.implementations,
-        implementation: Implementation.Hybrid,
-        deployParams: [getAddress(signer), [], [], []],
-        deploySalt: OWNER_ACCOUNT_SALT,
-    });
-    if (getAddress(derived.address) !== getAddress(delegator)) {
+    if (await derivePayerAccount(signer) !== getAddress(delegator)) {
         throw new Error(m.signatureWrongOwner);
     }
 }
@@ -636,19 +624,12 @@ export function tokenLabel(): string {
 /**
  * The payer smart account a wallet owns, derived rather than remembered.
  *
- * CREATE2 from `[owner, [], [], []]` at a fixed salt, which is the same derivation the
- * bootstrap sponsor performs — so a returning user always knows which account to ask the
- * chain about, with no storage and no server.
+ * `ownerPayerAccount` — the same derivation the bootstrap sponsor and the faucet perform —
+ * so a returning user always knows which account to ask the chain about, with no storage
+ * and no server.
  */
 export async function derivePayerAccount(owner: Address): Promise<Address> {
-    const derived = await getCounterfactualAccountData({
-        factory: getAddress(deployment.environment.SimpleFactory),
-        implementations: deployment.environment.implementations,
-        implementation: Implementation.Hybrid,
-        deployParams: [getAddress(owner), [], [], []],
-        deploySalt: OWNER_ACCOUNT_SALT,
-    });
-    return getAddress(derived.address);
+    return (await ownerPayerAccount(deployment.environment, owner)).address;
 }
 
 /**
