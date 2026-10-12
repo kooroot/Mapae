@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-1813%20TS%20%2B%2078%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-1800%20TS%20%2B%2078%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -105,7 +105,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 문서](https://docs.mapae.io)에 있다.
-- 회귀 검증: **1813 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts/scheduler/arcade/faucet 1253 + MCP 3 + 웹 522 + 문서 35)
+- 회귀 검증: **1800 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts/scheduler/arcade/faucet 1236 + MCP 3 + 웹 526 + 문서 35)
   + 78 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -151,8 +151,9 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   나오지 않는다.
 - **온보딩 스폰서는 인증 없는 인터넷 요청에 응답하는, 자금이 든 키다.** 키페어는
   오프라인에서 공짜로 만들 수 있으므로 계정 단위 중복방지는 예산이 아니라 신원일
-  뿐이다. 그리핑을 실제로 막는 것은 계정당 24시간 1회의 faucet 창, 일일 가스 예산,
-  그리고 일부러 작게 유지하는 스폰서 지갑 잔액이다. 이걸 소진시키면 그날의 온보딩이 멈출 뿐 —
+  뿐이다. 그리핑을 실제로 막는 것은 일일 가스 예산과 일부러 작게 유지하는 스폰서 지갑
+  잔액이다. 테스트넷 토큰은 자기 지갑과 한도를 따로 가진 faucet.mapae.io 서비스가
+  준다(`apps/faucet`). 이걸 소진시키면 그날의 온보딩이 멈출 뿐 —
   스폰서는 위임 권한이 없으므로 payer 자금·한도·정산에는 닿지 못한다.
 - **중복방지는 프로세스 내부에서만 보장된다.** 단일 replica에서는 올바르지만
   다중 replica 전에 영속 저장소로 옮겨야 한다.
