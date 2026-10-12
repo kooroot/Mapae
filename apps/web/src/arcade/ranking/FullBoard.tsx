@@ -14,7 +14,8 @@ import {useRankingPage, type RankingPageAt} from './client';
 export function FullBoard({board, mine, mineBelow, locale}: {board: RankingBoard; mine: readonly string[]; mineBelow: boolean | null; locale: Locale}) {
     const ko = locale === 'ko', id = useId();
     const [at, setAt] = useState<RankingPageAt | null>(null);
-    const page = useRankingPage(board.board, board.period, at), value = page.value, entrants = value?.entrants ?? board.entrants;
+    // A board that shrank to its top rows (a new day) hides the list, and stops reading it.
+    const page = useRankingPage(board.board, board.period, board.entrants > BOARD_ROWS ? at : null), value = page.value, entrants = value?.entrants ?? board.entrants;
     const focus = value && at && 'around' in at ? value.focus : null;
     // Where focus goes once the asked page is shown: its heading after paging, the found row after a jump.
     const landing = useRef<'heading' | 'row' | null>(null), heading = useRef<HTMLHeadingElement>(null), found = useRef<HTMLLIElement>(null);
@@ -54,7 +55,7 @@ export function FullBoard({board, mine, mineBelow, locale}: {board: RankingBoard
                 {value ? range(value.offset) : ko ? '전체 순위' : 'Full board'}<small>{ko ? ` · 참가 ${entrants}` : ` of ${entrants}`}</small>
             </h3>
             {value && at && 'around' in at && value.focus === null && <p className="rank-full-note" role="status">
-                {ko ? `11위 아래에는 내 전령이 없어요. ${range(BOARD_ROWS)}부터 보여 드려요.` : `None of your guardians places below #${BOARD_ROWS} here, so this starts at #${BOARD_ROWS + 1}.`}
+                {ko ? `${BOARD_ROWS + 1}위부터는 내 전령이 없어요. ${range(BOARD_ROWS)}를 보여 드려요.` : `None of your guardians places below #${BOARD_ROWS} here, so this starts at #${BOARD_ROWS + 1}.`}
             </p>}
             {value ? value.rows.length > 0
                 ? <ol className="rank-list" aria-label={range(value.offset)}>
@@ -65,7 +66,7 @@ export function FullBoard({board, mine, mineBelow, locale}: {board: RankingBoard
             : page.error ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '이 쪽을 불러오지 못했어요.' : 'This page could not load.'}</p>
                 <button type="button" className="arc-button arc-button-paper" disabled={page.loading} onClick={page.retry}><RefreshCw size={16} aria-hidden="true" />{ko ? '다시 불러오기' : 'Retry'}</button></div>
             : <p role="status" className="rank-full-note"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true" /> {ko ? '순위를 불러오고 있어요…' : 'Loading places…'}</p>}
-            {value && <nav className="rank-full-pager" aria-label={ko ? '전체 순위 쪽' : 'Full board pages'}>
+            {value && (value.offset > BOARD_ROWS || value.offset + RANKING_PAGE_ROWS < entrants) && <nav className="rank-full-pager" aria-label={ko ? '전체 순위 쪽' : 'Full board pages'}>
                 {value.offset > BOARD_ROWS && <button type="button" className="arc-button arc-button-paper" onClick={() => go({offset: value.offset - RANKING_PAGE_ROWS}, 'heading')}>
                     <ChevronLeft size={18} aria-hidden="true" /><span className="sr-only">{ko ? '이전 쪽 ' : 'Previous page, '}</span>{range(value.offset - RANKING_PAGE_ROWS)}</button>}
                 {value.offset + RANKING_PAGE_ROWS < entrants && <button type="button" className="arc-button arc-button-paper is-next" onClick={() => go({offset: value.offset + RANKING_PAGE_ROWS}, 'heading')}>
