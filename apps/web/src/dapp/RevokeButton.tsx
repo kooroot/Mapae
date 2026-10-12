@@ -8,6 +8,7 @@ import {
     readRevocationNonce,
 } from "@mapae/delegation/revocation";
 import {redactUrls} from "@mapae/shared";
+import {encodeDelegations} from "@metamask/smart-accounts-kit/utils";
 import {useQuery} from "@tanstack/react-query";
 import {useMemo, useState} from "react";
 import {getAddress, isHash, type Hex} from "viem";
@@ -20,9 +21,11 @@ import {
     publicSubmitterAvailability,
     publicClient,
 } from "../lib/config";
+import {requestSponsoredBootstrap} from "../lib/grant";
 import type {Locale} from "../lib/i18n";
 import {useLocale} from "../lib/locale";
 import {
+    DEPLOY_ACCOUNT_COPY,
     judgeStudioRevokeGate,
     readPayerAccount,
     requestSponsoredRevocation,
@@ -100,10 +103,10 @@ export function RevokeButton({
     const {locale} = useLocale();
     const t = COPY[locale];
     const endpoint = publicSubmitterAvailability();
-    // Whether the overview tab (`STUDIO_SECTIONS`) shows the top-up button
-    // (`FAUCET_COPY.action`) — `TestnetTopUp` renders only with a configured sponsor — so
-    // the account-missing note can point there honestly.
+    // The deploy button below shows only with a configured sponsor, and the
+    // account-missing note names it only then.
     const sponsor = useMemo(() => bootstrapAvailability(), []);
+    const [deploy, setDeploy] = useState<{phase: "idle" | "busy"} | {phase: "failed"; reason: string}>({phase: "idle"});
     const payer = getAddress(delegation.delegator);
     // `useAccount().chainId` rather than `useChainId()`: the latter falls back to the
     // config's first chain while disconnected, so it can never report a mismatch, and a
@@ -172,10 +175,25 @@ export function RevokeButton({
         }
     }
 
+    /**
+     * Have the sponsor deploy the payer from the signed root, then read the chain again so
+     * the gate moves on to "ready". The root alone, never the agent's leaf: the sponsor
+     * authorises on the owner's signature and nothing else.
+     */
+    async function deployAccount(url: string): Promise<void> {
+        setDeploy({phase: "busy"});
+        try {
+            await requestSponsoredBootstrap(url, {permissionContext: encodeDelegations([delegation]), delegator: payer}, locale);
+            setDeploy({phase: "idle"});
+        } catch (error) {
+            setDeploy({phase: "failed", reason: error instanceof Error && error.message ? redactUrls(error.message) : DEPLOY_ACCOUNT_COPY[locale].failed});
+        }
+        await account.refetch();
+    }
+
     const busy = progress.phase === "signing" || progress.phase === "submitting";
-    const note = studioRevokeGateNote(gate, locale, {
-        topUpOffered: sponsor.kind === "configured",
-    });
+    const deployOffered = sponsor.kind === "configured";
+    const note = studioRevokeGateNote(gate, locale, {deployOffered});
 
     return (
         <div className="studio-revoke-action">
@@ -195,6 +213,12 @@ export function RevokeButton({
                         : t.submitting
                     : studioRevokeButtonLabel(gate, locale)}
             </button>}
+            {gate.kind === "account-missing" && sponsor.kind === "configured" && (
+                <button type="button" className="mapae-action mapae-action-secondary" disabled={deploy.phase === "busy"} onClick={() => void deployAccount(sponsor.url)}>
+                    {deploy.phase === "busy" ? DEPLOY_ACCOUNT_COPY[locale].busy : DEPLOY_ACCOUNT_COPY[locale].action}
+                </button>
+            )}
+            {deploy.phase === "failed" && gate.kind === "account-missing" && <small className="studio-revoke-note fault" role="alert">{deploy.reason}</small>}
             {busy && <ActionProgress ko={locale === "ko"} current={progress.phase === "signing" ? 0 : 1} steps={locale === "ko" ? ["회수 서명", "체인 확인"] : ["Sign revocation", "Confirm on-chain"]} title={progress.phase === "signing" ? t.signing : t.submitting} />}
             {endpoint.kind === "refused" ? (
                 <small className="studio-revoke-note fault">

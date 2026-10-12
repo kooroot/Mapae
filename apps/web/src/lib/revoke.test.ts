@@ -1,9 +1,8 @@
-import {describe, expect, mock, test} from "bun:test";
+import {describe, expect, test} from "bun:test";
 import {createPublicClient, custom, getAddress, type Address} from "viem";
-import * as faucet from "./faucet";
 import {LOCALES} from "./i18n";
-import * as studioSections from "./studio-sections";
 import {
+    DEPLOY_ACCOUNT_COPY,
     awaitRevocationVisible,
     judgeStudioRevokeGate,
     readPayerAccount,
@@ -235,15 +234,15 @@ describe("studioRevokeButtonLabel", () => {
 });
 
 describe("studioRevokeGateNote", () => {
-    const withTopUp = {topUpOffered: true};
-    const withoutTopUp = {topUpOffered: false};
+    const withDeploy = {deployOffered: true};
+    const withoutDeploy = {deployOffered: false};
     const missing = {kind: "account-missing"} as const;
 
     test("a missing payer states what revocation needs and who can deploy the account", () => {
         // Not "wait until it exists": the agent holds the signed root, the public
         // `/bootstrap` deploys for any signed root, so the holder can make the grant live
         // whenever they like — and the owner has no kill switch until then.
-        for (const page of [withTopUp, withoutTopUp]) {
+        for (const page of [withDeploy, withoutDeploy]) {
             const en = studioRevokeGateNote(missing, "en", page);
             expect(en).toContain("Revocation needs the account to exist");
             expect(en).toContain("anyone holding this permission can have it deployed at any time");
@@ -253,35 +252,23 @@ describe("studioRevokeGateNote", () => {
         }
     });
 
-    test("with a sponsor, the note names the tab and the button that deploy the account now", () => {
-        // Built from the copy the Studio renders — the overview tab's label from
-        // `STUDIO_SECTIONS`, the top-up button's from `FAUCET_COPY` — the same `/bootstrap`
-        // request, which deploys a codeless account before it tops it up. The literal
-        // lines hold the sentence itself, byte for byte, so a change to either source
-        // shows up here as words and not only as a moved reference.
-        const en = studioRevokeGateNote(missing, "en", withTopUp);
-        expect(en).toContain(`open the ‘${studioSections.STUDIO_SECTIONS.en.overview.label}’ tab`);
-        expect(en).toContain(`press ‘${faucet.FAUCET_COPY.en.action}’`);
-        expect(en).toContain("open the ‘Authority’ tab and press ‘Get testnet balance’");
-        expect(en).toContain("deploys the account first");
-        const ko = studioRevokeGateNote(missing, "ko", withTopUp);
-        expect(ko).toContain(`‘${studioSections.STUDIO_SECTIONS.ko.overview.label}’ 탭에서`);
-        expect(ko).toContain(`‘${faucet.FAUCET_COPY.ko.action}’를 누르세요`);
-        expect(ko).toContain("‘권한’ 탭에서 ‘테스트넷 잔액 받기’를 누르세요");
-        expect(ko).toContain("계정을 먼저 배포하니");
+    test("with a sponsor, the note names the deploy button beside it", () => {
+        const en = studioRevokeGateNote(missing, "en", withDeploy);
+        expect(en).toContain(`press ‘${DEPLOY_ACCOUNT_COPY.en.action}’`);
+        expect(en).toContain("press ‘Deploy payer account’ — the gas is sponsored — then revoke it here.");
+        const ko = studioRevokeGateNote(missing, "ko", withDeploy);
+        expect(ko).toContain(`‘${DEPLOY_ACCOUNT_COPY.ko.action}’를 누르세요`);
+        expect(ko).toContain("‘지불 계정 배포’를 누르세요. 가스는 스폰서가 내고");
     });
 
     test("without a sponsor, the note promises no button the page does not show", () => {
-        // `TestnetTopUp` renders nothing without a configured sponsor.
         for (const locale of LOCALES) {
-            const note = studioRevokeGateNote(missing, locale, withoutTopUp);
-            expect(note).not.toContain(faucet.FAUCET_COPY[locale].action);
-            expect(note).not.toContain(`‘${studioSections.STUDIO_SECTIONS[locale].overview.label}’`);
+            expect(studioRevokeGateNote(missing, locale, withoutDeploy)).not.toContain(DEPLOY_ACCOUNT_COPY[locale].action);
         }
-        expect(studioRevokeGateNote(missing, "en", withoutTopUp)).toContain(
+        expect(studioRevokeGateNote(missing, "en", withoutDeploy)).toContain(
             "Revoke it here as soon as the account exists.",
         );
-        expect(studioRevokeGateNote(missing, "ko", withoutTopUp)).toContain(
+        expect(studioRevokeGateNote(missing, "ko", withoutDeploy)).toContain(
             "계정이 생기는 대로 여기서 회수해 주세요.",
         );
     });
@@ -289,10 +276,10 @@ describe("studioRevokeGateNote", () => {
     test("a failed read says so and how to retry, and names no cause", () => {
         // The read fails for reasons on either end; "check the network connection" sent a
         // person with a fine connection to the wrong place.
-        expect(studioRevokeGateNote({kind: "owner-unreadable"}, "en", withTopUp)).toBe(
+        expect(studioRevokeGateNote({kind: "owner-unreadable"}, "en", withDeploy)).toBe(
             "The payer account's owner could not be read. Reload the page to try again.",
         );
-        expect(studioRevokeGateNote({kind: "owner-unreadable"}, "ko", withTopUp)).toBe(
+        expect(studioRevokeGateNote({kind: "owner-unreadable"}, "ko", withDeploy)).toBe(
             "지불 계정의 소유자를 읽지 못했습니다. 페이지를 새로고침해 다시 시도해 주세요.",
         );
     });
@@ -301,18 +288,18 @@ describe("studioRevokeGateNote", () => {
         const chainNote = studioRevokeGateNote(
             {kind: "wrong-chain", connected: 1, expected: 91_342},
             "en",
-            withTopUp,
+            withDeploy,
         );
         expect(chainNote).toContain("chain 91342");
         expect(chainNote).toContain("chain 1");
         const walletNote = studioRevokeGateNote(
             {kind: "wrong-wallet", connected: OTHER, owner: OWNER},
             "ko",
-            withTopUp,
+            withDeploy,
         );
         expect(walletNote).toContain("0x0000…0001");
         expect(walletNote).toContain("0x0000…0002");
-        expect(studioRevokeGateNote({kind: "ready", owner: OWNER}, "en", withTopUp)).toContain(
+        expect(studioRevokeGateNote({kind: "ready", owner: OWNER}, "en", withDeploy)).toContain(
             "sponsored",
         );
         for (const gate of [
@@ -321,7 +308,7 @@ describe("studioRevokeGateNote", () => {
             {kind: "disconnected"},
             {kind: "owner-unknown"},
         ] as const) {
-            expect(studioRevokeGateNote(gate, "en", withTopUp)).toBeUndefined();
+            expect(studioRevokeGateNote(gate, "en", withDeploy)).toBeUndefined();
         }
     });
 });
@@ -455,60 +442,3 @@ describe("awaitRevocationVisible", () => {
     });
 });
 
-/*
- * The export sets as they were before any mock below, captured at load: a module mock is
- * process-wide and rewrites the live bindings of everything that imported the module —
- * this file's own `studioSections` included — so the namespace objects cannot be read
- * back for the restore once the probe is in.
- */
-const REAL_STUDIO_SECTIONS = {...studioSections};
-const REAL_FAUCET = {...faucet};
-
-describe("the account-missing note reads the Studio's copy rather than spelling it", () => {
-    test("swapping the exported labels swaps the words in the note", async () => {
-        // The byte pins above pass for a note that spells ‘Authority’ itself, because that
-        // is what the label reads today. Only a label the source never carried can tell
-        // "reads the module" from "happens to match it" — so the two modules are swapped
-        // for probes and the same note asked for again. Restored in `finally`, whatever the
-        // assertions say: every later test in this process sees the real words.
-        mock.module("./studio-sections", () => ({
-            ...REAL_STUDIO_SECTIONS,
-            STUDIO_SECTIONS: {
-                en: {
-                    ...REAL_STUDIO_SECTIONS.STUDIO_SECTIONS.en,
-                    overview: {...REAL_STUDIO_SECTIONS.STUDIO_SECTIONS.en.overview, label: "PROBE-TAB"},
-                },
-                ko: {
-                    ...REAL_STUDIO_SECTIONS.STUDIO_SECTIONS.ko,
-                    overview: {...REAL_STUDIO_SECTIONS.STUDIO_SECTIONS.ko.overview, label: "탐침-탭"},
-                },
-            },
-        }));
-        mock.module("./faucet", () => ({
-            ...REAL_FAUCET,
-            FAUCET_COPY: {
-                en: {...REAL_FAUCET.FAUCET_COPY.en, action: "PROBE-BUTTON"},
-                ko: {...REAL_FAUCET.FAUCET_COPY.ko, action: "탐침-버튼"},
-            },
-        }));
-        try {
-            const probed = await import("./revoke");
-            const missing = {kind: "account-missing"} as const;
-
-            expect(probed.studioRevokeGateNote(missing, "en", {topUpOffered: true})).toContain(
-                "open the ‘PROBE-TAB’ tab and press ‘PROBE-BUTTON’",
-            );
-            expect(probed.studioRevokeGateNote(missing, "ko", {topUpOffered: true})).toContain(
-                "‘탐침-탭’ 탭에서 ‘탐침-버튼’를 누르세요",
-            );
-        } finally {
-            mock.module("./studio-sections", () => REAL_STUDIO_SECTIONS);
-            mock.module("./faucet", () => REAL_FAUCET);
-        }
-
-        // The restore took: the real words are back for whoever runs next.
-        expect(
-            studioRevokeGateNote({kind: "account-missing"}, "en", {topUpOffered: true}),
-        ).toContain("open the ‘Authority’ tab and press ‘Get testnet balance’");
-    });
-});

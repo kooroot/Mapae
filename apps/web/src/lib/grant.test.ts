@@ -221,13 +221,13 @@ describe("signedSessionGrant", () => {
 });
 
 /**
- * The regression these cover: onboarding used to tolerate exactly one refusal reason
- * (`faucet_recently_used`), so an already-deployed account whose *top-up* was refused for
- * budget, sponsor or balance-read reasons failed an onboarding that had already succeeded.
+ * The regression these cover: onboarding used to tolerate exactly one refusal reason, so
+ * an already-deployed account refused for budget or sponsor reasons failed an onboarding
+ * that had already succeeded.
  */
 describe("bootstrap outcome", () => {
     const REFUSALS = [
-        "faucet_recently_used",
+        "rate_limited",
         "budget_exhausted",
         "sponsor_unfunded",
         "bootstrap_unavailable",

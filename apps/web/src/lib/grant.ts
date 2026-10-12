@@ -464,7 +464,7 @@ async function verifyUndeployedPermissionArtifact(
  * a good day, a string, an array or nothing at all on a bad one — and `postBootstrap`
  * only carries it. A field that is not a string is absent, so a reply this client was not
  * written against reads as "no reason" and lands on the generic sentence, never as UI
- * text nobody wrote. `interpretTopUp` in `faucet.ts` reads its reply through this too.
+ * text nobody wrote.
  */
 export function bootstrapReplyField(body: unknown, key: string): string | undefined {
     if (typeof body !== "object" || body === null) return undefined;
@@ -473,7 +473,7 @@ export function bootstrapReplyField(body: unknown, key: string): string | undefi
 }
 
 /**
- * One POST to the sponsor, shared by the deploy path and the testnet top-up.
+ * One POST to the sponsor: onboarding's deploy and the Studio's "deploy payer account".
  *
  * The body carries the signed permission context and nothing else — no owner address, no
  * salt, no bytecode. Everything the sponsor acts on is reconstructed from that signature,
@@ -493,8 +493,8 @@ export async function postBootstrap(
             redirect: "error",
             headers: {"content-type": "application/json"},
             body: JSON.stringify({permissionContext}),
-            // Outside the server's idle timeout (two 60 s receipt waits + 15 s), so the server answers first.
-            signal: AbortSignal.timeout(150_000),
+            // Outside the server's idle timeout (one 60 s receipt wait + 15 s), so the server answers first.
+            signal: AbortSignal.timeout(90_000),
         });
     } catch {
         throw new Error(MSG[locale].bootstrapUnreachable);
@@ -507,12 +507,10 @@ export async function postBootstrap(
  * What one bootstrap attempt means for onboarding, given what the chain says afterwards.
  *
  * Chain state is the verdict; the sponsor's answer only explains a failure. Deployed code
- * ends the call successfully however the sponsor answered, because `/bootstrap` also serves
- * Studio's top-up button: an already-deployed account can be refused for reasons that are
- * about the faucet — a closed 24h window, an exhausted daily budget, a token balance the
- * sponsor could not read — and none of those unmake the deploy this call exists for.
- * Tolerating one named reason instead is what let `budget_exhausted` fail an onboarding
- * whose account was already live.
+ * ends the call successfully however the sponsor answered: a refusal that arrives while
+ * the account already exists — a rate limit, an exhausted daily budget — does not unmake
+ * the deploy this call exists for. Tolerating one named reason instead is what let
+ * `budget_exhausted` fail an onboarding whose account was already live.
  *
  * @returns the message to fail with, or `undefined` when the account is deployed.
  */
@@ -535,7 +533,7 @@ export function judgeBootstrapOutcome(
  */
 export async function requestSponsoredBootstrap(
     endpoint: string,
-    artifact: PermissionArtifact,
+    artifact: Pick<PermissionArtifact, "permissionContext" | "delegator">,
     locale: Locale = "en",
 ): Promise<void> {
     const {ok, body} = await postBootstrap(endpoint, artifact.permissionContext, locale);
