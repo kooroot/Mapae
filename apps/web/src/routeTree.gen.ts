@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as FaucetRouteImport } from './routes/faucet'
 import { Route as ArcadeChar123SectionChar125RouteImport } from './routes/arcade/{-$section}'
 import { Route as KoIndexRouteImport } from './routes/ko/index'
 import { Route as KoAppRouteImport } from './routes/ko/app'
+import { Route as KoFaucetRouteImport } from './routes/ko/faucet'
 import { Route as KoArcadeChar123SectionChar125RouteImport } from './routes/ko/arcade/{-$section}'
 
 const IndexRoute = IndexRouteImport.update({
@@ -24,6 +26,11 @@ const IndexRoute = IndexRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaucetRoute = FaucetRouteImport.update({
+  id: '/faucet',
+  path: '/faucet',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ArcadeChar123SectionChar125Route =
@@ -42,6 +49,11 @@ const KoAppRoute = KoAppRouteImport.update({
   path: '/ko/app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KoFaucetRoute = KoFaucetRouteImport.update({
+  id: '/ko/faucet',
+  path: '/ko/faucet',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const KoArcadeChar123SectionChar125Route =
   KoArcadeChar123SectionChar125RouteImport.update({
     id: '/ko/arcade/{-$section}',
@@ -52,16 +64,20 @@ const KoArcadeChar123SectionChar125Route =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/faucet': typeof FaucetRoute
   '/arcade/{-$section}': typeof ArcadeChar123SectionChar125Route
   '/ko/app': typeof KoAppRoute
+  '/ko/faucet': typeof KoFaucetRoute
   '/ko/': typeof KoIndexRoute
   '/ko/arcade/{-$section}': typeof KoArcadeChar123SectionChar125Route
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/faucet': typeof FaucetRoute
   '/arcade/{-$section}': typeof ArcadeChar123SectionChar125Route
   '/ko/app': typeof KoAppRoute
+  '/ko/faucet': typeof KoFaucetRoute
   '/ko': typeof KoIndexRoute
   '/ko/arcade/{-$section}': typeof KoArcadeChar123SectionChar125Route
 }
@@ -69,8 +85,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/faucet': typeof FaucetRoute
   '/arcade/{-$section}': typeof ArcadeChar123SectionChar125Route
   '/ko/app': typeof KoAppRoute
+  '/ko/faucet': typeof KoFaucetRoute
   '/ko/': typeof KoIndexRoute
   '/ko/arcade/{-$section}': typeof KoArcadeChar123SectionChar125Route
 }
@@ -79,24 +97,30 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/faucet'
     | '/arcade/{-$section}'
     | '/ko/app'
+    | '/ko/faucet'
     | '/ko/'
     | '/ko/arcade/{-$section}'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/app'
+    | '/faucet'
     | '/arcade/{-$section}'
     | '/ko/app'
+    | '/ko/faucet'
     | '/ko'
     | '/ko/arcade/{-$section}'
   id:
     | '__root__'
     | '/'
     | '/app'
+    | '/faucet'
     | '/arcade/{-$section}'
     | '/ko/app'
+    | '/ko/faucet'
     | '/ko/'
     | '/ko/arcade/{-$section}'
   fileRoutesById: FileRoutesById
@@ -104,8 +128,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
+  FaucetRoute: typeof FaucetRoute
   ArcadeChar123SectionChar125Route: typeof ArcadeChar123SectionChar125Route
   KoAppRoute: typeof KoAppRoute
+  KoFaucetRoute: typeof KoFaucetRoute
   KoIndexRoute: typeof KoIndexRoute
   KoArcadeChar123SectionChar125Route: typeof KoArcadeChar123SectionChar125Route
 }
@@ -124,6 +150,13 @@ declare module '@tanstack/react-router' {
       path: '/app'
       fullPath: '/app'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faucet': {
+      id: '/faucet'
+      path: '/faucet'
+      fullPath: '/faucet'
+      preLoaderRoute: typeof FaucetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/arcade/{-$section}': {
@@ -147,6 +180,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KoAppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ko/faucet': {
+      id: '/ko/faucet'
+      path: '/ko/faucet'
+      fullPath: '/ko/faucet'
+      preLoaderRoute: typeof KoFaucetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ko/arcade/{-$section}': {
       id: '/ko/arcade/{-$section}'
       path: '/ko/arcade/{-$section}'
@@ -160,8 +200,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
+  FaucetRoute: FaucetRoute,
   ArcadeChar123SectionChar125Route: ArcadeChar123SectionChar125Route,
   KoAppRoute: KoAppRoute,
+  KoFaucetRoute: KoFaucetRoute,
   KoIndexRoute: KoIndexRoute,
   KoArcadeChar123SectionChar125Route: KoArcadeChar123SectionChar125Route,
 }
