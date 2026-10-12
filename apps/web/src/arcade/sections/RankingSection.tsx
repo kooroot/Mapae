@@ -151,7 +151,7 @@ function MyGuardians({desk, onSendOuting}: {desk: GuardianDesk; onSendOuting: (g
                         <ul className="rank-games">
                             {RANKED_GAMES.map(game => {
                                 const left = RANKED_ATTEMPTS - standing.games[game].attemptsUsed, today = standing.games[game].today;
-                                return <li key={game}><RankLine locale={locale} game={game} guardian={standing} leader={standings.leaders[game]} />
+                                return <li key={game}><RankLine locale={locale} game={game} guardian={standing} leader={standings.leaders[game]} weekly />
                                     {left > 0 && <button type="button" className="arc-text-button" disabled={busy} onClick={() => onSendOuting(game, token.tokenId)}><Compass size={16} aria-hidden="true" />{ko ? '랭크 도전 보내기' : 'Send a ranked round'}</button>}
                                     {today && today.rank > BOARD_ROWS && <Nearby rows={today.nearby} self={token.tokenId} locale={locale} />}
                                 </li>;
