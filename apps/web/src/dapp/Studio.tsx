@@ -1,3 +1,4 @@
+import "@fontsource/nanum-gothic-coding/400.css";
 import "../styles/app.css";
 import {
     readDelegationStatus,

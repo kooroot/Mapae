@@ -1,3 +1,5 @@
+import "../styles/display-fonts.css";
+import "@fontsource/nanum-gothic-coding/400.css";
 import "../styles/landing.css";
 import "../styles/hero.css";
 import "../styles/home.css";

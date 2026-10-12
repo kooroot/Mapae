@@ -1,3 +1,5 @@
+import "../styles/display-fonts.css";
+import "@fontsource/nanum-gothic-coding/400.css";
 import {Web3Providers} from "../dapp/Web3Providers";
 import {ArcadeShell} from "./ArcadeShell";
 import {useArcadeMotion} from "./motion";

@@ -25,6 +25,7 @@ for (const [path, selector] of pages) {
     }))).join('\n');
     assert.ok(css.includes(selector), `${path}: page CSS arrives only after JavaScript`);
     assert.ok(!/noto-serif-kr-korean-|nanum-gothic-coding-korean-/.test(css), `${path}: unpartitioned Korean font`);
+    if (surface === 'faucet' || surface === 'app') assert.ok(!css.includes('noto-serif-kr-'), 'Unused display faces in the critical stylesheet');
     if (surface === 'faucet') {
         assert.ok(!css.includes('.studio-shell'), 'Faucet includes Studio styles');
         assert.ok(!css.includes('.home-hero'), 'Faucet includes landing styles');

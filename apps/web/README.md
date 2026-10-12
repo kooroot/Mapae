@@ -137,8 +137,9 @@ sender를 강제하므로 자기 권한의 회수만 나를 수 있고, 예치�
 ## 초기 화면 검증
 
 배포 루트는 `src/surfaces/`에서 빌드 시 선택한다. 라우터가 페이지 코드와 CSS를
-함께 preload하도록 두고, 루트에 `React.lazy`를 중첩하지 않는다. 전역에는 토큰·폰트만
-두고 각 화면이 자신의 CSS를 import한다. 한글 폰트는 Fontsource의 `600.css`처럼
+함께 preload하도록 두고, 루트에 `React.lazy`를 중첩하지 않는다. 전역에는 토큰·기본 UI 폰트만
+두고 각 화면이 자신의 CSS와 추가 글꼴을 import한다. 명조는 랜딩·아케이드,
+한글 고정폭은 랜딩·아케이드·Studio에서만 선언한다. 한글 폰트는 Fontsource의 `600.css`처럼
 `unicode-range`로 나눈 weight entrypoint를 사용한다 (`korean-600.css`는 전체 글꼴).
 
 빌드 후 `bun run preview --port 5202`를 켜고 아래 검사를 실행한다. dev 서버는

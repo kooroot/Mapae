@@ -1,0 +1,4 @@
+/* Use the weight entrypoints: korean-600.css is a full ~1 MB face without
+ * unicode-range, while these declarations fetch only the characters in use. */
+@import "@fontsource/noto-serif-kr/600.css";
+@import "@fontsource/noto-serif-kr/700.css";
