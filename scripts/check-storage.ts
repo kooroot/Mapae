@@ -48,6 +48,8 @@ export const STORE_MODULES = [
     "apps/web/src/arcade/outing-submission.ts",
     // Public pending transaction identity only; nft/model.test.ts pins secret exclusion.
     "apps/web/src/arcade/nft/transaction-store.ts",
+    // Known faucet mission ids per wallet address; mission-store.test.ts drops everything else.
+    "apps/web/src/faucet/mission-store.ts",
 ];
 // The landing greeter writes only one catalog zodiac name, tested against hostile inputs.
 // Guest practice projects one local courier and bounded practice records; its tests

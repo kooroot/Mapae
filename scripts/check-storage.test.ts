@@ -46,6 +46,7 @@ describe("findStorageWrites", () => {
             "apps/web/src/lib/grant-store.ts",
             "apps/web/src/arcade/outing-submission.ts",
             "apps/web/src/arcade/nft/transaction-store.ts",
+            "apps/web/src/faucet/mission-store.ts",
         ]);
         expect(SESSION_STORE_MODULES).toEqual(["apps/web/src/landing/arcade-greeter-store.ts", "apps/web/src/arcade/guest/store.ts"]);
     });
