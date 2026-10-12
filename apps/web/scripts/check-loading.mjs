@@ -6,7 +6,10 @@ const [origin, surface] = process.argv.slice(2);
 const selectors = {faucet: '.fct-workspace', landing: '.home-hero', app: '.studio-shell'};
 assert.ok(origin && surface in selectors, 'Usage: node scripts/check-loading.mjs <origin> <landing|app|faucet>');
 const pages = [['/', selectors[surface]], ['/ko', selectors[surface]]];
-if (surface === 'landing') pages.push(['/arcade', '.arc-room'], ['/ko/arcade', '.arc-room']);
+if (surface === 'landing') for (const locale of ['', '/ko']) {
+    pages.push([`${locale}/arcade`, '.arc-room']);
+    for (const section of ['guardians', 'outings', 'ranking', 'journal', 'wallet']) pages.push([`${locale}/arcade/${section}`, '.nft-arcade']);
+}
 for (const [path, selector] of pages) {
     const url = new URL(path, origin);
     const response = await fetch(url);
@@ -24,6 +27,7 @@ for (const [path, selector] of pages) {
         return sheet.text();
     }))).join('\n');
     assert.ok(css.includes(selector), `${path}: page CSS arrives only after JavaScript`);
+    assert.match(css, /\.sr-only\s*\{[^}]*clip-path:inset\(50%\)/, `${path}: accessible descriptions must stay visually hidden without landing CSS`);
     assert.ok(!/noto-serif-kr-korean-|nanum-gothic-coding-korean-/.test(css), `${path}: unpartitioned Korean font`);
     if (surface === 'faucet' || surface === 'app') assert.ok(!css.includes('noto-serif-kr-'), 'Unused display faces in the critical stylesheet');
     if (surface === 'faucet') {

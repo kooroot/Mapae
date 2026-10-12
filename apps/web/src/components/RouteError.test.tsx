@@ -52,12 +52,12 @@ describe("RouteError", () => {
         expect(ko).not.toContain("Something went wrong.");
     });
 
-    test("the retry is a real button in the landing's button clothes", () => {
+    test("the retry is a real button with shared error-page styling", () => {
         // `type="button"`: the fallback can render inside a form-free document today, but a
         // submit button is what a bare `<button>` is, and the policy already refuses forms.
         const html = render("en", new Error("boom"));
 
-        expect(html).toContain('<button type="button" class="btn">');
+        expect(html).toContain('<button type="button" class="route-error-action">');
     });
 
     test("an error without a message leaves the detail line out", () => {

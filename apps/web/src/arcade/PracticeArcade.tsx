@@ -2,8 +2,7 @@ import {GameGuide} from "./GameGuide";
 import {StampChallenges, StampCoach} from "./StampChallenges";
 import type {GameId, ActivityOutcome} from "@mapae/arcade";
 import {ConfirmDialog} from "../components/ConfirmDialog";
-import {RaceGame} from "./race/RaceGame";
-import {ShopGame} from "./shop/ShopGame";
+import {Arena, RaceGame, ShopGame, GameViewport} from "./PracticeGames";
 import {AgentReceipt} from "./AgentReceipt";
 import {admitHumanActivity, completeActivity, practiceBest, latestShopMemory, type Activity} from "./activity";
 import {GAME_NAMES} from "./game-names";
@@ -15,7 +14,6 @@ import {ArrowLeft, ArrowRight, Volume2, VolumeX} from "lucide-react";
 import {LocaleSwitch, useLocale} from "../lib/locale";
 import {localizePath, type Locale} from "../lib/i18n";
 import {ArcadeBrand} from "./ArcadeBrand";
-import {Arena} from "./Arena";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {Goblin, GameArt} from "./Characters";
 import {admitPracticeRun, selectCharacter, finishPracticeRun, type Companion, type ArcadeState, type Run} from "./state";
@@ -264,6 +262,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                     </div>
                 </>}
                 {screen === "play" && initialReplay && initialGame === selectedGame && (manual?.source === "practice" ? manual.replaySeed : ticket?.replaySeed) === initialReplay.seed && <p className="arc-replay-invite">{initialReplay.daily ? ko ? "오늘의 도전 · 모두 같은 출발 조건 · 무료" : "Daily challenge · Same scenario for everyone · Free" : ko ? `${initialReplay.name}의 ${initialReplay.score.toLocaleString()}점에 도전 · 같은 출발 조건 · 무료` : `Challenge ${initialReplay.name}'s ${initialReplay.score.toLocaleString()} points · Same starting scenario · Free`}</p>}
+                <GameViewport locale={locale}>
                 {screen === "play" && drillSeed !== null && <Arena key={`drill-${drillSeed}`} practice="boss" seed={drillSeed} suspended={settingsOpen || exitOpen} locale={locale} character={character} reducedMotion={still} sound={sound} onFinish={finish} />}
                 {screen === "play" && ticket && <Arena aptitudes={ticket.aptitudes} seed={gameSeed(ticket)} suspended={settingsOpen || exitOpen} key={ticket.id} locale={locale} character={{...character, name: ticket.name, color: ticket.color, appearance: ticket.appearance}} reducedMotion={still} sound={sound} onFinish={finish} />}
                 {screen === "play" && manual && (() => {
@@ -271,6 +270,7 @@ export function PracticeArcade({onBack, store, character, initialGame, initialRe
                         locale, seed: gameSeed(manual), reducedMotion: still, sound, suspended: settingsOpen || exitOpen, onComplete: finishManual, onExit: () => setExitOpen(true)};
                     return manual.game === "race" ? <RaceGame key={manual.id} {...props} /> : <ShopGame key={manual.id} {...props} initialConfig={shopConfig} memory={shopMemory} />;
                 })()}
+                </GameViewport>
                 {screen === "result" && manual && <><AgentReceipt ref={ritual} activity={manual} locale={locale} best={practiceBest(demo, manual.characterId, manual.game)} record={record} /><div className="practice-turn-actions"><button className="arc-button" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)), gameSeed(manual), manual.outcome?.replay?.shop, manual.outcome?.replay?.shopMemory, manual.outcome?.replay?.aptitudes)}>{ko ? "같은 조건으로 다시 도전" : "Retry the same scenario"}<ArrowRight size={19} /></button><button className="arc-button arc-button-paper" onClick={() => begin(update(v => selectCharacter(v, manual.characterId)))}>{ko ? "새로운 판 연습" : "Practice a new scenario"}</button><button className="arc-text-button" onClick={lobby}>{ko ? "다른 게임 연습" : "Practice another game"}</button></div></>}
                 {screen === "result" && result && <section ref={ritual} className="arc-result-layout"><div className="arc-result-paper" data-ritual="paper">
                     <div className="arc-section-label"><span>{t.result}</span><span>NO. {demo.runs.length.toString().padStart(3, "0")}</span></div>

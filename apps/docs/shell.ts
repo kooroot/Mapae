@@ -83,12 +83,9 @@ export function renderPage(params: {
     const canonical = `${SITE_URL}/${page.url}`;
     const title = page.url === "" ? "Mapae — 기술 문서" : `${page.title} · Mapae`;
 
-    // Loaded only where a diagram exists. It is a 3.5 MB bundle for one sequence diagram,
-    // so the sixteen pages without one must not pay for it — and it is served from this
-    // origin rather than a CDN because the policy below is `script-src 'self'`.
+    // The small loader fetches the renderer only as a diagram approaches the viewport.
     const diagramScript = hasDiagram
-        ? `<script type="module" src="${root}assets/mermaid.min.js"></script>\n` +
-          `<script type="module" src="${root}assets/diagrams.js"></script>`
+        ? `<script type="module" src="${root}assets/diagrams.js"></script>`
         : "";
 
     return `<!DOCTYPE html>

@@ -25,7 +25,7 @@ GitBook에서 커스텀 도메인은 유료 기능이고, 그 유료 도메인�
 
 한 Worker에 두 호스트를 붙일 수도 있었지만, Cloudflare는 에셋이 매치되면 스크립트를
 부르지 않는다. 그래서 리다이렉트를 책 쪽에 두려면 `run_worker_first`가 필요하고,
-그러면 폰트 92개와 3.5 MB mermaid 번들까지 매 방문마다 스크립트를 거친다 — 레거시
+그러면 폰트와 다이어그램 모듈까지 매 방문마다 스크립트를 거친다 — 레거시
 호스트 하나 때문에 본 사이트의 "런타임 없음"을 버리는 거래다. 나눠두면 리다이렉트는
 낡은 링크를 따라온 사람에게만 과금되고, 그 링크가 사라지는 날 `wrangler delete`
 한 번으로 지울 수 있다.
@@ -60,8 +60,8 @@ bun run deploy:docs:legacy  # gitbook.mapae.io 리다이렉트 Worker 배포 (�
 ## 빌드 산출물
 
 - 페이지마다 `<url>/index.html` — 확장자 없는 주소가 리라이트 규칙 없이 풀린다.
-- `_headers` — CSP는 `script-src 'self'`. mermaid를 CDN이 아니라 `node_modules`에서
-  복사해 넣는 이유가 이것이다. 폰트(Pretendard 동적 서브셋 92개, IBM Plex Mono)도 같다.
+- `_headers` — CSP는 `script-src 'self'`. Mermaid를 CDN 대신 설치된 패키지의 ESM entrypoint에서
+  Bun으로 분할 빌드한다. 다이어그램이 화면 근처에 올 때 해당 렌더러만 불러온다. 폰트(Pretendard 동적 서브셋 92개, IBM Plex Mono)도 같다.
 - `404.html`, `robots.txt`, `sitemap.xml`.
 
 폰트와 mermaid는 커밋하지 않는다. 락파일이 버전을 고정하고 `bun install`이 받아온다.

@@ -28,15 +28,11 @@ const DOCS = join(REPO, "docs");
 const OUT = join(HERE, "dist");
 
 /**
- * Fonts and the mermaid bundle are copied out of `node_modules` rather than committed.
- * The lockfile pins them, `bun install` fetches them, and the repository stays free of a
- * 3.5 MB minified blob whose diffs nobody can read.
+ * Fonts are copied out of `node_modules` rather than committed.
+ * The lockfile pins them and `bun install` fetches them. Generated font and
+ * diagram assets remain build output.
  */
 const VENDORED: ReadonlyArray<{from: string; to: string}> = [
-    {
-        from: "mermaid/dist/mermaid.min.js",
-        to: "assets/mermaid.min.js",
-    },
     {
         from: "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css",
         to: "assets/fonts/pretendard.css",
@@ -115,6 +111,17 @@ async function main(): Promise<void> {
     write("assets/search-index.json", JSON.stringify(searchIndex));
 
     cpSync(join(HERE, "assets"), join(OUT, "assets"), {recursive: true});
+
+    // Bundle the ESM entry and its lazy diagram engines. The IIFE distribution has
+    // no default export and cannot be loaded as a module. Splitting also keeps
+    // unrelated diagram engines out of a reader's initial download.
+    const diagramsBuild = await Bun.build({
+        entrypoints: [join(HERE, "assets/diagrams.js")],
+        outdir: join(OUT, "assets"),
+        target: "browser", format: "esm", splitting: true, minify: true,
+        naming: {entry: "[name].js", chunk: "chunks/[name]-[hash].js"},
+    });
+    if (!diagramsBuild.success) throw new AggregateError(diagramsBuild.logs, "Diagram build failed");
 
     for (const {from, to} of VENDORED) {
         // `resolveSync` handles the files; a directory is not a module specifier, so it is

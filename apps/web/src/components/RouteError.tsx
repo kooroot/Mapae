@@ -1,4 +1,4 @@
-import {useRouter, type ErrorComponentProps} from "@tanstack/react-router";
+import type {ErrorComponentProps} from "@tanstack/react-router";
 import type {Locale} from "../lib/i18n";
 import {useLocale} from "../lib/locale";
 
@@ -27,9 +27,9 @@ const COPY: Record<Locale, {title: string; body: string; retry: string; detail: 
  * document ground, outside `.studio-shell`, so paper and ink are the right surface for
  * either product.
  *
- * Retry is `router.invalidate()`, not the boundary's `reset`: invalidating re-runs the
- * matched loaders and, because the match boundary keys on `loadedAt`, clears the caught
- * error with them. `reset` alone re-renders the same failed match, which throws again.
+ * Retry reloads the document. React.lazy retains a rejected module promise, so
+ * invalidating route loaders alone cannot recover after a failed chunk request.
+ * A new document also reads the current asset manifest after a deployment.
  *
  * The message is kept in an optional disclosure: a render failure has no vocabulary to map
  * it to, and the sentence is what a bug report needs. Rendered inside the root shell,
@@ -37,7 +37,6 @@ const COPY: Record<Locale, {title: string; body: string; retry: string; detail: 
  */
 export function RouteError({error}: ErrorComponentProps) {
     const {locale} = useLocale();
-    const router = useRouter();
     const t = COPY[locale];
     return (
         <main className="route-error">
@@ -45,7 +44,7 @@ export function RouteError({error}: ErrorComponentProps) {
                 <h1>{t.title}</h1>
                 <p>{t.body}</p>
                 {error.message ? <details><summary>{t.detail}</summary><code className="route-error-detail">{error.message}</code></details> : null}
-                <button type="button" className="btn" onClick={() => router.invalidate()}>
+                <button type="button" className="route-error-action" onClick={() => window.location.reload()}>
                     <span>{t.retry}</span>
                 </button>
             </div>
