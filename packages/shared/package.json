@@ -10,7 +10,8 @@
     "./chain": "./src/chain.ts",
     "./token": "./src/token.ts",
     "./x402": "./src/x402.ts",
-    "./errors": "./src/errors.ts"
+    "./errors": "./src/errors.ts",
+    "./net": "./src/net.ts"
   },
   "peerDependencies": {
     "viem": "*"
