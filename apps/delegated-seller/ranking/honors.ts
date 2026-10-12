@@ -31,7 +31,7 @@ export class GuardianHonorBook {
             const title = this.db.query('INSERT INTO arcade_guardian_titles VALUES (?,?,?,?,?)'), mark = this.db.query('INSERT INTO arcade_guardian_title_weeks VALUES (?,?)');
             for (let week = first; week <= sealed; week = addDays(week, 7)) {
                 if (done.has(week)) continue;
-                for (const game of RANKED_GAMES) for (const row of weekBoard(this.db, this.collection, game, week, at).slice(0, BOARD_ROWS)) title.run(c, week, game, row.tokenId, row.rank);
+                for (const game of RANKED_GAMES) for (const row of weekBoard(this.db, this.collection, game, week, at).rows.slice(0, BOARD_ROWS)) title.run(c, week, game, row.tokenId, row.rank);
                 mark.run(c, week);
             }
         }).immediate();

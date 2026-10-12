@@ -39,17 +39,29 @@ const DEVOTION_BOARD = `WITH days AS (
 /** The ruleset a closed week ranked under when it closed: a later ruleset bump never empties it. */
 const WEEK_RULESET = 'SELECT MAX(ruleset) AS ruleset FROM arcade_guardian_ranked WHERE collection=? AND week=? AND created_at<?';
 
-type Window = {from: string; to: string; closesAt: number | null; rows: RankingRow[]};
+/** A board window; `ruleset` is the one its rows ranked under, null for devotion, which counts days across rulesets. */
+type Window = {from: string; to: string; closesAt: number | null; ruleset: number | null; rows: RankingRow[]};
+type Moves = ReadonlyMap<string, number> | null;
 
 /** Every entrant of one game's week board at `at`: the open week under the current ruleset, a closed one under its own. */
-export function weekBoard(db: Database, collection: Address, game: GameId, week: string, at: number): RankingRow[] {
+export function weekBoard(db: Database, collection: Address, game: GameId, week: string, at: number): {ruleset: number; rows: RankingRow[]} {
     const c = collection.toLowerCase(), cutoff = weekCutoff(week);
     const ruleset = week < kstWeek(kstDay(at))
         ? db.query<{ruleset: number | null}, [string, string, number]>(WEEK_RULESET).get(c, week, cutoff)?.ruleset ?? ARCADE_RULESET_VERSION
         : ARCADE_RULESET_VERSION;
-    return db.query<RankingRow, [string, number, string, string, number, number]>(WEEK_BOARD).all(c, ruleset, game, week, cutoff, WEEKLY_COUNTED_DAYS)
-        .map(r => ({rank: r.rank, tokenId: r.tokenId, seed: r.seed, score: r.score}));
+    return {ruleset, rows: db.query<RankingRow, [string, number, string, string, number, number]>(WEEK_BOARD).all(c, ruleset, game, week, cutoff, WEEKLY_COUNTED_DAYS)
+        .map(r => ({rank: r.rank, tokenId: r.tokenId, seed: r.seed, score: r.score}))};
 }
+
+/**
+ * Each guardian's rank on the whole earlier board, so a guardian that was simply below the shown rows is never called new. No
+ * comparison when the earlier board is empty (every row would read "new") or ranked under another ruleset: a ruleset change
+ * starts every course afresh, so a climb across it would compare different games.
+ */
+function previousRanks(current: Window, earlier: Window): Moves {
+    return earlier.rows.length && earlier.ruleset === current.ruleset ? new Map(earlier.rows.map(row => [row.tokenId, row.rank])) : null;
+}
+const move = (moves: Moves, tokenId: string) => ({moves: moves !== null, prev: moves?.get(tokenId) ?? null});
 
 /**
  * Public leaderboards read from verified ranked rows only. Every board is derived on read; nothing here is stored, so a
@@ -59,17 +71,20 @@ export function weekBoard(db: Database, collection: Address, game: GameId, week:
 export class RankingReader {
     constructor(readonly store: OutingStore, readonly collection: Address, readonly now: () => number = Date.now) {}
 
+    /** A board's top rows, each with its rank one window earlier: reading the earlier board doubles the work of a request, nothing more. */
     board(board: RankingBoardId, period: RankingPeriod): RankingBoard {
-        const window = this.window(board, period, this.now());
-        return {board, period, from: window.from, to: window.to, closesAt: window.closesAt, entrants: window.rows.length, rows: window.rows.slice(0, BOARD_ROWS)};
+        const at = this.now(), window = this.window(board, period, at), moves = previousRanks(window, this.window(board, period, at, 1));
+        return {board, period, from: window.from, to: window.to, closesAt: window.closesAt, entrants: window.rows.length, moves: moves !== null,
+            rows: window.rows.slice(0, BOARD_ROWS).map(row => ({...row, prev: moves?.get(row.tokenId) ?? null}))};
     }
 
     /** Where each named guardian stands on every current board, computing each window once for the whole request. */
     standings(tokenIds: readonly string[]): RankingStandings {
         const at = this.now(), today = kstDay(at), week = kstWeek(today);
-        const boards = Object.fromEntries(RANKED_GAMES.map(game => [game, {
-            today: this.window(game, 'today', at).rows, week: this.window(game, 'week', at).rows, lastweek: this.window(game, 'lastweek', at).rows,
-        }])) as Record<GameId, Record<'today' | 'week' | 'lastweek', RankingRow[]>>;
+        const boards = Object.fromEntries(RANKED_GAMES.map(game => {
+            const [today, yesterday, week, lastweek] = (['today', 'yesterday', 'week', 'lastweek'] as const).map(period => this.window(game, period, at)) as [Window, Window, Window, Window];
+            return [game, {today: today.rows, week: week.rows, lastweek: lastweek.rows, todayMoves: previousRanks(today, yesterday), weekMoves: previousRanks(week, lastweek)}];
+        })) as Record<GameId, Record<'today' | 'week' | 'lastweek', RankingRow[]> & {todayMoves: Moves; weekMoves: Moves}>;
         const devotion = this.window('devotion', '28d', at).rows;
         const guardians = tokenIds.map((tokenId): GuardianStanding => {
             const taken = this.store.rankedAttemptsTaken(this.collection, tokenId, today);
@@ -79,7 +94,8 @@ export class RankingReader {
                 devotion: {rank: devoted?.rank ?? null, days: devoted?.score ?? 0},
                 titles: RANKED_GAMES.flatMap(game => {const row = boards[game].lastweek.find(r => r.tokenId === tokenId); return row && row.rank <= BOARD_ROWS ? [{game, place: row.rank}] : [];}),
                 games: Object.fromEntries(RANKED_GAMES.map(game => [game, {
-                    attemptsUsed: taken[game].length, today: standing(boards[game].today, tokenId), week: standing(boards[game].week, tokenId),
+                    attemptsUsed: taken[game].length, today: standing(boards[game].today, tokenId, boards[game].todayMoves),
+                    week: standing(boards[game].week, tokenId, boards[game].weekMoves),
                 }])) as GuardianStanding['games'],
             };
         });
@@ -87,20 +103,22 @@ export class RankingReader {
             leaders: Object.fromEntries(RANKED_GAMES.map(game => [game, boards[game].today[0]?.score ?? null])) as RankingStandings['leaders'], guardians};
     }
 
-    private window(board: RankingBoardId, period: RankingPeriod, at: number): Window {
+    /** The board's window at `at`, or `back` windows earlier: the day, week or 28-day span ending `back` days or weeks sooner. */
+    private window(board: RankingBoardId, period: RankingPeriod, at: number, back = 0): Window {
         const today = kstDay(at), week = kstWeek(today), collection = this.collection.toLowerCase(), db = this.store.db;
         const rows = (sql: string, ...args: (string | number)[]) => db.query<RankingRow, (string | number)[]>(sql).all(...args)
             .map(r => ({rank: r.rank, tokenId: r.tokenId, seed: r.seed, score: r.score}));
         if (board === 'devotion') {
-            const from = addDays(today, 1 - DEVOTION_DAYS);
-            return {from, to: today, closesAt: nextReset(at, 'day'), rows: rows(DEVOTION_BOARD, collection, from, today)};
+            const to = addDays(today, -back), from = addDays(to, 1 - DEVOTION_DAYS);
+            return {from, to, closesAt: back ? null : nextReset(at, 'day'), ruleset: null, rows: rows(DEVOTION_BOARD, collection, from, to)};
         }
         if (period === 'today' || period === 'yesterday') {
-            const day = period === 'today' ? today : addDays(today, -1);
-            return {from: day, to: day, closesAt: period === 'today' ? nextReset(at, 'day') : null, rows: rows(DAY_BOARD, collection, ARCADE_RULESET_VERSION, board, day)};
+            const day = addDays(today, (period === 'today' ? 0 : -1) - back);
+            return {from: day, to: day, closesAt: period === 'today' && !back ? nextReset(at, 'day') : null, ruleset: ARCADE_RULESET_VERSION,
+                rows: rows(DAY_BOARD, collection, ARCADE_RULESET_VERSION, board, day)};
         }
-        const start = period === 'week' ? week : addDays(week, -7);
-        return {from: start, to: addDays(start, 6), closesAt: period === 'week' ? nextReset(at, 'week') : null, rows: weekBoard(db, this.collection, board, start, at)};
+        const start = addDays(week, (period === 'week' ? 0 : -7) - 7 * back), {ruleset, rows: entrants} = weekBoard(db, this.collection, board, start, at);
+        return {from: start, to: addDays(start, 6), closesAt: period === 'week' && !back ? nextReset(at, 'week') : null, ruleset, rows: entrants};
     }
 
     /** The token's ranked days over the last year: enough for any streak a board shows, bounded however long a token plays. */
@@ -111,10 +129,10 @@ export class RankingReader {
     }
 }
 
-function standing(rows: RankingRow[], tokenId: string): RankingStanding | null {
+function standing(rows: RankingRow[], tokenId: string, moves: Moves): RankingStanding | null {
     const index = rows.findIndex(row => row.tokenId === tokenId);
     if (index < 0) return null;
     const row = rows[index]!;
-    return {rank: row.rank, score: row.score, entrants: rows.length, leader: rows[0]!.score, above: rows[index - 1] ?? null,
+    return {rank: row.rank, score: row.score, ...move(moves, tokenId), entrants: rows.length, leader: rows[0]!.score, above: rows[index - 1] ?? null,
         nearby: rows.slice(Math.max(0, index - NEARBY_SPAN), index + NEARBY_SPAN + 1)};
 }

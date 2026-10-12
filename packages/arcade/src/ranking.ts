@@ -27,12 +27,18 @@ export type RankingPeriod = GamePeriod | "28d";
 export const GAME_PERIODS = ["today", "week", "yesterday", "lastweek"] as const satisfies readonly GamePeriod[];
 /** `seed` is the guardian's public birth seed: enough to draw its portrait, nothing about its owner. */
 export type RankingRow = {rank: number; tokenId: string; seed: Hex; score: number};
+/**
+ * Rank movement against the same board one window earlier (the day before, the week before, devotion as of yesterday).
+ * `moves` is false when there is nothing fair to compare with: an empty earlier board, or one ranked under another ruleset.
+ * While it is true, `prev` is the guardian's rank on the whole earlier board, or null when it had no entry there at all.
+ */
+export type RankingMove = {moves: boolean; prev: number | null};
 export type RankingBoard = {
     board: RankingBoardId; period: RankingPeriod; from: string; to: string;
     /** When the window closes (epoch ms); null once it has. */
-    closesAt: number | null; entrants: number; rows: RankingRow[];
+    closesAt: number | null; entrants: number; moves: boolean; rows: (RankingRow & Pick<RankingMove, "prev">)[];
 };
-export type RankingStanding = {rank: number; score: number; entrants: number; leader: number; above: RankingRow | null; nearby: RankingRow[]};
+export type RankingStanding = RankingMove & {rank: number; score: number; entrants: number; leader: number; above: RankingRow | null; nearby: RankingRow[]};
 export type GuardianStreak = {current: number; best: number; freezes: number; playedToday: boolean};
 export type GuardianStanding = {
     tokenId: string; streak: GuardianStreak; devotion: {rank: number | null; days: number};

@@ -32,9 +32,9 @@ describe('boards', () => {
         add('9', 'race', '2026-10-14', 1, 90, 10); add('2', 'race', '2026-10-14', 1, 10);
         add('4', 'stamp', '2026-10-14', 1, 999); add('6', 'race', '2026-10-13', 1, 999);
         const board = reader.board('race', 'today');
-        expect(board).toEqual({board: 'race', period: 'today', from: '2026-10-14', to: '2026-10-14', closesAt: Date.parse('2026-10-14T15:00:00Z'), entrants: 4, rows: [
-            {rank: 1, tokenId: '3', seed: seedOf('3'), score: 90}, {rank: 2, tokenId: '9', seed: seedOf('9'), score: 90},
-            {rank: 3, tokenId: '5', seed: seedOf('5'), score: 90}, {rank: 4, tokenId: '2', seed: seedOf('2'), score: 10},
+        expect(board).toEqual({board: 'race', period: 'today', from: '2026-10-14', to: '2026-10-14', closesAt: Date.parse('2026-10-14T15:00:00Z'), entrants: 4, moves: true, rows: [
+            {rank: 1, tokenId: '3', seed: seedOf('3'), score: 90, prev: null}, {rank: 2, tokenId: '9', seed: seedOf('9'), score: 90, prev: null},
+            {rank: 3, tokenId: '5', seed: seedOf('5'), score: 90, prev: null}, {rank: 4, tokenId: '2', seed: seedOf('2'), score: 10, prev: null},
         ]});
         expect(reader.board('race', 'yesterday')).toMatchObject({from: '2026-10-13', closesAt: null, entrants: 1});
     });
@@ -71,6 +71,55 @@ describe('boards', () => {
         const board = reader.board('devotion', '28d');
         expect(board).toMatchObject({from: '2026-09-17', to: '2026-10-14', closesAt: Date.parse('2026-10-14T15:00:00Z'), entrants: 3});
         expect(board.rows.map(r => [r.rank, r.tokenId, r.score])).toEqual([[1, '1', 2], [1, '2', 2], [3, '3', 1]]);
+    });
+});
+
+describe('movement', () => {
+    test('ranks compare with the whole earlier board: up, down, unchanged, new, and a climb from below the shown rows', () => {
+        const {add, reader} = setup();
+        for (let i = 1; i <= 14; i++) add(String(i), 'race', '2026-10-13', 1, 100 - i);
+        add('14', 'race', '2026-10-14', 1, 500); add('1', 'race', '2026-10-14', 1, 400); add('3', 'race', '2026-10-14', 1, 300); add('20', 'race', '2026-10-14', 1, 200);
+        const board = reader.board('race', 'today');
+        expect(board.moves).toBe(true);
+        // Token 14 was 14th, off yesterday's top ten but on the board, so it climbs 13 rather than reading new; token 2 dropped out.
+        expect(board.rows.map(r => [r.tokenId, r.rank, r.prev])).toEqual([['14', 1, 14], ['1', 2, 1], ['3', 3, 3], ['20', 4, null]]);
+        expect(reader.standings(['14']).guardians[0]!.games.race.today).toMatchObject({rank: 1, moves: true, prev: 14});
+        // Yesterday's board compares with the day before, which nobody played: nothing to compare, so no row reads new.
+        const yesterday = reader.board('race', 'yesterday');
+        expect(yesterday.moves).toBe(false); expect(yesterday.rows.every(r => r.prev === null)).toBe(true);
+        expect(reader.board('stamp', 'today')).toMatchObject({moves: false, rows: []});
+    });
+    test('devotion compares with the 28 days ending yesterday, shared ranks on both sides', () => {
+        const {add, reader} = setup();
+        for (const day of ['2026-09-16', '2026-10-10', '2026-10-11']) add('1', 'race', day, 1, 1);
+        for (const day of ['2026-10-12', '2026-10-13']) add('2', 'stamp', day, 1, 1);
+        add('3', 'shop', '2026-10-13', 1, 1); add('3', 'shop', '2026-10-14', 1, 1); add('2', 'shop', '2026-10-14', 1, 1); add('4', 'race', '2026-10-14', 1, 1);
+        // Yesterday: 1 had 3 days, 2 had 2, 3 had 1. Today the 16 Sep day ages out of token 1's window.
+        expect(reader.board('devotion', '28d').rows.map(r => [r.tokenId, r.rank, r.prev])).toEqual([['2', 1, 2], ['1', 2, 1], ['3', 2, 3], ['4', 4, null]]);
+    });
+    test('weeks compare with the week before under the same ruleset only', () => {
+        const {add, reader} = setup(), old = ARCADE_RULESET_VERSION - 1;
+        add('1', 'stamp', '2026-10-06', 1, 50); add('2', 'stamp', '2026-10-06', 1, 40); add('2', 'stamp', '2026-10-13', 1, 70); add('1', 'stamp', '2026-10-13', 1, 30);
+        expect(reader.board('stamp', 'week')).toMatchObject({moves: true, rows: [{tokenId: '2', prev: 2}, {tokenId: '1', prev: 1}]});
+        expect(reader.standings(['2']).guardians[0]!.games.stamp.week).toMatchObject({rank: 1, moves: true, prev: 2});
+        // Last week closed under an older ruleset: its scores came from other courses, so this week shows no movement.
+        const bumped = setup();
+        bumped.add('5', 'shop', '2026-10-06', 1, 90, 1, old); bumped.add('6', 'shop', '2026-10-07', 1, 80, 1, old); bumped.add('6', 'shop', '2026-09-30', 1, 70, 1, old);
+        bumped.add('5', 'shop', '2026-10-13', 1, 10);
+        expect(bumped.reader.board('shop', 'week')).toMatchObject({moves: false, rows: [{tokenId: '5', prev: null}]});
+        expect(bumped.reader.standings(['5']).guardians[0]!.games.shop.week).toMatchObject({rank: 1, moves: false, prev: null});
+        // Last week against the week before: both closed under that same older ruleset, so they compare.
+        expect(bumped.reader.board('shop', 'lastweek')).toMatchObject({moves: true, rows: [{tokenId: '5', prev: null}, {tokenId: '6', prev: 1}]});
+    });
+    test('at midnight KST the day just ended becomes yesterday and still compares with the day before it', () => {
+        const {store, add} = setup();
+        add('1', 'race', '2026-10-13', 1, 10); add('2', 'race', '2026-10-13', 1, 20); add('1', 'race', '2026-10-14', 1, 30); add('2', 'race', '2026-10-14', 1, 5);
+        const at = (instant: number) => new RankingReader(store, collection, () => instant);
+        const before = at(Date.parse('2026-10-14T14:59:59Z')), after = at(Date.parse('2026-10-14T15:00:00Z'));
+        const moves = [{tokenId: '1', rank: 1, prev: 2}, {tokenId: '2', rank: 2, prev: 1}];
+        expect(before.board('race', 'today')).toMatchObject({from: '2026-10-14', moves: true, rows: moves});
+        expect(after.board('race', 'today')).toMatchObject({from: '2026-10-15', moves: true, rows: []});
+        expect(after.board('race', 'yesterday')).toMatchObject({from: '2026-10-14', moves: true, rows: moves});
     });
 });
 
@@ -143,7 +192,7 @@ describe('standings', () => {
             leaders: {race: 99, shop: null, stamp: null}});
         const mine = standings.guardians[0]!;
         expect(mine.games.race.attemptsUsed).toBe(3);
-        expect(mine.games.race.today).toEqual({rank: 12, score: 88, entrants: 15, leader: 99, above: {rank: 11, tokenId: '11', seed: seedOf('11'), score: 89},
+        expect(mine.games.race.today).toEqual({rank: 12, score: 88, moves: false, prev: null, entrants: 15, leader: 99, above: {rank: 11, tokenId: '11', seed: seedOf('11'), score: 89},
             nearby: [10, 11, 12, 13, 14].map(n => ({rank: n, tokenId: String(n), seed: seedOf(String(n)), score: 100 - n}))});
         expect(mine.games.shop).toMatchObject({attemptsUsed: 0, today: null, week: {rank: 1, score: 6, above: null}});
         expect(mine.games.stamp).toEqual({attemptsUsed: 0, today: null, week: null});
