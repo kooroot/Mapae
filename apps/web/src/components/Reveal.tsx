@@ -48,6 +48,11 @@ export function Reveal({
         // this commit, before the re-render that sets `data-armed` starts the
         // transition it delays — and, like the observer, it is read once on mount.
         if (delay) node.style.transitionDelay = `${delay}ms`;
+        const rect = node.getBoundingClientRect();
+        if (rect.top < window.innerHeight && rect.bottom > 0) {
+            setShown(true);
+            return;
+        }
         setArmed(true);
         const observer = new IntersectionObserver(
             (entries) => {

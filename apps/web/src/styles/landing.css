@@ -62,11 +62,6 @@
     flex-shrink: 0;
 }
 
-.lockup {
-    display: inline-flex;
-    align-items: center;
-    gap: 11px;
-}
 
 .nav .lockup img,
 .foot .lockup img {

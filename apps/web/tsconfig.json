@@ -2,6 +2,7 @@
     "extends": "../../packages/shared/tsconfig.json",
     "compilerOptions": {
         "jsx": "react-jsx",
+        "paths": {"@site-root": ["./src/surfaces/combined.tsx"]},
         "types": [
             "vite/client",
             "bun",

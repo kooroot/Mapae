@@ -403,3 +403,9 @@ button {
     color: var(--ink-3);
     overflow-wrap: anywhere;
 }
+
+.lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+}

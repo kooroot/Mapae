@@ -34,28 +34,6 @@
     font-family: var(--sans);
 }
 
-.studio-entry-loading {
-    display: grid;
-    min-height: 100svh;
-    place-items: center;
-    align-content: center;
-    gap: 16px;
-    color: rgba(242, 238, 231, 0.62);
-    background: #080807;
-    font-family: var(--mono);
-    font-size:14px;
-    letter-spacing: 0.22em;
-}
-
-.studio-entry-loading i {
-    width: 22px;
-    height: 22px;
-    border: 1px solid rgba(242, 238, 231, 0.2);
-    border-top-color: #e8b88f;
-    border-radius: 50%;
-    animation: studio-spin 800ms linear infinite;
-}
-
 .studio-shell::before {
     content: "";
     position: fixed;
@@ -962,46 +940,6 @@ a.studio-metric:hover {
     font-size:14px;
     line-height: 1.65;
     word-break: keep-all;
-}
-
-.studio-revoke-action {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    margin-top: 16px;
-}
-
-/* Revoke and forget read as the destructive acts they are — red, not the metal CTA. The
-   fallbacks keep it red in the arcade, which renders RevokeButton outside .studio-shell. */
-.mapae-action.studio-danger-action {
-    border-color: rgba(227, 107, 98, 0.45);
-    color: var(--studio-red, #e36b62);
-    background: var(--studio-red-wash, rgba(227, 107, 98, 0.1));
-}
-
-.mapae-action.studio-danger-action:hover:not(:disabled) {
-    border-color: rgba(227, 107, 98, 0.7);
-    background: rgba(227, 107, 98, 0.16);
-    filter: none;
-}
-
-/* Status copy, not an error — the red form is opt-in via .fault. */
-.studio-revoke-note {
-    max-width: 62ch;
-    color: var(--studio-text-3);
-    font-size:14px;
-    line-height: 1.6;
-    word-break: keep-all;
-}
-
-.studio-revoke-note.fault {
-    color: var(--studio-red);
-}
-
-.studio-revoke-note a {
-    color: var(--studio-metal);
-    text-decoration: underline;
 }
 
 .studio-security-grid {
@@ -2486,5 +2424,5 @@ a.studio-metric:hover {
 .studio-shell :is(button,a,summary):focus-visible{outline:2px solid var(--ui-focus);outline-offset:3px}
 /* Hangul is already square: tracking built for Latin caps lands as gaps between syllables, and mid-word breaks split them. */
 .studio-shell:lang(ko){word-break:keep-all;overflow-wrap:break-word}
-:is(.studio-entry-loading,.studio-kicker,.studio-card-label,.studio-sidebar-foot p,.studio-status-pill,.studio-manual-import>summary small,.studio-security-check>span,.studio-security-detail>header>span,.studio-receipt-card>header>span,.studio-agent-card header>i):lang(ko){font-family:var(--sans);letter-spacing:.02em}
+:is(.studio-kicker,.studio-card-label,.studio-sidebar-foot p,.studio-status-pill,.studio-manual-import>summary small,.studio-security-check>span,.studio-security-detail>header>span,.studio-receipt-card>header>span,.studio-agent-card header>i):lang(ko){font-family:var(--sans);letter-spacing:.02em}
 @media(max-width:720px){.studio-segmented button{min-height:var(--ui-touch)}}

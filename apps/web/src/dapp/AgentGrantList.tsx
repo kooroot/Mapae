@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import {useEffect, useState} from "react";
 import {buildMcpBundle} from "../lib/agent-key";
-import {docsUrl, deployment} from "../lib/config";
+import {docsUrl} from "../lib/config";
+import {deployment} from "../lib/chain-client";
 import {short} from "../lib/dial";
 import type {SessionGrant} from "../lib/grant";
 import type {Locale} from "../lib/i18n";

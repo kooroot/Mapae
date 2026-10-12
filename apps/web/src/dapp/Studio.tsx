@@ -1,3 +1,4 @@
+import "../styles/app.css";
 import {
     readDelegationStatus,
     readSettlementReceipts,
@@ -33,16 +34,15 @@ import {GrantOnboarding, type GrantPlacement} from "./GrantOnboarding";
 import {Web3Providers} from "./Web3Providers";
 import {
     chain,
-    deployment,
     docsUrl,
     explorerAddressUrl,
     explorerTxUrl,
     faucetUrl,
     landingUrl,
-    publicClient,
     publicSubmitterAvailability,
     submitterAvailability,
 } from "../lib/config";
+import {deployment, publicClient} from "../lib/chain-client";
 import {RevokeButton} from "./RevokeButton";
 import {awaitRevocationVisible} from "../lib/revoke";
 import {short, struckPercent} from "../lib/dial";

@@ -1,3 +1,4 @@
+import "./revoke-button.css";
 import {WalletPicker} from "../components/WalletPicker";
 import {ActionProgress} from "../components/ActionProgress";
 import type {Delegation} from "@metamask/smart-accounts-kit";
@@ -16,11 +17,10 @@ import {useAccount, useSignTypedData} from "wagmi";
 import {
     bootstrapAvailability,
     chain,
-    deployment,
     explorerTxUrl,
     publicSubmitterAvailability,
-    publicClient,
 } from "../lib/config";
+import {deployment, publicClient} from "../lib/chain-client";
 import {requestSponsoredBootstrap} from "../lib/grant";
 import type {Locale} from "../lib/i18n";
 import {useLocale} from "../lib/locale";

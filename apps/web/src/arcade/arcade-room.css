@@ -115,6 +115,11 @@
     .arc-room-viewport { overflow: hidden; cursor: grab; }
     .arc-room-viewport:active { cursor: grabbing; }
     .arc-room-cabinets { justify-content: flex-start; align-items: end; gap: 4vw; padding: 6px 0 8px; touch-action: pan-y pinch-zoom; }
+    /* Match Embla's centered start position in SSR. Its inline transform takes over
+       on mount; 48vw cabinets + 4vw gaps keep the first paint on the selected game. */
+    .arc-room[data-selected=race] .arc-room-cabinets { transform: translateX(calc(50% - 24vw)); }
+    .arc-room[data-selected=shop] .arc-room-cabinets { transform: translateX(calc(50% - 76vw)); }
+    .arc-room[data-selected=stamp] .arc-room-cabinets { transform: translateX(calc(50% - 128vw)); }
     .arc-room-cabinet { flex: 0 0 48vw; max-width: none; user-select: none; }
     .arc-room-navigation { display: flex; justify-content: center; align-items: center; gap: 0; margin-top: -8px; }
     .arc-room-navigation button { display: grid; place-items: center; width: 44px; height: 44px; color: #eed1a1; }

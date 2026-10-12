@@ -8,10 +8,6 @@ import {DOCUMENT_SECURITY_HEADERS} from "../lib/security";
 
 import "../styles/fonts.css";
 import "../styles/tokens.css";
-import "../styles/landing.css";
-import "../styles/hero.css";
-import "../styles/home.css";
-import "../styles/app.css";
 
 /*
  * The document.

@@ -1,9 +1,4 @@
-// Subpath import on purpose: the package barrel also pulls in the Bun-only agent
-// runtime, which does not resolve in a browser bundle.
-import {parseActiveDeploymentArtifactJson} from "@mapae/delegation/config";
 import {explorerAddressUrl, explorerTxUrl, giwaSepolia, MOCK_USDC} from "@mapae/shared";
-import {createPublicClient, http} from "viem";
-import frameworkArtifact from "../../../../deployments/giwa-sepolia.framework.json";
 import type {Locale} from "./i18n";
 
 export type SiteSurface = "combined" | "landing" | "app" | "faucet";
@@ -44,13 +39,6 @@ export const faucetUrl =
 export const sellerGuideUrl = `${githubUrl}/blob/main/docs/seller-guide.md`;
 
 /**
- * The committed deployment artifact is the source of truth for enforcer and
- * manager addresses. `docs/deployed-contracts.md` mirrors it for humans; code
- * reads the JSON so the two cannot drift apart silently.
- */
-export const deployment = parseActiveDeploymentArtifactJson(JSON.stringify(frameworkArtifact));
-
-/**
  * What this page is allowed to say, and what it reads live.
  *
  * Two rules govern this file.
@@ -70,8 +58,6 @@ export const deployment = parseActiveDeploymentArtifactJson(JSON.stringify(frame
 export const rpcUrl = import.meta.env["VITE_RPC_URL"]?.trim() || giwaSepolia.rpcUrls.default.http[0];
 
 export const chain = giwaSepolia;
-
-export const publicClient = createPublicClient({chain: giwaSepolia, transport: http(rpcUrl)});
 
 export {explorerAddressUrl, explorerTxUrl};
 

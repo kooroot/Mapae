@@ -3,7 +3,7 @@ import {isDelegationRevoked, readAccountOwner} from "@mapae/delegation/revocatio
 import {buildRevocationSubmissionBody} from "@mapae/delegation/revocation-submission";
 import type {Address, Hex, PublicClient} from "viem";
 import type {PackedUserOperation} from "viem/account-abstraction";
-import {deployment, publicClient} from "./config";
+import {deployment, publicClient} from "./chain-client";
 import {shortAddress} from "./dial";
 import type {Locale} from "./i18n";
 

@@ -14,7 +14,7 @@ import {
     zeroAddress,
     type Address,
 } from "viem";
-import {deployment, publicClient} from "./config";
+import {deployment, publicClient} from "./chain-client";
 import type {AgentSessionKey} from "./agent-key";
 import type {Locale} from "./i18n";
 

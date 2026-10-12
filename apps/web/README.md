@@ -133,3 +133,21 @@ sender를 강제하므로 자기 권한의 회수만 나를 수 있고, 예치�
 않은 요청은 스폰서의 지출 없이 거절된다. 스폰서드 프로파일의 수수료 상한과
 일일 예산이 나머지를 묶는다. 온보딩 스폰서와 같은 논리다 — 침해돼도 자기
 잔액만큼의 가스가 전부이고, 호출자가 지명할 수 있는 것이 없다.
+
+## 초기 화면 검증
+
+배포 루트는 `src/surfaces/`에서 빌드 시 선택한다. 라우터가 페이지 코드와 CSS를
+함께 preload하도록 두고, 루트에 `React.lazy`를 중첩하지 않는다. 전역에는 토큰·폰트만
+두고 각 화면이 자신의 CSS를 import한다. 한글 폰트는 Fontsource의 `600.css`처럼
+`unicode-range`로 나눈 weight entrypoint를 사용한다 (`korean-600.css`는 전체 글꼴).
+
+빌드 후 `bun run preview --port 5202`를 켜고 아래 검사를 실행한다. dev 서버는
+JS로 CSS를 주입하므로 초기 SSR 스타일 누락을 검증할 수 없다.
+
+```bash
+node scripts/check-loading.mjs http://localhost:5202 faucet
+# 다른 빌드는 마지막 인자를 landing 또는 app으로 바꾼다.
+```
+
+브라우저 검증도 캐시를 비우고 JavaScript 요청을 지연한 첫 화면부터 확인한다.
+네트워크가 idle이 된 후의 스크린샷만으로 초기 로딩을 판정하지 않는다.

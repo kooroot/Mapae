@@ -29,9 +29,10 @@ export function ArcadeRoom({locale, selected, onSelect, reducedMotion, children}
     reducedMotion: boolean; children: ReactNode;
 }) {
     const ko = locale === "ko";
-    const [visible, setVisible] = useState(selected === "auto" ? 0 : GAMES.indexOf(selected));
+    const [startIndex] = useState(selected === "auto" ? 0 : GAMES.indexOf(selected));
+    const [visible, setVisible] = useState(startIndex);
     const [viewport, carousel] = useEmblaCarousel({
-        align: "center", containScroll: false, duration: reducedMotion ? 0 : 25,
+        startIndex, align: "center", containScroll: false, duration: reducedMotion ? 0 : 25,
         active: false, breakpoints: {"(max-width: 620px)": {active: true}},
     });
     const cabinets = useRef<(HTMLButtonElement | null)[]>([]);
@@ -83,7 +84,7 @@ export function ArcadeRoom({locale, selected, onSelect, reducedMotion, children}
         if (!game) return;
         setVisible(index); onSelect(game); carousel?.scrollTo(index, reducedMotion);
     }
-    return <section className="arc-room" ref={room} aria-labelledby="arc-room-title">
+    return <section className="arc-room" data-selected={selected === "auto" ? "race" : selected} ref={room} aria-labelledby="arc-room-title">
         <picture className="arc-room-background"><source media="(max-width: 620px)" srcSet="/arcade/hanok-room-768.webp" /><img src="/arcade/hanok-room-1536.webp" width={1536} height={1024} alt="" fetchPriority="high" /></picture>
         <div className="arc-room-ambient" aria-hidden="true"><div className="arc-room-lanterns"><i /><i /><i /><i /><i /><i /></div></div>
         <div className="arc-room-sign"><ArcadeBrand /><h1 id="arc-room-title">{ko ? "오늘은 뭐 하고 놀까요?" : "What shall we play today?"}</h1></div>
@@ -98,7 +99,7 @@ export function ArcadeRoom({locale, selected, onSelect, reducedMotion, children}
                     const next = event.key === "Home" ? 0 : event.key === "End" ? GAMES.length - 1 : Math.max(0, Math.min(GAMES.length - 1, index + (event.key === "ArrowRight" ? 1 : -1)));
                     choose(next); cabinets.current[next]?.focus({preventScroll: true});
                 }}>
-                <img src={`/arcade/cabinet-${game}-640.webp`} srcSet={`/arcade/cabinet-${game}-384.webp 384w, /arcade/cabinet-${game}-640.webp 640w`} sizes="(max-width: 620px) 72vw, (max-width: 1000px) 28vw, 300px" width={640} height={960} alt="" draggable={false} />
+                <img src={`/arcade/cabinet-${game}-640.webp`} srcSet={`/arcade/cabinet-${game}-384.webp 384w, /arcade/cabinet-${game}-640.webp 640w`} sizes="(max-width: 620px) 48vw, (max-width: 1000px) 28vw, 300px" width={640} height={960} alt="" draggable={false} />
                 <span className="arc-room-marquee" lang={locale}>{names[game]}</span>
                 <span className="arc-room-crt" aria-hidden="true" />
                 <span className="arc-room-slot"><span>{selected === game ? ko ? "선택 완료 ✓" : "SELECTED ✓" : ko ? "놀이 선택 ↗" : "SELECT GAME ↗"}</span></span>

@@ -79,3 +79,5 @@
 .arc-nav a em{flex:none;padding:1px 7px;border:1px solid #e9c99f40;border-radius:var(--r-pill);color:var(--arc-gold);font:600 11px/1.5 var(--sans);font-style:normal;font-variant-numeric:tabular-nums}
 .arc-header-connect{min-height:44px;padding:8px 18px;gap:8px;font-size:13px;white-space:nowrap}
 .arc-account-disconnect{white-space:nowrap}
+
+.arc-game-loading{display:grid;place-items:center;min-height:100svh;background:var(--arc-bg,#0e0c0a);color:var(--arc-text,#ede7da);font-family:var(--sans)}

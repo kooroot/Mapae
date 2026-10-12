@@ -4,7 +4,8 @@ import {ArrowUpRight, Check, CircleAlert, Clock3, Droplets, LoaderCircle, PartyP
 import {useEffect, useState, type ReactNode} from "react";
 import type {Address} from "viem";
 import {MOCK_USDC} from "@mapae/shared";
-import {appUrl, explorerAddressUrl, explorerTxUrl, landingUrl, publicClient} from "../lib/config";
+import {appUrl, explorerAddressUrl, explorerTxUrl, landingUrl} from "../lib/config";
+import {publicClient} from "../lib/chain-client";
 import {localizeUrl} from "../lib/i18n";
 import {shortAddress} from "../lib/dial";
 import {useLocale} from "../lib/locale";

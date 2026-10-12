@@ -1,4 +1,4 @@
-import {useEffect, useLayoutEffect, useRef, useState} from "react";
+import {lazy, Suspense, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {useLocation, useNavigate, useParams} from "@tanstack/react-router";
 import {useAccount, useConnect} from "wagmi";
 import type {GameId} from "@mapae/arcade";
@@ -9,7 +9,6 @@ import {ArcadeHeader} from "./ArcadeHeader";
 import {ArcadeMenu} from "./ArcadeMenu";
 import {scrollToGameStart, swapScreen} from "./motion";
 import {LobbyDock} from "./LobbyDock";
-import {GuestArcade} from "./guest/GuestArcade";
 import {useGuestPractice} from "./guest/useGuestPractice";
 import {trackEngagement} from "./engagement/client";
 import {useGuardianDesk} from "./nft/useGuardianDesk";
@@ -19,12 +18,15 @@ import {OutingsSection} from "./sections/OutingsSection";
 import {JournalSection} from "./sections/JournalSection";
 import {RankingSection} from "./sections/RankingSection";
 import {attemptsBadge, attemptsLeft} from "./ranking/format";
-import {NftPractice} from "./nft/NftPractice";
 import type {GuardianToken} from "./profile/guardians";
 import {arcadeSectionFromParam, arcadeSectionLink, outingStatusLabel, SECTION_COPY, type ArcadeSection, type SectionBadges} from "./sections";
 import {pendingGrowth} from "./nft/model";
 import "./arcade-shell.css";
 import "./guest/guest.css";
+
+// Game engines are only needed after a visitor chooses to play.
+const GuestArcade = lazy(() => import("./guest/GuestArcade").then(m => ({default: m.GuestArcade})));
+const NftPractice = lazy(() => import("./nft/NftPractice").then(m => ({default: m.NftPractice})));
 
 type Screen = {kind: "section"} | {kind: "guest"; game: GameId} | {kind: "practice"; token: GuardianToken; game: GameId; seed: number};
 
@@ -118,8 +120,9 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
     };
     const blocked = desk.busy || desk.session.status === "signing", leave = () => void disconnect();
 
-    if (screen.kind === "guest") return <GuestArcade game={screen.game} store={guestStore} onBack={back} onGuardian={meetGuardian} />;
-    if (screen.kind === "practice") return <NftPractice token={screen.token} game={screen.game} seed={screen.seed} ko={ko} reducedMotion={reducedMotion} returnLabel={SECTION_COPY[locale][section].back} onClose={back} />;
+    const gameLoading = <div className="arc-game-loading" role="status">{ko ? "놀이를 준비하고 있어요…" : "Getting your game ready…"}</div>;
+    if (screen.kind === "guest") return <Suspense fallback={gameLoading}><GuestArcade game={screen.game} store={guestStore} onBack={back} onGuardian={meetGuardian} /></Suspense>;
+    if (screen.kind === "practice") return <Suspense fallback={gameLoading}><NftPractice token={screen.token} game={screen.game} seed={screen.seed} ko={ko} reducedMotion={reducedMotion} returnLabel={SECTION_COPY[locale][section].back} onClose={back} /></Suspense>;
     return <main className="arcade agent-arcade arc-shell">
         <ArcadeHeader section={section} locale={locale} owner={owner} walletWaiting={walletWaiting} badges={badges} disconnecting={desk.disconnecting} blocked={blocked} onDisconnect={leave}
             menu={<ArcadeMenu locale={locale} owner={owner} walletWaiting={walletWaiting} badges={badges} disconnecting={desk.disconnecting} blocked={blocked} onDisconnect={leave} />} />

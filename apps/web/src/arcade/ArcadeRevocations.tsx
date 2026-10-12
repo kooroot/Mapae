@@ -4,7 +4,7 @@ import {useQuery} from "@tanstack/react-query";
 import {useState} from "react";
 import type {Hex} from "viem";
 import type {SessionGrant} from "../lib/grant";
-import {deployment, publicClient} from "../lib/config";
+import {deployment, publicClient} from "../lib/chain-client";
 import {RevokeButton} from "../dapp/RevokeButton";
 
 /** The outing permissions this browser signed, each with its on-chain state and a revoke control. */

@@ -1,3 +1,4 @@
+import {fileURLToPath} from "node:url";
 import {cloudflare} from "@cloudflare/vite-plugin";
 import {tanstackStart} from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
@@ -38,7 +39,11 @@ export default defineConfig(({mode}) => {
     // into apps/web/.env must fail the same way one passed inline does.
     const env = loadEnv(mode, process.cwd(), "VITE_");
     assertBuildEnv(env);
+    const surface = env["VITE_SITE_SURFACE"]?.trim() || "combined";
     return {
+        // Select the production root at build time. React.lazy inside a shared root
+        // hides its CSS from the SSR route manifest and delays it until hydration.
+        resolve: {alias: {"@site-root": fileURLToPath(new URL(`./src/surfaces/${surface}.tsx`, import.meta.url))}},
         plugins: [
             cloudflare({viteEnvironment: {name: "ssr"}}),
             tanstackStart({

@@ -3,9 +3,11 @@ import {MOCK_USDC} from '@mapae/shared';
 import {explorerAddressUrl, faucetUrl} from '../../lib/config';
 import {shortAddress} from '../../lib/dial';
 import {localizeUrl} from '../../lib/i18n';
-import {ArcadeRevocations} from '../ArcadeRevocations';
+import {lazy, Suspense} from 'react';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {DeskGate, SectionHeading} from './SectionFrame';
+
+const ArcadeRevocations = lazy(() => import("../ArcadeRevocations").then(m => ({default: m.ArcadeRevocations})));
 
 /**
  * Wallet: who is connected, the smart account that pays for outings and every signed permission. Disconnecting
@@ -35,6 +37,6 @@ function Wallet({desk}: {desk: GuardianDesk}) {
                 <small>{ko ? `faucet.mapae.io에서 @mapae_io를 팔로우하면 하루에 한 번 ${MOCK_USDC.symbol}(테스트넷, 실제 돈 아님)를 받아요.` : `Follow @mapae_io on faucet.mapae.io to get ${MOCK_USDC.symbol} (testnet, not real money) once a day.`}</small>
             </div>
         </section>
-        <ArcadeRevocations grants={giwa.grants} ko={ko} onRevoked={giwa.revoked} />
+        <Suspense fallback={<p role="status">{ko ? "권한 관리 준비 중…" : "Loading permission controls…"}</p>}><ArcadeRevocations grants={giwa.grants} ko={ko} onRevoked={giwa.revoked} /></Suspense>
     </>;
 }

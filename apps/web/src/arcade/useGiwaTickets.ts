@@ -1,21 +1,17 @@
 import {ProfileError, profileRequest} from "./profile/client";
 import {useEffect, useRef, useState} from "react";
 import {useAccount, useConfig, useDisconnect, useSwitchChain} from "wagmi";
-
 import {formatUnits, getAddress, type Address, type Hex} from "viem";
-import {prepareRootPermissionSigningRequest, assembleRootPermission} from "@mapae/delegation/signing";
-
 import {ARCADE_TICKET_AMOUNT} from "@mapae/arcade/tickets";
 import type {AgentGoal, GameId} from "@mapae/arcade";
 import {guardianTokenId} from "@mapae/arcade/guardians";
-import {bootstrapAvailability, chain, deployment, publicClient} from "../lib/config";
-import {derivePayerAccount, readPayerBalance, requestSponsoredBootstrap, verifyPermissionArtifact} from "../lib/grant";
+import {bootstrapAvailability, chain} from "../lib/config";
+import {deployment, publicClient} from "../lib/chain-client";
 import type {Locale} from "../lib/i18n";
 import {arcadePolicy, checkGiwaCatalogue, GiwaTicketError} from "./giwa-client";
 import {giwaWalletError, requestGiwaSignature, waitForWallet} from "./giwa-wallet";
 import {loadGrants, writeGrants} from "../lib/grant-store";
 import type {SessionGrant} from "../lib/grant";
-
 import {validAllowance} from "./allowance";
 import {type OutingStatus, type OutingView} from "@mapae/arcade/outings";
 import {clearSubmission, readSubmission, saveSubmission, type OutingSubmission} from "./outing-submission";
@@ -53,7 +49,8 @@ export function useGiwaTickets(locale: Locale, owner: Address | undefined, authe
         if (!address) return;
         try {setSubmission(readSubmission(address));} catch {setError("외출 요청 기록을 읽지 못했어요. / Outing request unavailable.");}
         let cancelled = false;
-        void derivePayerAccount(address).then(async account => {
+        void import("../lib/grant").then(async ({derivePayerAccount, readPayerBalance}) => {
+            const account = await derivePayerAccount(address);
             // A balance RPC failure must not hide a previously signed grant's revoke
             // button. The account address is deterministic and known before that read.
             if (!cancelled) setPayer(account);
@@ -81,7 +78,7 @@ export function useGiwaTickets(locale: Locale, owner: Address | undefined, authe
             const spent = value.jobs.map(job => `${job.id}:${job.spent}`).join("|");
             if (spent !== lastSpent.current && payer) {
                 lastSpent.current = spent;
-                void readPayerBalance(payer).then(amount => {if (activeOwner.current === address) setBalance(amount === undefined ? null : formatUnits(amount, 6));}).catch(() => {if (activeOwner.current === address) setBalance(null);});
+                void import("../lib/grant").then(({readPayerBalance}) => readPayerBalance(payer)).then(amount => {if (activeOwner.current === address) setBalance(amount === undefined ? null : formatUnits(amount, 6));}).catch(() => {if (activeOwner.current === address) setBalance(null);});
             }
             setAvailable(value.enabled); serverAgent.current = value.agent;
             setJobs(value.jobs);
@@ -150,6 +147,9 @@ export function useGiwaTickets(locale: Locale, owner: Address | undefined, authe
             }
             setPhase("preparing");
             const owner = getAddress(address);
+            const [{derivePayerAccount, readPayerBalance, requestSponsoredBootstrap, verifyPermissionArtifact}, {prepareRootPermissionSigningRequest, assembleRootPermission}] = await Promise.all([
+                import("../lib/grant"), import("@mapae/delegation/signing"),
+            ]);
             const account = await derivePayerAccount(owner);
             for (const [index, target] of targets.entries()) {
                 const {admissions, tokenId, goal, name} = target;

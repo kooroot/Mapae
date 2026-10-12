@@ -25,7 +25,8 @@ import {
 } from "lucide-react";
 import {useEffect, useMemo, useRef, useState, type FormEvent} from "react";
 import {useAccount, useSwitchChain, useWalletClient} from "wagmi";
-import {bootstrapAvailability, chain, deployment, publicClient} from "../lib/config";
+import {bootstrapAvailability, chain} from "../lib/config";
+import {deployment, publicClient} from "../lib/chain-client";
 import {
     requestSponsoredBootstrap,
     signedSessionGrant,

@@ -5,7 +5,7 @@ import {writeContract} from 'viem/actions';
 import {BaseError,bytesToHex,ContractFunctionRevertedError,ContractFunctionZeroDataError,isAddress,isHash,parseAbiItem,type Address,type Hex} from 'viem';
 import {guardianAbi} from '@mapae/arcade/guardian-abi';
 import {GUARDIAN_CHAIN_ID,GUARDIAN_ENTROPY,GUARDIAN_PROVIDER} from '@mapae/arcade/guardians';
-import {publicClient} from '../../lib/config';
+import {publicClient} from "../../lib/chain-client";
 import {ProfileError,profileRequest} from '../profile/client';
 import {giwaWalletError} from '../giwa-wallet';
 import type {GuardianClaimBatch,GuardianDetail,GuardianRoster,GuardianToken} from '../profile/guardians';

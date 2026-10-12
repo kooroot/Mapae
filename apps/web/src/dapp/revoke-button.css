@@ -1,0 +1,40 @@
+.studio-revoke-action {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/* Revoke and forget read as the destructive acts they are — red, not the metal CTA. The
+   fallbacks keep it red in the arcade, which renders RevokeButton outside .studio-shell. */
+.mapae-action.studio-danger-action {
+    border-color: rgba(227, 107, 98, 0.45);
+    color: var(--studio-red, #e36b62);
+    background: var(--studio-red-wash, rgba(227, 107, 98, 0.1));
+}
+
+.mapae-action.studio-danger-action:hover:not(:disabled) {
+    border-color: rgba(227, 107, 98, 0.7);
+    background: rgba(227, 107, 98, 0.16);
+    filter: none;
+}
+
+/* Status copy, not an error — the red form is opt-in via .fault. */
+.studio-revoke-note {
+    max-width: 62ch;
+    color: var(--studio-text-3);
+    font-size:14px;
+    line-height: 1.6;
+    word-break: keep-all;
+}
+
+.studio-revoke-note.fault {
+    color: var(--studio-red);
+}
+
+.studio-revoke-note a {
+    color: var(--studio-metal);
+    text-decoration: underline;
+}
+
