@@ -1,7 +1,7 @@
 import type {GameId} from "@mapae/arcade";
 import {guardianName, type GuardianHonors} from "@mapae/arcade/guardians";
 import {
-    addDays, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
+    addDays, DEVOTION_DAYS, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
     type GuardianStreak, type RankingBoardId, type RankingMove, type RankingPeriod, type RankingStanding, type RankingStandings,
 } from "@mapae/arcade/ranking";
 import type {Locale} from "../../lib/i18n";
@@ -70,7 +70,10 @@ export function shiftCopy(shift: RankShift, period: RankingPeriod, locale: Local
     case "up": return {mark: `▲${shift.by}`, label: locale === "ko" ? `${since}보다 ${shift.by}계단 올라감` : `Up ${shift.by} from ${en}`};
     case "down": return {mark: `▼${shift.by}`, label: locale === "ko" ? `${since}보다 ${shift.by}계단 내려감` : `Down ${shift.by} from ${en}`};
     case "same": return {mark: "–", label: locale === "ko" ? `${since}${particle} 같은 순위` : `Same place as ${en}`};
-    case "new": return {mark: "NEW", label: locale === "ko" ? `새로 오름 · ${since}에는 기록 없음` : `New: no record ${en}`};
+    // Devotion's earlier board is the 28 days to yesterday, so a newcomer there had no ranked day in all of them.
+    case "new": return {mark: "NEW", label: period === "28d"
+        ? locale === "ko" ? `새로 오름 · 어제까지 ${DEVOTION_DAYS}일 동안 기록 없음` : `New: no record in the ${DEVOTION_DAYS} days to yesterday`
+        : locale === "ko" ? `새로 오름 · ${since}에는 기록 없음` : `New: no record ${en}`};
     }
 }
 

@@ -23,7 +23,9 @@ describe("rank movement", () => {
         expect(shiftCopy({kind: "down", by: 1}, "week", "ko")).toEqual({mark: "▼1", label: "지난주보다 1계단 내려감"});
         expect(shiftCopy({kind: "same"}, "yesterday", "ko")).toEqual({mark: "–", label: "전날과 같은 순위"});
         expect(shiftCopy({kind: "same"}, "lastweek", "en").label).toBe("Same place as the week before");
-        expect(shiftCopy({kind: "new"}, "28d", "ko")).toEqual({mark: "NEW", label: "새로 오름 · 어제에는 기록 없음"});
+        expect(shiftCopy({kind: "new"}, "today", "ko")).toEqual({mark: "NEW", label: "새로 오름 · 어제에는 기록 없음"});
+        expect(shiftCopy({kind: "new"}, "28d", "ko").label).toBe("새로 오름 · 어제까지 28일 동안 기록 없음");
+        expect(shiftCopy({kind: "new"}, "28d", "en").label).toBe("New: no record in the 28 days to yesterday");
         expect(shiftCopy({kind: "new"}, "week", "en").label).toBe("New: no record last week");
     });
 });

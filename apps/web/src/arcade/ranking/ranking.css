@@ -26,6 +26,7 @@
 .rank-move.is-up{background:var(--jade-wash);color:var(--jade-ink)}
 .rank-move.is-down{background:var(--vermilion-wash);color:var(--vermilion)}
 .rank-move.is-same{color:var(--card-muted)}
+.arc-entry-dock .rank-move.is-same{color:var(--arc-muted)}
 .rank-move.is-new{border:1px solid var(--medal-gold-rim);background:var(--medal-gold-light);color:var(--medal-gold-ink);font:800 9px/1 var(--sans);letter-spacing:.06em}
 
 /* The board: game tabs on the dark shell, then the board on paper with its chips, period control, podium and rows. */

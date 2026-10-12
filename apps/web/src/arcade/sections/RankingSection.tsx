@@ -183,7 +183,7 @@ function Rules({locale}: {locale: Locale}) {
         '지난주 1위는 장원, 2–3위는 급제, 4–10위는 입격 칭호를 달아요. 칭호는 꾸밈일 뿐이에요.',
         '지난주 칭호와 최장 출석은 화요일 0시(한국 시간)에 확정되고, 모험 기록에서 NFT에 함께 남겨요.',
         '같은 점수면 먼저 낸 기록이 앞서요. 순위는 한국 시간 자정과 월요일 0시에 새로 시작해요.',
-        '순위 옆 ▲▼는 어제(주간 순위는 지난주)보다 오르내린 계단 수, NEW는 그때 기록이 없던 전령이에요. 놀이 규칙이 바뀐 직후에는 비교하지 않아요.',
+        '순위 옆 ▲▼는 바로 앞 기간보다 오르내린 계단 수예요. 오늘은 어제와, 이번 주는 지난주와, 꾸준함은 어제까지의 28일과 견줘요. NEW는 그 기간에 기록이 없던 전령이고, 놀이 규칙이 바뀐 직후에는 견주지 않아요.',
         '무료 체험과 연습 점수는 들어가지 않아요. 검증된 외출 결과만 올라가요. 테스트 토큰만 써요.',
     ] : [
         `In each game, the first ${RANKED_ATTEMPTS} rounds of a Korean-time day are ranked. Later rounds still grow your guardian but stay off the boards.`,
@@ -193,7 +193,7 @@ function Rules({locale}: {locale: Locale}) {
         'Last week’s #1 is Champion, #2–3 Podium and #4–10 Top 10. Titles are cosmetic.',
         'Last week’s titles and your longest streak are final at Tuesday 00:00 KST; record them on the NFT from the journal with your outings.',
         'On equal scores the earlier record leads. Boards restart at midnight KST, and weekly ones on Monday 00:00 KST.',
-        '▲▼ beside a place count the places gained or lost since yesterday (last week on weekly boards); NEW marks a guardian with no record then. Right after a rules change nothing is compared.',
+        '▲▼ beside a place count the places gained or lost since the window before: today against yesterday, this week against last week, devotion against the 28 days to yesterday. NEW marks a guardian with no record then; right after a rules change nothing is compared.',
         'Free play and practice scores never count; only verified outing results reach the boards. Test tokens only.',
     ];
     return <details className="rank-rules"><summary>{ko ? '랭킹 규칙' : 'How rankings work'}</summary><ul>{items.map(item => <li key={item}>{item}</li>)}</ul></details>;
