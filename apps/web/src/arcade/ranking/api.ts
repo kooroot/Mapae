@@ -6,7 +6,7 @@ import {
     STREAK_FREEZE_MAX, validRankingBoard, validRankingTokenId,
     type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings,
 } from "@mapae/arcade/ranking";
-import {tokenHash} from "../profile/api";
+import {tokenHash} from "../../lib/siwe-session";
 
 const UPSTREAM = "https://seller.mapae.io/arcade/ranking";
 const MAX_RESPONSE_BYTES = 64 * 1024;

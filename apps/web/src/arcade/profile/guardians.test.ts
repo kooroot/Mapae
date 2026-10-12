@@ -7,7 +7,8 @@ import {kstDay} from '@mapae/arcade/ranking';
 import type {Address} from 'viem';
 import {emptyProgress,type GuardianRoster} from '../../../../delegated-seller/guardians/types';
 import {profileRepository} from './repository';
-import {profileApi,tokenHash} from './api';
+import {profileApi} from './api';
+import {tokenHash} from '../../lib/siwe-session';
 import {d1} from './test-db';
 import {guardiansApi,validGuardianSnapshot} from './guardians';
 
