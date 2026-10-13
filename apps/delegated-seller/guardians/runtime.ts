@@ -1,4 +1,4 @@
-import {createPublicClient, getAddress, isAddress, type Address, type Hex, type PublicClient} from 'viem';
+import {createPublicClient, getAddress, isAddress, TransactionReceiptNotFoundError, type Address, type Hex, type PublicClient} from 'viem';
 import {privateKeyToAccount} from 'viem/accounts';
 import {throttledHttp, reconcileSettlementReceipt} from '@mapae/delegation';
 import {giwaSepolia, parseNodeRpcUrl, MOCK_USDC} from '@mapae/shared';
@@ -33,6 +33,8 @@ export function readGuardianConfig(env: Record<string,string | undefined> = proc
 }
 type Config = NonNullable<ReturnType<typeof readGuardianConfig>>;
 export type GuardianClient = Pick<PublicClient, 'readContract' | 'getBlock' | 'getTransactionReceipt' | 'getChainId'>;
+/** How far behind the wall clock honors are sealed: well past any lag between the chain head and this process. */
+export const HONOR_CLOCK_MARGIN_MS = 10 * 60_000;
 export function createGuardianReader(config: Config, client: GuardianClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(config.rpcUrl, {}, {timeout: 15_000, retryCount: 1})})): GuardianReader {
     const read = (functionName: string, args: readonly unknown[] = [], blockNumber?: bigint) => client.readContract({
         address: config.collection, abi: guardianAbi, functionName, args, ...(blockNumber === undefined ? {} : {blockNumber}),
@@ -81,7 +83,10 @@ export function createGuardianReader(config: Config, client: GuardianClient = cr
 
 /** Receipt success alone is insufficient for an irrevocable signed growth claim. The caller checked the chain and read the safe head. */
 export async function safeReceipt(client: GuardianClient, row: StoredResult, safe: bigint): Promise<ReceiptEvidence> {
-    const receipt = await client.getTransactionReceipt({hash:row.result.paymentTx});
+    // A payment the node no longer has (dropped by an unsafe-head reorg, or a node that never indexed it) waits like an
+    // unsafe one; anything else thrown here is the node failing, which closes the batch.
+    const receipt = await client.getTransactionReceipt({hash:row.result.paymentTx})
+        .catch((e: unknown) => {if (e instanceof TransactionReceiptNotFoundError) throw new OutingError('receipt_unconfirmed'); throw e;});
     if (receipt.status !== 'success' || reconcileSettlementReceipt({logs:receipt.logs, asset:MOCK_USDC.address,
         payer:row.payer,payTo:ARCADE_PAY_TO,amount:ARCADE_TICKET_AMOUNT}).length) throw new OutingError('receipt_unconfirmed');
     if (receipt.blockNumber > safe) throw new OutingError('receipt_unconfirmed');
@@ -105,7 +110,9 @@ export function createGuardianClaims(config: Config, ledger: GuardianLedger, rea
         if (await client.getChainId() !== 91342) throw new OutingError('receipt_unconfirmed');
         const safe = (await client.getBlock({blockTag:'safe'})).number;
         if (safe === null) throw new OutingError('receipt_unconfirmed');
-        const sealed = token.revealed ? honors.honor(tokenId, Date.now()) : null;
+        // The contract seals a week on block.timestamp, which trails this clock by the chain's lag; an honor signed in that gap
+        // reverts the whole batch, results included. Signing from a clock held back by the margin never produces such an honor.
+        const sealed = token.revealed ? honors.honor(tokenId, Date.now() - HONOR_CLOCK_MARGIN_MS) : null;
         let honor: GuardianClaimBatch['honor'] = null;
         if (sealed && honorAdvances(token.honors, sealed)) {
             // Sign the lane-wise maxima the contract will store, so the honor never shows a lane below the NFT's own.

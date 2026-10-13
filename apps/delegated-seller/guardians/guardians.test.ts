@@ -3,7 +3,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {privateKeyToAccount} from 'viem/accounts';
-import {recoverTypedDataAddress,type Address,type Hex,type Log} from 'viem';
+import {recoverTypedDataAddress,TransactionReceiptNotFoundError,type Address,type Hex,type Log} from 'viem';
 import {emptyHonors,guardianHonorFromJson,guardianHonorsOf,guardianTraitsHash,guardianResultFromJson,guardianResultDomain,GUARDIAN_CLAIM_BATCH,GUARDIAN_HONOR_TYPES,GUARDIAN_RESULT_TYPES,type GuardianHonors,type GuardianSnapshot} from '@mapae/arcade/guardians';
 import {runArcadeSimulation} from '@mapae/arcade/simulation';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
@@ -14,7 +14,7 @@ import {ARCADE_PAY_TO} from '@mapae/arcade/tickets';
 import {OutingStore} from '../outings/store';
 import {OutingRunner} from '../outings/runner';
 import {createGuardianApp} from './routes';
-import {createGuardianClaims,createGuardianReader,readGuardianConfig,type GuardianClient} from './runtime';
+import {createGuardianClaims,createGuardianReader,readGuardianConfig,HONOR_CLOCK_MARGIN_MS,type GuardianClient} from './runtime';
 import {emptyProgress,type GuardianReader,type GuardianToken} from './types';
 import {resultView} from './ledger';
 
@@ -130,6 +130,19 @@ describe('canonical safe payment before attestation',()=>{
             client({getTransactionReceipt:async()=>({status:'success',logs:[],blockNumber:10n,blockHash})}),
         ])expect((await createGuardianClaims(config,s.guardians,reader,noHonors,c)(owner,'1')).claims).toEqual([]);
         expect(s.guardians.get(row.result.resultId)?.signature).toBeNull();
+    });
+    test('a payment the node no longer has waits unsigned and the rows behind it are still signed',async()=>{
+        const s=store(),orphan=await complete(s,'guardian-outing-0','1',`0x${'ee'.repeat(32)}` as Hex),later=await complete(s,'guardian-outing-1','1',tx);
+        const c=client({getTransactionReceipt:async({hash}:{hash:Hex})=>{if(hash===orphan.result.paymentTx)throw new TransactionReceiptNotFoundError({hash});return {status:'success',logs,blockNumber:10n,blockHash};}});
+        const batch=await createGuardianClaims(config,s.guardians,reader,noHonors,c,0)(owner,'1');
+        expect(batch.claims.map(e=>e.result.resultId)).toEqual([later.result.resultId]);
+        expect(s.guardians.get(orphan.result.resultId)?.signature).toBeNull();
+        await expect(createGuardianClaims(config,s.guardians,reader,noHonors,client({getTransactionReceipt:async()=>{throw Error('node down');}}))(owner,'1')).rejects.toThrow('node down');
+    });
+    test('honors are sealed from a clock held back by the margin, so the chain head is never behind the seal',async()=>{
+        let at=0;
+        await createGuardianClaims(config,store().guardians,reader,{honor:(_,when)=>{at=when;return null;}},client())(owner,'1');
+        const held=Date.now()-at;expect(held).toBeGreaterThanOrEqual(HONOR_CLOCK_MARGIN_MS);expect(held).toBeLessThan(HONOR_CLOCK_MARGIN_MS+60_000);
     });
     test('only the current owner batches, including results the previous owner earned',async()=>{
         const s=store(),row=await complete(s),transferred={...reader,token:async()=>({...token(),owner:receiver,ownershipEpoch:'2'})};
