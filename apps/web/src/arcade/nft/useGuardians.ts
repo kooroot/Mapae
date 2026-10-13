@@ -74,6 +74,7 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         :reason==='batch_unavailable'?(ko?'한 번에 기록하기는 전령 컨트랙트 업그레이드 뒤에 열려요. 업그레이드가 끝나면 다시 시도해 주세요.':'Recording in one go opens after the guardian contract upgrade. Try again once it lands.')
         :reason==='claim_rejected'?(ko?'기록이 이미 반영됐거나 상태가 바뀌어 지갑 요청을 보내지 않았어요. 새로고침한 뒤 다시 기록해 주세요.':'Nothing was sent: these outings were already recorded or the guardian changed. Refresh and record again.')
         :reason==='claims_waiting'?(ko?'아직 GIWA에서 확정되지 않은 모험이에요. 몇 분 뒤 다시 기록해 주세요.':'These outings are not final on GIWA yet. Record them again in a few minutes.')
+        :reason==='honor_unsealed'?(ko?'이번 주 칭호와 출석은 GIWA에서 아직 마감되지 않아 지갑 요청을 보내지 않았어요. 몇 분 뒤 다시 기록해 주세요.':'Nothing was sent: this week\'s honors are not closed on GIWA yet. Record again in a few minutes.')
         :e instanceof ProfileError&&e.code==='rate_limited'?(ko?'요청이 많아요. 잠시 후 다시 시도해 주세요.':'Too many requests. Try again shortly.')
         :(ko?'완료를 확인하지 못했어요. 아래 트랜잭션과 전령 상태를 새로고침해 주세요. 새 결제나 재추첨을 자동으로 요청하지 않아요.':'Completion is not confirmed. Check the transaction and refresh your guardian. Nothing is paid or redrawn automatically.'));}finally{locked.current=false;if(alive.current){setBusy(false);setPhase('');}await refresh();}}
     async function mint(){await perform(async()=>{
@@ -104,9 +105,11 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         setPhase(ko?`${[results.length?`모험 ${results.length}건`:'',honors.length?'칭호·출석':''].filter(Boolean).join('과 ')} 기록을 지갑에서 확인해 주세요`
             :`Confirm ${[results.length?`${results.length} ${results.length===1?'outing':'outings'}`:'',honors.length?'honors':''].filter(Boolean).join(' and ')} in your wallet`);
         const w=await wallet();
-        // A revert here means nothing was sent; say so rather than pointing at a transaction that does not exist.
+        // A revert here means nothing was sent; say so rather than pointing at a transaction that does not exist. An honor the
+        // chain has not sealed yet (its clock trails the seller's) is the one revert that heals by itself, so it gets its own words.
         const simulation=await publicClient.simulateContract({address:collection,abi:guardianAbi,functionName:'claim',args:[results,signatures,honors,honorSignatures],account:owner})
-            .catch((e:unknown)=>{if(e instanceof BaseError&&e.walk(x=>x instanceof ContractFunctionRevertedError))throw Error('claim_rejected');throw e;});
+            .catch((e:unknown)=>{const revert=e instanceof BaseError?e.walk(x=>x instanceof ContractFunctionRevertedError):null;
+                if(revert instanceof ContractFunctionRevertedError)throw Error(revert.data?.errorName==='InvalidHonor'?'honor_unsealed':'claim_rejected');throw e;});
         await wallet();await recorded(await writeContract(w,simulation.request),'claim',token.tokenId);
     });}
     async function recover(token:GuardianToken){await perform(async()=>{
