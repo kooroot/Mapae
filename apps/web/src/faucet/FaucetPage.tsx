@@ -16,7 +16,6 @@ import {LocaleSwitch, useLocale} from "../lib/locale";
 import {ClaimPanel} from "./ClaimPanel";
 import {claimFaucet, FaucetError, loginFaucet, readFaucetAccount, readFaucetStatus} from "./client";
 import {FAUCET_COPY, formatAmount} from "./copy";
-import {markMissions, readMissions} from "./mission-store";
 import "./faucet.css";
 
 /**
@@ -51,9 +50,8 @@ function FaucetScreen() {
     const [signedIn, setSignedIn] = useState(false);
     const [fresh, setFresh] = useState<Record<FaucetKind, boolean>>({musdc: false, eth: false});
     const [pendingLong, setPendingLong] = useState(false);
+    // The follow is the person's act, not the wallet's: one click covers this visit whichever wallet connects, and a reload asks again.
     const [missions, setMissions] = useState<FaucetMissionId[]>([]);
-    // A follow opened before a wallet is connected is kept for the wallet that connects next.
-    const unclaimedMissions = useRef<FaucetMissionId[]>([]);
     const current = useRef<Address | undefined>(undefined);
 
     const refresh = useCallback(async (owner: Address) => {
@@ -71,10 +69,7 @@ function FaucetScreen() {
     useEffect(() => {
         current.current = address;
         setViews(NO_VIEWS); setRecipient(undefined); setSignedIn(false); setFresh({musdc: false, eth: false}); setPendingLong(false);
-        if (!address) {setMissions(unclaimedMissions.current); return;}
-        setMissions(unclaimedMissions.current.length ? markMissions(address, unclaimedMissions.current) : readMissions(address));
-        unclaimedMissions.current = [];
-        void refresh(address);
+        if (address) void refresh(address);
     }, [address, refresh]);
 
     const anyPending = views.musdc?.state === "pending" || views.eth?.state === "pending";
@@ -88,11 +83,7 @@ function FaucetScreen() {
         return () => clearInterval(timer);
     }, [address, anyPending, refresh]);
 
-    const onMission = (id: FaucetMissionId) => {
-        if (address) {setMissions(markMissions(address, [id])); return;}
-        unclaimedMissions.current = [...new Set([...unclaimedMissions.current, id])];
-        setMissions(unclaimedMissions.current);
-    };
+    const onMission = (id: FaucetMissionId) => setMissions((done) => [...new Set([...done, id])]);
 
     const ensureSession = async () => {
         if (!address) throw new FaucetError("login_required");
