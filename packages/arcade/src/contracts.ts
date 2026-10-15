@@ -4,6 +4,11 @@ import type {GuardianAptitudes} from "./guardians";
 export const ARCADE_RULESET_VERSION = 3;
 
 export type GameId = "stamp" | "race" | "shop";
+/** The three games' display names, one source for the web, the share page and the seller's share card. */
+export const GAME_NAMES: Record<"ko" | "en", Record<GameId, string>> = {
+    ko: {race: "달려라 마패", shop: "흥정상회", stamp: "도깨비 도장찍기"},
+    en: {race: "Auto Race", shop: "Tiny Shop", stamp: "Dokkaebi Stamp"},
+};
 export type AgentMode = "rules" | "llm";
 export type AgentGoal = "score" | "save" | "explore";
 export type AgentProfile = {name: string; color: "red" | "jade" | "ink"; temperament: "curious" | "bold" | "calm"; goal: AgentGoal; aptitudes?: GuardianAptitudes};

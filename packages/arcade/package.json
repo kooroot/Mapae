@@ -18,7 +18,8 @@
     "./season": "./src/season.ts",
     "./team": "./src/team.ts",
     "./guardians": "./src/guardians.ts",
-    "./guardian-abi": "./src/guardian-abi.ts"
+    "./guardian-abi": "./src/guardian-abi.ts",
+    "./guardian-art": "./src/guardian-art.ts"
   },
   "dependencies": {
     "@mapae/shared": "workspace:*",
