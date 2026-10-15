@@ -34,7 +34,9 @@ export function SeasonBoard({desk, walletWaiting}: {desk: GuardianDesk; walletWa
                     <h2 id="rank-board-title">{ko ? `시즌 ${SEASON.id} 순위` : `Season ${SEASON.id} board`}</h2></div>
                 {remote.value && <BoardChips entrants={remote.value.entrants} closesAt={remote.value.closesAt} period="season" locale={locale} />}
             </div>
-            {closed && !sealed && <p className="rank-team-note rank-tally-note">{tallyNotice(locale)}</p>}
+            {closed && !sealed && (hall.error && !hall.value
+                ? <div className="rank-error rank-tally-note" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '명예의 전당을 불러오지 못했어요. 잠시 뒤 저절로 다시 읽어 와요.' : 'The hall of fame could not load. It will try again shortly.'}</p></div>
+                : <p className="rank-team-note rank-tally-note">{tallyNotice(locale)}</p>)}
             {!status.value ? status.error
                 ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '시즌 정보를 불러오지 못했어요. 잠시 뒤 저절로 다시 읽어 와요.' : 'The season could not load. It will try again shortly.'}</p></div>
                 : <Loading ko={ko} />

@@ -281,15 +281,16 @@ export class RankingReader {
 
     /**
      * The season board as of `today` (or its last day) and as of the day before, or null before the season opens. Points are
-     * summed per day in SQL; the attendance bonus and the shared ranks are added here from each guardian's season days.
+     * summed per day in SQL; the attendance bonus and the shared ranks are added here from each guardian's season days. A closed
+     * season has no earlier board: its standings are final, so no row moves.
      */
     private seasonWindows(today: string): SeasonWindows | null {
         const window = seasonWindow(this.season, today);
         if (!window) return null;
-        const {from, to} = window, yesterday = addDays(to, -1), totals = new Map<string, {bonus: number; today: number}>();
+        const {from, to} = window, yesterday = addDays(to, -1), totals = new Map<string, {bonus: number; today: number}>(), closed = to < today;
         const current: (RankingRow & SeasonRowExtras)[] = [], earlier: RankingRow[] = [];
         for (const row of this.pointTotals(from, to)) {
-            const days = row.days.split(','), run = seasonStreak(days, to), before = days.filter(day => day <= yesterday);
+            const days = row.days.split(','), run = seasonStreak(days, to), before = closed ? [] : days.filter(day => day <= yesterday);
             current.push({rank: 0, tokenId: row.tokenId, seed: row.seed, score: row.points + run.bonus, days: days.length, streak: run.current});
             totals.set(row.tokenId, {bonus: run.bonus, today: row.today});
             if (before.length) earlier.push({rank: 0, tokenId: row.tokenId, seed: row.seed, score: row.before + seasonStreak(before, yesterday).bonus});

@@ -34,7 +34,8 @@ export function shareCardArt(dir: string): ShareCardArtSource {
 }
 
 /** A settled day or a closed season never changes: the Worker keeps that card an hour at the edge, a live one a minute. */
-export const cardSettled = (card: RankedCard | SeasonCard): boolean => 'game' in card ? card.final : card.status.phase === 'closed';
+/** A past day's card never changes; a season card settles once the hall has sealed (every entrant then wears at least the entrant mark), not at the close, when late settlements may still move it. */
+export const cardSettled = (card: RankedCard | SeasonCard): boolean => 'game' in card ? card.final : card.status.phase === 'closed' && card.marks.length > 0;
 /** The tag the Worker stores and echoes: the card's identity and standing, so a changed score is a new card. */
 export function cardEtag(card: RankedCard | SeasonCard): string {
     const standing = 'game' in card ? `${card.score}-${card.rank}-${card.entrants}-${card.season?.points ?? '-'}-${card.season?.rank ?? '-'}` : `${card.season.points}-${card.season.rank}-${card.season.entrants}-${card.marks.length}`;

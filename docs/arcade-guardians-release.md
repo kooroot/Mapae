@@ -271,6 +271,7 @@ seller는 체인에서 기록됨을 확인한 결과를 DB에 표시해 두고 �
 시즌이 끝나면 seller가 최종 순위를 한 번 봉인하고, 웹은 그 사본으로 명예의 전당·문양·추첨을 보여 준다. 계약은 바뀌지 않는다. 문양은 seller가 봉인한 `participants`·`podium`·`teams`에서 유도해 웹이 SVG로 그리므로 지갑·마켓플레이스에는 보이지 않는다 — 온체인 특성(`uint80 marks` 같은 비트 필드)은 Honor 계약 업그레이드 때 넣는다.
 
 - **봉인.** seller 테이블 `arcade_season_hall(collection, season, sealed_at, data, PK(collection, season))`. 시즌이 닫힌 뒤 마지막 주의 봉인 시각(화요일 0시, `hallSealsAt`)을 지나 처음 읽힐 때 시즌 보드·팀 보드·주간 장원·7일 연속 출석 풀을 모아 한 번만 쓴다. 그 전에는 `/arcade/ranking/hall/s1`이 `{sealed: false, sealsAt}`를 답하고 웹은 "종료 · 최종 집계 중"과 화요일 0시 확정 안내를 보여 준다. 종료 블록은 `seasonEndsAt`(종료일 다음 날 0시 KST) 이후 첫 GIWA 블록을 RPC 이진 탐색(약 25번 `getBlock`)으로 찾는다. RPC가 막히면 봉인하지 않고 다음 읽기에 다시 시도하며, seller 로그에 `[ranking] season N not sealed — close block unavailable`이 남는다. 한 번 봉인되면 `SEASON.id`를 2로 올려도 `/hall/s1`은 테이블에서 답하고, 모르는 시즌은 404.
+- **공동 순위.** 시상대는 순위 3 이내 전원이다(동점이면 3명을 넘을 수 있고, 모두 시상대 문양과 기프티콘을 받는다). 팀전 1위가 동점이면 그 팀 모두 우승 팀 표식을 단다. 아무도 참가하지 않은 시즌은 시상대·우승 팀·추첨 없이 봉인된다.
 - **추첨 공식.** 풀 = 시즌 안에서 7일 연속 출석을 1회 이상 완주한 전령(token 오름차순). seed = 종료 블록 해시. `i`번째 당첨은 `keccak256(seed ‖ uint256(i)) mod 남은 수`로 고르고 뽑힌 전령은 풀에서 뺀다(5명, 풀이 작으면 그만큼). 공유는 확인할 길이 없어 자격에 넣지 않는다.
 - **운영 순서.**
   1. 종료 — 종료일 다음 날 0시 KST에 seller `/season`이 `closed`를 답하고 웹은 집계 중으로 바뀐다. 아무것도 하지 않는다.

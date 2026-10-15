@@ -12,7 +12,7 @@ import {OutingStore} from '../outings/store';
 import {RankingReader, type CloseBlock} from './board';
 import {GuardianHonorBook} from './honors';
 import {createRankingApp} from './routes';
-import {shareCardArt} from './share-card';
+import {cardSettled, shareCardArt} from './share-card';
 
 const collection = '0x5555555555555555555555555555555555555555' as Address;
 const owner = '0x1111111111111111111111111111111111111111' as Address;
@@ -335,13 +335,14 @@ describe('season', () => {
         expect(rows(reader.board('season', 's1'))).toEqual([['7', 1, 30, null, 1, 1], ['3', 2, 7, null, 1, 1], ['9', 3, 5, null, 1, 1], ['5', 4, 3, null, 1, 1]]);
         expect(reader.board('season', 's1').moves).toBe(false);
     });
-    test('only the season\'s days count, the window stops at the end, and a closed season has no clock', () => {
+    test('only the season\'s days count, the window stops at the end, and a closed season has no clock and no movement', () => {
         const {add, reader} = setup(season1);
         add('1', 'race', '2026-10-04', 1, 50); add('2', 'race', '2026-10-05', 1, 50);
         expect(rows(reader.board('season', 's1'))).toEqual([['2', 1, 10, 1, 1, 0]]);
         const short = setup({id: 1, start: '2026-10-05', end: '2026-10-10'});
         short.add('1', 'race', '2026-10-10', 1, 50); short.add('1', 'race', '2026-10-09', 1, 50); short.add('2', 'race', '2026-10-11', 1, 50);
-        expect(short.reader.board('season', 's1')).toMatchObject({from: '2026-10-05', to: '2026-10-10', closesAt: null, entrants: 1, moves: true, rows: [{tokenId: '1', score: 20, prev: 1, days: 2, streak: 2}]});
+        expect(short.reader.board('season', 's1')).toMatchObject({from: '2026-10-05', to: '2026-10-10', closesAt: null, entrants: 1, moves: false, rows: [{tokenId: '1', score: 20, prev: null, days: 2, streak: 2}]});
+        expect(short.reader.standings(['1']).guardians[0]!.season).toMatchObject({moves: false, prev: null});
         expect(short.reader.standings(['1']).guardians[0]!.season).toMatchObject({points: 20, rank: 1, today: 10});
     });
     test('a round settled after its week sealed never adds points; the open week takes every settlement', () => {
@@ -428,6 +429,7 @@ describe('hall of fame', () => {
         tick(closed - 1); expect(reader.hall('s1')).rejects.toThrow('invalid_request');
         tick(closed); expect(await reader.hall('s1')).toEqual({season: 1, sealed: false, sealsAt}); expect(calls).toEqual([]);
         expect((await reader.seasonCard('12')).marks).toEqual([]);
+        expect(cardSettled(await reader.seasonCard('12'))).toBe(false); // the Worker keeps a closed, unsealed card a minute, not an hour
         tick(sealsAt);
         const hall = await reader.hall('s1');
         expect(calls).toEqual([closed]);
@@ -454,6 +456,7 @@ describe('hall of fame', () => {
         // Marks on the season card: podium, team and entrant for 12; a rabbit off the podium is an entrant only.
         expect((await reader.seasonCard('12')).marks).toEqual([{season: 1, kind: 'podium', place: 1}, {season: 1, kind: 'team', zodiac: 'tiger'}, {season: 1, kind: 'entrant'}]);
         expect((await reader.seasonCard('88')).marks).toEqual([{season: 1, kind: 'podium', place: 3}, {season: 1, kind: 'entrant'}]);
+        expect(cardSettled(await reader.seasonCard('88'))).toBe(true);
         // Another season on the same store still reads season 1 from the table; its own hall is not open yet.
         const next = new RankingReader(store, collection, () => sealsAt, {id: 2, start: null, end: null});
         expect(await next.hall('s1')).toEqual(hall); expect(next.hall('s2')).rejects.toThrow('invalid_request'); expect(next.hall('s3')).rejects.toThrow('not_found');
