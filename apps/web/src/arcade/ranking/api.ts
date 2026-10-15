@@ -1,15 +1,18 @@
 import {isHash, type Hex} from "viem";
 import type {GameId} from "@mapae/arcade";
-import {GUARDIAN_MAX_SUPPLY} from "@mapae/arcade/guardians";
+import {GUARDIAN_MAX_SUPPLY, GUARDIAN_ZODIACS, guardianZodiac, type GuardianZodiac} from "@mapae/arcade/guardians";
 import {
     BOARD_ROWS, DEVOTION_DAYS, isRankingDay, NEARBY_SPAN, parseRankingIds, parseRankingPageOffset, RANKED_ATTEMPTS, RANKED_GAMES, RANKING_PAGE_ROWS, rankingPageOffset,
     STREAK_FREEZE_MAX, validRankingBoard, validRankingTokenId,
     type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings, type SeasonStanding,
 } from "@mapae/arcade/ranking";
 import {SEASON, SEASON_MAX_DAY_POINTS, SEASON_STREAK_BONUS, SEASON_STREAK_DAYS, seasonPhase, type Season, type SeasonStatus} from "@mapae/arcade/season";
+import {validTeamPeriod, type TeamBoard, type TeamMember, type TeamPeriod, type TeamRow} from "@mapae/arcade/team";
 import {hasReceiptToken, ipBudget, upstreamJson, type UpstreamDependencies} from "./upstream";
 
 const MAX_SCORE = 1_000_000_000;
+/** The twelve zodiac teams over a period; read before BOARD_PATH, which would take `team` for a board id. */
+const TEAM_PATH = /^\/api\/arcade\/ranking\/board\/team\/([a-z0-9]{1,8})$/;
 /** A board's top rows, or with `/from/<offset>` or `/around/<ids>` one page of the whole board below them. */
 const BOARD_PATH = /^\/api\/arcade\/ranking\/board\/([a-z]{1,16})\/([a-z0-9]{1,16})(?:\/(from|around)\/([0-9,]{1,20}))?$/;
 const STANDINGS_PATH = /^\/api\/arcade\/ranking\/guardians\/([0-9,]{1,20})$/;
@@ -34,12 +37,15 @@ const failure = (code: string, status: number, extra: Record<string, string> = {
  * Hits come from the edge cache; only a miss spends the per-IP budget and one bearer call to the seller.
  */
 export async function rankingApi(request: Request, deps: RankingDependencies): Promise<Response> {
-    const url = new URL(request.url), board = BOARD_PATH.exec(url.pathname), standing = STANDINGS_PATH.exec(url.pathname), status = STATUS_PATH.test(url.pathname);
-    if (!board && !standing && !status) return failure("not_found", 404);
+    const url = new URL(request.url), team = TEAM_PATH.exec(url.pathname), board = team ? null : BOARD_PATH.exec(url.pathname);
+    const standing = STANDINGS_PATH.exec(url.pathname), status = STATUS_PATH.test(url.pathname);
+    if (!team && !board && !standing && !status) return failure("not_found", 404);
     if (request.method !== "GET") return failure("method_not_allowed", 405, {Allow: "GET"});
     const season = deps.season ?? SEASON, ids = standing ? parseRankingIds(standing[1]!) : null, by = board?.[3] as "from" | "around" | undefined;
     const at = by === "from" ? parseRankingPageOffset(board![4]!) : by === "around" ? parseRankingIds(board![4]!) : null;
-    if (url.search || (board && !validRankingBoard(board[1]!, board[2]!, season)) || (standing && !ids) || (by && at === null)) return failure("invalid_request", 400);
+    if (url.search || (team && !validTeamPeriod(team[1]!, season)) || (board && !validRankingBoard(board[1]!, board[2]!, season)) || (standing && !ids) || (by && at === null)) {
+        return failure("invalid_request", 400);
+    }
     if (!hasReceiptToken(deps)) return failure("ranking_unavailable", 503);
     const key = new Request(`${url.origin}${url.pathname}`), cache = deps.cache ? await deps.cache.catch(() => undefined) : undefined;
     const hit = await cache?.match(key);
@@ -53,11 +59,11 @@ export async function rankingApi(request: Request, deps: RankingDependencies): P
         if (!upstream.found) throw new Error("upstream");
         value = upstream.value;
     } catch {return failure("ranking_unavailable", 503);}
-    const copy = status ? parseSeasonStatus(value, season) : !board ? parseRankingStandings(value, ids!)
+    const copy = status ? parseSeasonStatus(value, season) : team ? parseTeamBoard(value, team[1] as TeamPeriod) : !board ? parseRankingStandings(value, ids!)
         : by ? parseRankingPage(value, board[1] as RankingBoardId, board[2] as RankingPeriod, typeof at === "number" ? {offset: at} : {around: at!})
         : parseRankingBoard(value, board[1] as RankingBoardId, board[2] as RankingPeriod);
     if (!copy) return failure("ranking_unavailable", 503);
-    const response = Response.json(copy, {headers: {...HEADERS, "Cache-Control": `public, max-age=${status ? MAX_AGE.season : board ? MAX_AGE.board : MAX_AGE.standings}`}});
+    const response = Response.json(copy, {headers: {...HEADERS, "Cache-Control": `public, max-age=${status ? MAX_AGE.season : board || team ? MAX_AGE.board : MAX_AGE.standings}`}});
     await cache?.put(key, response.clone()).catch(() => {/* A cold cache only costs the next visitor one seller call. */});
     return response;
 }
@@ -184,6 +190,40 @@ function guardian(v: unknown, tokenId: string): GuardianStanding | null {
     if (!uint(v.weekPoints) || v.weekPoints > SEASON_MAX_DAY_POINTS * 7 || (v.weekPoints < 1 && RANKED_GAMES.some(game => games[game].today))) return null;
     return {tokenId, streak: {current: streak.current, best: streak.best, freezes: streak.freezes, playedToday: streak.playedToday},
         devotion: {rank: devotion.rank as number | null, days: devotion.days}, season, weekPoints: v.weekPoints, titles, games};
+}
+
+/**
+ * The twelve zodiac teams: one row per zodiac, totals descending with shared places in zodiac order, every member count fitting
+ * what the window can pay, and each team's top member born into that very team (its seed says so), carrying at least the
+ * team's average. A week spans seven days and always has a close; a season closes at a midnight on or after its last day.
+ */
+export function parseTeamBoard(v: unknown, period: TeamPeriod): TeamBoard | null {
+    if (!object(v) || v.period !== period || !isRankingDay(v.from) || !isRankingDay(v.to) || v.from > v.to || !(v.closesAt === null || instant(v.closesAt)) ||
+        !uint(v.entrants) || !Array.isArray(v.rows) || v.rows.length !== GUARDIAN_ZODIACS.length) return null;
+    const week = period === "week", span = daysOf(v.from, v.to), midnight = Date.parse(`${v.to}T15:00:00Z`);
+    if (week ? span !== 7 || v.closesAt !== midnight : v.closesAt !== null && (v.closesAt < midnight || (v.closesAt - midnight) % DAY_MS !== 0)) return null;
+    // What one member can bring over the window: every day's maximum, plus the attendance bonus a season window can hold.
+    const cap = SEASON_MAX_DAY_POINTS * span + (week ? 0 : maxSeasonBonus(span)), rows: TeamRow[] = [];
+    let members = 0;
+    for (const [i, item] of v.rows.entries()) {
+        if (!object(item) || !(GUARDIAN_ZODIACS as readonly unknown[]).includes(item.zodiac) || rows.some(r => r.zodiac === item.zodiac) || !uint(item.members) ||
+            item.members > GUARDIAN_MAX_SUPPLY || !uint(item.points) || item.points < item.members || item.points > item.members * cap || (item.members === 0) !== (item.top === null)) return null;
+        const zodiac = item.zodiac as GuardianZodiac, previous = rows.at(-1);
+        const rank = !previous ? 1 : item.points === previous.points ? previous.rank : i + 1;
+        if (item.rank !== rank || (previous && (item.points > previous.points ||
+            (item.points === previous.points && GUARDIAN_ZODIACS.indexOf(zodiac) < GUARDIAN_ZODIACS.indexOf(previous.zodiac))))) return null;
+        let top: TeamMember | null = null;
+        if (item.top !== null) {
+            const t = item.top;
+            if (!object(t) || !validRankingTokenId(t.tokenId) || typeof t.seed !== "string" || !isHash(t.seed) || !uint(t.points) || t.points < 1 || t.points > cap ||
+                t.points > item.points || t.points * item.members < item.points || guardianZodiac(t.seed) !== zodiac) return null;
+            top = {tokenId: t.tokenId, seed: t.seed.toLowerCase() as Hex, points: t.points};
+        }
+        members += item.members;
+        rows.push({rank, zodiac, points: item.points, members: item.members, top});
+    }
+    if (members !== v.entrants) return null;
+    return {period, from: v.from, to: v.to, closesAt: v.closesAt, entrants: v.entrants, rows};
 }
 
 /** The season's status: our season's id, its dates (none, or two ranking days in order) and a phase that follows from them today. */

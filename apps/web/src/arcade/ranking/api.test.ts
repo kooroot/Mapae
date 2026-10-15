@@ -1,9 +1,11 @@
 import {afterEach, describe, expect, test} from "bun:test";
-import type {Hex} from "viem";
+import {pad, toHex, type Hex} from "viem";
 import {ARCADE_RULESET_VERSION} from "@mapae/arcade";
+import {GUARDIAN_ZODIACS, guardianZodiac, type GuardianZodiac} from "@mapae/arcade/guardians";
 import {kstWeek, type RankingBoard, type RankingPage, type RankingStanding, type RankingStandings, type SeasonStanding} from "@mapae/arcade/ranking";
 import type {SeasonStatus} from "@mapae/arcade/season";
-import {parseRankingBoard, parseRankingPage, parseRankingStandings, parseSeasonStatus, rankingApi, type RankingDependencies} from "./api";
+import type {TeamBoard, TeamRow} from "@mapae/arcade/team";
+import {parseRankingBoard, parseRankingPage, parseRankingStandings, parseSeasonStatus, parseTeamBoard, rankingApi, type RankingDependencies} from "./api";
 
 const receiptToken = "ranking-receipt-token".repeat(3), now = Date.parse("2026-10-14T03:00:00Z");
 const origin = "https://app.mapae.io/api/arcade/ranking";
@@ -21,6 +23,15 @@ const seasonBoard = (rows = [seasonRow(1, "12", 187, 9, 9, 2), seasonRow(2, "88"
 const page = (offset = 10, focus: string | null = null): RankingPage => ({board: "race", period: "today", from: "2026-10-14", to: "2026-10-14", entrants: 137, moves: true,
     offset, focus, rows: Array.from({length: Math.max(0, Math.min(50, 137 - offset))}, (_, i) => ({...rowOf(offset + i + 1, String(offset + i + 1), 1000 - offset - i), prev: offset + i + 2}))});
 const still = (...rows: ReturnType<typeof rowOf>[]) => rows.map(r => ({...r, prev: null}));
+/** The lowest numbered seed from `from` born into `zodiac`. */
+const seedFor = (zodiac: GuardianZodiac, from = 0) => {for (let i = from; ; i++) {const seed = pad(toHex(i), {size: 32}); if (guardianZodiac(seed) === zodiac) return seed;}};
+/** This week's team board: tiger leads, rat and ox share second, pig has one entrant, the other eight teams are empty. */
+const teamRow = (rank: number, zodiac: GuardianZodiac, points: number, members: number, top: [string, number] | null): TeamRow =>
+    ({rank, zodiac, points, members, top: top && {tokenId: top[0], seed: seedFor(zodiac), points: top[1]}});
+const teamRows = (): TeamRow[] => [teamRow(1, "tiger", 307, 2, ["12", 187]), teamRow(2, "rat", 44, 1, ["88", 44]), teamRow(2, "ox", 44, 3, ["5", 20]), teamRow(4, "pig", 3, 1, ["7", 3]),
+    ...GUARDIAN_ZODIACS.filter(z => !["tiger", "rat", "ox", "pig"].includes(z)).map(z => teamRow(5, z, 0, 0, null))];
+const teamBoard = (rows = teamRows()): TeamBoard => ({period: "week", from: "2026-10-12", to: "2026-10-18", closesAt: Date.parse("2026-10-18T15:00:00Z"), entrants: rows.reduce((n, r) => n + r.members, 0), rows});
+const seasonTeams = (rows = teamRows()): TeamBoard => ({...teamBoard(rows), period: "s1", from: "2026-10-05", to: "2026-10-14", closesAt: Date.parse("2026-11-01T15:00:00Z")});
 const empty = {attemptsUsed: 0, today: null, week: null};
 /** Nine days in: a full run's bonus and three wins today. */
 const mySeason = (): SeasonStanding => ({moves: true, prev: 4, points: 187, rank: 2, entrants: 212, days: 9, streak: 9, bonus: 10, today: 30});
@@ -53,7 +64,7 @@ describe("public ranking proxy", () => {
         for (const path of ["/board/race/today?x=1", "/board/xp/today", "/board/devotion/today", "/board/race/28d", "/guardians/2,1", "/guardians/1,1", "/guardians/1,2,3,4", "/guardians/0", "/guardians/10001",
             "/board/race/today/from/0", "/board/race/today/from/11", "/board/race/today/from/010", "/board/race/today/from/10010", "/board/race/today/around/2,1",
             "/board/race/today/around/1,2,3,4", "/board/race/today/from/10?x=1", "/board/race/28d/from/10", "/board/devotion/today/around/1", "/season?x=1", "/board/season/s2",
-            "/board/season/today", "/board/race/s1", "/board/season/s1/from/9"])
+            "/board/season/today", "/board/race/s1", "/board/season/s1/from/9", "/board/team/s2", "/board/team/today", "/board/team/week/from/10", "/board/team/week/around/1", "/board/team/week?x=1"])
             expect((await call(path)).status).toBe(400);
         for (const path of ["/board/race", "/guardians", "/board/race/today/extra", "/board/race/today/at/10", "/board/race/today/from", "/board/race/today/from/10/x", "/../profile/session",
             "/season/", "/season/1", "/seasons"]) expect((await call(path)).status).toBe(404);
@@ -92,6 +103,18 @@ describe("public ranking proxy", () => {
         expect((await setup(() => Response.json(status()), {season: {id: 2, start: null, end: null}}).call("/board/season/s1")).status).toBe(400);
         expect((await setup(() => Response.json(seasonBoard())).call("/board/season/s1")).headers.get("Cache-Control")).toBe("public, max-age=30");
         expect(await (await setup(() => Response.json(seasonBoard())).call("/board/season/s1")).json<unknown>()).toEqual(seasonBoard());
+    });
+    test("team boards travel like boards: their own path, a half-minute cache, and a bad copy is 503", async () => {
+        const {calls, entries, call} = setup(() => Response.json(teamBoard()));
+        const ok = await call("/board/team/week");
+        expect(ok.status).toBe(200); expect(ok.headers.get("Cache-Control")).toBe("public, max-age=30"); expect(await ok.json<unknown>()).toEqual(teamBoard());
+        await call("/board/team/week"); expect(calls).toHaveLength(1); expect(calls[0]!.url).toBe("https://seller.mapae.io/arcade/ranking/board/team/week");
+        expect([...entries.keys()]).toEqual(["https://app.mapae.io/api/arcade/ranking/board/team/week"]);
+        const season = setup(() => Response.json(seasonTeams()));
+        expect(await (await season.call("/board/team/s1")).json<unknown>()).toEqual(seasonTeams());
+        expect((await setup(() => Response.json(seasonTeams()), {season: {id: 2, start: null, end: null}}).call("/board/team/s1")).status).toBe(400);
+        const swapped = setup(() => Response.json(seasonTeams()));
+        expect((await swapped.call("/board/team/week")).status).toBe(503); expect(swapped.entries.size).toBe(0);
     });
     test("pages reach the seller on their own paths, are cached by the whole path, and spend the same per-IP budget", async () => {
         const {calls, limits, entries, call} = setup(() => Response.json(page(60, "74")));
@@ -175,6 +198,33 @@ describe("strict copies", () => {
         expect(parseRankingPage(asked, "season", "s1", {offset: 10})?.rows.map(r => [r.rank, r.days, r.streak])).toEqual([[9, 2, 0], [12, 1, 1]]);
         expect(parseRankingPage({...asked, rows: [seasonRow(9, "40", 5, 2, 3, 11), asked.rows[1]!]}, "season", "s1", {offset: 10})).toBeNull();
     });
+    test("team boards: twelve teams once each in order, shared places, counts the window can pay, a top member born into its team", () => {
+        expect(parseTeamBoard({...teamBoard(), extra: 1, rows: teamBoard().rows.map(r => ({...r, owner: "0x11"}))}, "week")).toEqual(teamBoard());
+        expect(parseTeamBoard(seasonTeams(), "s1")).toEqual(seasonTeams());
+        expect(parseTeamBoard({...seasonTeams(), closesAt: null}, "s1")?.closesAt).toBeNull();
+        expect(parseTeamBoard({...seasonTeams(), closesAt: Date.parse("2026-10-14T15:00:00Z")}, "s1")?.closesAt).toBe(Date.parse("2026-10-14T15:00:00Z"));
+        // A season window of ten days pays at most 300 + 10 a member; a week at most 210. Uppercase seeds are kept lowercase.
+        expect(parseTeamBoard(seasonTeams([teamRow(1, "tiger", 620, 2, ["12", 310]), ...teamRows().slice(1)]), "s1")?.rows[0]!.points).toBe(620);
+        expect(parseTeamBoard(teamBoard([teamRow(1, "tiger", 420, 2, ["12", 210]), ...teamRows().slice(1)]), "week")?.rows[0]!.points).toBe(420);
+        const loud = seedFor("tiger", 0xabc), shouted = `0x${loud.slice(2).toUpperCase()}` as Hex;
+        expect(shouted).not.toBe(loud);
+        expect(parseTeamBoard(teamBoard([{...teamRows()[0]!, top: {tokenId: "12", seed: shouted, points: 187}}, ...teamRows().slice(1)]), "week")?.rows[0]!.top!.seed).toBe(loud);
+        const edit = (change: (rows: TeamRow[]) => void) => {const b = teamBoard(); change(b.rows); return {...b, entrants: b.rows.reduce((n, r) => n + r.members, 0)};};
+        const bad: [unknown, "week" | "s1"][] = [
+            [{...teamBoard(), period: "s1"}, "week"], [{...teamBoard(), to: "2026-10-17"}, "week"], [{...teamBoard(), closesAt: null}, "week"], [{...teamBoard(), closesAt: Date.parse("2026-10-19T15:00:00Z")}, "week"],
+            [{...seasonTeams(), closesAt: Date.parse("2026-10-13T15:00:00Z")}, "s1"], [{...seasonTeams(), closesAt: Date.parse("2026-11-01T16:00:00Z")}, "s1"], [{...seasonTeams(), period: "s2"}, "s1"],
+            [{...teamBoard(), entrants: 6}, "week"], [{...teamBoard(), rows: teamBoard().rows.slice(1)}, "week"], [{...teamBoard(), rows: [...teamBoard().rows, teamRow(5, "dog", 0, 0, null)]}, "week"],
+            [edit(r => {r[11] = teamRow(5, "tiger", 0, 0, null);}), "week"], [edit(r => {r[1]!.rank = 3;}), "week"], [edit(r => {r[2]!.rank = 3;}), "week"], [edit(r => {r[3]!.rank = 3;}), "week"],
+            [edit(r => {r[4]!.rank = 4;}), "week"], [edit(r => {[r[1], r[2]] = [r[2]!, r[1]!];}), "week"], [edit(r => {[r[0], r[1]] = [r[1]!, r[0]!];}), "week"],
+            [edit(r => {r[0]!.points = 421;}), "week"], [edit(r => {r[3]!.points = 0;}), "week"], [edit(r => {r[3]!.members = 0;}), "week"], [edit(r => {r[4]!.members = 1;}), "week"],
+            [edit(r => {r[4]!.top = r[3]!.top;}), "week"], [edit(r => {r[3]!.top = null;}), "week"], [edit(r => {r[0]!.top!.points = 308;}), "week"], [edit(r => {r[0]!.top!.points = 153;}), "week"],
+            [edit(r => {r[0]!.top!.points = 0;}), "week"], [edit(r => {r[0]!.top!.seed = seedFor("rat");}), "week"], [edit(r => {r[0]!.top!.seed = "0x12" as Hex;}), "week"],
+            [edit(r => {r[0]!.top!.tokenId = "0";}), "week"], [edit(r => {r[0]!.members = 10_001; r[0]!.points = 10_001;}), "week"], [edit(r => {r[0]!.zodiac = "cat" as GuardianZodiac;}), "week"],
+            [edit(r => {r[0]!.members = 1.5;}), "week"], [seasonTeams([teamRow(1, "tiger", 621, 2, ["12", 311]), ...teamRows().slice(1)]), "s1"],
+            [seasonTeams([teamRow(1, "tiger", 620, 2, ["12", 311]), ...teamRows().slice(1)]), "s1"], [null, "week"], [[], "week"],
+        ];
+        for (const [i, [value, period]] of bad.entries()) expect([i, parseTeamBoard(value, period)]).toEqual([i, null]);
+    });
     test("pages: the asked offset or a found focus, consecutive places from it, and a length that fits the entrants", () => {
         expect(parseRankingPage(page(), "race", "today", {offset: 10})).toEqual(page());
         expect(parseRankingPage(page(110), "race", "today", {offset: 110})?.rows).toHaveLength(27);
@@ -250,7 +300,8 @@ describe("real seller contract", () => {
         const app = createRankingApp({token: receiptToken, reader: new RankingReader(store, collection, () => now, season)});
         const fetcher = async (url: string, init?: RequestInit) => app.request(new Request(url.replace("https://seller.mapae.io/arcade/ranking", "https://seller.local"), init));
         const deps: RankingDependencies = {receiptToken, fetcher, rateLimit: async () => true, now};
-        for (const path of ["/board/race/today", "/board/race/week", "/board/race/yesterday", "/board/shop/lastweek", "/board/stamp/today", "/board/devotion/28d", "/guardians/3,12,40", "/season", "/board/season/s1"]) {
+        for (const path of ["/board/race/today", "/board/race/week", "/board/race/yesterday", "/board/shop/lastweek", "/board/stamp/today", "/board/devotion/28d", "/guardians/3,12,40", "/season", "/board/season/s1",
+            "/board/team/week", "/board/team/s1"]) {
             const response = await rankingApi(new Request(origin + path), deps);
             expect(response.status).toBe(200);
         }
@@ -259,6 +310,10 @@ describe("real seller contract", () => {
         // Token 12: #1 alone on 13 Oct (10) and #12 today (1); its shop round of 6 Oct settled after that week sealed, so it earns nothing. Tokens 3 and 4 played before the season.
         expect(mine.guardians[0]!.season).toEqual({moves: true, prev: 1, points: 11, rank: 1, entrants: 14, days: 2, streak: 2, bonus: 0, today: 1});
         expect(mine.guardians[0]!.weekPoints).toBe(11);
+        const teams = await (await rankingApi(new Request(origin + "/board/team/week"), deps)).json() as TeamBoard;
+        expect(teams).toMatchObject({period: "week", from: "2026-10-12", to: "2026-10-18", entrants: 14}); expect(teams.rows).toHaveLength(12);
+        expect(teams.rows.reduce((n, r) => n + r.points, 0)).toBe(10 + 7 + 5 + 3 * 7 + 1 * 4 + 10);
+        expect((await (await rankingApi(new Request(origin + "/board/team/s1"), deps)).json() as TeamBoard).rows.reduce((n, r) => n + r.points, 0)).toBe(teams.rows.reduce((n, r) => n + r.points, 0));
         expect(await (await rankingApi(new Request(origin + "/season"), deps)).json<unknown>()).toEqual({...season, today: "2026-10-14", phase: "open"});
         const s1 = await (await rankingApi(new Request(origin + "/board/season/s1"), deps)).json() as RankingBoard;
         expect(s1.rows[0]).toMatchObject({tokenId: "12", score: 11, days: 2, streak: 2}); expect(s1.entrants).toBe(14); expect(s1.closesAt).toBe(Date.parse("2026-11-01T15:00:00Z"));
