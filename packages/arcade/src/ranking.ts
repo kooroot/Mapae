@@ -77,7 +77,9 @@ const WEEK_ZERO = "1970-01-05";
 export const HONOR_GRACE_MS = DAY_MS;
 
 export function isRankingDay(value: unknown): value is string {
-    return typeof value === "string" && DAY.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+    if (typeof value !== "string" || !DAY.test(value)) return false;
+    const at = Date.parse(`${value}T00:00:00Z`);
+    return !Number.isNaN(at) && new Date(at).toISOString().slice(0, 10) === value;
 }
 function dayStart(day: string): number {
     if (!isRankingDay(day)) throw new Error("Invalid ranking day");

@@ -1,8 +1,9 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import type {Hex} from "viem";
 import {ARCADE_RULESET_VERSION} from "@mapae/arcade";
-import {kstWeek, type RankingBoard, type RankingPage, type RankingStanding, type RankingStandings} from "@mapae/arcade/ranking";
-import {parseRankingBoard, parseRankingPage, parseRankingStandings, rankingApi, type RankingDependencies} from "./api";
+import {kstWeek, type RankingBoard, type RankingPage, type RankingStanding, type RankingStandings, type SeasonStanding} from "@mapae/arcade/ranking";
+import type {SeasonStatus} from "@mapae/arcade/season";
+import {parseRankingBoard, parseRankingPage, parseRankingStandings, parseSeasonStatus, rankingApi, type RankingDependencies} from "./api";
 
 const receiptToken = "ranking-receipt-token".repeat(3), now = Date.parse("2026-10-14T03:00:00Z");
 const origin = "https://app.mapae.io/api/arcade/ranking";
@@ -10,14 +11,22 @@ const seedOf = (tokenId: string) => `0x${tokenId.padStart(64, "0")}` as Hex;
 const rowOf = (rank: number, tokenId = String(rank), score = 100 - rank) => ({rank, tokenId, seed: seedOf(tokenId), score});
 const board = (rows: RankingBoard["rows"] = [{...rowOf(1), prev: 2}, {...rowOf(2), prev: null}], moves = true): RankingBoard =>
     ({board: "race", period: "today", from: "2026-10-14", to: "2026-10-14", closesAt: now + 1000, entrants: rows.length, moves, rows});
+const status = (phase: SeasonStatus["phase"] = "open"): SeasonStatus => phase === "pending" ? {id: 1, start: null, end: null, today: "2026-10-14", phase}
+    : {id: 1, start: phase === "announced" ? "2026-10-19" : "2026-10-05", end: phase === "closed" ? "2026-10-13" : "2026-11-01", today: "2026-10-14", phase};
+/** The season board nine days in: shared places, each row's days and run. */
+const seasonRow = (rank: number, tokenId: string, score: number, days: number, streak = days, prev: number | null = null) => ({...rowOf(rank, tokenId, score), prev, days, streak});
+const seasonBoard = (rows = [seasonRow(1, "12", 187, 9, 9, 2), seasonRow(2, "88", 120, 9, 4, 1), seasonRow(2, "5", 120, 8, 8, 3), seasonRow(4, "7", 3, 1, 1)], moves = true): RankingBoard =>
+    ({board: "season", period: "s1", from: "2026-10-05", to: "2026-10-14", closesAt: Date.parse("2026-11-01T15:00:00Z"), entrants: rows.length, moves, rows});
 /** Page `offset` of a 137-entrant race board, token n at #n and one place lower yesterday. */
 const page = (offset = 10, focus: string | null = null): RankingPage => ({board: "race", period: "today", from: "2026-10-14", to: "2026-10-14", entrants: 137, moves: true,
     offset, focus, rows: Array.from({length: Math.max(0, Math.min(50, 137 - offset))}, (_, i) => ({...rowOf(offset + i + 1, String(offset + i + 1), 1000 - offset - i), prev: offset + i + 2}))});
 const still = (...rows: ReturnType<typeof rowOf>[]) => rows.map(r => ({...r, prev: null}));
 const empty = {attemptsUsed: 0, today: null, week: null};
+/** Nine days in: a full run's bonus and three wins today. */
+const mySeason = (): SeasonStanding => ({moves: true, prev: 4, points: 187, rank: 2, entrants: 212, days: 9, streak: 9, bonus: 10, today: 30});
 function standings(): RankingStandings {
     return {day: "2026-10-14", week: "2026-10-12", closesAt: {day: now + 1000, week: now + 5000}, leaders: {stamp: null, race: 99, shop: null}, guardians: [{
-        tokenId: "2", streak: {current: 2, best: 4, freezes: 0, playedToday: true}, devotion: {rank: 1, days: 6}, titles: [{game: "race", place: 3}],
+        tokenId: "2", streak: {current: 2, best: 4, freezes: 0, playedToday: true}, devotion: {rank: 1, days: 6}, season: mySeason(), titles: [{game: "race", place: 3}],
         games: {stamp: empty, race: {attemptsUsed: 2, today: {rank: 2, score: 98, moves: true, prev: 5, entrants: 2, leader: 99, above: rowOf(1), nearby: [rowOf(1), rowOf(2)]}, week: null}, shop: empty},
     }]};
 }
@@ -43,9 +52,11 @@ describe("public ranking proxy", () => {
         expect((await call("/board/race/today", {method: "POST"})).status).toBe(405);
         for (const path of ["/board/race/today?x=1", "/board/xp/today", "/board/devotion/today", "/board/race/28d", "/guardians/2,1", "/guardians/1,1", "/guardians/1,2,3,4", "/guardians/0", "/guardians/10001",
             "/board/race/today/from/0", "/board/race/today/from/11", "/board/race/today/from/010", "/board/race/today/from/10010", "/board/race/today/around/2,1",
-            "/board/race/today/around/1,2,3,4", "/board/race/today/from/10?x=1", "/board/race/28d/from/10", "/board/devotion/today/around/1"])
+            "/board/race/today/around/1,2,3,4", "/board/race/today/from/10?x=1", "/board/race/28d/from/10", "/board/devotion/today/around/1", "/season?x=1", "/board/season/s2",
+            "/board/season/today", "/board/race/s1", "/board/season/s1/from/9"])
             expect((await call(path)).status).toBe(400);
-        for (const path of ["/board/race", "/guardians", "/board/race/today/extra", "/board/race/today/at/10", "/board/race/today/from", "/board/race/today/from/10/x", "/../profile/session"]) expect((await call(path)).status).toBe(404);
+        for (const path of ["/board/race", "/guardians", "/board/race/today/extra", "/board/race/today/at/10", "/board/race/today/from", "/board/race/today/from/10/x", "/../profile/session",
+            "/season/", "/season/1", "/seasons"]) expect((await call(path)).status).toBe(404);
         expect(calls).toHaveLength(0);
         const ok = await call("/board/race/today", {headers: {Cookie: "__Host-mapae-arcade-session=" + "a".repeat(64), Origin: "https://evil.test"}});
         expect(ok.status).toBe(200); expect(ok.headers.get("Access-Control-Allow-Origin")).toBeNull();
@@ -63,6 +74,24 @@ describe("public ranking proxy", () => {
         expect(calls).toHaveLength(1); expect(limits).toHaveLength(1); expect(limits[0]).not.toContain("203.0.113.9");
         const standing = setup(() => Response.json(standings()));
         expect((await standing.call("/guardians/2")).headers.get("Cache-Control")).toBe("public, max-age=10");
+    });
+    test("the season status is cached a minute; its board and pages travel like any other; a status for another season or a wrong phase is 503", async () => {
+        const {calls, entries, call} = setup(() => Response.json(status()));
+        const ok = await call("/season");
+        expect(ok.status).toBe(200); expect(ok.headers.get("Cache-Control")).toBe("public, max-age=60");
+        expect(await ok.json<unknown>()).toEqual(status()); expect(calls[0]!.url).toBe("https://seller.mapae.io/arcade/ranking/season");
+        await call("/season"); expect(calls).toHaveLength(1); expect([...entries.keys()]).toEqual(["https://app.mapae.io/api/arcade/ranking/season"]);
+        for (const phase of ["pending", "announced", "closed"] as const) expect(await (await setup(() => Response.json(status(phase))).call("/season")).json<unknown>()).toEqual(status(phase));
+        for (const bad of [{...status(), id: 2}, {...status(), phase: "closed"}, {...status("pending"), phase: "announced"}, {...status(), start: null}, {...status(), end: "2026-10-04"},
+            {...status(), today: "2026-10-32"}, {...status(), phase: "live"}, {...status("announced"), phase: "open"}, {...status("closed"), phase: "open"}]) {
+            const {entries, call} = setup(() => Response.json(bad));
+            expect((await call("/season")).status).toBe(503); expect(entries.size).toBe(0);
+        }
+        // The injected season decides which id answers.
+        expect((await setup(() => Response.json(status()), {season: {id: 2, start: null, end: null}}).call("/season")).status).toBe(503);
+        expect((await setup(() => Response.json(status()), {season: {id: 2, start: null, end: null}}).call("/board/season/s1")).status).toBe(400);
+        expect((await setup(() => Response.json(seasonBoard())).call("/board/season/s1")).headers.get("Cache-Control")).toBe("public, max-age=30");
+        expect(await (await setup(() => Response.json(seasonBoard())).call("/board/season/s1")).json<unknown>()).toEqual(seasonBoard());
     });
     test("pages reach the seller on their own paths, are cached by the whole path, and spend the same per-IP budget", async () => {
         const {calls, limits, entries, call} = setup(() => Response.json(page(60, "74")));
@@ -119,6 +148,29 @@ describe("strict copies", () => {
         expect(parseRankingBoard(tied, "devotion", "28d")?.rows.map(r => r.prev)).toEqual([2, 2, null]);
         for (const rows of [still(rowOf(1, "1", 5), rowOf(2, "2", 5)), still(rowOf(1, "1", 5), rowOf(3, "2", 2)), still(rowOf(1, "1", 29))]) expect(parseRankingBoard({...devotion, rows, entrants: rows.length}, "devotion", "28d")).toBeNull();
     });
+    test("season boards: shared places, each row's days inside the window and a run no longer than them, points within what those days can earn", () => {
+        expect(parseRankingBoard(seasonBoard(), "season", "s1")).toEqual(seasonBoard());
+        expect(parseRankingBoard({...seasonBoard(), closesAt: null}, "season", "s1")?.closesAt).toBeNull();
+        expect(parseRankingBoard({...seasonBoard(), closesAt: Date.parse("2026-10-14T15:00:00Z")}, "season", "s1")?.closesAt).toBe(Date.parse("2026-10-14T15:00:00Z"));
+        // A first day: nothing to compare with, one day each, a point for taking part.
+        expect(parseRankingBoard({...seasonBoard([seasonRow(1, "3", 30, 1), seasonRow(2, "9", 1, 1)], false), from: "2026-10-14"}, "season", "s1")?.rows.map(r => r.score)).toEqual([30, 1]);
+        const edit = (change: (rows: ReturnType<typeof seasonRow>[]) => void) => {const b = seasonBoard(); change(b.rows as ReturnType<typeof seasonRow>[]); return b;};
+        const bad: unknown[] = [
+            {...seasonBoard(), closesAt: Date.parse("2026-10-13T15:00:00Z")}, {...seasonBoard(), closesAt: Date.parse("2026-10-14T16:00:00Z")}, {...seasonBoard(), period: "s2"},
+            edit(r => {r[0]!.days = 11;}), edit(r => {r[0]!.days = 0;}), edit(r => {r[1]!.streak = 10;}), edit(r => {delete (r[3] as Partial<typeof r[3]>).days;}), edit(r => {r[2]!.streak = -1;}),
+            edit(r => {r[2]!.days = 1.5;}), edit(r => {r[0]!.score = 281;}), edit(r => {r[3]!.score = 0;}), edit(r => {r[3]!.score = 31;}), edit(r => {r[1]!.score = 121;}),
+            edit(r => {r[2]!.rank = 3;}), edit(r => {r[3]!.rank = 3;}), edit(r => {r[3]!.prev = 0;}),
+        ];
+        for (const value of bad) expect(parseRankingBoard(value, "season", "s1")).toBeNull();
+        // Two rows may share an earlier place on the season board, never on a game board; days and streak belong to the season board only.
+        expect(parseRankingBoard(edit(r => {r[1]!.prev = 3;}), "season", "s1")?.rows.map(r => r.prev)).toEqual([2, 3, 3, null]);
+        expect(parseRankingBoard({...board(), rows: [{...rowOf(1), prev: 2, days: 1, streak: 1}, {...rowOf(2), prev: null}]}, "race", "today")).toBeNull();
+        expect(parseRankingBoard({...board(), rows: [{...rowOf(1), prev: 2}, {...rowOf(2), prev: null, streak: 0}]}, "race", "today")).toBeNull();
+        const page = {...seasonBoard(), offset: 10, focus: null, entrants: 12, rows: [seasonRow(9, "40", 5, 2, 0, 11), seasonRow(12, "41", 2, 1, 1, null)]};
+        const {closesAt: _, ...asked} = page;
+        expect(parseRankingPage(asked, "season", "s1", {offset: 10})?.rows.map(r => [r.rank, r.days, r.streak])).toEqual([[9, 2, 0], [12, 1, 1]]);
+        expect(parseRankingPage({...asked, rows: [seasonRow(9, "40", 5, 2, 3, 11), asked.rows[1]!]}, "season", "s1", {offset: 10})).toBeNull();
+    });
     test("pages: the asked offset or a found focus, consecutive places from it, and a length that fits the entrants", () => {
         expect(parseRankingPage(page(), "race", "today", {offset: 10})).toEqual(page());
         expect(parseRankingPage(page(110), "race", "today", {offset: 110})?.rows).toHaveLength(27);
@@ -152,8 +204,23 @@ describe("strict copies", () => {
             s => {s.guardians[0]!.titles = [{game: "race", place: 11}];}, s => {delete (s.guardians[0]!.games as Partial<typeof s.guardians[0]["games"]>).shop;},
             s => {s.closesAt.week = s.closesAt.day - 1;}, s => {delete (s.guardians[0]!.games.race.today as Partial<RankingStanding>).moves;},
             s => {s.guardians[0]!.games.race.today!.moves = false;}, s => {s.guardians[0]!.games.race.today!.prev = 0;},
+            // The season standing: null or whole, with days, run, bonus and today inside what the days allow.
+            s => {delete (s.guardians[0] as Partial<typeof s.guardians[0]>).season;}, s => {s.guardians[0]!.season!.rank = 0;}, s => {s.guardians[0]!.season!.entrants = 1;},
+            s => {s.guardians[0]!.season!.streak = 10;}, s => {s.guardians[0]!.season!.bonus = 5;}, s => {s.guardians[0]!.season!.bonus = 20;}, s => {s.guardians[0]!.season!.today = 31;},
+            s => {s.guardians[0]!.season!.points = 281;}, s => {s.guardians[0]!.season!.points = 18;}, s => {s.guardians[0]!.season!.days = 0;}, s => {s.guardians[0]!.season!.prev = 0;},
+            s => {s.guardians[0]!.season!.moves = false;}, s => {s.guardians[0]!.season = {} as SeasonStanding;},
         ];
         for (const change of corrupt) {const value = standings(); change(value); expect(parseRankingStandings(value, ["2"])).toBeNull();}
+        const none = standings(); none.guardians[0]!.season = null;
+        expect(parseRankingStandings(none, ["2"])?.guardians[0]!.season).toBeNull();
+        expect(parseRankingStandings({...standings(), guardians: [{...standings().guardians[0]!, season: {...mySeason(), points: 280, bonus: 10, today: 30}}]}, ["2"])?.guardians[0]!.season?.points).toBe(280);
+    });
+    test("season status: our id, dates as a pair of ranking days or none, and the phase those dates give today", () => {
+        for (const phase of ["pending", "announced", "open", "closed"] as const) expect(parseSeasonStatus(status(phase))).toEqual(status(phase));
+        expect(parseSeasonStatus({...status(), extra: 1})).toEqual(status());
+        expect(parseSeasonStatus({...status(), id: 2}, {id: 2, start: null, end: null})).toEqual({...status(), id: 2});
+        for (const bad of [{...status(), id: 2}, {...status(), id: "1"}, {...status(), phase: "announced"}, {...status(), today: "2026-10-14T00:00"}, {...status(), start: "2026-10-04x"},
+            {...status("pending"), end: "2026-11-01"}, {...status(), today: "2026-10-32"}, null, [], "open"]) expect(parseSeasonStatus(bad)).toBeNull();
     });
 });
 
@@ -162,6 +229,7 @@ describe("real seller contract", () => {
     afterEach(() => {for (const s of stores.splice(0)) s.close();});
     test("the seller's own boards and standings pass the proxy validator unchanged", async () => {
         const {OutingStore} = await import("../../../../delegated-seller/outings/store");
+        const season = {id: 1, start: "2026-10-05", end: "2026-11-01"};
         const {RankingReader} = await import("../../../../delegated-seller/ranking/board");
         const {createRankingApp} = await import("../../../../delegated-seller/ranking/routes");
         const store = new OutingStore(":memory:"); stores.push(store);
@@ -170,21 +238,26 @@ describe("real seller contract", () => {
             .run(`${tokenId}:${game}:${day}:${attempt}`, collection, tokenId, seedOf(tokenId), ARCADE_RULESET_VERSION, game, day, kstWeek(day), attempt, score, 0, now - 1000 + Number(tokenId));
         for (let i = 1; i <= 14; i++) add(String(i), "race", "2026-10-14", 1, 500 - i * 3);
         add("12", "race", "2026-10-13", 1, 7); add("12", "shop", "2026-10-06", 1, 70); add("3", "stamp", "2026-10-01", 1, 9); add("4", "stamp", "2026-10-02", 1, 9);
-        const app = createRankingApp({token: receiptToken, reader: new RankingReader(store, collection, () => now)});
+        const app = createRankingApp({token: receiptToken, reader: new RankingReader(store, collection, () => now, season)});
         const fetcher = async (url: string, init?: RequestInit) => app.request(new Request(url.replace("https://seller.mapae.io/arcade/ranking", "https://seller.local"), init));
         const deps: RankingDependencies = {receiptToken, fetcher, rateLimit: async () => true, now};
-        for (const path of ["/board/race/today", "/board/race/week", "/board/race/yesterday", "/board/shop/lastweek", "/board/stamp/today", "/board/devotion/28d", "/guardians/3,12,40"]) {
+        for (const path of ["/board/race/today", "/board/race/week", "/board/race/yesterday", "/board/shop/lastweek", "/board/stamp/today", "/board/devotion/28d", "/guardians/3,12,40", "/season", "/board/season/s1"]) {
             const response = await rankingApi(new Request(origin + path), deps);
             expect(response.status).toBe(200);
         }
         const mine = await (await rankingApi(new Request(origin + "/guardians/12"), deps)).json() as RankingStandings;
         expect(mine.guardians[0]!.games.race.today).toMatchObject({rank: 12, entrants: 14, moves: true, prev: 1});
+        // Token 12: #1 alone on 13 Oct (10) and #12 today (1); its shop round of 6 Oct settled after that week sealed, so it earns nothing. Tokens 3 and 4 played before the season.
+        expect(mine.guardians[0]!.season).toEqual({moves: true, prev: 1, points: 11, rank: 1, entrants: 14, days: 2, streak: 2, bonus: 0, today: 1});
+        expect(await (await rankingApi(new Request(origin + "/season"), deps)).json()).toEqual({...season, today: "2026-10-14", phase: "open"});
+        const s1 = await (await rankingApi(new Request(origin + "/board/season/s1"), deps)).json() as RankingBoard;
+        expect(s1.rows[0]).toMatchObject({tokenId: "12", score: 11, days: 2, streak: 2}); expect(s1.entrants).toBe(14); expect(s1.closesAt).toBe(Date.parse("2026-11-01T15:00:00Z"));
         const race = await (await rankingApi(new Request(origin + "/board/race/today"), deps)).json() as RankingBoard;
         expect(race.moves).toBe(true); expect(race.rows.map(r => r.prev)).toEqual(Array(10).fill(null)); expect(mine.guardians[0]!.streak).toMatchObject({current: 2});
         // 75 entrants: a page past the top ten, a short last page, an empty one past the end, and around lookups.
         for (let i = 15; i <= 75; i++) add(String(i), "race", "2026-10-14", 1, 100 - i);
         for (const path of ["/board/race/today/from/10", "/board/race/today/from/60", "/board/race/today/from/110", "/board/race/today/around/3,70", "/board/race/today/around/40",
-            "/board/devotion/28d/from/10", "/board/shop/lastweek/around/12"]) {
+            "/board/devotion/28d/from/10", "/board/shop/lastweek/around/12", "/board/season/s1/from/10", "/board/season/s1/around/3,70"]) {
             const response = await rankingApi(new Request(origin + path), deps);
             expect(response.status).toBe(200);
         }
