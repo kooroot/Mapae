@@ -1,9 +1,9 @@
 import {afterEach,expect,test} from 'bun:test';
 import {privateKeyToAccount} from 'viem/accounts';
-import {encodePacked,keccak256,toHex,type Address,type Hex} from 'viem';
+import {BaseError,encodePacked,InsufficientFundsError,keccak256,toHex,type Address,type Hex} from 'viem';
 import {emptyHonors,guardianHonorFromJson,guardianHonorJson,guardianName,guardianResultDomain,GUARDIAN_HONOR_TYPES,GUARDIAN_RESULT_TYPES,guardianResultFromJson,guardianTraitsHash,type GuardianHonors} from '@mapae/arcade/guardians';
 import type {GuardianClaimBatch,GuardianToken,VerifiedResult} from '../profile/guardians';
-import {nftCompanion,verifiedClaims,pendingGrowth,pendingHonors,guardianPortrait,refreshedDetail,verifyReplacement} from './model';
+import {gasShortfall,nftCompanion,verifiedClaims,pendingGrowth,pendingHonors,guardianPortrait,refreshedDetail,verifyReplacement} from './model';
 import {assertNftTransactionStorage,saveNftTransaction,readNftTransaction,clearNftTransaction} from './transaction-store';
 import {verifyRevelation} from './recovery';
 import {activeGuardianOuting} from './outing-model';
@@ -126,4 +126,12 @@ test('only this token, collection and ownership epoch can block a new outing',()
     expect(activeGuardianOuting({...job,guardian:{...job.guardian,ownershipEpoch:'3'}},identity)).toBe(true);
     expect(activeGuardianOuting({...job,guardian:{...job.guardian,ownershipEpoch:'3',collection:owner}},identity)).toBe(false);
     expect(activeGuardianOuting({...job,status:'complete'},identity)).toBe(false);
+});
+test('a draw refused for lack of ETH is told apart from every other failure',()=>{
+    expect(gasShortfall(new Error('no_gas'))).toBe(true);
+    expect(gasShortfall(new InsufficientFundsError({cause:new BaseError('insufficient funds for transfer')}))).toBe(true);
+    expect(gasShortfall(new BaseError('simulation failed',{cause:new InsufficientFundsError({cause:new BaseError('insufficient funds for gas * price + value')})}))).toBe(true);
+    expect(gasShortfall(new Error('reverted'))).toBe(false);
+    expect(gasShortfall(new BaseError('execution reverted'))).toBe(false);
+    expect(gasShortfall('no_gas')).toBe(false);
 });

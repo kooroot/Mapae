@@ -9,7 +9,8 @@ import {publicClient} from "../../lib/chain-client";
 import {ProfileError,profileRequest} from '../profile/client';
 import {giwaWalletError} from '../giwa-wallet';
 import type {GuardianClaimBatch,GuardianDetail,GuardianRoster,GuardianToken} from '../profile/guardians';
-import {refreshedDetail,sameAddress,verifiedClaims,verifyReplacement} from './model';
+import {gasShortfall,refreshedDetail,sameAddress,verifiedClaims,verifyReplacement} from './model';
+import {FAUCET_HINT} from '../faucet-hint';
 import {assertNftTransactionStorage,clearNftTransaction,readNftTransaction,saveNftTransaction,type NftTransaction} from './transaction-store';
 import {entropyRecoveryAbi,verifyRevelation} from './recovery';
 import {trackEngagement} from '../engagement/client';
@@ -18,11 +19,11 @@ import {trackEngagement} from '../engagement/client';
 export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
     const {address,connector}=useAccount(), config=useConfig(),{switchChainAsync}=useSwitchChain();
     const [roster,setRoster]=useState<GuardianRoster|null>(null),[detail,setDetail]=useState<GuardianDetail|null>(null),[selected,setSelected]=useState<string|null>(null);
-    const [error,setError]=useState(''),[busy,setBusy]=useState(false),[phase,setPhase]=useState(''),[loading,setLoading]=useState(false),[paused,setPaused]=useState(true),[transaction,setTransaction]=useState<NftTransaction|null>(null);
+    const [error,setError]=useState(''),[gasShort,setGasShort]=useState(false),[busy,setBusy]=useState(false),[phase,setPhase]=useState(''),[loading,setLoading]=useState(false),[paused,setPaused]=useState(true),[transaction,setTransaction]=useState<NftTransaction|null>(null);
     const rosterRef=useRef<GuardianRoster|null>(null),loadFailed=useRef(false),alive=useRef(true),locked=useRef(false),refreshing=useRef(false),selectedRef=useRef(selected),identity=useRef({address,uid:connector?.uid}),scope=useRef(owner);selectedRef.current=selected;identity.current={address,uid:connector?.uid};scope.current=owner;
     // A switched wallet starts from nothing: no roster, guardian or recovery record of the previous owner survives one render.
     const [shown,setShown]=useState(owner);
-    if(shown!==owner){setShown(owner);setRoster(null);rosterRef.current=null;setDetail(null);setSelected(null);setError('');setTransaction(null);setPaused(true);}
+    if(shown!==owner){setShown(owner);setRoster(null);rosterRef.current=null;setDetail(null);setSelected(null);setError('');setGasShort(false);setTransaction(null);setPaused(true);}
     const live=(target:Address)=>alive.current&&scope.current===target;
     useEffect(()=>{alive.current=true;refreshing.current=false;if(!owner)return;try{setTransaction(readNftTransaction(owner));}catch{setError(ko?'트랜잭션 복구 기록을 읽지 못했어요.':'Transaction recovery record is unavailable.');}return()=>{alive.current=false;};},[owner]);
     const refresh=useCallback(async()=>{
@@ -70,7 +71,7 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         if(receipt.status!=='success'){clearNftTransaction(owner);setTransaction(null);throw Error('reverted');}
         clearNftTransaction(owner);setTransaction(null);if(cancelled)throw Error('cancelled');await refresh();
     }
-    async function perform(action:()=>Promise<void>){if(locked.current||!owner)return;trackEngagement({event:'operator_action',locale:ko?'ko':'en'});locked.current=true;setBusy(true);setError('');loadFailed.current=false;setPhase(ko?'지갑에서 확인해 주세요':'Confirm in your wallet');try{await action();}catch(e){const code=giwaWalletError(e)?.code;const reason=e instanceof Error?e.message:'';setError(code==='rejected'?(ko?'지갑 요청을 취소했어요. 다시 시도할 수 있어요.':'Wallet request cancelled. You can try again.')
+    async function perform(action:()=>Promise<void>){if(locked.current||!owner)return;trackEngagement({event:'operator_action',locale:ko?'ko':'en'});locked.current=true;setBusy(true);setError('');setGasShort(false);loadFailed.current=false;setPhase(ko?'지갑에서 확인해 주세요':'Confirm in your wallet');try{await action();}catch(e){const code=giwaWalletError(e)?.code;const reason=e instanceof Error?e.message:'';const short=gasShortfall(e);setGasShort(short);setError(short?FAUCET_HINT[ko?'ko':'en'].gas:code==='rejected'?(ko?'지갑 요청을 취소했어요. 다시 시도할 수 있어요.':'Wallet request cancelled. You can try again.')
         :reason==='batch_unavailable'?(ko?'한 번에 기록하기는 전령 컨트랙트 업그레이드 뒤에 열려요. 업그레이드가 끝나면 다시 시도해 주세요.':'Recording in one go opens after the guardian contract upgrade. Try again once it lands.')
         :reason==='claim_rejected'?(ko?'기록이 이미 반영됐거나 상태가 바뀌어 지갑 요청을 보내지 않았어요. 새로고침한 뒤 다시 기록해 주세요.':'Nothing was sent: these outings were already recorded or the guardian changed. Refresh and record again.')
         :reason==='claims_waiting'?(ko?'아직 GIWA에서 확정되지 않은 모험이에요. 몇 분 뒤 다시 기록해 주세요.':'These outings are not final on GIWA yet. Record them again in a few minutes.')
@@ -80,12 +81,15 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
     async function mint(){await perform(async()=>{
         if(!owner||!roster?.enabled||!roster.collection||paused||transaction)throw Error('mint_unavailable');
         const w=await wallet();
-        const [oracle,provider,fee]=await Promise.all([
+        const [oracle,provider,fee,balance]=await Promise.all([
             publicClient.readContract({address:roster.collection,abi:guardianAbi,functionName:'entropy'}),
             publicClient.readContract({address:roster.collection,abi:guardianAbi,functionName:'entropyProvider'}),
             publicClient.readContract({address:roster.collection,abi:guardianAbi,functionName:'mintFee'}),
+            publicClient.getBalance({address:owner}),
         ]);
         if(!sameAddress(oracle,GUARDIAN_ENTROPY)||!sameAddress(provider,GUARDIAN_PROVIDER))throw Error('collection');
+        // A wallet without the fee is told where to get it before any wallet prompt; gas on top of the fee is the node's call in the simulation.
+        if(balance<fee)throw Error('no_gas');
         const contribution=bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
         const simulation=await publicClient.simulateContract({address:roster.collection,abi:guardianAbi,functionName:'mint',args:[contribution,fee],value:fee,account:owner});
         await wallet();const hash=await writeContract(w,simulation.request);await recorded(hash,'mint');
@@ -144,5 +148,5 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         }
         const receipt=await publicClient.getTransactionReceipt({hash:tx.hash});clearNftTransaction(owner);setTransaction(null);if(receipt.status!=='success')throw Error('reverted');
     });}
-    return {roster,detail,selected,select,more,refresh,mint,claimAll,recover,checkTransaction,transaction,error,busy,phase,loading,paused};
+    return {roster,detail,selected,select,more,refresh,mint,claimAll,recover,checkTransaction,transaction,error,gasShort,busy,phase,loading,paused};
 }

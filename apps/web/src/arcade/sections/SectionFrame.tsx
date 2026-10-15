@@ -1,9 +1,11 @@
 import type {ReactNode} from 'react';
 import {Link} from '@tanstack/react-router';
-import {CircleAlert, Gamepad2, LoaderCircle, RefreshCw, Sparkles, Ticket} from 'lucide-react';
+import {ArrowUpRight, CircleAlert, Gamepad2, LoaderCircle, RefreshCw, Sparkles, Ticket} from 'lucide-react';
 import {guardianName} from '@mapae/arcade/guardians';
 import {WalletPicker} from '../../components/WalletPicker';
 import {GuardianAvatar} from '../GuardianAvatar';
+import {FaucetHint} from '../FaucetHint';
+import {FAUCET_HINT, faucetHintUrl} from '../faucet-hint';
 import {SignInCard} from '../SignInCard';
 import {TransactionRecovery} from '../nft/TransactionRecovery';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
@@ -42,7 +44,7 @@ export function DeskGate({desk, walletWaiting, need, children}: {desk: GuardianD
     switch (stage) {
     case 'unavailable': return <div className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true" /><p>{nft.error}</p><button type="button" className="arc-text-button" disabled={nft.loading} onClick={() => void nft.refresh()}><RefreshCw size={16} aria-hidden="true" />{ko ? '다시 불러오기' : 'Retry'}</button></div>;
     case 'closed': return <section className="nft-panel"><h2>{ko ? '전령단이 곧 문을 열어요' : 'Guardians are preparing to arrive'}</h2><p>{ko ? '지금은 무료 게임을 즐길 수 있어요. NFT 뽑기는 준비가 끝나면 열립니다.' : 'Play the free games while NFT draws are being prepared.'}</p><Link className="arc-button" {...arcadeSectionLink('lobby', desk.locale)}>{ko ? '무료 게임 하러 가기' : 'Play the free games'}</Link></section>;
-    case 'empty': return <section className="nft-panel"><h2>{ko ? '아직 함께할 전령이 없어요' : 'No guardian yet'}</h2><p>{ko ? '첫 전령을 뽑으면 외출을 보내고 모험 기록을 쌓을 수 있어요.' : 'Draw your first guardian to send outings and build a journal.'}</p>{guardians(ko ? '첫 전령 뽑기' : 'Draw my first guardian')}</section>;
+    case 'empty': return <section className="nft-panel"><h2>{ko ? '아직 함께할 전령이 없어요' : 'No guardian yet'}</h2><p>{ko ? '첫 전령을 뽑으면 외출을 보내고 모험 기록을 쌓을 수 있어요.' : 'Draw your first guardian to send outings and build a journal.'}</p>{guardians(ko ? '첫 전령 뽑기' : 'Draw my first guardian')}<FaucetHint locale={desk.locale} /></section>;
     case 'waiting': return <section className="nft-panel"><h2>{ko ? '전령의 탄생을 기다리고 있어요' : 'Your guardian is on the way'}</h2><p>{revealed.length ? ko ? '탄생을 확인하거나, 이미 함께하는 다른 전령으로 바꿔 보세요.' : 'Check the reveal, or switch to a guardian who is already here.' : ko ? '탄생이 끝나면 이곳에서 함께할 수 있어요.' : 'Once revealed, your guardian joins you here.'}</p><div className="nft-panel-actions">{guardians(ko ? '탄생 확인하러 가기' : 'Check the reveal')}{revealed[0] && <button type="button" className="arc-text-button" onClick={() => void nft.select(revealed[0]!.tokenId)}>{ko ? '다른 전령으로 바꾸기' : 'Switch to another guardian'}</button>}</div></section>;
     default: return children;
     }
@@ -59,9 +61,9 @@ export function GuardianSwitcher({desk}: {desk: GuardianDesk}) {
 
 /** The roster's own progress: load errors, a running transaction and a transaction to recover. `phase={false}` when the page shows progress in place. */
 export function NftStatus({desk, phase = true}: {desk: GuardianDesk; phase?: boolean}) {
-    const {ko, nft} = desk;
+    const {ko, locale, nft} = desk;
     return <>
-        {nft.error && <div className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true" /><p>{nft.error}</p><button type="button" className="arc-text-button" disabled={nft.loading || nft.busy} onClick={() => void nft.refresh()}><RefreshCw size={16} className={nft.loading ? 'arc-loading-icon' : undefined} aria-hidden="true" />{nft.loading ? (ko ? '불러오는 중…' : 'Refreshing…') : (ko ? '다시 불러오기' : 'Retry')}</button></div>}
+        {nft.error && <div className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true" /><p>{nft.error}</p>{nft.gasShort && <a className="arc-button arc-button-paper" href={faucetHintUrl(locale)}>{FAUCET_HINT[locale].action}<ArrowUpRight size={16} aria-hidden="true" /></a>}<button type="button" className="arc-text-button" disabled={nft.loading || nft.busy} onClick={() => void nft.refresh()}><RefreshCw size={16} className={nft.loading ? 'arc-loading-icon' : undefined} aria-hidden="true" />{nft.loading ? (ko ? '불러오는 중…' : 'Refreshing…') : (ko ? '다시 불러오기' : 'Retry')}</button></div>}
         {phase && nft.busy && <p role="status" className="arc-notice nft-notice is-info"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true" />{nft.phase}</p>}
         {nft.transaction && <TransactionRecovery transaction={nft.transaction} busy={nft.busy} ko={ko} onCheck={nft.checkTransaction} />}
     </>;
