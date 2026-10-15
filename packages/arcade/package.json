@@ -19,7 +19,10 @@
     "./team": "./src/team.ts",
     "./guardians": "./src/guardians.ts",
     "./guardian-abi": "./src/guardian-abi.ts",
-    "./guardian-art": "./src/guardian-art.ts"
+    "./guardian-art": "./src/guardian-art.ts",
+    "./share-card": "./src/share-card/card.ts",
+    "./share-card/contract": "./src/share-card/contract.ts",
+    "./share-card/png": "./src/share-card/png.ts"
   },
   "dependencies": {
     "@mapae/shared": "workspace:*",

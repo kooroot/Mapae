@@ -2,9 +2,9 @@ import {expect, test} from "bun:test";
 import {crc32, decodePng, encodePng} from "./png";
 import {createBitmap, pixelAt, rgb} from "./raster";
 
-const layer = (name: string) => Bun.file(new URL(`../../../public/arcade/share/${name}.png`, import.meta.url)).bytes();
+const layer = (name: string) => Bun.file(new URL(`../../../../apps/web/public/arcade/share/${name}.png`, import.meta.url)).bytes();
 /** The layer art arrives from the asset repository; without it the codec is still proven on its own output. */
-const hasArt = await Bun.file(new URL("../../../public/arcade/share/head-dragon.png", import.meta.url)).exists();
+const hasArt = await Bun.file(new URL("../../../../apps/web/public/arcade/share/head-dragon.png", import.meta.url)).exists();
 
 test("encode then decode round-trips every pixel of an opaque bitmap", async () => {
     const bitmap = createBitmap(37, 11, rgb("#0e0c0a"));
