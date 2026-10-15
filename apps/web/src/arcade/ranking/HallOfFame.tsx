@@ -38,7 +38,7 @@ export function HallOfFame({desk, hall}: {desk: GuardianDesk; hall: SealedHall})
             {hall.champions.map(champion => <li key={`${champion.week}-${champion.game}`}><Portrait row={{rank: 1, tokenId: champion.tokenId, seed: champion.seed, score: champion.score}} /><span>{championCopy(champion, locale)}</span></li>)}
         </ul> : <p className="rank-team-note">{ko ? '이번 시즌에는 주간 장원이 없었어요.' : 'No weekly champion this season.'}</p>}
         <h3 className="rank-hall-heading">{ko ? '7일 연속 출석 추첨' : '7-day streak raffle'}</h3>
-        <p className="rank-team-note"><Dices size={16} aria-hidden="true" /> {raffleFormula(locale)} · {closeBlockCopy(hall.closeBlock, locale)}</p>
+        <p className="rank-team-note rank-hall-note"><Dices size={16} aria-hidden="true" /><span>{raffleFormula(locale)} · {closeBlockCopy(hall.closeBlock, locale)}</span></p>
         {hall.streakPool.length ? <ul className="rank-hall-list rank-hall-pool" aria-label={ko ? '추첨 풀' : 'Raffle pool'}>
             {hall.streakPool.map(entrant => <li key={entrant.tokenId} className={winners.has(entrant.tokenId) ? 'is-winner' : undefined}>
                 <Portrait row={{rank: 0, tokenId: entrant.tokenId, seed: entrant.seed, score: 0}} /><span>{streakEntrantCopy(entrant.tokenId, entrant.runs, locale)}</span>
@@ -46,7 +46,8 @@ export function HallOfFame({desk, hall}: {desk: GuardianDesk; hall: SealedHall})
             </li>)}
         </ul> : <p className="rank-team-note">{ko ? '7일 연속 출석을 완주한 전령이 없어 추첨은 없었어요.' : 'Nobody completed a 7-day run, so there was no draw.'}</p>}
         {worn.length > 0 && <ul className="rank-hall-mine" aria-label={ko ? '내 전령의 문양' : 'My guardians’ marks'}>
-            {worn.map(({token, marks}) => <li key={token.tokenId}><SeasonMarks marks={marks} locale={locale} /><span>{ko ? `내 전령 ${guardianName(token.tokenId, 'ko')}: ` : `My guardian ${guardianName(token.tokenId, 'en')}: `}{marks.map(mark => seasonMarkShortName(mark, locale)).join(' · ')}</span></li>)}
+            {worn.map(({token, marks}) => <li key={token.tokenId}><SeasonMarks marks={marks} locale={locale} />
+                <span>{`${ko ? '내 전령' : 'My guardian'} ${guardianName(token.tokenId, locale)}: ${marks.map(mark => seasonMarkShortName(mark, locale)).join(' · ')}`}</span></li>)}
         </ul>}
         <h3 className="rank-hall-heading">{ko ? '상품 전달' : 'Prizes'}</h3>
         <ul className="rank-season-intro">{prizeNotes(locale).map((item, i) => <li key={item}>{i === 0 ? <Coffee size={16} aria-hidden="true" /> : <span className="rank-season-dot" aria-hidden="true" />}<span>{item}</span></li>)}</ul>
