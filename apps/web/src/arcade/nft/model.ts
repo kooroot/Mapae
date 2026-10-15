@@ -25,7 +25,7 @@ export function guardianPortrait(seed:Hex):{appearance:Guardian;color:Color} {
 /** Guardian temperament as players read it on the talents card and allowance row. */
 export const TEMPERAMENT_NAMES={ko:{curious:'호기심 많은 탐험가',bold:'대담한 도전자',calm:'차분한 전략가'},en:{curious:'Curious explorer',bold:'Bold adventurer',calm:'Calm strategist'}} as const;
 export const sameAddress=(a:string,b:string)=>a.toLowerCase()===b.toLowerCase();
-/** A draw that could not be sent for lack of GIWA Sepolia ETH: the pre-check's own refusal, or the node's when gas on top of the fee is short. */
+/** An onchain request (a draw, a record, a recovery) that could not be sent for lack of GIWA Sepolia ETH: the draw pre-check's own refusal, or the node's when gas on top of the fee is short. */
 export const gasShortfall=(e:unknown)=>e instanceof Error&&e.message==='no_gas'||e instanceof BaseError&&!!e.walk(x=>x instanceof InsufficientFundsError);
 export function verifyReplacement(owner:Address,nonce:number,replacement:{from:Address;nonce:number}){
     if(!Number.isSafeInteger(nonce)||nonce<0||!sameAddress(owner,replacement.from)||nonce!==replacement.nonce)throw Error('replacement_mismatch');
