@@ -1,4 +1,4 @@
 .share-actions{display:flex;flex-wrap:wrap;gap:0 16px;margin:0}
 .rank-games>li .share-actions{grid-column:1/-1}
-.share-x{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-7px 0;border-radius:8px;color:inherit}
+.share-x{flex:none;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;margin:-12px -10px;border-radius:10px;color:inherit}
 .share-x:hover,.share-x:focus-visible{color:var(--arc-gold,#e9c99f);background:rgba(233,201,159,.14)}

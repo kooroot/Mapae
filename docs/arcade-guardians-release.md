@@ -245,6 +245,17 @@ seller는 체인에서 기록됨을 확인한 결과를 DB에 표시해 두고 �
 - **배포 순서.** 이 기능이 처음 올라갈 때는 seller 재시작 → `deploy:app`. 재시작 전에는 웹 프록시의 `/api/arcade/ranking/season`과 시즌 보드가 503이라 로비 배너는 보이지 않고 시즌 탭은 오류 안내를 보여 준다. `/guardians/:ids`(내 전령의 자리·로비 도크의 순위 줄)도 `season` 필드가 없어 프록시 검증에서 503이 되므로, 이전 단계처럼 seller 재시작을 먼저 한다. 공개 순위표(일별·주간·꾸준함)만 영향이 없다.
 - **상품·문양·명예의 전당.** 상위 3명 커피 기프티콘과 7일 연속 출석 전령 중 추첨 1명은 시즌이 끝난 뒤 수동으로 전달한다. 시즌 한정 문양과 명예의 전당은 다음 단계에서 올린다.
 
+### 공유 카드
+
+오늘 순위와 시즌 점수를 X에 올릴 수 있게 Worker가 1200×630 PNG 카드와 og 메타가 담긴 공유 페이지를 만든다. 계약·seller 저장소는 바뀌지 않는다: seller는 `/arcade/ranking/card/:game/:day/:tokenId`와 `/arcade/ranking/card/season/:tokenId`로 기존 순위표를 읽어 주고, 웹 Worker가 `apps/web/src/arcade/share/`에서 응답을 검증한 뒤 PNG를 직접 그린다(외부 폰트·브라우저·이미지 서비스 없음).
+
+- **경로.** 카드 `/api/arcade/share/g/:tokenId/:game/:day/card.png`·`/api/arcade/share/s/:tokenId/card.png`, 페이지 `/share/g/:tokenId/:game/:day`·`/share/s/:tokenId`(앞에 `/ko` 붙이면 한국어). 날짜는 오늘부터 365일 전까지, 그 밖의 날짜·쿼리 문자열·잘못된 형식은 404. 웹 버튼은 `https://x.com/intent/post?text=…&url=<페이지>`와 `카드 저장`(download) 두 가지이며 추적 매개변수는 붙이지 않는다.
+- **캐시.** 지난 날 카드는 가장자리 1시간·브라우저 5분, 오늘 카드와 열린 시즌 카드는 60초. 캐시 키에 `CARD_REVISION`이 들어가므로 카드 디자인을 바꿀 때는 `card.ts`의 `CARD_REVISION`을 올린다(X는 카드 이미지를 자체 캐시하므로 이미 올린 글의 미리 보기는 바뀌지 않는다). seller가 꺼져 있거나 응답이 검증에 걸리면 503 + `Retry-After: 5`(no-store), seller 404는 30초 캐시되는 404.
+- **CPU 예산.** 캐시 미스 한 번에 레이어 PNG 디코드·합성·인코드로 약 90ms CPU를 쓴다. **Workers Free는 요청당 CPU 10ms라 카드 경로가 잘리므로 app Worker가 Workers Paid(기본 30초)인지 확인한다.** 디코드한 레이어는 isolate 안에서 메모된다.
+- **레이어 PNG.** 카드는 `public/arcade/share/*.png`(옷장·부적 WebP를 `apps/web/scripts/share-layers.sh`로 320px PNG로 바꾼 36장, 약 4.9MB)를 ASSETS에서 읽는다. `apps/web/public/arcade/`는 git 밖이라 **Mapae-arcade-asset 저장소에 `arcade/share/`를 더하고 `SHA256SUMS`를 다시 만든 뒤 CI의 `ref`를 새 커밋으로 올려야 한다.** 이 파일이 없으면 운영 카드 경로는 503이 되고, 테스트는 파일이 있을 때만 실제 레이어를 쓴다.
+- **배포 순서.** seller 재시작(카드 경로) → `deploy:landing`(`/share/*` 페이지는 랜딩 Worker가 받는다) → `deploy:app`. 두 Worker 모두 `ARCADE_RECEIPT_TOKEN`이 있어야 seller를 읽는다. WAF나 봇 차단 규칙이 있다면 `Twitterbot`·`facebookexternalhit`·카카오 미리 보기 크롤러가 `/share/*`와 `/api/arcade/share/*`를 읽을 수 있어야 미리 보기가 뜬다.
+- **다음 단계.** 카드 글자는 영문 대문자 픽셀 폰트뿐이다. 한글 전령 이름을 카드에 올리려면 한글 글리프 아틀라스를 레이어처럼 에셋 저장소에 넣는 작업(3b)이 따로 필요하다.
+
 ### 신뢰 경계
 
 - 관리자는 모든 상태를 신뢰받는다. 업그레이드는 즉시 적용되고(timelock 없음) birth·성장·소유권을 바꿀 수 있으며, 결과 서명자를 자기 키로 바꿔 성장을 직접 발급할 수도 있다. 관리자/서명자 분리는 서명 키가 유출돼도 관리자 권한을 얻지 못하게 하는 키 위생 규칙이다. 테스트넷 밖에서 쓰기 전에 owner를 multisig(필요하면 TimelockController)로 `transferOwnership` → `acceptOwnership`한다.
