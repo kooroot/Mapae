@@ -2,6 +2,7 @@ import type {Hex} from "viem";
 import {GAME_NAMES} from "../contracts";
 import {BACKDROP_COLORS, guardianArtLayers, guardianLook, SEAL_COLORS, ZODIAC_NAMES, type GuardianFitting} from "../guardian-art";
 import {GUARDIAN_CHARMS, GUARDIAN_HATS, GUARDIAN_OUTFITS, GUARDIAN_SHOES, GUARDIAN_ZODIACS, guardianName, guardianTraits} from "../guardians";
+import type {SeasonMark} from "../hall";
 import type {RankedCard, SeasonCard} from "../ranking";
 import {SEASON} from "../season";
 import {CARD_HEIGHT, CARD_WIDTH} from "./contract";
@@ -85,12 +86,18 @@ export function renderRankedCard(card: RankedCard, art: ShareCardArt): Bitmap {
         : `${ZODIAC_NAMES.en[t.zodiac]} · ${t.charm === "none" ? "NO CHARM" : `CHARM: ${t.charm}`} · ${t.temperament}`, 492, 3, INK.dim);
     return b;
 }
-/** A season standing's card: the season and its dates, total points and place, days played, the run and its bonus. */
+/** A season mark in the card's uppercase pixel font: S1 PODIUM #2, TEAM TIGER, ENTRANT. */
+const markLabel = (mark: SeasonMark): string => mark.kind === "podium" ? `S${mark.season} PODIUM #${mark.place}` : mark.kind === "team" ? `TEAM ${ZODIAC_NAMES.en[mark.zodiac].toUpperCase()}` : "ENTRANT";
+/**
+ * A season standing's card: the season and its dates, total points and place, days played, the run and its bonus, and once the
+ * season has sealed, the marks the guardian wears.
+ */
 export function renderSeasonCard(card: SeasonCard, art: ShareCardArt): Bitmap {
     const b = frame(card.tokenId, card.seed, art), {status, season} = card;
     line(b, `SEASON ${status.id}${status.phase === "closed" ? " FINAL" : ""} · ${monthDay(status.start!)} - ${monthDay(status.end!)}`, 262, 3, INK.dim);
     scoreBlock(b, season.points, "SEASON PTS");
     placeLine(b, season.rank, `#${season.rank} OF ${season.entrants} · ${season.days} ${season.days === 1 ? "DAY" : "DAYS"}`);
     line(b, `${season.streak}-DAY RUN · BONUS +${season.bonus}`, 492, 3, INK.dim);
+    if (status.phase === "closed" && card.marks.length) line(b, card.marks.map(markLabel).join(" · "), 528, 3, INK.gold);
     return b;
 }

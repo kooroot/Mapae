@@ -71,10 +71,18 @@ test("a season card draws total points, the podium medal and the run line, open 
     expect(inkAt(b, 596, 446, "#e2b24a")).toBe(true);
     expect(hasInk(b, 600, 318, 528, 80, "#f2c14e")).toBe(true);
     expect(hasInk(b, 600, 262, 528, 24, "#bca788")).toBe(true);
+    expect(hasInk(b, 600, 528, 528, 24, "#e9c99f")).toBe(false); // no marks until the hall seals
     await save("card-season-12", b);
     const open = renderSeasonCard({...closed, status: {...closed.status, today: "2026-10-14", phase: "open"}, season}, art);
     expect(inkAt(open, 596, 446, "#c9c9c9")).toBe(true);
     await save("card-season-open", open);
+});
+test("a sealed season card adds the marks line: podium place, winning team, entrant", async () => {
+    const marks: SeasonCard["marks"] = [{season: 1, kind: "podium", place: 2}, {season: 1, kind: "team", zodiac: "tiger"}, {season: 1, kind: "entrant"}];
+    const b = renderSeasonCard({...closed, season: {...closed.season, rank: 2}, marks}, art);
+    expect(hasInk(b, 600, 528, 528, 24, "#e9c99f")).toBe(true);
+    expect(hasInk(b, 600, 492, 528, 24, "#bca788")).toBe(true);
+    await save("card-season-marks", b);
 });
 test("the card encodes to a PNG that decodes back to the same size", async () => {
     const png = await encodePng(renderRankedCard(ranked, art));
