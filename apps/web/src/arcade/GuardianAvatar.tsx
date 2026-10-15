@@ -1,11 +1,15 @@
 import {useId} from "react";
+import type {SeasonMark} from "@mapae/arcade/hall";
 import type {Color} from "./state";
 import {BACKDROP_COLORS, SEAL_COLORS} from "@mapae/arcade/guardian-art";
 import type {Guardian} from "./guardian";
 import {guardianLayers} from "./guardian-layers";
+import {SeasonMarkGlyph, shownMarks} from "./ranking/SeasonMark";
 import "./guardian.css";
 
-export function GuardianAvatar({appearance, color = "red", portrait = false, className = ""}: {appearance?: Guardian; color?: Color; portrait?: boolean; className?: string}) {
+/** The marks a portrait wears: season marks at its bottom right, podium first, three at most. */
+const MARK_SIZE = 36, MARK_STEP = 40, MARK_RIGHT = 380, MARK_Y = 334;
+export function GuardianAvatar({appearance, color = "red", portrait = false, className = "", marks = []}: {appearance?: Guardian; color?: Color; portrait?: boolean; className?: string; marks?: readonly SeasonMark[]}) {
     const tones = BACKDROP_COLORS[appearance?.backdrop ?? "dawn"];
     const id = useId();
     const layers = appearance ? guardianLayers(appearance) : [];
@@ -14,5 +18,7 @@ export function GuardianAvatar({appearance, color = "red", portrait = false, cla
         {portrait && <><rect width="400" height="400" rx="28" fill={tones[1]} /><circle cx="200" cy="186" r="156" fill={tones[0]} /><circle cx="200" cy="186" r="144" fill="none" stroke={tones[1]} strokeWidth="1" /><path d="M26 318 Q110 260 200 317 T400 314 V400 H0Z" fill={tones[0]} opacity=".2" /><path d="M35 69h24m-12-12v24M337 253h20m-10-10v20" stroke={tones[0]} strokeWidth="2" /></>}
         {appearance ? layers.map((layer, i) => <image key={`${layer.src}-${i}`} href={layer.src} x={layer.x} y={layer.y} width={layer.width} height={layer.height} clipPath={layer.clip ? `url(#${id}-hat-${i})` : undefined} preserveAspectRatio={layer.stretch ? "none" : "xMidYMax meet"} />) : <image href="/arcade/arcade-emblem.webp" x="95" y="75" width="210" height="236" />}
         {portrait && <><rect x="22" y="329" width="42" height="49" rx="8" fill={SEAL_COLORS[color]} /><image href="/arcade/arcade-emblem.webp" x="27" y="335" width="32" height="36" /><rect x="8" y="8" width="384" height="384" rx="22" fill="none" stroke={SEAL_COLORS[color]} strokeWidth="3" /></>}
+        {portrait && shownMarks(marks).map((mark, i) => <svg key={mark.kind} x={MARK_RIGHT - MARK_SIZE - i * MARK_STEP} y={MARK_Y} width={MARK_SIZE} height={MARK_SIZE} viewBox="0 0 24 24" className={mark.kind === "podium" ? `is-place-${mark.place}` : undefined}>
+            <SeasonMarkGlyph mark={mark} id={`${id}-mark-${mark.kind}`} /></svg>)}
     </svg>;
 }
