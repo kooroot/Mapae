@@ -243,7 +243,7 @@ seller는 체인에서 기록됨을 확인한 결과를 DB에 표시해 두고 �
 - **단계.** `packages/arcade/src/season.ts`의 `SEASON`이 `{id: 1, start: null, end: null}`이면 준비 중(배너는 규칙 미리 보기, 시즌 탭은 규칙·상품 안내). 날짜를 넣으면 시작 전 `announced`(D-n), 시작일부터 종료일까지 `open`, 그다음 날부터 `closed`(최종 순위, 시계 없음).
 - **날짜 설정.** `SEASON`을 `{id: 1, start: "YYYY-MM-DD", end: "YYYY-MM-DD"}`(한국 시간, 종료일 포함)로 바꾸는 커밋 한 건 → mini에서 pull → `bun install --frozen-lockfile` → `io.mapae.delegated-seller` 재시작. 날짜는 seller만 읽으므로 **웹 재배포가 필요 없다**. 시작은 월요일, 종료는 일요일을 권장한다(마지막 주의 봉인 화요일 0시와 맞물린다).
 - **배포 순서.** 이 기능이 처음 올라갈 때는 seller 재시작 → `deploy:app`. 재시작 전에는 웹 프록시의 `/api/arcade/ranking/season`과 시즌 보드가 503이라 로비 배너는 보이지 않고 시즌 탭은 오류 안내를 보여 준다. `/guardians/:ids`(내 전령의 자리·로비 도크의 순위 줄)도 `season` 필드가 없어 프록시 검증에서 503이 되므로, 이전 단계처럼 seller 재시작을 먼저 한다. 공개 순위표(일별·주간·꾸준함)만 영향이 없다.
-- **상품·문양·명예의 전당.** 상위 3명 커피 기프티콘과 7일 연속 출석 전령 중 추첨 1명은 시즌이 끝난 뒤 수동으로 전달한다. 시즌 한정 문양과 명예의 전당은 다음 단계에서 올린다.
+- **상품·문양·명예의 전당.** 상위 3명 커피 기프티콘과 7일 연속 출석 전령 중 추첨 5명은 시즌이 끝난 뒤 수동으로 전달한다(아래 "명예의 전당·상품 전달"). 시즌 한정 문양은 seller가 봉인한 전당에서 웹이 SVG로 그린다 — 계약을 바꾸지 않으므로 온체인 특성이 아니다.
 
 ### 공유 카드
 
@@ -264,7 +264,20 @@ seller는 체인에서 기록됨을 확인한 결과를 DB에 표시해 두고 �
 - **경로.** seller `GET /arcade/ranking/board/team/<week | s<id>>`(bearer, 페이지 없음, 시즌 전·다른 id는 400, reader 없음 503). 웹 프록시 `/api/arcade/ranking/board/team/<period>`는 보드와 같은 30초 가장자리 캐시·IP 예산이며 사본을 엄격히 검증한다(12띠 각 한 번, 합계 내림차순·순위 공유, `members ≤ points ≤ members×상한`, `top`의 seed가 그 띠, `Σmembers = entrants`). 검증에 걸리면 503.
 - **웹.** 랭킹 `#team` 탭(이번 주 | 시즌 N 토글, 시즌이 진행·종료면 시즌이 기본), "우리 팀" 표식과 내 기여 비율, 로비 도크의 "우리 호랑이팀 3위 · 1위까지 120점" 줄(시즌이 열려 있고 참가자가 있을 때만).
 - **배포 순서.** **seller 재시작이 먼저**, 그다음 `deploy:app`. 새 웹이 옛 seller를 읽는 동안은 `/guardians/:ids` 사본에 `weekPoints`가 없어 프록시가 503을 내므로 "내 전령의 자리"·도크의 순위 줄이 잠시 비고, 띠 팀전 탭도 503 안내를 띄운다. 공개 보드(`/board/...`)와 시즌 상태는 영향이 없다. 반대 순서(seller만 새것)는 옛 웹이 `weekPoints`를 무시하므로 안전하다.
-- **다음 단계.** 시즌이 끝날 때 1위 팀 전령에게 주는 우승 팀 표식은 아직 문구뿐이다. 표식을 NFT 특성으로 남기는 작업은 시즌 1 한정 문양과 함께 다음 단계에서 다룬다. 팀 순위 ▲▼ 변동도 이번에는 넣지 않았다.
+- **다음 단계.** 1위 팀 전령의 우승 팀 표식은 시즌 봉인 뒤 전당의 `teams`에서 유도해 웹이 그린다(아래). 표식을 NFT 특성으로 남기는 일은 계약 업그레이드 때로 미룬다. 팀 순위 ▲▼ 변동도 이번에는 넣지 않았다.
+
+### 명예의 전당·상품 전달
+
+시즌이 끝나면 seller가 최종 순위를 한 번 봉인하고, 웹은 그 사본으로 명예의 전당·문양·추첨을 보여 준다. 계약은 바뀌지 않는다. 문양은 seller가 봉인한 `participants`·`podium`·`teams`에서 유도해 웹이 SVG로 그리므로 지갑·마켓플레이스에는 보이지 않는다 — 온체인 특성(`uint80 marks` 같은 비트 필드)은 Honor 계약 업그레이드 때 넣는다.
+
+- **봉인.** seller 테이블 `arcade_season_hall(collection, season, sealed_at, data, PK(collection, season))`. 시즌이 닫힌 뒤 마지막 주의 봉인 시각(화요일 0시, `hallSealsAt`)을 지나 처음 읽힐 때 시즌 보드·팀 보드·주간 장원·7일 연속 출석 풀을 모아 한 번만 쓴다. 그 전에는 `/arcade/ranking/hall/s1`이 `{sealed: false, sealsAt}`를 답하고 웹은 "종료 · 최종 집계 중"과 화요일 0시 확정 안내를 보여 준다. 종료 블록은 `seasonEndsAt`(종료일 다음 날 0시 KST) 이후 첫 GIWA 블록을 RPC 이진 탐색(약 25번 `getBlock`)으로 찾는다. RPC가 막히면 봉인하지 않고 다음 읽기에 다시 시도하며, seller 로그에 `[ranking] season N not sealed — close block unavailable`이 남는다. 한 번 봉인되면 `SEASON.id`를 2로 올려도 `/hall/s1`은 테이블에서 답하고, 모르는 시즌은 404.
+- **추첨 공식.** 풀 = 시즌 안에서 7일 연속 출석을 1회 이상 완주한 전령(token 오름차순). seed = 종료 블록 해시. `i`번째 당첨은 `keccak256(seed ‖ uint256(i)) mod 남은 수`로 고르고 뽑힌 전령은 풀에서 뺀다(5명, 풀이 작으면 그만큼). 공유는 확인할 길이 없어 자격에 넣지 않는다.
+- **운영 순서.**
+  1. 종료 — 종료일 다음 날 0시 KST에 seller `/season`이 `closed`를 답하고 웹은 집계 중으로 바뀐다. 아무것도 하지 않는다.
+  2. 봉인 확인 — 화요일 0시 KST 뒤 `curl https://mapae.io/api/arcade/ranking/hall/s1`에서 `"sealed": true`를 본다. `false`가 이어지면 seller 로그의 RPC 오류를 보고 한 번 더 읽는다(읽기가 곧 재시도).
+  3. 추첨 검증 — `bun --no-env-file scripts/season-raffle.ts --season 1`이 공개 RPC에서 종료 블록을 다시 찾고 당첨자를 다시 뽑아 비교한다(불일치면 종료 코드 1 — 그때는 봉인 데이터를 의심하고 공지하지 않는다). JSON 출력(블록 번호·해시·풀·당첨 5명)은 비공개 저장소 `season-1-result.md`에 남기고, X 공지에는 블록 번호와 해시를 적는다.
+  4. DM 처리 — 당첨 전령의 주인이 `@mapae_io`에 전령 번호를 DM으로 보내면 `Mapae Arcade Season 1 prize\nGuardian #<id>\nX: @<handle>` 문장을 지갑에서 서명해 달라고 안내하고, `bun --no-env-file scripts/season-raffle.ts verify --collection <전령 계약> --token <id> --handle <handle> --signature 0x…`로 `ownerOf`와 대조한다(가스·트랜잭션 없음). X 계정 하나에 상품 하나. 기록은 token·X 계정·발송일만 남기고 지갑 주소와 서명 본문은 남기지 않는다. 시즌 뒤 양도된 전령은 서명 시점의 소유자가 받는다.
+  5. 배포 순서 — seller 재시작 → `deploy:landing` → `deploy:app`. 옛 seller에 새 웹이 붙으면 `/hall/s1`이 404라 프록시가 503을 내고 전당 영역만 오류 안내를 띄운다(순위표·시즌 상태는 그대로). 공유 카드는 `CARD_REVISION` 3으로 봉인 뒤 문양 줄이 더 그려진다.
 
 ### 신뢰 경계
 
