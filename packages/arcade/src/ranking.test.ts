@@ -5,6 +5,7 @@ import {
     addDays, fnv1a, guardianStreak, kstDay, kstWeek, nextReset, parseRankingIds, parseRankingPageOffset, rankedSeed, rankingPageOffset, rankingWeekIndex, rankingWeekOf, sealedWeek,
     streakMilestone, titlePlace, validRankedAttempt, validRankingBoard, weekCutoff,
 } from "./ranking";
+import {SEASON} from "./season";
 
 describe("KST windows", () => {
     test("the day turns at 00:00 KST, which is 15:00 UTC", () => {
@@ -53,12 +54,17 @@ describe("ranked seeds", () => {
 
 describe("request shapes", () => {
     test("boards pair games with day/week windows and devotion with 28 days", () => {
-        expect(validRankingBoard("stamp", "today")).toBe(true);
-        expect(validRankingBoard("shop", "lastweek")).toBe(true);
-        expect(validRankingBoard("devotion", "28d")).toBe(true);
-        expect(validRankingBoard("devotion", "today")).toBe(false);
-        expect(validRankingBoard("race", "28d")).toBe(false);
-        expect(validRankingBoard("xp", "today")).toBe(false);
+        expect(validRankingBoard("stamp", "today", SEASON)).toBe(true);
+        expect(validRankingBoard("shop", "lastweek", SEASON)).toBe(true);
+        expect(validRankingBoard("devotion", "28d", SEASON)).toBe(true);
+        expect(validRankingBoard("devotion", "today", SEASON)).toBe(false);
+        expect(validRankingBoard("race", "28d", SEASON)).toBe(false);
+        expect(validRankingBoard("xp", "today", SEASON)).toBe(false);
+        // The season board answers to its id alone, dates or not; the seller decides whether it is open.
+        expect(validRankingBoard("season", "s1", SEASON)).toBe(true);
+        expect(validRankingBoard("season", "s2", SEASON)).toBe(false); expect(validRankingBoard("season", "s1", {id: 2, start: null, end: null})).toBe(false);
+        for (const period of ["today", "28d", "s", "s01", "1"]) expect(validRankingBoard("season", period, SEASON)).toBe(false);
+        expect(validRankingBoard("race", "s1", SEASON)).toBe(false);
     });
     test("standing ids are one to three ascending unique guardians", () => {
         expect(parseRankingIds("1,20,300")).toEqual(["1", "20", "300"]);

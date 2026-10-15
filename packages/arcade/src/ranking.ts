@@ -1,6 +1,7 @@
 import type {Hex} from "viem";
 import {ARCADE_RULESET_VERSION, type GameId} from "./contracts";
 import {GUARDIAN_MAX_SUPPLY} from "./guardians";
+import type {Season} from "./season";
 
 /**
  * Ranked play: the first RANKED_ATTEMPTS settled outing rounds of each game per guardian and Korean calendar day count toward the
@@ -22,10 +23,10 @@ export const NEARBY_SPAN = 2;
 export const RANKED_GAMES = ["stamp", "race", "shop"] as const satisfies readonly GameId[];
 
 export type RankedAttempt = {day: string; attempt: number};
-export type RankingBoardId = GameId | "devotion";
+export type RankingBoardId = GameId | "devotion" | "season";
 export type GamePeriod = "today" | "yesterday" | "week" | "lastweek";
-/** Game boards read the four day/week windows; the devotion board reads only the last 28 days. */
-export type RankingPeriod = GamePeriod | "28d";
+/** Game boards read the four day/week windows; the devotion board reads only the last 28 days; the season board its own `s<id>`. */
+export type RankingPeriod = GamePeriod | "28d" | `s${number}`;
 export const GAME_PERIODS = ["today", "week", "yesterday", "lastweek"] as const satisfies readonly GamePeriod[];
 /** `seed` is the guardian's public birth seed: enough to draw its portrait, nothing about its owner. */
 export type RankingRow = {rank: number; tokenId: string; seed: Hex; score: number};
@@ -35,10 +36,12 @@ export type RankingRow = {rank: number; tokenId: string; seed: Hex; score: numbe
  * While it is true, `prev` is the guardian's rank on the whole earlier board, or null when it had no entry there at all.
  */
 export type RankingMove = {moves: boolean; prev: number | null};
+/** What a season row carries besides its points: days played inside the season and the current attendance run there. */
+export type SeasonRowExtras = {days: number; streak: number};
 export type RankingBoard = {
     board: RankingBoardId; period: RankingPeriod; from: string; to: string;
     /** When the window closes (epoch ms); null once it has. */
-    closesAt: number | null; entrants: number; moves: boolean; rows: (RankingRow & Pick<RankingMove, "prev">)[];
+    closesAt: number | null; entrants: number; moves: boolean; rows: (RankingRow & Pick<RankingMove, "prev"> & Partial<SeasonRowExtras>)[];
 };
 /**
  * One page of a whole board: its rows from the 0-based place `offset` (offset 10 starts at #11), with movement against the same
@@ -48,8 +51,12 @@ export type RankingBoard = {
 export type RankingPage = Omit<RankingBoard, "closesAt"> & {offset: number; focus: string | null};
 export type RankingStanding = RankingMove & {rank: number; score: number; entrants: number; leader: number; above: RankingRow | null; nearby: RankingRow[]};
 export type GuardianStreak = {current: number; best: number; freezes: number; playedToday: boolean};
+/** A guardian's place in the season race: points with the attendance bonus in, and what today and the run added. */
+export type SeasonStanding = RankingMove & SeasonRowExtras & {points: number; rank: number; entrants: number; bonus: number; today: number};
 export type GuardianStanding = {
     tokenId: string; streak: GuardianStreak; devotion: {rank: number | null; days: number};
+    /** Null outside a season window, or with no ranked day inside it yet. */
+    season: SeasonStanding | null;
     /** Last week's places 1–10, per game. */
     titles: {game: GameId; place: number}[];
     games: Record<GameId, {attemptsUsed: number; today: RankingStanding | null; week: RankingStanding | null}>;
@@ -138,8 +145,9 @@ export function validRankedAttempt(value: unknown): value is RankedAttempt {
 export function validRankingTokenId(value: unknown): value is string {
     return typeof value === "string" && /^[1-9]\d{0,4}$/.test(value) && Number(value) <= GUARDIAN_MAX_SUPPLY;
 }
-/** The board/period pairs that exist. */
-export function validRankingBoard(board: string, period: string): board is RankingBoardId {
+/** The board/period pairs that exist. The season board answers to its own id whatever its dates: the seller judges those. */
+export function validRankingBoard(board: string, period: string, season: Season): board is RankingBoardId {
+    if (board === "season") return period === `s${season.id}`;
     return board === "devotion" ? period === "28d" : (RANKED_GAMES as readonly string[]).includes(board) && (GAME_PERIODS as readonly string[]).includes(period);
 }
 /** The page offset holding a 0-based place below the top rows. */
@@ -164,21 +172,26 @@ export function parseRankingIds(value: string): string[] | null {
  * spends a held rest day (keeping the run without adding to it) or ends the run. Today never breaks a run before it is over.
  */
 export function guardianStreak(days: readonly string[], today: string): GuardianStreak {
+    const {current, best, freezes, playedToday} = streakProgress(days, today);
+    return {current, best, freezes, playedToday};
+}
+/** The streak with `completed`: how many times a run reached a multiple of STREAK_FREEZE_EVERY, each the moment a rest day was earned. */
+export function streakProgress(days: readonly string[], today: string): GuardianStreak & {completed: number} {
     const played = new Set(days.filter(day => isRankingDay(day) && day <= today));
     const first = [...played].sort()[0];
-    let current = 0, best = 0, freezes = 0;
+    let current = 0, best = 0, freezes = 0, completed = 0;
     if (first) {
         for (let day = first; day <= today; day = addDays(day, 1)) {
             if (played.has(day)) {
                 current++;
                 best = Math.max(best, current);
-                if (current % STREAK_FREEZE_EVERY === 0) freezes = Math.min(STREAK_FREEZE_MAX, freezes + 1);
+                if (current % STREAK_FREEZE_EVERY === 0) {freezes = Math.min(STREAK_FREEZE_MAX, freezes + 1); completed++;}
             } else if (day === today) break;
             else if (freezes > 0) freezes--;
             else {current = 0; freezes = 0;}
         }
     }
-    return {current, best, freezes, playedToday: played.has(today)};
+    return {current, best, freezes, completed, playedToday: played.has(today)};
 }
 /** The highest attendance milestone a longest streak reached, 0 if none. GuardianMetadata mirrors STREAK_MILESTONES. */
 export function streakMilestone(best: number): number {
