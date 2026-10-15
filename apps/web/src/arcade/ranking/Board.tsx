@@ -13,19 +13,19 @@ const KST_OFFSET_MINUTES = 9 * 60;
 
 /** The dates a board covers, as its overline reads them. */
 export const boardSpan = (board: RankingBoard) => board.from === board.to ? board.from : `${board.from} – ${board.to}`;
-const clockPeriod = (board: RankingBoard): ClockPeriod => board.board === 'season' ? 'season' : board.period === 'week' ? 'week' : 'day';
+/** How a board's clock reads: the season counts days, a weekly window the week, and any other window the day. */
+export const clockPeriod = (board: RankingBoard): ClockPeriod => board.board === 'season' ? 'season' : board.period === 'week' ? 'week' : 'day';
 
 /** Entrants, and the reset as a ticking chip that turns urgent in the last hour; a closed window reads as final. */
-export function BoardChips({board, locale}: {board: RankingBoard; locale: Locale}) {
-    const ko = locale === 'ko', now = useSecondClock(board.closesAt !== null);
+export function BoardChips({entrants, closesAt, period, locale}: {entrants: number; closesAt: number | null; period: ClockPeriod; locale: Locale}) {
+    const ko = locale === 'ko', now = useSecondClock(closesAt !== null);
     const [offset, setOffset] = useState(KST_OFFSET_MINUTES);
     // The visitor's clock is read after hydration, so the server and the first client render agree on KST.
     useEffect(() => setOffset(-new Date().getTimezoneOffset()), []);
-    const period = clockPeriod(board);
-    const reset = board.closesAt === null ? null : resetClock({now, closesAt: board.closesAt, period, locale});
+    const reset = closesAt === null ? null : resetClock({now, closesAt, period, locale});
     return <div className="rank-chips">
-        <span className="rank-chip"><Users size={15} aria-hidden="true" />{ko ? `참가 ${board.entrants}` : `${board.entrants} ${board.entrants === 1 ? 'entrant' : 'entrants'}`}</span>
-        {reset ? <span className={`rank-chip is-clock${reset.soon ? ' is-soon' : ''}${reset.final ? ' is-final' : ''}`} title={countdown({now, closesAt: board.closesAt!, period, locale, offsetMinutes: offset})}>
+        <span className="rank-chip"><Users size={15} aria-hidden="true" />{ko ? `참가 ${entrants}` : `${entrants} ${entrants === 1 ? 'entrant' : 'entrants'}`}</span>
+        {reset ? <span className={`rank-chip is-clock${reset.soon ? ' is-soon' : ''}${reset.final ? ' is-final' : ''}`} title={countdown({now, closesAt: closesAt!, period, locale, offsetMinutes: offset})}>
             {reset.final ? <i className="rank-pulse" aria-hidden="true" /> : <Timer size={15} aria-hidden="true" />}<span>{reset.label}</span></span>
             : <span className="rank-chip is-closed"><Lock size={14} aria-hidden="true" />{ko ? '마감' : 'Final'}</span>}
     </div>;

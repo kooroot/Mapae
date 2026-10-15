@@ -27,7 +27,7 @@ export function SeasonBoard({desk, walletWaiting}: {desk: GuardianDesk; walletWa
             <div className="rank-board-head">
                 <div><span className="arc-overline">{status.value ? seasonPhaseLabel(status.value, locale) : ko ? '시즌' : 'Season'}</span>
                     <h2 id="rank-board-title">{ko ? `시즌 ${SEASON.id} 순위` : `Season ${SEASON.id} board`}</h2></div>
-                {remote.value && <BoardChips board={remote.value} locale={locale} />}
+                {remote.value && <BoardChips entrants={remote.value.entrants} closesAt={remote.value.closesAt} period="season" locale={locale} />}
             </div>
             {!status.value ? status.error
                 ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '시즌 정보를 불러오지 못했어요. 잠시 뒤 저절로 다시 읽어 와요.' : 'The season could not load. It will try again shortly.'}</p></div>

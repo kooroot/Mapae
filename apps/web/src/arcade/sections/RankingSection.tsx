@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 import {useLocation} from '@tanstack/react-router';
-import {CalendarDays, CircleAlert, Compass, Flag, LoaderCircle, RefreshCw} from 'lucide-react';
+import {CalendarDays, CircleAlert, Compass, Flag, LoaderCircle, RefreshCw, Users} from 'lucide-react';
 import type {GameId} from '@mapae/arcade';
 import {guardianName} from '@mapae/arcade/guardians';
 import {
@@ -14,15 +14,17 @@ import {GuardianAvatar} from '../GuardianAvatar';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {useRankingBoard} from '../ranking/client';
 import {placeLabel, points, streakCopy, titlesOnNft} from '../ranking/format';
-import {Board, BoardChips, boardSpan} from '../ranking/Board';
+import {Board, BoardChips, boardSpan, clockPeriod} from '../ranking/Board';
 import {FullBoard} from '../ranking/FullBoard';
 import {SeasonBoard} from '../ranking/SeasonBoard';
+import {TeamBoard} from '../ranking/TeamBoard';
 import {GameThumb} from '../Characters';
 import {RankLine, TitleChips} from '../ranking/RankLine';
 import {ShareActions} from '../share/ShareButton';
 import {DeskGate, SectionHeading} from './SectionFrame';
 
-const BOARDS = ['season', ...RANKED_GAMES, 'devotion'] as const satisfies readonly RankingBoardId[];
+type TabId = RankingBoardId | 'team';
+const BOARDS = ['season', 'team', ...RANKED_GAMES, 'devotion'] as const satisfies readonly TabId[];
 type GameBoardId = Exclude<RankingBoardId, 'season'>;
 const PERIOD_NAMES: Record<Locale, Record<GamePeriod, string>> = {
     ko: {today: '오늘', week: '이번 주', yesterday: '어제', lastweek: '지난주'},
@@ -30,25 +32,27 @@ const PERIOD_NAMES: Record<Locale, Record<GamePeriod, string>> = {
 };
 const DEVOTION_NAME = {ko: '꾸준함', en: 'Devotion'};
 const SEASON_NAME = {ko: `시즌 ${SEASON.id}`, en: `Season ${SEASON.id}`};
+const TEAM_NAME = {ko: '띠 팀전', en: 'Zodiac teams'};
 
 /**
- * Rankings: the season race, each game's boards for today, this week, yesterday and last week, the 28-day devotion board, and
- * where the owner's guardians stand with a way to send the next ranked round. The boards are public; only the "my guardians"
- * panels need a wallet. A `#season` hash opens the season tab, read after hydration so the server and client agree on the first paint.
+ * Rankings: the season race, the zodiac teams, each game's boards for today, this week, yesterday and last week, the 28-day
+ * devotion board, and where the owner's guardians stand with a way to send the next ranked round. The boards are public; only
+ * the "my guardians" panels need a wallet. A `#season` or `#team` hash opens that tab, read after hydration so the server and
+ * client agree on the first paint.
  */
 export function RankingSection({desk, walletWaiting, onSendOuting}: {desk: GuardianDesk; walletWaiting: boolean; onSendOuting: (game: GameId, tokenId: string) => void}) {
     const {ko, locale} = desk;
-    const [board, setBoard] = useState<RankingBoardId>('stamp'), hash = useLocation({select: location => location.hash});
-    useEffect(() => {if (hash === 'season') setBoard('season');}, [hash]);
+    const [board, setBoard] = useState<TabId>('stamp'), hash = useLocation({select: location => location.hash});
+    useEffect(() => {if (hash === 'season' || hash === 'team') setBoard(hash);}, [hash]);
     return <div className="nft-arcade">
         <SectionHeading section="ranking" desk={desk} />
         <div className="rank-tabs" role="group" aria-label={ko ? '순위표 고르기' : 'Choose a board'}>
             {BOARDS.map(id => <button key={id} type="button" aria-pressed={board === id} onClick={() => setBoard(id)}>
-                {id === 'season' ? <Flag size={20} aria-hidden="true" /> : id === 'devotion' ? <CalendarDays size={20} aria-hidden="true" /> : <GameThumb game={id} />}
-                <span>{id === 'season' ? SEASON_NAME[locale] : id === 'devotion' ? DEVOTION_NAME[locale] : GAME_NAMES[locale][id]}</span>
+                {id === 'season' ? <Flag size={20} aria-hidden="true" /> : id === 'team' ? <Users size={20} aria-hidden="true" /> : id === 'devotion' ? <CalendarDays size={20} aria-hidden="true" /> : <GameThumb game={id} />}
+                <span>{id === 'season' ? SEASON_NAME[locale] : id === 'team' ? TEAM_NAME[locale] : id === 'devotion' ? DEVOTION_NAME[locale] : GAME_NAMES[locale][id]}</span>
             </button>)}
         </div>
-        {board === 'season' ? <SeasonBoard desk={desk} walletWaiting={walletWaiting} /> : <>
+        {board === 'season' ? <SeasonBoard desk={desk} walletWaiting={walletWaiting} /> : board === 'team' ? <TeamBoard desk={desk} walletWaiting={walletWaiting} /> : <>
             <GameBoard key={board} desk={desk} board={board} />
             <DeskGate desk={desk} walletWaiting={walletWaiting} need="guardian"><MyGuardians desk={desk} onSendOuting={onSendOuting} /></DeskGate>
         </>}
@@ -65,7 +69,7 @@ function GameBoard({desk, board}: {desk: GuardianDesk; board: GameBoardId}) {
         <div className="rank-board-head">
             <div><span className="arc-overline">{board === 'devotion' ? (ko ? `최근 ${DEVOTION_DAYS}일` : `Last ${DEVOTION_DAYS} days`) : remote.value ? boardSpan(remote.value) : PERIOD_NAMES[locale][period]}</span>
                 <h2 id="rank-board-title">{board === 'devotion' ? (ko ? '랭크 도전에 나온 날' : 'Days with a ranked round') : ko ? `${GAME_NAMES.ko[board]} 순위` : `${GAME_NAMES.en[board]} board`}</h2></div>
-            {remote.value && <BoardChips board={remote.value} locale={locale} />}
+            {remote.value && <BoardChips entrants={remote.value.entrants} closesAt={remote.value.closesAt} period={clockPeriod(remote.value)} locale={locale} />}
         </div>
         {board !== 'devotion' && <div className="rank-periods" role="group" aria-label={ko ? '기간 고르기' : 'Choose a period'}>
             {GAME_PERIODS.map(id => <button key={id} type="button" aria-pressed={period === id} onClick={() => setPeriod(id)}>{PERIOD_NAMES[locale][id]}</button>)}
@@ -142,6 +146,7 @@ function Rules({locale}: {locale: Locale}) {
         '순위 옆 ▲▼는 바로 앞 기간보다 오르내린 계단 수예요. 오늘은 어제와, 이번 주는 지난주와, 꾸준함은 어제까지의 28일과 견줘요. NEW는 그 기간에 기록이 없던 전령이고, 놀이 규칙이 바뀐 직후에는 견주지 않아요.',
         `시즌 점수는 매일 놀이마다 1위 10점, 2위 7점, 3위 5점, 4–${BOARD_ROWS}위 3점, 참가만 해도 1점. 하루 최대 ${SEASON_MAX_DAY_POINTS}점이에요.`,
         `시즌 안에서 출석 도장 ${SEASON_STREAK_DAYS}일을 이어 찍을 때마다 +${SEASON_STREAK_BONUS}점. 쉼표는 평소처럼 빠진 하루를 지켜 줘요.`,
+        '띠 팀전은 같은 띠 전령의 시즌 점수를 더해 합계로 겨뤄요. 이번 주 보기는 출석 보너스 없이 일별 순위 점수만 더해요.',
         '무료 체험과 연습 점수는 들어가지 않아요. 검증된 외출 결과만 올라가요. 테스트 토큰만 써요.',
     ] : [
         `In each game, the first ${RANKED_ATTEMPTS} rounds of a Korean-time day are ranked. Later rounds still grow your guardian but stay off the boards.`,
@@ -154,6 +159,7 @@ function Rules({locale}: {locale: Locale}) {
         '▲▼ beside a place count the places gained or lost since the window before: today against yesterday, this week against last week, devotion against the 28 days to yesterday. NEW marks a guardian with no record then; right after a rules change nothing is compared.',
         `Season points, per game per day: #1 10, #2 7, #3 5, #4–${BOARD_ROWS} 3, and 1 for taking part — up to ${SEASON_MAX_DAY_POINTS} a day.`,
         `+${SEASON_STREAK_BONUS} for every ${SEASON_STREAK_DAYS}-day attendance run inside the season; rest days cover a missed day as usual.`,
+        'Zodiac teams add every teammate’s season points and race by total; the weekly view adds daily-board points with no attendance bonus.',
         'Free play and practice scores never count; only verified outing results reach the boards. Test tokens only.',
     ];
     return <details className="rank-rules"><summary>{ko ? '랭킹 규칙' : 'How rankings work'}</summary><ul>{items.map(item => <li key={item}>{item}</li>)}</ul></details>;
