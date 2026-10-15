@@ -1,5 +1,7 @@
 import type {Companion, Color, Temperament} from "./state";
 import type {AgentGoal} from "@mapae/arcade";
+import {guardianTraits} from "@mapae/arcade/guardians";
+import type {Hex} from "viem";
 import {HATS, OUTFITS, SHOES, WARDROBE_PRESETS, validWardrobe, projectWardrobe, type Wardrobe} from "./wardrobe";
 
 export const ZODIACS = ["rat", "ox", "tiger", "rabbit", "dragon", "snake", "horse", "goat", "monkey", "rooster", "dog", "pig"] as const;
@@ -31,6 +33,11 @@ export const GUARDIAN_STORIES: Record<Zodiac, {ko: string; en: string}> = {
 };
 export const BACKDROP_COLORS: Record<Backdrop, [string, string]> = {dawn: ["#ead3a5", "#bd785a"], moon: ["#a9abc8", "#43465f"], jade: ["#bbd7b7", "#416c60"], ember: ["#e3a18a", "#733b3d"]};
 export const SEAL_COLORS: Record<Color, string> = {red: "#c7483d", jade: "#347c6e", ink: "#303445"};
+/** The appearance a minted guardian's birth seed decodes to: what the NFT image and the share card both draw. */
+export function guardianAppearance(seed: Hex): Guardian {
+    const t = guardianTraits(seed);
+    return {version: 1, seed: seed.slice(2, 18), zodiac: t.zodiac, backdrop: t.backdrop, charm: t.charm, wardrobe: {hat: t.hat, outfit: t.outfit, shoes: t.shoes}};
+}
 export const guardianAsset = (zodiac: Zodiac, size: 256 | 768 = 768) => `/arcade/guardians/${zodiac}-${size}.webp`;
 export const charmAsset = (charm: Exclude<Charm, "none">) => `/arcade/guardians/charm-${charm}.webp`;
 

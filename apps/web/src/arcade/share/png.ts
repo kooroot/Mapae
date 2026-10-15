@@ -19,7 +19,7 @@ export function crc32(bytes: Uint8Array): number {
     return (c ^ 0xffffffff) >>> 0;
 }
 
-async function pipe(bytes: Uint8Array, stream: {readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array>}): Promise<Uint8Array> {
+async function pipe(bytes: Uint8Array, stream: {readable: ReadableStream<Uint8Array>; writable: WritableStream<BufferSource>}): Promise<Uint8Array> {
     const writer = stream.writable.getWriter();
     const written = writer.write(bytes).then(() => writer.close());
     const out = new Uint8Array(await new Response(stream.readable).arrayBuffer());

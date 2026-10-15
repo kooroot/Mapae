@@ -2,7 +2,7 @@ import {BaseError, ContractFunctionRevertedError, createPublicClient, http, isAd
 import {giwaSepolia, parseNodeRpcUrl} from "@mapae/shared";
 import {guardianAbi} from "@mapae/arcade/guardian-abi";
 import {GUARDIAN_MAX_SUPPLY, guardianName, guardianTraits, guardianTokenId} from "@mapae/arcade/guardians";
-import {BACKDROP_COLORS, SEAL_COLORS, type Guardian} from "../guardian";
+import {BACKDROP_COLORS, guardianAppearance, SEAL_COLORS} from "../guardian";
 import {guardianLayers} from "../guardian-layers";
 
 type Birth = {seed: Hex; revealed: boolean};
@@ -89,9 +89,7 @@ export async function guardianArtApi(request: Request, deps: ArtDependencies): P
         return new Response(request.method === "HEAD" ? null : pending, {headers: {...headers, "Cache-Control": "public, max-age=10"}});
     }
     try {
-        const t = guardianTraits(birth.seed), tones = BACKDROP_COLORS[t.backdrop];
-        const appearance: Guardian = {version: 1, seed: birth.seed.slice(2, 18), zodiac: t.zodiac, backdrop: t.backdrop, charm: t.charm, wardrobe: {hat: t.hat, outfit: t.outfit, shoes: t.shoes}};
-        const layers = guardianLayers(appearance);
+        const t = guardianTraits(birth.seed), tones = BACKDROP_COLORS[t.backdrop], layers = guardianLayers(guardianAppearance(birth.seed));
         const paths = [...new Set(layers.map(layer => layer.src))];
         const embedded = new Map(await Promise.all(paths.map(async path => [path, await embeddedImage(await deps.assets.fetch(new Request(new URL(path, url.origin), {signal: AbortSignal.timeout(10000)})))] as const)));
         const clips = layers.map((layer, i) => layer.clip ? `<clipPath id="fit-${i}" clipPathUnits="userSpaceOnUse"><polygon points="${layer.clip.map(p => `${p.x},${p.y}`).join(" ")}"/></clipPath>` : "").join("");

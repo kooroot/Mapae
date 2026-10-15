@@ -7,12 +7,9 @@ import {
     type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings, type SeasonStanding,
 } from "@mapae/arcade/ranking";
 import {SEASON, SEASON_MAX_DAY_POINTS, SEASON_STREAK_BONUS, SEASON_STREAK_DAYS, seasonPhase, type Season, type SeasonStatus} from "@mapae/arcade/season";
-import {tokenHash} from "../../lib/siwe-session";
+import {hasReceiptToken, ipBudget, upstreamJson, type UpstreamDependencies} from "./upstream";
 
-const UPSTREAM = "https://seller.mapae.io/arcade/ranking";
-const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_SCORE = 1_000_000_000;
-const RATE_PER_MINUTE = 120;
 /** A board's top rows, or with `/from/<offset>` or `/around/<ids>` one page of the whole board below them. */
 const BOARD_PATH = /^\/api\/arcade\/ranking\/board\/([a-z]{1,16})\/([a-z0-9]{1,16})(?:\/(from|around)\/([0-9,]{1,20}))?$/;
 const STANDINGS_PATH = /^\/api\/arcade\/ranking\/guardians\/([0-9,]{1,20})$/;
@@ -22,13 +19,9 @@ const MAX_AGE = {board: 30, standings: 10, season: 60};
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "Referrer-Policy": "no-referrer"};
 
-export type RankingDependencies = {
-    receiptToken?: string;
-    fetcher?: (url: string, init?: RequestInit) => Promise<Response>;
+export type RankingDependencies = UpstreamDependencies & {
     /** The edge cache; absent where the runtime has none. */
     cache?: Promise<Cache>;
-    rateLimit: (bucket: string, until: number, limit: number) => Promise<boolean>;
-    now?: number;
     /** The season whose id the status and board must answer to; tests inject one. */
     season?: Season;
 };
@@ -47,21 +40,18 @@ export async function rankingApi(request: Request, deps: RankingDependencies): P
     const season = deps.season ?? SEASON, ids = standing ? parseRankingIds(standing[1]!) : null, by = board?.[3] as "from" | "around" | undefined;
     const at = by === "from" ? parseRankingPageOffset(board![4]!) : by === "around" ? parseRankingIds(board![4]!) : null;
     if (url.search || (board && !validRankingBoard(board[1]!, board[2]!, season)) || (standing && !ids) || (by && at === null)) return failure("invalid_request", 400);
-    if (!deps.receiptToken || deps.receiptToken.length < 32) return failure("ranking_unavailable", 503);
+    if (!hasReceiptToken(deps)) return failure("ranking_unavailable", 503);
     const key = new Request(`${url.origin}${url.pathname}`), cache = deps.cache ? await deps.cache.catch(() => undefined) : undefined;
     const hit = await cache?.match(key);
     if (hit) return hit;
-    const now = deps.now ?? Date.now(), minute = Math.floor(now / 60_000), until = (minute + 1) * 60_000, ip = request.headers.get("CF-Connecting-IP");
-    if (ip && !await deps.rateLimit(`ranking-ip:${await tokenHash(ip)}:${minute}`, until, RATE_PER_MINUTE)) {
-        return failure("rate_limited", 429, {"Retry-After": String(Math.max(1, Math.ceil((until - now) / 1000)))});
-    }
+    const retryAfter = await ipBudget(request, deps);
+    if (retryAfter !== null) return failure("rate_limited", 429, {"Retry-After": String(retryAfter)});
     let value: unknown;
     try {
-        const response = await (deps.fetcher ?? fetch)(`${UPSTREAM}${url.pathname.slice("/api/arcade/ranking".length)}`, {
-            method: "GET", headers: {Authorization: `Bearer ${deps.receiptToken}`, Accept: "application/json"}, redirect: "manual", signal: AbortSignal.timeout(10_000),
-        });
-        if (!response.ok) {await response.body?.cancel(); throw new Error("upstream");}
-        value = await boundedJson(response);
+        // The reader answers every board and standing that exists; its 404 is as much an outage here as any other failure.
+        const upstream = await upstreamJson(url.pathname.slice("/api/arcade/ranking".length), deps);
+        if (!upstream.found) throw new Error("upstream");
+        value = upstream.value;
     } catch {return failure("ranking_unavailable", 503);}
     const copy = status ? parseSeasonStatus(value, season) : !board ? parseRankingStandings(value, ids!)
         : by ? parseRankingPage(value, board[1] as RankingBoardId, board[2] as RankingPeriod, typeof at === "number" ? {offset: at} : {around: at!})
@@ -70,20 +60,6 @@ export async function rankingApi(request: Request, deps: RankingDependencies): P
     const response = Response.json(copy, {headers: {...HEADERS, "Cache-Control": `public, max-age=${status ? MAX_AGE.season : board ? MAX_AGE.board : MAX_AGE.standings}`}});
     await cache?.put(key, response.clone()).catch(() => {/* A cold cache only costs the next visitor one seller call. */});
     return response;
-}
-
-async function boundedJson(response: Response): Promise<unknown> {
-    const advertised = response.headers.get("Content-Length");
-    if (advertised && Number(advertised) > MAX_RESPONSE_BYTES) {await response.body?.cancel(); throw new Error("too_large");}
-    const reader = response.body?.getReader(); if (!reader) throw new Error("empty");
-    const decoder = new TextDecoder(); let size = 0, text = "";
-    for (;;) {
-        const next = await reader.read(); if (next.done) break;
-        size += next.value.byteLength;
-        if (size > MAX_RESPONSE_BYTES) {await reader.cancel(); throw new Error("too_large");}
-        text += decoder.decode(next.value, {stream: true});
-    }
-    return JSON.parse(text + decoder.decode());
 }
 
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -177,7 +153,7 @@ function standing(v: unknown, tokenId: string): RankingStanding | null {
 function optionalStanding(v: unknown, tokenId: string): RankingStanding | null | undefined {
     return v === null ? null : standing(v, tokenId) ?? undefined;
 }
-function seasonStanding(v: unknown): SeasonStanding | null {
+export function seasonStanding(v: unknown): SeasonStanding | null {
     if (!object(v) || typeof v.moves !== "boolean" || !earlierRank(v.prev, v.moves) || !uint(v.rank) || v.rank < 1 || !uint(v.entrants) || v.entrants < v.rank ||
         !uint(v.days) || v.days < 1 || !uint(v.streak) || v.streak > v.days || !seasonBonus(v.bonus, v.days) || !seasonPoints(v.points, v.days, v.bonus) ||
         !uint(v.today) || v.today > SEASON_MAX_DAY_POINTS || v.today > v.points) return null;
