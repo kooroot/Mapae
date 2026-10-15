@@ -1,9 +1,9 @@
+import {GAME_NAMES} from "@mapae/arcade";
 import {guardianName} from "@mapae/arcade/guardians";
 import type {RankingStanding, SeasonStanding} from "@mapae/arcade/ranking";
 import {SEASON} from "@mapae/arcade/season";
 import {landingUrl} from "../../lib/config";
 import {localizePath, type Locale} from "../../lib/i18n";
-import {GAME_NAMES} from "../game-names";
 import {points} from "../ranking/format";
 import {sharePaths, type ShareTarget} from "./page";
 

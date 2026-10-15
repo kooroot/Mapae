@@ -1,8 +1,8 @@
+import {GAME_NAMES} from "@mapae/arcade";
 import {guardianName, guardianTraits} from "@mapae/arcade/guardians";
 import type {RankedCard, SeasonCard} from "@mapae/arcade/ranking";
 import {SEASON} from "@mapae/arcade/season";
 import {localizePath, type Locale} from "../../lib/i18n";
-import {GAME_NAMES} from "../game-names";
 import {GUARDIAN_STORIES} from "../guardian";
 import {points, seasonDate} from "../ranking/format";
 

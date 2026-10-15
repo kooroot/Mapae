@@ -1,8 +1,7 @@
 import {Check, Crown, Trophy} from 'lucide-react';
-import type {GameId} from '@mapae/arcade';
+import {GAME_NAMES, type GameId} from '@mapae/arcade';
 import type {GuardianStanding} from '@mapae/arcade/ranking';
 import type {Locale} from '../../lib/i18n';
-import {GAME_NAMES} from '../game-names';
 import {rankLine, titleName} from './format';
 import {RankMedal} from './RankMedal';
 import {RankMove} from './RankMove';

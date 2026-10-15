@@ -1,7 +1,7 @@
 import {raceOutcome} from "@mapae/arcade/simulation";
 import {MOCK_USDC} from "@mapae/shared";
 import {Fragment, useEffect, useLayoutEffect, useRef, useState} from "react";
-import type {AgentDecision} from "@mapae/arcade";
+import {GAME_NAMES, type AgentDecision} from "@mapae/arcade";
 import {applyRaceRound, createRaceSeason, makeRaceCourse, raceEndTime, raceNextCheckpoint, raceFrameAt,
     RACE_BURST_COST, RACE_HABITS, RACE_DRAFT_DISTANCE, raceTraffic, raceHighlights, RACE_CHECKPOINTS, RACE_PACES, RACE_ROUTES, raceTerrain, type RaceTerrain, type RaceRoute, type RaceCommand, type RacePace, RACE_ROUNDS, SEASON_TOKENS, seasonRanking, type RaceSimulation, type RaceStrategy, type RaceAction} from "@mapae/arcade/race";
 import type {PlayableGameProps} from "../agent-contract";
@@ -11,7 +11,6 @@ import type {ArcadeSound} from "../sound";
 import {GuardianAvatar} from "../GuardianAvatar";
 import {GameArt} from "../Characters";
 import {requestRaceDecision} from "./decision";
-import {GAME_NAMES} from "../game-names";
 import {GameGuide} from "../GameGuide";
 import {RaceTrack} from "./RaceTrack";
 import {BEAT_MS, cueSeal, cueStartBeat, pressBurst, startSignal, START_BEATS} from "./race-fx";
