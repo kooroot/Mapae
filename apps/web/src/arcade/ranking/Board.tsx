@@ -5,9 +5,10 @@ import {guardianName} from '@mapae/arcade/guardians';
 import type {RankingBoard} from '@mapae/arcade/ranking';
 import type {Locale} from '../../lib/i18n';
 import {arcadeSectionLink} from '../sections';
-import {BoardRow, MineTag, Move, Portrait} from './BoardRow';
+import {BoardRow, MineTag, Move, Portrait, type MarksOf} from './BoardRow';
 import {boardScore, countdown, resetClock, type ClockPeriod} from './format';
 import {RankMedal} from './RankMedal';
+import {SeasonMarks} from './SeasonMark';
 
 const KST_OFFSET_MINUTES = 9 * 60;
 
@@ -37,8 +38,11 @@ export function useSecondClock(running: boolean) {
     return now;
 }
 
-/** A board's top rows: the podium on risers, then the places below it; an empty open board invites the first ranked round. */
-export function Board({board, mine, locale}: {board: RankingBoard; mine: ReadonlySet<string>; locale: Locale}) {
+/**
+ * A board's top rows: the podium on risers, then the places below it; an empty open board invites the first ranked round.
+ * `marksOf` puts each guardian's season marks beside its name once the season has sealed.
+ */
+export function Board({board, mine, locale, marksOf}: {board: RankingBoard; mine: ReadonlySet<string>; locale: Locale; marksOf?: MarksOf}) {
     const ko = locale === 'ko';
     if (!board.rows.length) {
         const open = board.closesAt !== null;
@@ -58,7 +62,7 @@ export function Board({board, mine, locale}: {board: RankingBoard; mine: Readonl
                     {mine.has(row.tokenId) && <MineTag ko={ko} />}
                     {row.rank === 1 && <Crown className="rank-crown" size={22} aria-hidden="true" />}
                     <div className="rank-portrait"><Portrait row={row} /><RankMedal rank={row.rank} locale={locale} size="lg" /><Move board={board} row={row} locale={locale} /></div>
-                    <strong>{guardianName(row.tokenId, locale)}</strong>
+                    <strong>{guardianName(row.tokenId, locale)}{marksOf && <SeasonMarks marks={marksOf(row)} locale={locale} size={16} />}</strong>
                     <span className="rank-score">{boardScore(board.board, row.score, locale)}</span>
                     {i === 0 && lead > 0 && <small className="rank-lead">{ko ? `2위보다 ${boardScore(board.board, lead, locale)} 앞섬` : `${boardScore(board.board, lead, locale)} ahead`}</small>}
                 </div>
@@ -66,7 +70,7 @@ export function Board({board, mine, locale}: {board: RankingBoard; mine: Readonl
             </li>)}
         </ol>
         {rest.length > 0 && <ol className="rank-list" aria-label={ko ? '4위부터' : 'From fourth place'}>
-            {rest.map(row => <BoardRow key={row.tokenId} board={board} row={row} mine={mine.has(row.tokenId)} locale={locale} />)}
+            {rest.map(row => <BoardRow key={row.tokenId} board={board} row={row} mine={mine.has(row.tokenId)} locale={locale} marksOf={marksOf} />)}
         </ol>}
     </>;
 }

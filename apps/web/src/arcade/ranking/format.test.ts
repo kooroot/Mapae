@@ -4,8 +4,9 @@ import type {RankingStanding, RankingStandings, SeasonStanding} from "@mapae/arc
 import type {SeasonStatus} from "@mapae/arcade/season";
 import type {TeamRow} from "@mapae/arcade/team";
 import {
-    attemptsBadge, attemptsLeft, averagePoints, bestSeasonStanding, boardScore, countdown, freshestGame, medalName, myTeamShare, rankLine, rankShift, resetClock, seasonBannerCopy,
-    seasonDate, seasonPhaseLabel, shiftCopy, streakCopy, teamCheerCopy, teamIntro, teamName, teamRowDetail, titleName, titlesOnNft,
+    attemptsBadge, attemptsLeft, averagePoints, bestSeasonStanding, boardScore, championCopy, closeBlockCopy, countdown, finalStandingCopy, freshestGame, hallChip, medalName, myTeamShare,
+    prizeNotes, raffleFormula, rankLine, rankShift, resetClock, seasonBannerCopy, seasonDate, seasonPhaseLabel, shiftCopy, streakCopy, streakEntrantCopy, tallyNotice, teamCheerCopy, teamIntro,
+    teamName, teamRowDetail, teamWinnerCopy, titleName, titlesOnNft,
 } from "./format";
 
 const seed = `0x${"1".padStart(64, "0")}` as const;
@@ -139,14 +140,54 @@ describe("season copy", () => {
         expect(seasonBannerCopy(status("open", "2026-11-10"), null, "en")).toBe("Season 1 live · 20 days left · up to 30 pts a day");
         expect(seasonBannerCopy(status("open", "2026-11-29"), {...mine, points: 1, rank: 40}, "ko")).toBe("시즌 1 진행 중 · 오늘 마지막 날 · 내 전령 1점 · 40위");
         expect(seasonBannerCopy(status("open", "2026-11-29"), {...mine, points: 1, rank: 40}, "en")).toBe("Season 1 live · last day today · my guardian 1 pt · #40");
-        expect(seasonBannerCopy(status("closed", "2026-11-30"), mine, "ko")).toBe("시즌 1 종료 · 최종 순위 보기");
-        expect(seasonBannerCopy(status("closed", "2026-11-30"), null, "en")).toBe("Season 1 is over · See the final board");
+        expect(seasonBannerCopy(status("closed", "2026-11-30"), mine, "ko")).toBe("시즌 1 종료 · 최종 집계 중 · 화요일 0시 확정");
+        expect(seasonBannerCopy(status("closed", "2026-11-30"), null, "en")).toBe("Season 1 is over · final tally Tue 00:00 KST");
+        expect(seasonBannerCopy(status("closed", "2026-12-01"), null, "ko", true)).toBe("시즌 1 종료 · 명예의 전당 보기");
+        expect(seasonBannerCopy(status("closed", "2026-12-01"), null, "en", true)).toBe("Season 1 is over · See the hall of fame");
+        expect(seasonBannerCopy(status("closed", "2026-12-01"), mine, "ko", true)).toBe("시즌 1 종료 · 내 전령 최종 2위 · 명예의 전당 보기");
+        expect(seasonBannerCopy(status("closed", "2026-12-01"), mine, "en", true)).toBe("Season 1 is over · my guardian finished #2 · See the hall of fame");
+    });
+    test("a closed season tallies until it seals: the overline, the notice and my final line say so", () => {
+        expect(seasonPhaseLabel(status("closed", "2026-12-01"), "ko", true)).toBe("최종 순위"); expect(seasonPhaseLabel(status("closed", "2026-12-01"), "en", true)).toBe("Final standings");
+        expect(tallyNotice("ko")).toBe("최종 순위는 화요일 0시(한국 시간)에 확정돼요. 늦게 정산된 모험이 들어올 수 있어요.");
+        expect(tallyNotice("en")).toBe("Final standings lock at Tuesday 00:00 KST, once late settlements are in.");
+        expect(finalStandingCopy(mine, "ko", true)).toBe("최종 2위/212 · 187점"); expect(finalStandingCopy(mine, "en", true)).toBe("Finished #2 of 212 · 187 pts");
+        expect(finalStandingCopy(mine, "ko", false)).toBe("최종 2위/212 · 187점 (집계 중)"); expect(finalStandingCopy({...mine, points: 1}, "en", false)).toBe("Finished #2 of 212 · 1 pt (tally pending)");
+    });
+    test("the hall of fame lines: the chip, the winning team, a champion, a raffle entrant, the formula, the block and the prize notes", () => {
+        const hall = {entrants: 212, sealedAt: Date.parse("2026-11-03T15:00:00Z"), closeBlock: {number: "31700000", hash: `0xabcd${"0".repeat(56)}ef12`}} as Parameters<typeof hallChip>[0];
+        expect(hallChip(hall, "ko")).toBe("참가 212 · 확정 11월 4일"); expect(hallChip(hall, "en")).toBe("212 entrants · sealed Nov 4"); expect(hallChip({...hall, entrants: 1}, "en")).toBe("1 entrant · sealed Nov 4");
+        const tiger = {rank: 1, zodiac: "tiger", points: 1240, members: 18, top: null} as const;
+        expect(teamWinnerCopy(tiger, "ko")).toBe("호랑이팀 · 1,240점 · 팀원 18명 모두 우승 팀 표식"); expect(teamWinnerCopy(tiger, "en")).toBe("Team Tiger · 1,240 pts · all 18 members wear the winners' mark");
+        expect(teamWinnerCopy({...tiger, members: 1}, "en")).toBe("Team Tiger · 1,240 pts · all 1 member wears the winners' mark");
+        const champion = {week: "2026-10-05", game: "stamp", tokenId: "12", seed, score: 1234} as const;
+        expect(championCopy(champion, "ko")).toBe(`10월 5일 주 · 도깨비 도장찍기 ${guardianName("12", "ko")} · 1,234점`); expect(championCopy(champion, "en")).toBe(`Week of Oct 5 · Dokkaebi Stamp ${guardianName("12", "en")} · 1,234 pts`);
+        expect(streakEntrantCopy("407", 2, "ko")).toBe(`${guardianName("407", "ko")} · 7일 연속 2회`); expect(streakEntrantCopy("407", 1, "en")).toBe(`${guardianName("407", "en")} · 1 run of 7 days`);
+        expect(raffleFormula("ko")).toBe("풀을 전령 번호 순으로 세우고 i번째 당첨은 keccak256(블록 해시 ‖ i) mod 남은 수 · 5명");
+        expect(raffleFormula("en")).toBe("Pool sorted by guardian number; pick i is keccak256(block hash ‖ i) mod remaining · 5 winners");
+        expect(closeBlockCopy(hall.closeBlock, "ko")).toBe("블록 #31,700,000 · 0xabcd…ef12"); expect(closeBlockCopy(hall.closeBlock, "en")).toBe("block #31,700,000 · 0xabcd…ef12");
+        expect(prizeNotes("ko")).toEqual([
+            "시즌 상위 3명과 7일 연속 출석 추첨 5명에게 커피 기프티콘을 드려요.",
+            "추첨은 시즌 종료 직후 첫 GIWA 블록 해시로 뽑아요: 풀을 전령 번호 순으로 세우고 keccak256(블록 해시 ‖ i)로 i번째를 고르니 누구나 다시 셀 수 있어요.",
+            "공유는 확인할 길이 없어 추첨 자격은 시즌 안 7일 연속 출석 1회 이상만 봐요.",
+            "당첨된 전령의 주인은 X에서 @mapae_io에 전령 번호(#407)를 DM으로 보내 주세요. X 계정 하나에 상품 하나예요.",
+            "소유 확인으로 지갑의 '메시지 서명'을 한 번 부탁드려요 — 안내하는 문장을 서명해 보내면 돼요. 가스도 트랜잭션도 없어요.",
+            "테스트넷이라 실제 돈은 오가지 않아요.",
+        ]);
+        expect(prizeNotes("en")).toEqual([
+            "Coffee gift cards go to the top 3 and to 5 guardians drawn from the 7-day-streak pool.",
+            "The draw uses the hash of the first GIWA block after the season closed: the pool sorted by guardian number, the i-th pick from keccak256(block hash ‖ i), so anyone can recompute it.",
+            "Sharing cannot be verified, so eligibility is one completed 7-day run inside the season and nothing else.",
+            "Owners DM @mapae_io on X with the guardian's number (#407). One prize per X account.",
+            "To confirm ownership you sign one message in your wallet; no gas, no transaction.",
+            "Testnet only — no real money moves.",
+        ]);
     });
     test("phase labels and dates", () => {
         expect(seasonPhaseLabel(status("pending", "2026-10-20"), "ko")).toBe("준비 중"); expect(seasonPhaseLabel(status("pending", "2026-10-20"), "en")).toBe("Coming soon");
         expect(seasonPhaseLabel(status("announced", "2026-10-20"), "ko")).toBe("D-13"); expect(seasonPhaseLabel(status("announced", "2026-11-01"), "en")).toBe("1 day to go");
         expect(seasonPhaseLabel(status("open", "2026-11-10"), "ko")).toBe("진행 중 · 남은 20일"); expect(seasonPhaseLabel(status("open", "2026-11-29"), "en")).toBe("Live · 1 day left");
-        expect(seasonPhaseLabel(status("closed", "2026-12-01"), "ko")).toBe("종료"); expect(seasonPhaseLabel(status("closed", "2026-12-01"), "en")).toBe("Final");
+        expect(seasonPhaseLabel(status("closed", "2026-12-01"), "ko")).toBe("종료 · 최종 집계 중"); expect(seasonPhaseLabel(status("closed", "2026-12-01"), "en")).toBe("Final tally pending");
         expect(seasonDate("2026-11-02", "ko")).toBe("11월 2일"); expect(seasonDate("2026-11-02", "en")).toBe("Nov 2"); expect(seasonDate("2027-01-31", "en")).toBe("Jan 31");
     });
     test("the banner speaks for the best placed of my guardians", () => {
@@ -178,6 +219,15 @@ describe("zodiac teams", () => {
         const tied = [team(1, "rat", 44, 1, ["88", 44]), team(1, "ox", 44, 3, ["5", 20]), team(3, "pig", 0, 0, null)];
         expect(teamCheerCopy(tied, "ox", "ko")).toBe("우리 소팀 공동 1위"); expect(teamCheerCopy(tied, "ox", "en")).toBe("Team Ox tied for #1");
         expect(() => teamCheerCopy(rows, "dog", "ko")).toThrow("Unknown team");
+    });
+    test("the cheer line once the season is over: won, shared first, or how it finished, pending until the seal", () => {
+        expect(teamCheerCopy(rows, "tiger", "ko", "sealed")).toBe("우리 호랑이팀 우승 · 2위보다 263점 앞섬"); expect(teamCheerCopy(rows, "tiger", "en", "sealed")).toBe("Team Tiger won the season · 263 pts ahead");
+        expect(teamCheerCopy(rows, "ox", "ko", "sealed")).toBe("우리 소팀 최종 2위 · 1위와 263점 차"); expect(teamCheerCopy(rows, "ox", "en", "sealed")).toBe("Team Ox finished #2 · 263 pts behind");
+        expect(teamCheerCopy(rows, "pig", "ko", "pending")).toBe("우리 돼지팀 최종 4위 · 1위와 307점 차 (집계 중)"); expect(teamCheerCopy(rows, "tiger", "en", "pending")).toBe("Team Tiger won the season · 263 pts ahead (tally pending)");
+        const tied = [team(1, "rat", 44, 1, ["88", 44]), team(1, "ox", 44, 3, ["5", 20]), team(3, "pig", 0, 0, null)];
+        expect(teamCheerCopy(tied, "ox", "ko", "sealed")).toBe("우리 소팀 공동 우승"); expect(teamCheerCopy(tied, "ox", "en", "sealed")).toBe("Team Ox shared first");
+        expect(teamIntro("ko", true)[4]).toBe("1위 팀 전령 모두 우승 팀 표식을 달았어요."); expect(teamIntro("en", true)[4]).toBe("Every guardian of the winning team now wears the mark.");
+        expect(teamIntro("en", true).slice(0, 4)).toEqual(teamIntro("en").slice(0, 4));
     });
     test("my share and the intro", () => {
         expect(myTeamShare(45, 307, "ko")).toBe("내 기여 45점 (15%)"); expect(myTeamShare(45, 307, "en")).toBe("my share 45 pts (15%)");

@@ -1,11 +1,13 @@
 import type {GameId} from "@mapae/arcade";
+import {GAME_NAMES} from "@mapae/arcade";
 import {ZODIAC_NAMES} from "@mapae/arcade/guardian-art";
 import {guardianName, type GuardianHonors, type GuardianZodiac} from "@mapae/arcade/guardians";
+import {RAFFLE_WINNERS, type HallChampion, type SealedHall} from "@mapae/arcade/hall";
 import {
-    addDays, DEVOTION_DAYS, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
+    addDays, DEVOTION_DAYS, kstDay, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
     type GamePeriod, type GuardianStreak, type RankingBoardId, type RankingMove, type RankingPeriod, type RankingStanding, type RankingStandings, type SeasonStanding,
 } from "@mapae/arcade/ranking";
-import {SEASON_MAX_DAY_POINTS, seasonCountdown, seasonDaysLeft, type SeasonStatus} from "@mapae/arcade/season";
+import {SEASON_MAX_DAY_POINTS, SEASON_STREAK_DAYS, seasonCountdown, seasonDaysLeft, type SeasonStatus} from "@mapae/arcade/season";
 import {teamGap, type TeamRow} from "@mapae/arcade/team";
 import type {Locale} from "../../lib/i18n";
 
@@ -168,18 +170,31 @@ export function seasonDate(day: string, locale: Locale): string {
     const month = Number(day.slice(5, 7)), date = Number(day.slice(8, 10));
     return locale === "ko" ? `${month}월 ${date}일` : `${MONTHS[month - 1]} ${date}`;
 }
-/** The season board's overline: where the season stands today. */
-export function seasonPhaseLabel(status: SeasonStatus, locale: Locale): string {
+/** The season board's overline: where the season stands today; a closed season is tallying until its hall seals. */
+export function seasonPhaseLabel(status: SeasonStatus, locale: Locale, sealed = false): string {
     const ko = locale === "ko";
     switch (status.phase) {
     case "pending": return ko ? "준비 중" : "Coming soon";
     case "announced": {const n = seasonCountdown(status, status.today); return ko ? `D-${n}` : `${n} ${n === 1 ? "day" : "days"} to go`;}
     case "open": {const n = seasonDaysLeft(status, status.today); return ko ? `진행 중 · 남은 ${n}일` : `Live · ${n} ${n === 1 ? "day" : "days"} left`;}
-    case "closed": return ko ? "종료" : "Final";
+    case "closed": return sealed ? ko ? "최종 순위" : "Final standings" : ko ? "종료 · 최종 집계 중" : "Final tally pending";
     }
 }
-/** The lobby strip, one line per phase: what is on, what is at stake, and where my best guardian stands once there is a score. */
-export function seasonBannerCopy(status: SeasonStatus, mine: SeasonStanding | null, locale: Locale): string {
+/** Under a closed board until it seals: when the standings lock, and why they may still move. */
+export function tallyNotice(locale: Locale): string {
+    return locale === "ko" ? "최종 순위는 화요일 0시(한국 시간)에 확정돼요. 늦게 정산된 모험이 들어올 수 있어요." : "Final standings lock at Tuesday 00:00 KST, once late settlements are in.";
+}
+const pending = (locale: Locale) => locale === "ko" ? " (집계 중)" : " (tally pending)";
+/** My guardian's line once the season is over: its final place and points, marked as pending until the seal. */
+export function finalStandingCopy(season: SeasonStanding, locale: Locale, sealed: boolean): string {
+    const line = locale === "ko" ? `최종 ${season.rank}위/${season.entrants} · ${points(season.points, "ko")}` : `Finished #${season.rank} of ${season.entrants} · ${points(season.points, "en")}`;
+    return sealed ? line : line + pending(locale);
+}
+/**
+ * The lobby strip, one line per phase: what is on, what is at stake, and where my best guardian stands once there is a score.
+ * Closed, it points at the hall of fame once the season has sealed, with my best final place when I have one.
+ */
+export function seasonBannerCopy(status: SeasonStatus, mine: SeasonStanding | null, locale: Locale, sealed = false): string {
     const ko = locale === "ko", name = ko ? `시즌 ${status.id}` : `Season ${status.id}`;
     switch (status.phase) {
     case "pending": return ko ? `${name} 준비 중 · 커피 기프티콘과 한정 문양이 걸려요 · 규칙 미리 보기` : `${name} is coming · coffee gift cards and a limited mark · Preview the rules`;
@@ -193,7 +208,10 @@ export function seasonBannerCopy(status: SeasonStatus, mine: SeasonStanding | nu
         if (mine) return ko ? `${name} 진행 중 · ${left} · 내 전령 ${points(mine.points, locale)} · ${mine.rank}위` : `${name} live · ${left} · my guardian ${points(mine.points, locale)} · #${mine.rank}`;
         return ko ? `${name} 진행 중 · ${left} · 매일 최대 ${SEASON_MAX_DAY_POINTS}점` : `${name} live · ${left} · up to ${SEASON_MAX_DAY_POINTS} pts a day`;
     }
-    case "closed": return ko ? `${name} 종료 · 최종 순위 보기` : `${name} is over · See the final board`;
+    case "closed":
+        if (!sealed) return ko ? `${name} 종료 · 최종 집계 중 · 화요일 0시 확정` : `${name} is over · final tally Tue 00:00 KST`;
+        if (mine) return ko ? `${name} 종료 · 내 전령 최종 ${mine.rank}위 · 명예의 전당 보기` : `${name} is over · my guardian finished #${mine.rank} · See the hall of fame`;
+        return ko ? `${name} 종료 · 명예의 전당 보기` : `${name} is over · See the hall of fame`;
     }
 }
 /** A zodiac team's name: 호랑이팀 / Team Tiger. */
@@ -213,9 +231,17 @@ export function teamRowDetail(row: TeamRow, locale: Locale): string {
     return ko ? `${row.members}명 · ${averagePoints(row.points, row.members, locale)} · 최고 기여 ${who}`
         : `${row.members} ${row.members === 1 ? "member" : "members"} · ${averagePoints(row.points, row.members, locale)} · top: ${who}`;
 }
-/** One line for my team: leading alone, sharing first, or how far from first. */
-export function teamCheerCopy(rows: readonly TeamRow[], zodiac: GuardianZodiac, locale: Locale): string {
+/** How a closed season's team race reads: still tallying, or sealed for good; null while the race is on. */
+export type TeamFinal = "pending" | "sealed" | null;
+/** One line for my team: leading alone, sharing first, or how far from first; once the season is over, how it finished. */
+export function teamCheerCopy(rows: readonly TeamRow[], zodiac: GuardianZodiac, locale: Locale, final: TeamFinal = null): string {
     const ko = locale === "ko", name = teamName(zodiac, locale), {rank, toFirst, lead} = teamGap(rows, zodiac);
+    if (final) {
+        const line = rank === 1 && lead > 0 ? ko ? `우리 ${name} 우승 · 2위보다 ${points(lead, locale)} 앞섬` : `${name} won the season · ${points(lead, locale)} ahead`
+            : rank === 1 ? ko ? `우리 ${name} 공동 우승` : `${name} shared first`
+            : ko ? `우리 ${name} 최종 ${rank}위 · 1위와 ${points(toFirst, locale)} 차` : `${name} finished #${rank} · ${points(toFirst, locale)} behind`;
+        return final === "sealed" ? line : line + pending(locale);
+    }
     if (rank === 1 && lead > 0) return ko ? `우리 ${name} 1위 · 2위보다 ${points(lead, locale)} 앞섬` : `${name} leads · ${points(lead, locale)} ahead`;
     if (rank === 1) return ko ? `우리 ${name} 공동 1위` : `${name} tied for #1`;
     return ko ? `우리 ${name} ${rank}위 · 1위까지 ${points(toFirst, locale)}` : `${name} #${rank} · ${points(toFirst, locale)} to #1`;
@@ -225,8 +251,9 @@ export function myTeamShare(mine: number, total: number, locale: Locale): string
     const share = total ? ` (${Math.round(mine / total * 100)}%)` : "";
     return locale === "ko" ? `내 기여 ${points(mine, locale)}${share}` : `my share ${points(mine, locale)}${share}`;
 }
-/** The team race in plain words: who is on a team, what counts, how places are decided, who is a member, and what the winners get. */
-export function teamIntro(locale: Locale): string[] {
+/** The team race in plain words: who is on a team, what counts, how places are decided, who is a member, and what the winners get (or got, once sealed). */
+export function teamIntro(locale: Locale, sealed = false): string[] {
+    if (sealed) return [...teamIntro(locale).slice(0, 4), locale === "ko" ? "1위 팀 전령 모두 우승 팀 표식을 달았어요." : "Every guardian of the winning team now wears the mark."];
     return locale === "ko" ? [
         "전령은 태어난 띠대로 열두 팀 중 하나에 속해요. 바꿀 수 없고, 같은 띠 전령은 모두 한 팀이에요.",
         "팀 점수는 팀원이 받은 시즌 점수를 모두 더해요. 이번 주 보기는 이번 주 일별 순위 점수만 더하고(출석 보너스 없음), 시즌과 상관없이 늘 열려 있어요.",
@@ -244,4 +271,51 @@ export function teamIntro(locale: Locale): string[] {
 /** The guardian whose season place is best: the one the banner speaks for. */
 export function bestSeasonStanding(standings: RankingStandings | null, tokenIds: readonly string[]): SeasonStanding | null {
     return standings?.guardians.filter(g => tokenIds.includes(g.tokenId)).reduce<SeasonStanding | null>((best, g) => g.season && (!best || g.season.rank < best.rank) ? g.season : best, null) ?? null;
+}
+
+/** The hall's chip: how many took part and when the standings sealed. */
+export function hallChip(hall: SealedHall, locale: Locale): string {
+    const sealed = seasonDate(kstDay(hall.sealedAt), locale);
+    return locale === "ko" ? `참가 ${hall.entrants} · 확정 ${sealed}` : `${hall.entrants} ${hall.entrants === 1 ? "entrant" : "entrants"} · sealed ${sealed}`;
+}
+/** A winning team's row: the team, its total, and that every member wears the mark. */
+export function teamWinnerCopy(team: TeamRow, locale: Locale): string {
+    const name = teamName(team.zodiac, locale), total = points(team.points, locale);
+    return locale === "ko" ? `${name} · ${total} · 팀원 ${team.members}명 모두 우승 팀 표식` : `${name} · ${total} · all ${team.members} ${team.members === 1 ? "member wears" : "members wear"} the winners' mark`;
+}
+/** A weekly champion's row: the week by its Monday, the game, the guardian and its weekly score. */
+export function championCopy(champion: HallChampion, locale: Locale): string {
+    const week = seasonDate(champion.week, locale), game = GAME_NAMES[locale][champion.game], name = guardianName(champion.tokenId, locale);
+    return locale === "ko" ? `${week} 주 · ${game} ${name} · ${points(champion.score, "ko")}` : `Week of ${week} · ${game} ${name} · ${points(champion.score, "en")}`;
+}
+/** A raffle entrant's row: the guardian and how many full runs it completed. */
+export function streakEntrantCopy(tokenId: string, runs: number, locale: Locale): string {
+    return locale === "ko" ? `${guardianName(tokenId, "ko")} · ${SEASON_STREAK_DAYS}일 연속 ${runs}회` : `${guardianName(tokenId, "en")} · ${runs} ${runs === 1 ? "run" : "runs"} of ${SEASON_STREAK_DAYS} days`;
+}
+/** The draw in one line: the formula anyone can recompute. */
+export function raffleFormula(locale: Locale): string {
+    return locale === "ko" ? `풀을 전령 번호 순으로 세우고 i번째 당첨은 keccak256(블록 해시 ‖ i) mod 남은 수 · ${RAFFLE_WINNERS}명`
+        : `Pool sorted by guardian number; pick i is keccak256(block hash ‖ i) mod remaining · ${RAFFLE_WINNERS} winners`;
+}
+/** The close block that seeded the draw: its number and a short hash. */
+export function closeBlockCopy(block: SealedHall["closeBlock"], locale: Locale): string {
+    return `${locale === "ko" ? "블록" : "block"} #${Number(block.number).toLocaleString(locale === "ko" ? "ko-KR" : "en-US")} · ${block.hash.slice(0, 6)}…${block.hash.slice(-4)}`;
+}
+/** How prizes reach the winners, in six lines, shown only once the season has sealed. */
+export function prizeNotes(locale: Locale): string[] {
+    return locale === "ko" ? [
+        `시즌 상위 3명과 ${SEASON_STREAK_DAYS}일 연속 출석 추첨 ${RAFFLE_WINNERS}명에게 커피 기프티콘을 드려요.`,
+        "추첨은 시즌 종료 직후 첫 GIWA 블록 해시로 뽑아요: 풀을 전령 번호 순으로 세우고 keccak256(블록 해시 ‖ i)로 i번째를 고르니 누구나 다시 셀 수 있어요.",
+        `공유는 확인할 길이 없어 추첨 자격은 시즌 안 ${SEASON_STREAK_DAYS}일 연속 출석 1회 이상만 봐요.`,
+        "당첨된 전령의 주인은 X에서 @mapae_io에 전령 번호(#407)를 DM으로 보내 주세요. X 계정 하나에 상품 하나예요.",
+        "소유 확인으로 지갑의 '메시지 서명'을 한 번 부탁드려요 — 안내하는 문장을 서명해 보내면 돼요. 가스도 트랜잭션도 없어요.",
+        "테스트넷이라 실제 돈은 오가지 않아요.",
+    ] : [
+        `Coffee gift cards go to the top 3 and to ${RAFFLE_WINNERS} guardians drawn from the ${SEASON_STREAK_DAYS}-day-streak pool.`,
+        "The draw uses the hash of the first GIWA block after the season closed: the pool sorted by guardian number, the i-th pick from keccak256(block hash ‖ i), so anyone can recompute it.",
+        `Sharing cannot be verified, so eligibility is one completed ${SEASON_STREAK_DAYS}-day run inside the season and nothing else.`,
+        "Owners DM @mapae_io on X with the guardian's number (#407). One prize per X account.",
+        "To confirm ownership you sign one message in your wallet; no gas, no transaction.",
+        "Testnet only — no real money moves.",
+    ];
 }
