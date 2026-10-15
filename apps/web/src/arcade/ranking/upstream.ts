@@ -21,13 +21,17 @@ export async function ipBudget(request: Request, deps: UpstreamDependencies): Pr
     return null;
 }
 
+/** A reader answer other than 200 or 404: the error carries the status for the one caller that reads it. */
+export class UpstreamError extends Error {
+    constructor(readonly status: number) {super(`upstream ${status}`);}
+}
 /** One bearer call to the reader at `path`: its parsed body, or `found: false` on its 404. Any other failure throws. */
 export async function upstreamJson(path: string, deps: UpstreamDependencies): Promise<{found: true; value: unknown} | {found: false}> {
     const response = await (deps.fetcher ?? fetch)(`${UPSTREAM}${path}`, {
         method: "GET", headers: {Authorization: `Bearer ${deps.receiptToken}`, Accept: "application/json"}, redirect: "manual", signal: AbortSignal.timeout(10_000),
     });
     if (response.status === 404) {await response.body?.cancel(); return {found: false};}
-    if (!response.ok) {await response.body?.cancel(); throw new Error("upstream");}
+    if (!response.ok) {await response.body?.cancel(); throw new UpstreamError(response.status);}
     return {found: true, value: await boundedJson(response)};
 }
 

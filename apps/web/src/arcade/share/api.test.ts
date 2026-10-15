@@ -2,6 +2,7 @@ import {beforeEach, describe, expect, test} from "bun:test";
 import type {Hex} from "viem";
 import type {RankedCard, SeasonCard, SeasonStanding} from "@mapae/arcade/ranking";
 import {shareApi, type ShareDependencies} from "./api";
+import {escapeHtml} from "./page";
 import {CARD_REVISION} from "./card";
 import {decodePng, encodePng} from "./png";
 import {createBitmap, rgb} from "./raster";
@@ -69,7 +70,7 @@ describe("share card image", () => {
         const {deps, calls} = setup();
         for (const path of ["/api/arcade/share/g/0/race/2026-10-14/card.png", "/api/arcade/share/g/407/chess/2026-10-14/card.png", "/api/arcade/share/g/407/race/2026-02-30/card.png",
             "/api/arcade/share/g/407/race/2026-10-15/card.png", "/api/arcade/share/g/407/race/2025-10-13/card.png", `${CARD}?ref=share`, "/api/arcade/share/g/407/race/2026-10-14/card.svg",
-            "/api/arcade/share/s/100000/card.png"]) {
+            "/api/arcade/share/s/100000/card.png", "/api/arcade/share/s/10001/card.png", "/api/arcade/share/g/99999/race/2026-10-14/card.png"]) {
             const response = await get(path, deps);
             expect(response.status).toBe(404); expect(response.headers.get("Cache-Control")).toBe("no-store");
         }
@@ -96,6 +97,10 @@ describe("share card image", () => {
 
 describe("share page", () => {
     let html: string, response: Response;
+    test("every string the page carries goes through one escape, whatever a name or story might one day hold", () => {
+        expect(escapeHtml(`<img src=x onerror="alert('1')">&`)).toBe("&lt;img src=x onerror=&quot;alert(&#39;1&#39;)&quot;&gt;&amp;");
+        expect(html.match(/<(script|style|iframe|object|svg)/)).toBeNull(); expect(html).not.toMatch(/ on[a-z]+=/);
+    });
     beforeEach(async () => {response = await get(`/ko${PAGE}`, setup().deps); html = await response.text();});
     test("carries the card as og:image with the guardian's copy in the page's own language, and nothing that runs", () => {
         expect(response.status).toBe(200);
@@ -142,5 +147,9 @@ describe("share page", () => {
         expect(odd.status).toBe(404); expect(await odd.text()).toContain("이 카드는 없어요");
         expect((await get(`${PAGE}?utm_source=x`, setup().deps)).status).toBe(404);
         expect((await get("/share/s/407", setup(() => Response.json({...seasonCard(), status: {...seasonCard().status, phase: "announced", today: "2026-10-01"}})).deps)).status).toBe(503);
+        // Before a season has a board the reader answers 400: no season card exists yet, so the page says so rather than asking back soon.
+        const early = await get("/ko/share/s/407", setup(() => Response.json({error: {code: "invalid_request"}}, {status: 400})).deps);
+        expect(early.status).toBe(404); expect(early.headers.get("Cache-Control")).toBe("public, max-age=30"); expect(await early.text()).toContain("이 카드는 없어요");
+        expect((await get(CARD, setup(() => Response.json({error: {code: "invalid_request"}}, {status: 400})).deps)).status).toBe(503);
     });
 });

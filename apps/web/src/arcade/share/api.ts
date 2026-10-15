@@ -1,10 +1,10 @@
 import type {GameId} from "@mapae/arcade";
-import {daysBetween, isRankingDay, kstDay, type RankedCard, type SeasonCard} from "@mapae/arcade/ranking";
+import {daysBetween, isRankingDay, kstDay, validRankingTokenId, type RankedCard, type SeasonCard} from "@mapae/arcade/ranking";
 import {SEASON, type Season} from "@mapae/arcade/season";
 import {landingUrl} from "../../lib/config";
 import type {Locale} from "../../lib/i18n";
 import {DOCUMENT_SECURITY_HEADERS} from "../../lib/security";
-import {hasReceiptToken, ipBudget, upstreamJson, type UpstreamDependencies} from "../ranking/upstream";
+import {hasReceiptToken, ipBudget, UpstreamError, upstreamJson, type UpstreamDependencies} from "../ranking/upstream";
 import {CARD_REVISION, cardLayers, renderRankedCard, renderSeasonCard, shareLayerPath, type LayerImages} from "./card";
 import {parseRankedCard, parseSeasonCard} from "./data";
 import {decodePng, encodePng, type Bitmap} from "./png";
@@ -82,6 +82,8 @@ export async function shareApi(request: Request, deps: ShareDependencies): Promi
     if (!parsed || url.search) return url.pathname.startsWith("/api/") ? error(404) : page(404, "no-store");
     if (request.method !== "GET" && request.method !== "HEAD") return error(405, {Allow: "GET, HEAD"});
     const {target} = parsed, now = deps.now ?? Date.now(), today = kstDay(now), season = deps.season ?? SEASON;
+    // A token past the supply, or a day outside the year of boards, is not there — the seller is never asked.
+    if (!validRankingTokenId(target.tokenId)) return missing();
     if (target.kind === "run" && (!isRankingDay(target.day) || target.day > today || daysBetween(target.day, today) > DAYS_BACK)) return missing();
     if (!hasReceiptToken(deps)) return unavailable();
     const key = new Request(`${url.origin}${url.pathname}?card=${CARD_REVISION}`), cache = deps.cache ? await deps.cache.catch(() => undefined) : undefined;
@@ -94,7 +96,11 @@ export async function shareApi(request: Request, deps: ShareDependencies): Promi
         const upstream = await upstreamJson(target.kind === "run" ? `/card/${target.game}/${target.day}/${target.tokenId}` : `/card/season/${target.tokenId}`, deps);
         if (!upstream.found) return missing("public, max-age=30");
         card = target.kind === "run" ? parseRankedCard(upstream.value, target.game, target.day, target.tokenId, today) : parseSeasonCard(upstream.value, target.tokenId, season);
-    } catch {return unavailable();}
+    } catch (failure) {
+        // The reader refuses a season card outright while no season board exists: there is no card, not a fault.
+        if (target.kind === "season" && failure instanceof UpstreamError && failure.status === 400) return missing("public, max-age=30");
+        return unavailable();
+    }
     if (!card) return unavailable();
     const settled = "game" in card ? card.final : card.status.phase === "closed";
     let stored: Response, client: string;
