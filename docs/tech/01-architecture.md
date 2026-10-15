@@ -15,7 +15,7 @@
 | `apps/payment-scheduler` | 같은 판매자 리소스를 고정 간격으로 구매 — 슬롯·예산·실행 이력·재시도를 DB에 들고 claim 단위로 결제 | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` — 핀(단일 payer·loopback) / 스폰서드(공개, 예치금 대납) 두 모드 | Bun + Hono |
 | `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 | Bun + Hono |
-| `apps/faucet` | faucet.mapae.io 뒤의 테스트넷 지급: 지불 계정 tUSDC 목표 잔액 보충, 운영자가 켜면 지갑에 GIWA Sepolia ETH 0.05 | Bun + Hono + SQLite |
+| `apps/faucet` | faucet.mapae.io 뒤의 테스트넷 지급: 지불 계정 tUSDC 목표 잔액 보충, 운영자가 켜면 지갑에 GIWA Sepolia ETH 0.005 | Bun + Hono + SQLite |
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
 | `apps/web` | 공개 랜딩 + Studio (스폰서드 온보딩·위임 발급·조회·회수) | TanStack Start + Cloudflare |
 
