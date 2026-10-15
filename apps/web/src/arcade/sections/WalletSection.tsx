@@ -1,10 +1,10 @@
 import {ArrowUpRight, Droplets, ExternalLink} from 'lucide-react';
 import {MOCK_USDC} from '@mapae/shared';
-import {explorerAddressUrl, faucetUrl} from '../../lib/config';
+import {explorerAddressUrl} from '../../lib/config';
 import {shortAddress} from '../../lib/dial';
-import {localizeUrl} from '../../lib/i18n';
 import {lazy, Suspense} from 'react';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
+import {FAUCET_HINT, faucetHintUrl} from '../faucet-hint';
 import {DeskGate, SectionHeading} from './SectionFrame';
 
 const ArcadeRevocations = lazy(() => import("../ArcadeRevocations").then(m => ({default: m.ArcadeRevocations})));
@@ -33,8 +33,8 @@ function Wallet({desk}: {desk: GuardianDesk}) {
                 <div><dt>{ko ? '스마트 계정 잔액' : 'Smart-account balance'}</dt><dd><strong>{giwa.balance ?? '—'} {MOCK_USDC.symbol}</strong></dd></div>
             </dl>
             <div className="arc-wallet-faucet">
-                <a className="arc-button arc-button-paper" href={localizeUrl(faucetUrl, locale)}><Droplets size={18} aria-hidden="true" />{ko ? '테스트 토큰 받기' : 'Get test tokens'}<ArrowUpRight size={17} aria-hidden="true" /></a>
-                <small>{ko ? `faucet.mapae.io에서 @mapae_io를 팔로우하면 하루에 한 번 ${MOCK_USDC.symbol}(테스트넷, 실제 돈 아님)를 받아요.` : `Follow @mapae_io on faucet.mapae.io to get ${MOCK_USDC.symbol} (testnet, not real money) once a day.`}</small>
+                <a className="arc-button arc-button-paper" href={faucetHintUrl(locale, 'musdc')}><Droplets size={18} aria-hidden="true" />{FAUCET_HINT[locale].action}<ArrowUpRight size={17} aria-hidden="true" /></a>
+                <small>{FAUCET_HINT[locale].need} {FAUCET_HINT[locale].unlock}</small>
             </div>
         </section>
         <Suspense fallback={<p role="status">{ko ? "권한 관리 준비 중…" : "Loading permission controls…"}</p>}><ArcadeRevocations grants={giwa.grants} ko={ko} onRevoked={giwa.revoked} /></Suspense>

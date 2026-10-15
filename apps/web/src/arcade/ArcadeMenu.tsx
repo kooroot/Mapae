@@ -5,8 +5,8 @@ import {ArrowUpRight, Droplets, Menu, X} from 'lucide-react';
 import type {Address} from 'viem';
 import {WalletPicker} from '../components/WalletPicker';
 import {LocaleSwitch} from '../lib/locale';
-import {localizePath, localizeUrl, type Locale} from '../lib/i18n';
-import {faucetUrl} from '../lib/config';
+import {localizePath, type Locale} from '../lib/i18n';
+import {FAUCET_HINT, faucetHintUrl} from './faucet-hint';
 import {AccountChip, SECTION_ICONS} from './ArcadeHeader';
 import {ARCADE_SECTIONS, arcadeSectionLink, SECTION_COPY, type SectionBadges} from './sections';
 
@@ -44,7 +44,7 @@ export function ArcadeMenu({locale, owner, walletWaiting, badges, disconnecting,
                         {owner ? <AccountChip owner={owner} ko={ko} disconnecting={disconnecting} blocked={blocked} onDisconnect={onDisconnect} />
                             : <><p>{ko ? '지갑을 연결하면 나의 전령과 기록이 이어져요.' : 'Connect a wallet to continue with your guardians and records.'}</p><WalletPicker reconnecting={walletWaiting} /></>}
                     </div>
-                    <a className="arc-menu-faucet" href={localizeUrl(faucetUrl, locale)}><Droplets size={20} aria-hidden="true" /><span><b>{ko ? '테스트 토큰 받기' : 'Get test tokens'}</b><small>{ko ? '용돈으로 쓸 테스트넷 토큰, 실제 돈 아님' : 'Testnet allowance tokens, not real money'}</small></span><ArrowUpRight size={16} aria-hidden="true" /></a>
+                    <a className="arc-menu-faucet" href={faucetHintUrl(locale, 'musdc')}><Droplets size={20} aria-hidden="true" /><span><b>{FAUCET_HINT[locale].action}</b><small>{ko ? '@mapae_io 팔로우 한 번이면 무료, 테스트넷 토큰이라 실제 돈 아님' : 'Free for a follow of @mapae_io — testnet tokens, not real money'}</small></span><ArrowUpRight size={16} aria-hidden="true" /></a>
                     <div className="arc-menu-foot"><LocaleSwitch /><a href={localizePath('/', locale)}>{ko ? 'Mapae 홈' : 'Mapae home'}<ArrowUpRight size={16} aria-hidden="true" /></a></div>
                 </Drawer.Popup>
             </Drawer.Viewport>

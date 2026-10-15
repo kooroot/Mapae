@@ -33,7 +33,7 @@ export function AllowanceProgress({phase, walletName, ko, target}: {
     const description = phase === "signing" ? ko ? `${walletName}에서 용돈 한도 메시지에 서명해 주세요. 지갑 앱이나 확장 프로그램에 요청이 열려 있는지 확인해 주세요.` : `Sign the allowance message in ${walletName}. Check your wallet app or extension for the request.`
         : phase === "switching" ? ko ? `${walletName}에서 네트워크 전환 요청을 확인해 주세요.` : `Confirm the network change in ${walletName}.`
         : phase === "authorizing" ? ko ? "서명을 받았어요. 정해 둔 용돈 한도와 권한이 맞는지 확인하고 있어요." : "Signature received. Checking that it matches your allowance and permission."
-        : phase === "bootstrap" ? ko ? "필요한 스마트 계정 생성과 테스트 토큰 충전을 요청했어요. GIWA의 응답을 받으면 자동으로 다음 단계로 넘어가요." : "Requesting smart-account setup and test tokens if needed. We will continue when GIWA responds."
+        : phase === "bootstrap" ? ko ? "필요한 스마트 계정 생성을 요청했어요. GIWA의 응답을 받으면 자동으로 다음 단계로 넘어가요." : "Requesting smart-account setup if needed. We will continue when GIWA responds."
         : phase === "submitting" ? ko ? "서버에 외출을 맡기고 있어요. 접수가 확인되면 화면을 닫아도 계속해요." : "Sending the outing to the server. Once accepted, it continues after you leave."
         : phase === "verifying" ? ko ? "스마트 계정의 잔액과 서명한 권한을 확인하고 있어요. 확인이 끝나야 용돈을 사용할 수 있어요." : "Checking the smart-account balance and signed permission before the allowance becomes available."
         : ko ? "입장권과 연결한 지갑을 확인하고 있어요. 필요한 단계에서 지갑 서명을 안내할게요." : "Checking tickets and your connected wallet. We will guide you when a signature is needed.";

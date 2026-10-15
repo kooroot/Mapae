@@ -189,7 +189,7 @@ export function useGiwaTickets(locale: Locale, owner: Address | undefined, authe
                 setPayer(account); setBalance(available === undefined ? null : formatUnits(available, 6));
                 const reserved = active.reduce((sum, item) => sum + item.reservedAdmissions, 0);
                 const needed = targets.slice(index).reduce((sum, item) => sum + item.admissions, reserved);
-                if (available === undefined || available < BigInt(needed) * ARCADE_TICKET_AMOUNT) throw new GiwaTicketError("테스트 토큰 잔액이 부족해요. Studio에서 충전해 주세요. / Top up test tokens in Studio.");
+                if (available === undefined || available < BigInt(needed) * ARCADE_TICKET_AMOUNT) throw new GiwaTicketError("테스트 토큰 잔액이 부족해요. faucet.mapae.io에서 @mapae_io를 팔로우하고 받아 주세요. / Not enough test tokens. Follow @mapae_io on faucet.mapae.io to get more.");
                 if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
                 setPhase("submitting");
                 await submitOuting({id: crypto.randomUUID(), tokenId, goal, choice, admissions,

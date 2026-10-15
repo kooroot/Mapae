@@ -11,8 +11,7 @@ import {AllowanceAmount} from './AllowanceAmount';
 import {GuardianAvatar} from './GuardianAvatar';
 import {GUARDIAN_NAMES} from './guardian';
 import type {Companion} from './state';
-import {faucetUrl} from '../lib/config';
-import {localizeUrl} from '../lib/i18n';
+import {FAUCET_HINT,faucetHintUrl} from './faucet-hint';
 import {arcadeSectionLink} from './sections';
 import './allowance.css';
 import {activeGuardianOuting,type GuardianIdentity} from './nft/outing-model';
@@ -32,7 +31,7 @@ export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,authenti
         <span className="arc-overline">{ko?'용돈 쥐여 보내기':'SEND THEM OUT'}</span>
         <h2 id="allowance-heading">{ko?'다녀와, 우리 친구!':'Off on a little adventure'}</h2>
         <p>{ko?'용돈과 놀이를 정하면 화면을 닫아도 계속해요. 돌아오면 모험첩을 펼쳐 보세요.':'Set their allowance and games. They keep going after you leave. Come back to their stories.'}</p>
-        <div className="arc-allowance-balance"><span>{ko?'스마트 계정 잔액':'Smart-account balance'}</span><strong>{giwa.balance??'—'} {MOCK_USDC.symbol}</strong><a className="arc-inline-link" href={localizeUrl(faucetUrl,ko?'ko':'en')}>{ko?'테스트 토큰 받기':'Get test tokens'}<ExternalLink size={14} aria-hidden="true"/></a></div>
+        <div className="arc-allowance-balance"><span>{ko?'스마트 계정 잔액':'Smart-account balance'}</span><strong>{giwa.balance??'—'} {MOCK_USDC.symbol}</strong><a className="arc-inline-link" href={faucetHintUrl(ko?'ko':'en','musdc')}>{FAUCET_HINT[ko?'ko':'en'].action}<ExternalLink size={14} aria-hidden="true"/></a></div>
         <div className="arc-friend-allowances">{members.map(c=>{
             const active=giwa.jobs.some(j=>activeGuardianOuting(j,c.nft));
             return <div className="arc-friend-allowance" key={c.id}><div className="arc-friend-identity"><GuardianAvatar appearance={c.appearance} color={c.color} portrait/><div><strong>{c.name}</strong><small>{active?(ko?'외출 기록에서 확인해요':'Check their outing below'):`${c.appearance?`${GUARDIAN_NAMES[ko?'ko':'en'][c.appearance.zodiac]} · `:''}${TEMPERAMENT_NAMES[ko?'ko':'en'][c.temperament]}`}</small></div></div>
