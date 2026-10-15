@@ -1,11 +1,10 @@
 import {beforeEach, describe, expect, test} from "bun:test";
 import type {Hex} from "viem";
 import type {RankedCard, SeasonCard, SeasonStanding} from "@mapae/arcade/ranking";
+import {CARD_REVISION} from "@mapae/arcade/share-card/contract";
+import {decodePng, encodePng} from "@mapae/arcade/share-card/png";
 import {shareApi, type ShareDependencies} from "./api";
 import {escapeHtml} from "./page";
-import {CARD_REVISION} from "./card";
-import {decodePng, encodePng} from "./png";
-import {createBitmap, rgb} from "./raster";
 
 const SEED = "0x7a1e9c4d2b6f80135e7c9a2d4f6b8e0c1a3d5f7b9e2c4a6d8f0b1e3c5a7d9f2b" as Hex;
 const receiptToken = "r".repeat(40), now = Date.parse("2026-10-14T03:00:00Z"), season = {id: 1, start: "2026-10-05", end: "2026-11-01"};
@@ -13,30 +12,38 @@ const standing: SeasonStanding = {moves: true, prev: 3, points: 187, rank: 2, en
 const ranked = (day = "2026-10-14"): RankedCard => ({game: "race", day, tokenId: "407", seed: SEED, score: 12_340, rank: 3, entrants: 41, leader: 15_000, final: day < "2026-10-14", season: standing});
 const seasonCard = (phase: "open" | "closed" = "open"): SeasonCard =>
     ({tokenId: "407", seed: SEED, status: {id: 1, start: season.start, end: season.end, today: phase === "open" ? "2026-10-14" : "2026-11-03", phase}, season: standing});
-const stubPng = await encodePng(createBitmap(32, 32, rgb("#5a8a7a")));
+/** What the seller answers on `/png`: a card-sized PNG with its tag and the cache life its facts call for; tests that break one of them say so. */
+const cardPng = await encodePng({width: 1200, height: 630, data: new Uint8ClampedArray(1200 * 630 * 4)});
+const tinyPng = await encodePng({width: 32, height: 32, data: new Uint8ClampedArray(32 * 32 * 4)});
+const etag = (card: RankedCard | SeasonCard) => "game" in card
+    ? `"card-${card.tokenId}-${card.game}-${card.day}-${card.score}-${card.rank}-${card.entrants}-${card.season?.points ?? "-"}-${card.season?.rank ?? "-"}-${CARD_REVISION}"`
+    : `"card-${card.tokenId}-season-${card.season.points}-${card.season.rank}-${card.season.entrants}-${CARD_REVISION}"`;
+const png = (card: RankedCard | SeasonCard, headers: Record<string, string> = {}, body: BodyInit = cardPng.slice()) => new Response(body, {headers: {
+    "Content-Type": "image/png", ETag: etag(card), "Cache-Control": ("game" in card ? card.final : card.status.phase === "closed") ? "public, max-age=3600" : "public, max-age=60", ...headers,
+}});
+const cardOf = (path: string) => path.startsWith("/card/season/") ? seasonCard() : ranked(path.split("/")[3]);
 
 function memoryCache() {
     const entries = new Map<string, Response>();
     const cache = {async match(key: Request) {return entries.get(key.url)?.clone();}, async put(key: Request, value: Response) {entries.set(key.url, value);}} as unknown as Cache;
     return {entries, cache};
 }
-function setup(answer: (path: string) => Response | Promise<Response> = path => Response.json(path.startsWith("/card/season/") ? seasonCard() : ranked(path.split("/")[3])), overrides: Partial<ShareDependencies> = {}) {
-    const calls: string[] = [], assetCalls: string[] = [], limits: string[] = [], {entries, cache} = memoryCache();
+function setup(answer: (path: string) => Response | Promise<Response> = path => path.endsWith("/png") ? png(cardOf(path)) : Response.json(cardOf(path)), overrides: Partial<ShareDependencies> = {}) {
+    const calls: string[] = [], limits: string[] = [], {entries, cache} = memoryCache();
     const deps: ShareDependencies = {
         receiptToken, now, cache: Promise.resolve(cache), season, base: "https://mapae.io",
         fetcher: async url => {calls.push(url); return answer(url.replace("https://seller.mapae.io/arcade/ranking", ""));},
-        assets: {async fetch(request) {assetCalls.push(new URL(request.url).pathname); return new Response(stubPng.slice(), {headers: {"Content-Type": "image/png"}});}},
         rateLimit: async bucket => {limits.push(bucket); return true;},
         ...overrides,
     };
-    return {deps, calls, assetCalls, limits, entries};
+    return {deps, calls, limits, entries};
 }
 const get = (path: string, deps: ShareDependencies, init: RequestInit = {}, origin = "https://mapae.io") => shareApi(new Request(`${origin}${path}`, {headers: {"CF-Connecting-IP": "203.0.113.9"}, ...init}), deps);
 const CARD = "/api/arcade/share/g/407/race/2026-10-14/card.png", PAGE = "/share/g/407/race/2026-10-14";
 
 describe("share card image", () => {
-    test("draws a validated round as a cached PNG with an ETag, and serves HEAD and the cache without the seller", async () => {
-        const {deps, calls, assetCalls, entries, limits} = setup();
+    test("stores the seller's card as a cached PNG with its ETag, and serves HEAD and the cache without the seller", async () => {
+        const {deps, calls, entries, limits} = setup();
         const response = await get(CARD, deps);
         expect(response.status).toBe(200);
         expect(response.headers.get("Content-Type")).toBe("image/png");
@@ -46,10 +53,9 @@ describe("share card image", () => {
         expect(response.headers.get("ETag")).toBe(`"card-407-race-2026-10-14-12340-3-41-187-2-${CARD_REVISION}"`);
         const png = await decodePng(new Uint8Array(await response.arrayBuffer()));
         expect(png.width).toBe(1200); expect(png.height).toBe(630);
-        expect(calls).toEqual(["https://seller.mapae.io/arcade/ranking/card/race/2026-10-14/407"]);
+        expect(calls).toEqual(["https://seller.mapae.io/arcade/ranking/card/race/2026-10-14/407/png"]);
         expect(limits).toHaveLength(1); expect(limits[0]).toStartWith("ranking-ip:");
         expect([...entries.keys()]).toEqual([`https://mapae.io${CARD}?card=${CARD_REVISION}`]);
-        expect(new Set(assetCalls).size).toBe(assetCalls.length); expect(assetCalls.every(p => p.startsWith("/arcade/share/") && p.endsWith(".png"))).toBe(true);
         const head = await get(CARD, deps, {method: "HEAD"});
         expect(head.status).toBe(200); expect(head.body).toBeNull(); expect(head.headers.get("ETag")).toBe(response.headers.get("ETag"));
         expect(calls).toHaveLength(1);
@@ -60,7 +66,7 @@ describe("share card image", () => {
         expect(response.headers.get("Cache-Control")).toBe("public, max-age=300");
         expect(entries.get(`https://mapae.io${past}?card=${CARD_REVISION}`)?.headers.get("Cache-Control")).toBe("public, max-age=3600");
         expect((await get(past, deps)).headers.get("Cache-Control")).toBe("public, max-age=300");
-        const closed = setup(() => Response.json(seasonCard("closed")), {now: Date.parse("2026-11-03T03:00:00Z")});
+        const closed = setup(() => png(seasonCard("closed")), {now: Date.parse("2026-11-03T03:00:00Z")});
         expect((await get("/api/arcade/share/s/407/card.png", closed.deps)).headers.get("Cache-Control")).toBe("public, max-age=300");
         const open = await get("/api/arcade/share/s/407/card.png", setup().deps);
         expect(open.headers.get("Cache-Control")).toBe("public, max-age=60");
@@ -79,19 +85,35 @@ describe("share card image", () => {
         expect(post.status).toBe(405); expect(post.headers.get("Allow")).toBe("GET, HEAD");
         expect(calls).toHaveLength(1);
     });
-    test("no token, a seller outage, a tampered answer, a missing layer or a spent budget never draw a card", async () => {
+    test("no token, a seller outage, an answer that is not a card of ours or a spent budget never serve a card", async () => {
         expect((await get(CARD, setup(undefined, {receiptToken: "short"}).deps)).status).toBe(503);
         const down = await get(CARD, setup(() => new Response("nope", {status: 500})).deps);
         expect(down.status).toBe(503); expect(down.headers.get("Retry-After")).toBe("5"); expect(down.headers.get("Cache-Control")).toBe("no-store");
-        expect((await get(CARD, setup(() => Response.json({...ranked(), rank: 99})).deps)).status).toBe(503);
-        expect((await get(CARD, setup(() => Response.json({...ranked(), tokenId: "408"})).deps)).status).toBe(503);
-        expect((await get(CARD, setup(() => Response.json(ranked("2026-10-13"))).deps)).status).toBe(503);
-        // Decoded layers stay with the isolate per origin, so a fresh origin is what reaches the failing asset store.
-        expect((await get(CARD, setup(undefined, {assets: {async fetch() {return new Response(null, {status: 404});}}}).deps, {}, "https://app.mapae.io")).status).toBe(503);
+        // Not a PNG, too large by its header or by its body, not card-sized, no card tag, or a cache life the seller may not ask for.
+        for (const answer of [
+            () => png(ranked(), {"Content-Type": "text/html"}), () => Response.json(ranked()), () => png(ranked(), {"Content-Length": String(3 * 1024 * 1024)}),
+            () => png(ranked(), {}, new Uint8Array(2 * 1024 * 1024 + 1)), () => png(ranked(), {}, tinyPng.slice()), () => png(ranked(), {}, new TextEncoder().encode("<svg/>")),
+            () => png(ranked(), {ETag: ""}), () => png(ranked(), {ETag: 'W/"card-407"'}), () => png(ranked(), {ETag: '"card-407"; evil'}), () => png(ranked(), {"Cache-Control": "public, max-age=86400"}),
+            () => png(ranked(), {"Cache-Control": "no-store"}),
+        ]) {
+            const response = await get(CARD, setup(answer).deps);
+            expect(response.status).toBe(503); expect(response.headers.get("Retry-After")).toBe("5");
+        }
         const limited = await get(CARD, setup(undefined, {rateLimit: async () => false}).deps);
         expect(limited.status).toBe(429); expect(Number(limited.headers.get("Retry-After"))).toBeGreaterThan(0);
         const missing = await get(CARD, setup(() => new Response(null, {status: 404})).deps);
         expect(missing.status).toBe(404); expect(missing.headers.get("Cache-Control")).toBe("public, max-age=30");
+    });
+    test("the seller's headers are read, not passed through: the stored card carries the Worker's own headers and the tag", async () => {
+        const {deps, entries} = setup(() => png(ranked(), {"X-Seller": "leak", Server: "bun", "Content-Security-Policy": "default-src *"}));
+        const response = await get(CARD, deps), stored = entries.get(`https://mapae.io${CARD}?card=${CARD_REVISION}`)!;
+        expect(response.status).toBe(200);
+        for (const r of [response, stored]) {
+            expect(r.headers.get("X-Seller")).toBeNull(); expect(r.headers.get("Server")).toBeNull();
+            expect(r.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
+            expect(r.headers.get("ETag")).toBe(`"card-407-race-2026-10-14-12340-3-41-187-2-${CARD_REVISION}"`);
+        }
+        expect(stored.headers.get("Cache-Control")).toBe("public, max-age=60");
     });
 });
 
@@ -150,6 +172,8 @@ describe("share page", () => {
         // Before a season has a board the reader answers 400: no season card exists yet, so the page says so rather than asking back soon.
         const early = await get("/ko/share/s/407", setup(() => Response.json({error: {code: "invalid_request"}}, {status: 400})).deps);
         expect(early.status).toBe(404); expect(early.headers.get("Cache-Control")).toBe("public, max-age=30"); expect(await early.text()).toContain("이 카드는 없어요");
+        const earlyCard = await get("/api/arcade/share/s/407/card.png", setup(() => Response.json({error: {code: "invalid_request"}}, {status: 400})).deps);
+        expect(earlyCard.status).toBe(404); expect(earlyCard.headers.get("Cache-Control")).toBe("public, max-age=30");
         expect((await get(CARD, setup(() => Response.json({error: {code: "invalid_request"}}, {status: 400})).deps)).status).toBe(503);
     });
 });

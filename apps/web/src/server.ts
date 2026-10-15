@@ -59,7 +59,7 @@ const entry = createServerEntry({fetch: (request, options) => {
     }
     if (path.startsWith("/api/arcade/share/") || /^(\/ko)?\/share\//.test(path)) {
         const profiles = profileRepository(env.ARCADE_DB);
-        return shareApi(request, {receiptToken: env.ARCADE_RECEIPT_TOKEN, assets: env.ASSETS, cache: caches.open("mapae-share"), rateLimit: (bucket, until, limit) => profiles.rateLimit(bucket, until, limit)});
+        return shareApi(request, {receiptToken: env.ARCADE_RECEIPT_TOKEN, cache: caches.open("mapae-share"), rateLimit: (bucket, until, limit) => profiles.rateLimit(bucket, until, limit)});
     }
     // Every surface routes it; only the faucet origin (or a loopback dev server) is answered.
     if (path.startsWith("/api/faucet/")) return faucetApi(request, {

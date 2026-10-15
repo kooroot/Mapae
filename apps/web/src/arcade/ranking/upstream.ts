@@ -27,24 +27,42 @@ export class UpstreamError extends Error {
 }
 /** One bearer call to the reader at `path`: its parsed body, or `found: false` on its 404. Any other failure throws. */
 export async function upstreamJson(path: string, deps: UpstreamDependencies): Promise<{found: true; value: unknown} | {found: false}> {
-    const response = await (deps.fetcher ?? fetch)(`${UPSTREAM}${path}`, {
-        method: "GET", headers: {Authorization: `Bearer ${deps.receiptToken}`, Accept: "application/json"}, redirect: "manual", signal: AbortSignal.timeout(10_000),
-    });
-    if (response.status === 404) {await response.body?.cancel(); return {found: false};}
-    if (!response.ok) {await response.body?.cancel(); throw new UpstreamError(response.status);}
-    return {found: true, value: await boundedJson(response)};
+    const response = await call(path, "application/json", deps);
+    if (!response) return {found: false};
+    return {found: true, value: JSON.parse(new TextDecoder().decode(await boundedBytes(response, MAX_RESPONSE_BYTES)))};
+}
+/**
+ * One bearer call to the reader for a binary body: the bytes and the reader's headers when the body is of `type` and within
+ * `maxBytes`, or `found: false` on its 404. Another type, a larger body or any other failure throws.
+ */
+export async function upstreamBytes(path: string, deps: UpstreamDependencies, limit: {type: string; maxBytes: number}): Promise<{found: true; bytes: Uint8Array<ArrayBuffer>; headers: Headers} | {found: false}> {
+    const response = await call(path, limit.type, deps);
+    if (!response) return {found: false};
+    if (response.headers.get("Content-Type")?.split(";")[0]?.trim() !== limit.type) {await response.body?.cancel(); throw new Error("wrong_type");}
+    return {found: true, bytes: await boundedBytes(response, limit.maxBytes), headers: response.headers};
 }
 
-async function boundedJson(response: Response): Promise<unknown> {
+/** The reader's response, or null for its 404; a status other than 200 or 404 throws with the status. */
+async function call(path: string, accept: string, deps: UpstreamDependencies): Promise<Response | null> {
+    const response = await (deps.fetcher ?? fetch)(`${UPSTREAM}${path}`, {
+        method: "GET", headers: {Authorization: `Bearer ${deps.receiptToken}`, Accept: accept}, redirect: "manual", signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status === 404) {await response.body?.cancel(); return null;}
+    if (!response.ok) {await response.body?.cancel(); throw new UpstreamError(response.status);}
+    return response;
+}
+async function boundedBytes(response: Response, maxBytes: number): Promise<Uint8Array<ArrayBuffer>> {
     const advertised = response.headers.get("Content-Length");
-    if (advertised && Number(advertised) > MAX_RESPONSE_BYTES) {await response.body?.cancel(); throw new Error("too_large");}
+    if (advertised && Number(advertised) > maxBytes) {await response.body?.cancel(); throw new Error("too_large");}
     const reader = response.body?.getReader(); if (!reader) throw new Error("empty");
-    const decoder = new TextDecoder(); let size = 0, text = "";
+    const chunks: Uint8Array[] = []; let size = 0;
     for (;;) {
         const next = await reader.read(); if (next.done) break;
         size += next.value.byteLength;
-        if (size > MAX_RESPONSE_BYTES) {await reader.cancel(); throw new Error("too_large");}
-        text += decoder.decode(next.value, {stream: true});
+        if (size > maxBytes) {await reader.cancel(); throw new Error("too_large");}
+        chunks.push(next.value);
     }
-    return JSON.parse(text + decoder.decode());
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) {bytes.set(chunk, offset); offset += chunk.byteLength;}
+    return bytes;
 }
