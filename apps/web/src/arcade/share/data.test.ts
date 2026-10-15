@@ -1,5 +1,6 @@
 import {expect, test} from "bun:test";
 import type {Hex} from "viem";
+import type {SeasonMark} from "@mapae/arcade/hall";
 import type {RankedCard, SeasonCard, SeasonStanding} from "@mapae/arcade/ranking";
 import {parseRankedCard, parseSeasonCard} from "./data";
 
@@ -7,7 +8,8 @@ const SEED_A = "0x7a1e9c4d2b6f80135e7c9a2d4f6b8e0c1a3d5f7b9e2c4a6d8f0b1e3c5a7d9f
 const SEED_B = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" as Hex;
 const season: SeasonStanding = {moves: true, prev: 3, points: 187, rank: 2, entrants: 212, days: 9, streak: 9, bonus: 10, today: 10};
 const ranked: RankedCard = {game: "race", day: "2026-10-14", tokenId: "407", seed: SEED_A, score: 12_340, rank: 3, entrants: 41, leader: 15_000, final: false, season};
-const closed: SeasonCard = {tokenId: "12", seed: SEED_B, status: {id: 1, start: "2026-10-05", end: "2026-11-01", today: "2026-11-03", phase: "closed"}, season: {...season, rank: 1, today: 0}};
+const closed: SeasonCard = {tokenId: "12", seed: SEED_B, status: {id: 1, start: "2026-10-05", end: "2026-11-01", today: "2026-11-03", phase: "closed"}, season: {...season, rank: 1, today: 0}, marks: []};
+const marks: SeasonMark[] = [{season: 1, kind: "podium", place: 1}, {season: 1, kind: "team", zodiac: "tiger"}, {season: 1, kind: "entrant"}];
 
 test("a ranked card answer is copied only when it echoes the request and holds together", () => {
     const today = "2026-10-14", raw = {...ranked, seed: SEED_A.toUpperCase().replace("0X", "0x")};
@@ -29,4 +31,16 @@ test("a season card answer needs our season in a phase with a board and a standi
         {...closed, status: {id: 1, start: null, end: null, today: "2026-10-01", phase: "pending"}}, {...closed, season: null}, {...closed, season: {...season, streak: 10}}, {...closed, more: true},
     ]) expect(parseSeasonCard(bad, "12", ours)).toBeNull();
     expect(parseSeasonCard(closed, "12", {id: 2, start: null, end: null})).toBeNull();
+});
+test("season marks are the sealed set in order, of this season, never while the season is open", () => {
+    const ours = {id: 1, start: "2026-10-05", end: "2026-11-01"}, open = {...closed, status: {...closed.status, today: "2026-10-14", phase: "open"}};
+    expect(parseSeasonCard({...closed, marks}, "12", ours)?.marks).toEqual(marks);
+    expect(parseSeasonCard({...closed, marks: [marks[2]!]}, "12", ours)?.marks).toEqual([marks[2]!]);
+    expect(parseSeasonCard({...closed, marks: [marks[1]!, marks[2]!]}, "12", ours)?.marks).toEqual([marks[1]!, marks[2]!]);
+    expect(parseSeasonCard(open, "12", ours)?.marks).toEqual([]);
+    for (const bad of [
+        [marks[2], marks[0]], [marks[0]], [marks[0], marks[1]], [marks[2], marks[2]], [{...marks[0], place: 4}], [{...marks[0], season: 2}], [{...marks[1], zodiac: "cat"}],
+        [{season: 1, kind: "entrant", extra: 1}], [{season: 1, kind: "podium"}], [{season: 1, kind: "team", zodiac: "tiger", place: 1}], ["entrant"], null, {},
+    ]) expect(parseSeasonCard({...closed, marks: bad}, "12", ours)).toBeNull();
+    expect(parseSeasonCard({...open, marks: [marks[2]]}, "12", ours)).toBeNull();
 });

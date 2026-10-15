@@ -3,12 +3,13 @@ import {pad, toHex, type Address, type Hex} from 'viem';
 import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
 import {guardianTraitsHash, guardianZodiac, type GuardianZodiac} from '@mapae/arcade/guardians';
 import {addDays, kstWeek, rankedSeed, type RankingBoard, type RankingPage, type RankingStandings} from '@mapae/arcade/ranking';
+import {raffleDraw, type SeasonHall} from '@mapae/arcade/hall';
 import {type Season, type SeasonStatus} from '@mapae/arcade/season';
 import {CARD_REVISION} from '@mapae/arcade/share-card/contract';
 import {decodePng} from '@mapae/arcade/share-card/png';
 import type {TeamBoard} from '@mapae/arcade/team';
 import {OutingStore} from '../outings/store';
-import {RankingReader} from './board';
+import {RankingReader, type CloseBlock} from './board';
 import {GuardianHonorBook} from './honors';
 import {createRankingApp} from './routes';
 import {shareCardArt} from './share-card';
@@ -24,13 +25,17 @@ afterEach(() => {for (const s of stores.splice(0)) s.close();});
 const season1: Season = {id: 1, start: '2026-10-05', end: '2026-11-01'};
 /** The share card's layer art, present when the asset repository has been copied into the web's public directory (as CI does). */
 const ART_DIR = new URL('../../web/public/arcade/', import.meta.url).pathname, hasArt = await Bun.file(`${ART_DIR}share/head-dragon.png`).exists();
-function setup(season?: Season) {
+/** The season's close block as a fake chain answers it; `calls` records each instant asked for. */
+const closeBlock = {number: '31700000', hash: `0x${'ab'.repeat(32)}` as Hex};
+function setup(season?: Season, findBlock?: CloseBlock) {
     const store = new OutingStore(':memory:'); stores.push(store);
+    let clock = now; const calls: number[] = [];
     const add = (tokenId: string, game: GameId | string, day: string, attempt: number, score: number, minute = attempt, ruleset = ARCADE_RULESET_VERSION, seed = seedOf(tokenId)) => {
         store.db.query('INSERT INTO arcade_guardian_ranked VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(`${tokenId}:${game}:${day}:${attempt}:${ruleset}`, collection.toLowerCase(), tokenId,
             seed, ruleset, game, day, kstWeek(day), attempt, score, 0, at(day, minute));
     };
-    return {store, add, reader: new RankingReader(store, collection, () => now, season)};
+    const reader = new RankingReader(store, collection, () => clock, season, findBlock ?? (async at => {calls.push(at); return closeBlock;}));
+    return {store, add, reader, calls, tick: (at: number) => {clock = at;}};
 }
 
 describe('boards', () => {
@@ -404,6 +409,82 @@ describe('season', () => {
     });
 });
 
+describe('hall of fame', () => {
+    const token = 'ranking-bridge-token'.repeat(3), auth = {Authorization: `Bearer ${token}`};
+    const seedFor = (zodiac: GuardianZodiac) => {for (let i = 0; ; i++) {const seed = pad(toHex(i), {size: 32}); if (guardianZodiac(seed) === zodiac) return seed;}};
+    const TIGER = seedFor('tiger'), RABBIT = seedFor('rabbit');
+    /** Season 1 closes at 00:00 KST after its last day and seals at that week's cutoff, Tuesday 00:00 KST. */
+    const closed = Date.parse('2026-11-01T15:00:00Z'), sealsAt = Date.parse('2026-11-02T15:00:00Z');
+    /** Nine race days for 12 (one full run), a seven-day stamp run for 7, one race day for 88; 12 and 7 are tigers. */
+    function season(findBlock?: CloseBlock) {
+        const s = setup(season1, findBlock);
+        for (let i = 0; i < 9; i++) s.add('12', 'race', addDays('2026-10-06', i), 1, 100, 1, ARCADE_RULESET_VERSION, TIGER);
+        for (let i = 0; i < 7; i++) s.add('7', 'stamp', addDays('2026-10-20', i), 1, 10, 1, ARCADE_RULESET_VERSION, TIGER);
+        s.add('88', 'race', '2026-10-14', 1, 50, 1, ARCADE_RULESET_VERSION, RABBIT);
+        return s;
+    }
+    test('unsealed from the close to the cutoff; sealed once at the first read after it, from the final boards, and never again', async () => {
+        const {store, add, reader, calls, tick} = season();
+        tick(closed - 1); expect(reader.hall('s1')).rejects.toThrow('invalid_request');
+        tick(closed); expect(await reader.hall('s1')).toEqual({season: 1, sealed: false, sealsAt}); expect(calls).toEqual([]);
+        expect((await reader.seasonCard('12')).marks).toEqual([]);
+        tick(sealsAt);
+        const hall = await reader.hall('s1');
+        expect(calls).toEqual([closed]);
+        expect(hall).toEqual({
+            season: 1, sealed: true, sealedAt: sealsAt, start: '2026-10-05', end: '2026-11-01', entrants: 3,
+            podium: [{rank: 1, tokenId: '12', seed: TIGER, points: 100, days: 9}, {rank: 2, tokenId: '7', seed: TIGER, points: 80, days: 7}, {rank: 3, tokenId: '88', seed: RABBIT, points: 7, days: 1}],
+            teams: [{rank: 1, zodiac: 'tiger', points: 180, members: 2, top: {tokenId: '12', seed: TIGER, points: 100}}],
+            champions: [
+                {week: '2026-10-05', game: 'race', tokenId: '12', seed: TIGER, score: 500}, {week: '2026-10-12', game: 'race', tokenId: '12', seed: TIGER, score: 300},
+                {week: '2026-10-19', game: 'stamp', tokenId: '7', seed: TIGER, score: 50}, {week: '2026-10-26', game: 'stamp', tokenId: '7', seed: TIGER, score: 10},
+            ],
+            streakPool: [{tokenId: '7', seed: TIGER, runs: 1}, {tokenId: '12', seed: TIGER, runs: 1}], closeBlock, raffle: raffleDraw(closeBlock.hash, ['7', '12']), participants: ['7', '12', '88'],
+        });
+        expect(new Set((hall as SeasonHall & {sealed: true}).raffle)).toEqual(new Set(['7', '12']));
+        // The second read answers from the table: no block read, and a late-settled round changes nothing on record.
+        add('88', 'race', '2026-10-30', 1, 9999, (Date.parse('2026-11-03T00:00:00Z') - at('2026-10-30')) / 60_000);
+        tick(sealsAt + 60_000);
+        expect(await reader.hall('s1')).toEqual(hall); expect(calls).toEqual([closed]);
+        expect(store.db.query<{n: number}, []>('SELECT COUNT(*) AS n FROM arcade_season_hall').get()!.n).toBe(1);
+        // The weekly champions are the honor book's first places over the same weeks.
+        const book = new GuardianHonorBook(store.db, collection); book.seal(sealsAt);
+        expect(store.db.query<{week: string; game: string; token_id: string}, []>("SELECT week, game, token_id FROM arcade_guardian_titles WHERE place=1 AND week BETWEEN '2026-10-05' AND '2026-11-01' ORDER BY week, game").all())
+            .toEqual(hall.sealed ? hall.champions.map(c => ({week: c.week, game: c.game, token_id: c.tokenId})) : []);
+        // Marks on the season card: podium, team and entrant for 12; a rabbit off the podium is an entrant only.
+        expect((await reader.seasonCard('12')).marks).toEqual([{season: 1, kind: 'podium', place: 1}, {season: 1, kind: 'team', zodiac: 'tiger'}, {season: 1, kind: 'entrant'}]);
+        expect((await reader.seasonCard('88')).marks).toEqual([{season: 1, kind: 'podium', place: 3}, {season: 1, kind: 'entrant'}]);
+        // Another season on the same store still reads season 1 from the table; its own hall is not open yet.
+        const next = new RankingReader(store, collection, () => sealsAt, {id: 2, start: null, end: null});
+        expect(await next.hall('s1')).toEqual(hall); expect(next.hall('s2')).rejects.toThrow('invalid_request'); expect(next.hall('s3')).rejects.toThrow('not_found');
+    });
+    test('without the close block the season stays unsealed and the next read tries the chain again', async () => {
+        let failures = 1;
+        const {reader, tick} = season(async () => {if (failures-- > 0) throw new Error('rpc down https://rpc.example/key'); return closeBlock;});
+        tick(sealsAt);
+        expect(await reader.hall('s1')).toEqual({season: 1, sealed: false, sealsAt});
+        expect(await reader.hall('s1')).toMatchObject({sealed: true, closeBlock});
+        const blind = setup(season1, undefined); blind.add('1', 'race', '2026-10-14', 1, 50);
+        const reader2 = new RankingReader(blind.store, collection, () => sealsAt, season1);
+        expect(await reader2.hall('s1')).toEqual({season: 1, sealed: false, sealsAt});
+    });
+    test('routes: a season by id, 400 before it closes or for a malformed id, 404 for a season never held, bearer only, nothing about owners', async () => {
+        const {reader, tick} = season(), app = createRankingApp({token, reader});
+        expect((await app.request('/hall/s1', {headers: auth})).status).toBe(400); expect((await app.request('/hall/s2', {headers: auth})).status).toBe(404);
+        tick(sealsAt);
+        const ok = await app.request('/hall/s1', {headers: auth});
+        expect(ok.status).toBe(200); expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
+        const body = await ok.text(); expect(JSON.parse(body)).toMatchObject({sealed: true, entrants: 3});
+        for (const key of ['actor', 'payer', 'owner', '0x1111']) expect(body).not.toContain(key);
+        expect((await app.request('/hall/s9', {headers: auth})).status).toBe(404);
+        for (const path of ['/hall/s0', '/hall/S1', '/hall/s01', '/hall/1', '/hall/s1x']) expect((await app.request(path, {headers: auth})).status).toBe(400);
+        expect((await app.request('/hall/s1')).status).toBe(401);
+        expect((await createRankingApp({token}).request('/hall/s1', {headers: auth})).status).toBe(503);
+        const pending = createRankingApp({token, reader: setup().reader});
+        expect((await pending.request('/hall/s1', {headers: auth})).status).toBe(400);
+    });
+});
+
 describe('team boards', () => {
     const V = ARCADE_RULESET_VERSION;
     /** The lowest numbered seed born into `zodiac`. */
@@ -479,19 +560,19 @@ describe('share cards', () => {
             expect(() => reader.card('race', day, day === '2026-10-14' ? '9' : '5')).toThrow(code);
         expect(() => reader.card('stamp', '2026-10-14', '5')).toThrow('not_found');
     });
-    test('the season standing rides on a day card while a season runs, and the season card needs a record in it', () => {
+    test('the season standing rides on a day card while a season runs, and the season card needs a record in it', async () => {
         const {add, reader} = setup(season1);
         for (let i = 0; i < 9; i++) add('12', 'race', addDays('2026-10-06', i), 1, 100);
         add('88', 'race', '2026-10-14', 1, 50); add('12', 'shop', '2026-10-13', 1, 5);
         const card = reader.card('race', '2026-10-13', '12');
         expect(card).toMatchObject({score: 100, rank: 1, entrants: 1, final: true});
         expect(card.season).toEqual({moves: true, prev: 1, points: 9 * 10 + 10 + 10, rank: 1, entrants: 2, days: 9, streak: 9, bonus: 10, today: 10});
-        expect(reader.seasonCard('12')).toEqual({tokenId: '12', seed: seedOf('12'), status: {id: 1, start: '2026-10-05', end: '2026-11-01', today: '2026-10-14', phase: 'open'}, season: card.season});
-        expect(reader.seasonCard('88')).toMatchObject({season: {points: 7, rank: 2, entrants: 2, days: 1, streak: 1, bonus: 0, today: 7}});
-        expect(() => reader.seasonCard('7')).toThrow('not_found');
+        expect(await reader.seasonCard('12')).toEqual({tokenId: '12', seed: seedOf('12'), status: {id: 1, start: '2026-10-05', end: '2026-11-01', today: '2026-10-14', phase: 'open'}, season: card.season, marks: []});
+        expect(await reader.seasonCard('88')).toMatchObject({season: {points: 7, rank: 2, entrants: 2, days: 1, streak: 1, bonus: 0, today: 7}});
+        expect(reader.seasonCard('7')).rejects.toThrow('not_found');
         const pending = setup(); pending.add('12', 'race', '2026-10-14', 1, 100);
         expect(pending.reader.card('race', '2026-10-14', '12').season).toBeNull();
-        expect(() => pending.reader.seasonCard('12')).toThrow('invalid_request');
+        expect(pending.reader.seasonCard('12')).rejects.toThrow('invalid_request');
     });
     test('card routes: strict shapes, 404 without a record, and nothing about the owner in the answer', async () => {
         const {add, reader} = setup(season1); add('1', 'race', '2026-10-14', 1, 50);
@@ -535,7 +616,7 @@ describe('share cards', () => {
         expect(settled.status).toBe(200); expect(settled.headers.get('Cache-Control')).toBe('public, max-age=3600');
         expect(settled.headers.get('ETag')).toMatch(new RegExp(`^"card-1-race-2026-10-13-40-1-1-.*-${CARD_REVISION}"$`));
         const season = await app.request('/card/season/1/png', {headers: auth});
-        expect(season.status).toBe(200); expect(season.headers.get('ETag')).toBe(`"card-1-season-10-1-1-${CARD_REVISION}"`);
+        expect(season.status).toBe(200); expect(season.headers.get('ETag')).toBe(`"card-1-season-10-1-1-0-${CARD_REVISION}"`);
         expect((await decodePng(new Uint8Array(await season.arrayBuffer()))).height).toBe(630);
         for (const path of ['/card/race/2026-10-14/2/png', '/card/season/2/png']) {
             const missing = await app.request(path, {headers: auth});

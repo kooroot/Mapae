@@ -11,7 +11,7 @@ const receiptToken = "r".repeat(40), now = Date.parse("2026-10-14T03:00:00Z"), s
 const standing: SeasonStanding = {moves: true, prev: 3, points: 187, rank: 2, entrants: 212, days: 9, streak: 9, bonus: 10, today: 10};
 const ranked = (day = "2026-10-14"): RankedCard => ({game: "race", day, tokenId: "407", seed: SEED, score: 12_340, rank: 3, entrants: 41, leader: 15_000, final: day < "2026-10-14", season: standing});
 const seasonCard = (phase: "open" | "closed" = "open"): SeasonCard =>
-    ({tokenId: "407", seed: SEED, status: {id: 1, start: season.start, end: season.end, today: phase === "open" ? "2026-10-14" : "2026-11-03", phase}, season: standing});
+    ({tokenId: "407", seed: SEED, status: {id: 1, start: season.start, end: season.end, today: phase === "open" ? "2026-10-14" : "2026-11-03", phase}, season: standing, marks: []});
 /** What the seller answers on `/png`: a card-sized PNG with its tag and the cache life its facts call for; tests that break one of them say so. */
 const cardPng = await encodePng({width: 1200, height: 630, data: new Uint8ClampedArray(1200 * 630 * 4)});
 const tinyPng = await encodePng({width: 32, height: 32, data: new Uint8ClampedArray(32 * 32 * 4)});
