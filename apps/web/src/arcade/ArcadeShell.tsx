@@ -18,6 +18,7 @@ import {OutingsSection} from "./sections/OutingsSection";
 import {JournalSection} from "./sections/JournalSection";
 import {RankingSection} from "./sections/RankingSection";
 import {attemptsBadge, attemptsLeft} from "./ranking/format";
+import {SeasonBanner} from "./ranking/SeasonBanner";
 import type {GuardianToken} from "./profile/guardians";
 import {arcadeSectionFromParam, arcadeSectionLink, outingStatusLabel, SECTION_COPY, type ArcadeSection, type SectionBadges} from "./sections";
 import {pendingGrowth} from "./nft/model";
@@ -128,6 +129,7 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
             menu={<ArcadeMenu locale={locale} owner={owner} walletWaiting={walletWaiting} badges={badges} disconnecting={desk.disconnecting} blocked={blocked} onDisconnect={leave} />} />
         <div className="arc-main">
             {section === "lobby" ? <ArcadeRoom locale={locale} selected={selected} onSelect={setSelected} reducedMotion={reducedMotion}>
+                <SeasonBanner desk={desk} />
                 <LobbyDock desk={desk} game={selected} walletWaiting={walletWaiting} onPlayGuest={playGuest} onPractice={practice} onSendOuting={sendOuting} />
             </ArcadeRoom> : section === "guardians" ? <GuardiansSection desk={desk} walletWaiting={walletWaiting} onPractice={practice} />
                 : section === "wallet" ? <WalletSection desk={desk} walletWaiting={walletWaiting} />

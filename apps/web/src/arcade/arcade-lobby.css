@@ -1,4 +1,9 @@
 /* The lobby continues the cabinet's warm wood, brass and paper materials. */
+/* The season strip at the top of the dock: one gold line that opens the season tab; on a phone the sentence wraps, the strip never scrolls. */
+.arc-season-banner { display:flex; align-items:center; gap:10px; min-height:44px; margin:0 0 16px; padding:6px 14px; border:1px solid #e9c99f55; border-radius:var(--r-pill); color:var(--arc-gold); font-size:13px; line-height:1.5; text-decoration:none; }
+.arc-season-banner>svg { flex:none; }.arc-season-banner>span { flex:1; min-width:0; text-align:left; word-break:keep-all; overflow-wrap:anywhere; }
+.arc-season-banner:hover,.arc-season-banner:focus-visible { border-color:var(--arc-gold); background:#e9c99f14; text-decoration:none; }
+.arc-season-banner[data-phase=open] { border-color:#e9c99f8c; }.arc-season-banner[data-phase=closed] { border-style:dashed; }
 .arc-inline-link { display:inline-flex; gap:8px; align-items:center; min-height:44px; margin-top:10px; font-size:13px; color:var(--arc-gold); }
 .arc-outing-status { display:flex; align-items:center; justify-content:center; gap:10px; line-height:1.7; }
 .agent-wait>small { color:var(--arc-dim); font-size:12px; }
