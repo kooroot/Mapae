@@ -2,9 +2,10 @@ import {describe, expect, test} from "bun:test";
 import {emptyHonors, guardianName} from "@mapae/arcade/guardians";
 import type {RankingStanding, RankingStandings, SeasonStanding} from "@mapae/arcade/ranking";
 import type {SeasonStatus} from "@mapae/arcade/season";
+import type {TeamRow} from "@mapae/arcade/team";
 import {
-    attemptsBadge, attemptsLeft, bestSeasonStanding, boardScore, countdown, freshestGame, medalName, rankLine, rankShift, resetClock, seasonBannerCopy, seasonDate, seasonPhaseLabel,
-    shiftCopy, streakCopy, titleName, titlesOnNft,
+    attemptsBadge, attemptsLeft, averagePoints, bestSeasonStanding, boardScore, countdown, freshestGame, medalName, myTeamShare, rankLine, rankShift, resetClock, seasonBannerCopy,
+    seasonDate, seasonPhaseLabel, shiftCopy, streakCopy, teamCheerCopy, teamIntro, teamName, teamRowDetail, titleName, titlesOnNft,
 } from "./format";
 
 const seed = `0x${"1".padStart(64, "0")}` as const;
@@ -154,5 +155,34 @@ describe("season copy", () => {
         expect(bestSeasonStanding(standings, ["1", "2", "3"])?.rank).toBe(2);
         expect(bestSeasonStanding(standings, ["3"])).toBeNull(); expect(bestSeasonStanding(null, ["1"])).toBeNull();
         expect(bestSeasonStanding(standings, ["4", "1"])?.rank).toBe(1);
+    });
+});
+describe("zodiac teams", () => {
+    const team = (rank: number, zodiac: TeamRow["zodiac"], points: number, members: number, top: [string, number] | null): TeamRow =>
+        ({rank, zodiac, points, members, top: top && {tokenId: top[0], seed, points: top[1]}});
+    const rows = [team(1, "tiger", 307, 2, ["12", 187]), team(2, "rat", 44, 1, ["88", 44]), team(2, "ox", 44, 3, ["5", 20]), team(4, "pig", 0, 0, null)];
+    test("names, averages and the row detail", () => {
+        expect(teamName("tiger", "ko")).toBe("호랑이팀"); expect(teamName("tiger", "en")).toBe("Team Tiger");
+        expect(averagePoints(307, 2, "ko")).toBe("평균 153.5점"); expect(averagePoints(307, 2, "en")).toBe("avg 153.5 pts");
+        expect(averagePoints(44, 3, "ko")).toBe("평균 14.7점"); expect(averagePoints(20, 2, "en")).toBe("avg 10 pts"); expect(averagePoints(0, 0, "ko")).toBe("평균 0점");
+        expect(teamRowDetail(rows[0]!, "ko")).toBe(`2명 · 평균 153.5점 · 최고 기여 ${guardianName("12", "ko")} 187점`);
+        expect(teamRowDetail(rows[0]!, "en")).toBe(`2 members · avg 153.5 pts · top: ${guardianName("12", "en")} 187 pts`);
+        expect(teamRowDetail(rows[1]!, "en")).toBe(`1 member · avg 44 pts · top: ${guardianName("88", "en")} 44 pts`);
+        expect(teamRowDetail(rows[3]!, "ko")).toBe("아직 참가 없음 · 랭크 도전 한 판이면 첫 점수");
+        expect(teamRowDetail(rows[3]!, "en")).toBe("No entrants yet · one ranked round opens the score");
+    });
+    test("the cheer line: leading alone, sharing first, or chasing", () => {
+        expect(teamCheerCopy(rows, "tiger", "ko")).toBe("우리 호랑이팀 1위 · 2위보다 263점 앞섬"); expect(teamCheerCopy(rows, "tiger", "en")).toBe("Team Tiger leads · 263 pts ahead");
+        expect(teamCheerCopy(rows, "ox", "ko")).toBe("우리 소팀 2위 · 1위까지 263점"); expect(teamCheerCopy(rows, "ox", "en")).toBe("Team Ox #2 · 263 pts to #1");
+        expect(teamCheerCopy(rows, "pig", "en")).toBe("Team Pig #4 · 307 pts to #1");
+        const tied = [team(1, "rat", 44, 1, ["88", 44]), team(1, "ox", 44, 3, ["5", 20]), team(3, "pig", 0, 0, null)];
+        expect(teamCheerCopy(tied, "ox", "ko")).toBe("우리 소팀 공동 1위"); expect(teamCheerCopy(tied, "ox", "en")).toBe("Team Ox tied for #1");
+        expect(() => teamCheerCopy(rows, "dog", "ko")).toThrow("Unknown team");
+    });
+    test("my share and the intro", () => {
+        expect(myTeamShare(45, 307, "ko")).toBe("내 기여 45점 (15%)"); expect(myTeamShare(45, 307, "en")).toBe("my share 45 pts (15%)");
+        expect(myTeamShare(0, 0, "ko")).toBe("내 기여 0점"); expect(myTeamShare(1, 1, "en")).toBe("my share 1 pt (100%)");
+        expect(teamIntro("ko")).toHaveLength(5); expect(teamIntro("en")).toHaveLength(5);
+        expect(teamIntro("ko")[4]).toContain("우승 팀 표식"); expect(teamIntro("en")[1]).toContain("no attendance bonus");
     });
 });

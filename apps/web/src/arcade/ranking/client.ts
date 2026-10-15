@@ -1,6 +1,7 @@
 import {useEffect, useState} from "react";
 import type {RankingBoard, RankingBoardId, RankingPage, RankingPeriod, RankingStandings} from "@mapae/arcade/ranking";
 import type {SeasonStatus} from "@mapae/arcade/season";
+import type {TeamBoard, TeamPeriod} from "@mapae/arcade/team";
 
 export type Remote<T> = {value: T | null; loading: boolean; error: boolean};
 const REFRESH_MS = 60_000;
@@ -46,6 +47,12 @@ function useVisibleTick(): number {
 export function useRankingBoard(board: RankingBoardId, period: RankingPeriod, enabled = true): Remote<RankingBoard> & {retry: () => void} {
     const [attempt, setAttempt] = useState(0), tick = useVisibleTick();
     return {...useRemote<RankingBoard>(enabled ? `/board/${board}/${period}` : null, `${tick}:${attempt}`), retry: () => setAttempt(a => a + 1)};
+}
+
+/** The twelve zodiac teams over a period, kept current like a board; nothing is read while not `enabled`. */
+export function useTeamBoard(period: TeamPeriod, enabled = true): Remote<TeamBoard> & {retry: () => void} {
+    const [attempt, setAttempt] = useState(0), tick = useVisibleTick();
+    return {...useRemote<TeamBoard>(enabled ? `/board/team/${period}` : null, `${tick}:${attempt}`), retry: () => setAttempt(a => a + 1)};
 }
 
 /** Where the season stands today, refreshed every minute so the phase turns over at midnight KST without a reload. */

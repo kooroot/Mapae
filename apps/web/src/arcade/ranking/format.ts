@@ -1,11 +1,13 @@
 import type {GameId} from "@mapae/arcade";
-import {guardianName, type GuardianHonors} from "@mapae/arcade/guardians";
+import {guardianName, type GuardianHonors, type GuardianZodiac} from "@mapae/arcade/guardians";
 import {
     addDays, DEVOTION_DAYS, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
     type GamePeriod, type GuardianStreak, type RankingBoardId, type RankingMove, type RankingPeriod, type RankingStanding, type RankingStandings, type SeasonStanding,
 } from "@mapae/arcade/ranking";
 import {SEASON_MAX_DAY_POINTS, seasonCountdown, seasonDaysLeft, type SeasonStatus} from "@mapae/arcade/season";
+import {teamGap, type TeamRow} from "@mapae/arcade/team";
 import type {Locale} from "../../lib/i18n";
+import {GUARDIAN_NAMES} from "../guardian";
 
 const KST_MINUTES = 9 * 60;
 const MINUTE = 60_000;
@@ -193,6 +195,51 @@ export function seasonBannerCopy(status: SeasonStatus, mine: SeasonStanding | nu
     }
     case "closed": return ko ? `${name} 종료 · 최종 순위 보기` : `${name} is over · See the final board`;
     }
+}
+/** A zodiac team's name: 호랑이팀 / Team Tiger. */
+export function teamName(zodiac: GuardianZodiac, locale: Locale): string {
+    return locale === "ko" ? `${GUARDIAN_NAMES.ko[zodiac]}팀` : `Team ${GUARDIAN_NAMES.en[zodiac]}`;
+}
+/** Points a member of the team: one decimal, none when whole; shown beside the total, never ranked by. */
+export function averagePoints(points: number, members: number, locale: Locale): string {
+    const average = members ? Math.round(points / members * 10) / 10 : 0, text = average.toLocaleString(locale === "ko" ? "ko-KR" : "en-US", {maximumFractionDigits: 1});
+    return locale === "ko" ? `평균 ${text}점` : `avg ${text} pts`;
+}
+/** A team row's second line: its members, the average and who brought the most; or that nobody has played yet. */
+export function teamRowDetail(row: TeamRow, locale: Locale): string {
+    const ko = locale === "ko";
+    if (!row.top) return ko ? "아직 참가 없음 · 랭크 도전 한 판이면 첫 점수" : "No entrants yet · one ranked round opens the score";
+    const who = `${guardianName(row.top.tokenId, locale)} ${points(row.top.points, locale)}`;
+    return ko ? `${row.members}명 · ${averagePoints(row.points, row.members, locale)} · 최고 기여 ${who}`
+        : `${row.members} ${row.members === 1 ? "member" : "members"} · ${averagePoints(row.points, row.members, locale)} · top: ${who}`;
+}
+/** One line for my team: leading alone, sharing first, or how far from first. */
+export function teamCheerCopy(rows: readonly TeamRow[], zodiac: GuardianZodiac, locale: Locale): string {
+    const ko = locale === "ko", name = teamName(zodiac, locale), {rank, toFirst, lead} = teamGap(rows, zodiac);
+    if (rank === 1 && lead > 0) return ko ? `우리 ${name} 1위 · 2위보다 ${points(lead, locale)} 앞섬` : `${name} leads · ${points(lead, locale)} ahead`;
+    if (rank === 1) return ko ? `우리 ${name} 공동 1위` : `${name} tied for #1`;
+    return ko ? `우리 ${name} ${rank}위 · 1위까지 ${points(toFirst, locale)}` : `${name} #${rank} · ${points(toFirst, locale)} to #1`;
+}
+/** What my guardian brought to its team's total, with its share once the team has any points. */
+export function myTeamShare(mine: number, total: number, locale: Locale): string {
+    const share = total ? ` (${Math.round(mine / total * 100)}%)` : "";
+    return locale === "ko" ? `내 기여 ${points(mine, locale)}${share}` : `my share ${points(mine, locale)}${share}`;
+}
+/** The team race in plain words: who is on a team, what counts, how places are decided, who is a member, and what the winners get. */
+export function teamIntro(locale: Locale): string[] {
+    return locale === "ko" ? [
+        "전령은 태어난 띠대로 열두 팀 중 하나에 속해요. 바꿀 수 없고, 같은 띠 전령은 모두 한 팀이에요.",
+        "팀 점수는 팀원이 받은 시즌 점수를 모두 더해요. 이번 주 보기는 이번 주 일별 순위 점수만 더하고(출석 보너스 없음), 시즌과 상관없이 늘 열려 있어요.",
+        "순위는 합계로 정해요. 인원이 적은 팀을 위해 1인 평균도 함께 보여 주지만, 순위에는 들어가지 않아요.",
+        "팀원 수는 그 기간에 랭크 도전을 한 번이라도 한 전령만 세요. 참가만 해도 팀에 1점이 가요.",
+        "시즌이 끝날 때 1위 팀의 전령은 모두 우승 팀 표식을 받아요. 표식은 시즌이 끝난 뒤 열려요.",
+    ] : [
+        "Every guardian belongs to one of twelve zodiac teams from birth. It never changes, and every guardian of the same zodiac is a teammate.",
+        "A team's score adds every member's season points. The weekly view adds only this week's daily-board points (no attendance bonus) and is open all year, season or not.",
+        "Teams rank by total. The per-member average is shown for small teams but does not affect the ranking.",
+        "Members are guardians with at least one ranked round in the window. Even taking part sends the team 1 point.",
+        "When the season ends, every guardian of the winning team gets the winners' mark. The mark opens after the season.",
+    ];
 }
 /** The guardian whose season place is best: the one the banner speaks for. */
 export function bestSeasonStanding(standings: RankingStandings | null, tokenIds: readonly string[]): SeasonStanding | null {
