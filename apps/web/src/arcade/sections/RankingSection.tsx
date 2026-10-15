@@ -19,6 +19,7 @@ import {FullBoard} from '../ranking/FullBoard';
 import {SeasonBoard} from '../ranking/SeasonBoard';
 import {GameThumb} from '../Characters';
 import {RankLine, TitleChips} from '../ranking/RankLine';
+import {ShareActions} from '../share/ShareButton';
 import {DeskGate, SectionHeading} from './SectionFrame';
 
 const BOARDS = ['season', ...RANKED_GAMES, 'devotion'] as const satisfies readonly RankingBoardId[];
@@ -108,6 +109,7 @@ function MyGuardians({desk, onSendOuting}: {desk: GuardianDesk; onSendOuting: (g
                                 return <li key={game}><RankLine locale={locale} game={game} guardian={standing} leader={standings.leaders[game]} weekly />
                                     {left > 0 && <button type="button" className="arc-text-button" disabled={busy} onClick={() => onSendOuting(game, token.tokenId)}><Compass size={16} aria-hidden="true" />{ko ? '랭크 도전 보내기' : 'Send a ranked round'}</button>}
                                     {today && today.rank > BOARD_ROWS && <Nearby rows={today.nearby} self={token.tokenId} locale={locale} />}
+                                    {today && <ShareActions target={{kind: 'run', tokenId: token.tokenId, game, day: standings.day}} standing={today} locale={locale} />}
                                 </li>;
                             })}
                         </ul>

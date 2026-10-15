@@ -6,6 +6,7 @@ import type {Locale} from '../../lib/i18n';
 import {GuardianAvatar} from '../GuardianAvatar';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {DeskGate} from '../sections/SectionFrame';
+import {ShareActions} from '../share/ShareButton';
 import {Board, BoardChips} from './Board';
 import {useRankingBoard, useSeasonStatus} from './client';
 import {FullBoard} from './FullBoard';
@@ -87,6 +88,7 @@ function MySeason({desk, period, closed}: {desk: GuardianDesk; period: `s${numbe
                                 : <p className="rank-line"><span>{closed ? ko ? '이번 시즌에는 기록이 없어요' : 'No record this season' : ko ? '아직 시즌 점수가 없어요 · 랭크 도전 한 판이면 1점' : 'No season points yet · one ranked round earns 1'}</span></p>}
                             {season && <small>{[...closed ? [] : [ko ? `오늘 +${season.today}점` : `today +${season.today} ${season.today === 1 ? 'pt' : 'pts'}`],
                                 ko ? `${season.days}일 참가 · 연속 ${season.streak}일 · 보너스 +${season.bonus}` : `${season.days} ${season.days === 1 ? 'day' : 'days'} · ${season.streak}-day run · bonus +${season.bonus}`].join(' · ')}</small>}
+                            {season && <ShareActions target={{kind: 'season', tokenId: token.tokenId}} standing={season} locale={locale} />}
                         </div>
                     </li>;
                 })}

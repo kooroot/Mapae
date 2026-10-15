@@ -10,6 +10,8 @@ import {GuardianAvatar} from '../GuardianAvatar';
 import {pendingGrowth, pendingHonors} from '../nft/model';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import type {GuardianToken, VerifiedResult} from '../profile/guardians';
+import {ShareActions} from '../share/ShareButton';
+import type {GuardianStanding} from '@mapae/arcade/ranking';
 import {DeskGate, GuardianSwitcher, NftStatus, SectionHeading} from './SectionFrame';
 
 /** Journal: the chosen guardian's growth on the NFT, the verified adventures still waiting, and one transaction to record them. */
@@ -23,7 +25,7 @@ export function JournalSection({desk, walletWaiting}: {desk: GuardianDesk; walle
 type Recorded = {tokenId: string; level: number; experience: number; honorWeek: number};
 
 function Journal({desk}: {desk: GuardianDesk}) {
-    const {ko, locale, giwa, nft, token, member} = desk;
+    const {ko, locale, giwa, nft, token, member, ranking} = desk;
     const [view, setView] = useState<'waiting' | 'all' | null>(null), [recorded, setRecorded] = useState<Recorded | null>(null);
     if (!token || !member) return null;
     const detail = nft.detail?.guardian.tokenId === token.tokenId ? nft.detail : null;
@@ -35,6 +37,7 @@ function Journal({desk}: {desk: GuardianDesk}) {
     // An attached honor takes one place in the contract batch.
     const batch = Math.min(pending?.plays ?? 0, GUARDIAN_CLAIM_BATCH - (honor.any ? 1 : 0));
     const levelAfter = detail ? 1 + Math.floor(detail.earned.experience / 100) : onChain.level;
+    const standing = ranking.standings?.guardians.find(g => g.tokenId === token.tokenId) ?? null, standingsDay = ranking.standings?.day ?? null;
     const celebrate = recorded?.tokenId === token.tokenId && !nft.busy && (onChain.experience > recorded.experience || token.honors.week > recorded.honorWeek) ? recorded : null;
     const waitingHonors = [honor.titles > 0 && (ko ? `칭호 ${honor.titles}개` : `${honor.titles} ${honor.titles === 1 ? 'title' : 'titles'}`),
         honor.longestStreak !== null && (ko ? `최장 출석 ${honor.longestStreak}일` : `${honor.longestStreak}-day best streak`)].filter(Boolean).join(' · ');
@@ -79,7 +82,7 @@ function Journal({desk}: {desk: GuardianDesk}) {
         {detail && rows.length === 0 && detail.results.length > 0 && <p className="jr-empty">{shown === 'waiting' && pending?.plays ? (ko ? '불러온 모험은 모두 기록됐어요. 이전 모험을 더 불러와 보세요.' : 'Every loaded outing is recorded. Load earlier ones below.') : (ko ? '기록을 기다리는 모험이 없어요.' : 'Nothing is waiting to be recorded.')}</p>}
         {groupByDay(rows, locale, desk.now).map(day => <section key={day.key} className="jr-day" aria-label={day.label}>
             <h3><span>{day.label}</span><small>+{day.experience} XP</small></h3>
-            <ol>{day.rows.map(r => <JournalRow key={r.id} result={r} locale={locale} />)}</ol>
+            <ol>{day.rows.map(r => <JournalRow key={r.id} result={r} locale={locale} standing={standing} standingsDay={standingsDay} />)}</ol>
         </section>)}
         {detail?.nextCursor && <button type="button" className="arc-button arc-button-paper nft-more" onClick={() => void nft.more()}>{ko ? '이전 모험 더 보기' : 'More adventures'}</button>}
         <p className="nft-small">{ko ? '검증된 모험은 기록 전에도 사라지지 않아요. 기록이 실패하면 같은 모험을 다시 기록하며, 입장권을 새로 사지 않아요.' : 'Verified outings stay safe until recorded. If recording fails, the same outings are retried; no new admission is purchased.'}</p>
@@ -103,8 +106,10 @@ function honorLine(token: GuardianToken, ko: boolean): string {
         streak > 0 && (ko ? ` · 최장 출석 ${streak}일` : ` · ${streak}-day best streak`)].filter(Boolean).join('');
 }
 
-function JournalRow({result: r, locale}: {result: VerifiedResult; locale: Locale}) {
+/** A ranked row shares its day's standing only while the boards still show that very score, so the post and the card agree with the row. */
+function JournalRow({result: r, locale, standing, standingsDay}: {result: VerifiedResult; locale: Locale; standing: GuardianStanding | null; standingsDay: string | null}) {
     const ko = locale === 'ko', xp = r.victory ? 15 : 10;
+    const today = r.ranked && standing && r.ranked.day === standingsDay ? standing.games[r.game].today : null, shared = today && today.score === r.score ? today : null;
     return <li className={`jr-row${r.claimed ? ' is-claimed' : ''}`}>
         <GameThumb game={r.game} />
         <div className="jr-row-main">
@@ -116,6 +121,7 @@ function JournalRow({result: r, locale}: {result: VerifiedResult; locale: Locale
         <span className="jr-meta">
             <time dateTime={new Date(r.at).toISOString()}>{TIME[locale].format(r.at)}</time>
             {r.ranked && <span className="jr-ranked" title={ko ? '순위에 들어간 판' : 'Counted on the boards'}><i aria-hidden="true" />{ko ? '랭크' : 'Ranked'}</span>}
+            {shared && r.ranked && <ShareActions target={{kind: 'run', tokenId: standing!.tokenId, game: r.game, day: r.ranked.day}} standing={shared} locale={locale} compact />}
             {r.claimed && <span className="jr-claimed"><Check size={13} aria-hidden="true" />{ko ? '기록됨' : 'Recorded'}</span>}
         </span>
         {r.transaction ? <a className="jr-receipt" href={explorerTxUrl(r.transaction)} target="_blank" rel="noreferrer" aria-label={ko ? '입장 결제 영수증 (새 창)' : 'Admission receipt (new tab)'} title={ko ? '입장 결제 영수증' : 'Admission receipt'}><ReceiptText size={18} aria-hidden="true" /></a> : <span className="jr-receipt" aria-hidden="true" />}
