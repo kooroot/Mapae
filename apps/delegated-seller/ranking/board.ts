@@ -1,14 +1,16 @@
 import type {Database} from 'bun:sqlite';
 import type {Address, Hex} from 'viem';
 import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
+import {guardianZodiac, type GuardianZodiac} from '@mapae/arcade/guardians';
 import {
     addDays, BOARD_ROWS, daysBetween, DEVOTION_DAYS, guardianStreak, kstDay, kstWeek, NEARBY_SPAN, nextReset, RANKED_GAMES, RANKING_PAGE_ROWS, rankingPageOffset, WEEKLY_COUNTED_DAYS,
     weekCutoff, type GuardianStanding, type RankedCard, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding,
     type RankingStandings, type SeasonCard, type SeasonRowExtras, type SeasonStanding,
 } from '@mapae/arcade/ranking';
 import {
-    SEASON, SEASON_ENTRY_POINTS, SEASON_RANK_POINTS, SEASON_TOP10_POINTS, seasonClosesAt, seasonStatus, seasonStreak, seasonWindow, type Season, type SeasonStatus,
+    SEASON, SEASON_ENTRY_POINTS, SEASON_RANK_POINTS, SEASON_TOP10_POINTS, seasonClosesAt, seasonPeriod, seasonStatus, seasonStreak, seasonWindow, type Season, type SeasonStatus,
 } from '@mapae/arcade/season';
+import {teamBoardRows, type TeamBoard, type TeamMember, type TeamPeriod} from '@mapae/arcade/team';
 import {OutingError} from '../outings/validation';
 import type {OutingStore} from '../outings/store';
 
@@ -70,6 +72,8 @@ const SEASON_TOTALS = `WITH rows AS (
         COALESCE(SUM(points) FILTER (WHERE day=?), 0) AS today, GROUP_CONCAT(day) AS days
     FROM daily GROUP BY token_id`;
 
+/** One guardian's daily-board points over a window, as SEASON_TOTALS sums them: the total, what was in by yesterday and today, and its days. */
+type PointTotals = {tokenId: string; seed: Hex; points: number; before: number; today: number; days: string};
 /** A board window; `ruleset` is the one its rows ranked under, null for devotion and the season, which count across rulesets. */
 type Window = {from: string; to: string; closesAt: number | null; ruleset: number | null; rows: (RankingRow & Partial<SeasonRowExtras>)[]};
 type Moves = ReadonlyMap<string, number> | null;
@@ -105,6 +109,8 @@ const placed = (rows: RankingRow[], offset: number, count: number, moves: Moves)
  * week keeps the ruleset it closed under.
  */
 export class RankingReader {
+    /** Each seed's zodiac, hashed once: a seed never changes, and there are at most as many as guardians. */
+    private readonly zodiacs = new Map<Hex, GuardianZodiac>();
     constructor(readonly store: OutingStore, readonly collection: Address, readonly now: () => number = Date.now, readonly season: Season = SEASON) {}
 
     seasonStatus(): SeasonStatus {
@@ -173,6 +179,30 @@ export class RankingReader {
             season: season && raced ? seasonStanding(raced, season, previousRanks(season.current, season.earlier)) : null};
     }
 
+    /**
+     * The twelve zodiac teams over a window: this week's daily-board points (no attendance bonus, open all year) or the season's
+     * points, bonus and all, each summed per team. Nothing is stored; the season board's own rows are regrouped.
+     */
+    teamBoard(period: TeamPeriod): TeamBoard {
+        const at = this.now(), today = kstDay(at);
+        if (period === 'week') {
+            const from = kstWeek(today), to = addDays(from, 6);
+            return this.teams(period, from, to, nextReset(at, 'week'), this.pointTotals(from, to).map(row => ({tokenId: row.tokenId, seed: row.seed, points: row.points})));
+        }
+        const season = period === seasonPeriod(this.season) ? this.seasonWindows(today) : null;
+        if (!season) throw new OutingError('invalid_request');
+        const {from, to, closesAt, rows} = season.current;
+        return this.teams(period, from, to, closesAt, rows.map(row => ({tokenId: row.tokenId, seed: row.seed, points: row.score})));
+    }
+    private teams(period: TeamPeriod, from: string, to: string, closesAt: number | null, members: TeamMember[]): TeamBoard {
+        return {period, from, to, closesAt, entrants: members.length, rows: teamBoardRows(members.map(member => ({...member, zodiac: this.zodiacOf(member.seed)})))};
+    }
+    private zodiacOf(seed: Hex): GuardianZodiac {
+        let zodiac = this.zodiacs.get(seed);
+        if (!zodiac) {zodiac = guardianZodiac(seed); this.zodiacs.set(seed, zodiac);}
+        return zodiac;
+    }
+
     /** One guardian's season standing for a share card: only while the season is open or closed, and only with a record in it. */
     seasonCard(tokenId: string): SeasonCard {
         const today = kstDay(this.now()), season = this.seasonWindows(today);
@@ -199,8 +229,7 @@ export class RankingReader {
         if (!window) return null;
         const {from, to} = window, yesterday = addDays(to, -1), totals = new Map<string, {bonus: number; today: number}>();
         const current: (RankingRow & SeasonRowExtras)[] = [], earlier: RankingRow[] = [];
-        for (const row of this.store.db.query<{tokenId: string; seed: Hex; points: number; before: number; today: number; days: string}, [string, string, string, string, string]>(SEASON_TOTALS)
-            .all(this.collection.toLowerCase(), from, to, yesterday, to)) {
+        for (const row of this.pointTotals(from, to)) {
             const days = row.days.split(','), run = seasonStreak(days, to), before = days.filter(day => day <= yesterday);
             current.push({rank: 0, tokenId: row.tokenId, seed: row.seed, score: row.points + run.bonus, days: days.length, streak: run.current});
             totals.set(row.tokenId, {bonus: run.bonus, today: row.today});
@@ -208,6 +237,11 @@ export class RankingReader {
         }
         return {current: {from, to, closesAt: seasonClosesAt(this.season, today), ruleset: null, rows: sharedRanks(current)},
             earlier: {from, to: yesterday, closesAt: null, ruleset: null, rows: sharedRanks(earlier)}, totals};
+    }
+
+    /** Every guardian's daily-board points over the days `from`..`to`, one scan; `before` stops the day before `to`, `today` is `to` alone. */
+    private pointTotals(from: string, to: string): PointTotals[] {
+        return this.store.db.query<PointTotals, [string, string, string, string, string]>(SEASON_TOTALS).all(this.collection.toLowerCase(), from, to, addDays(to, -1), to);
     }
 
     /** The board's window at `at`, or `back` windows earlier: the day, week or 28-day span ending `back` days or weeks sooner. */

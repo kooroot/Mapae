@@ -2,6 +2,7 @@ import {createHash, timingSafeEqual} from 'node:crypto';
 import {Hono} from 'hono';
 import {isRankingDay, parseRankingIds, parseRankingPageOffset, RANKED_GAMES, validRankingBoard, validRankingTokenId, type RankingPeriod} from '@mapae/arcade/ranking';
 import {SEASON} from '@mapae/arcade/season';
+import {validTeamPeriod} from '@mapae/arcade/team';
 import type {GameId} from '@mapae/arcade';
 import {OutingError} from '../outings/validation';
 import type {RankingReader} from './board';
@@ -24,6 +25,13 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
     });
     /** The season whose board exists: the reader's, which a test may set; the shipped one until a reader is wired. */
     const season = () => options.reader?.season ?? SEASON;
+    /** The twelve zodiac teams this week or this season; registered before the generic board so `team` never reads as a board id. */
+    app.get('/board/team/:period', c => {
+        const period = c.req.param('period');
+        if (!validTeamPeriod(period, season())) throw new OutingError('invalid_request');
+        if (!options.reader) throw new OutingError('disabled');
+        return c.json(options.reader.teamBoard(period));
+    });
     app.get('/board/:board/:period', c => {
         const {board, period} = c.req.param();
         if (!validRankingBoard(board, period, season())) throw new OutingError('invalid_request');

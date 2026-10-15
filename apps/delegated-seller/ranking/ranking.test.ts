@@ -1,9 +1,10 @@
 import {afterEach, describe, expect, test} from 'bun:test';
-import type {Address, Hex} from 'viem';
+import {pad, toHex, type Address, type Hex} from 'viem';
 import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
-import {guardianTraitsHash} from '@mapae/arcade/guardians';
+import {guardianTraitsHash, guardianZodiac, type GuardianZodiac} from '@mapae/arcade/guardians';
 import {addDays, kstWeek, rankedSeed, type RankingBoard, type RankingPage, type RankingStandings} from '@mapae/arcade/ranking';
 import {type Season, type SeasonStatus} from '@mapae/arcade/season';
+import type {TeamBoard} from '@mapae/arcade/team';
 import {OutingStore} from '../outings/store';
 import {RankingReader} from './board';
 import {GuardianHonorBook} from './honors';
@@ -20,9 +21,9 @@ afterEach(() => {for (const s of stores.splice(0)) s.close();});
 const season1: Season = {id: 1, start: '2026-10-05', end: '2026-11-01'};
 function setup(season?: Season) {
     const store = new OutingStore(':memory:'); stores.push(store);
-    const add = (tokenId: string, game: GameId | string, day: string, attempt: number, score: number, minute = attempt, ruleset = ARCADE_RULESET_VERSION) => {
+    const add = (tokenId: string, game: GameId | string, day: string, attempt: number, score: number, minute = attempt, ruleset = ARCADE_RULESET_VERSION, seed = seedOf(tokenId)) => {
         store.db.query('INSERT INTO arcade_guardian_ranked VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(`${tokenId}:${game}:${day}:${attempt}:${ruleset}`, collection.toLowerCase(), tokenId,
-            seedOf(tokenId), ruleset, game, day, kstWeek(day), attempt, score, 0, at(day, minute));
+            seed, ruleset, game, day, kstWeek(day), attempt, score, 0, at(day, minute));
     };
     return {store, add, reader: new RankingReader(store, collection, () => now, season)};
 }
@@ -282,7 +283,7 @@ describe('routes', () => {
         const {add, reader} = setup(season1); add('1', 'race', '2026-10-14', 1, 50); add('1', 'race', '2026-10-06', 1, 50);
         const app = createRankingApp({token, reader});
         for (const path of ['/board/race/today', '/board/race/lastweek', '/board/devotion/28d', '/board/race/today/from/10', '/board/race/today/around/1', '/guardians/1', '/season',
-            '/board/season/s1', '/board/season/s1/from/10', '/board/season/s1/around/1']) {
+            '/board/season/s1', '/board/season/s1/from/10', '/board/season/s1/around/1', '/board/team/week', '/board/team/s1']) {
             const body = await (await app.request(path, {headers: auth})).text();
             for (const key of ['actor', 'payer', 'transaction', 'paymentTx', 'payment_tx', 'owner', '0x1111']) expect(body).not.toContain(key);
         }
@@ -384,6 +385,68 @@ describe('season', () => {
         const second = createRankingApp({token, reader: setup({...season1, id: 2}).reader});
         expect((await second.request('/board/season/s2', {headers: auth})).status).toBe(200);
         expect((await second.request('/board/season/s1', {headers: auth})).status).toBe(400);
+    });
+});
+
+describe('team boards', () => {
+    const V = ARCADE_RULESET_VERSION;
+    /** The lowest numbered seed born into `zodiac`. */
+    const seedFor = (zodiac: GuardianZodiac) => {for (let i = 0; ; i++) {const seed = pad(toHex(i), {size: 32}); if (guardianZodiac(seed) === zodiac) return seed;}};
+    const TIGER = seedFor('tiger'), RAT = seedFor('rat'), OX = seedFor('ox'), DOG = seedFor('dog'), RABBIT = seedFor('rabbit');
+    const teams = (board: TeamBoard) => board.rows.map(r => [r.rank, r.zodiac, r.points, r.members, r.top?.tokenId ?? null, r.top?.points ?? null]);
+    const empty = (rank: number, ...taken: string[]) => (['rat', 'ox', 'tiger', 'rabbit', 'dragon', 'snake', 'horse', 'goat', 'monkey', 'rooster', 'dog', 'pig'] as const).filter(z => !taken.includes(z)).map(z => [rank, z, 0, 0, null, null]);
+    test('this week adds the Monday-to-Sunday daily-board points of every game per team, no bonus, season or not', () => {
+        const {add, reader} = setup();
+        add('1', 'race', '2026-10-12', 1, 90, 1, V, TIGER); add('2', 'race', '2026-10-12', 1, 80, 1, V, TIGER); add('3', 'race', '2026-10-12', 1, 70, 1, V, RAT);
+        add('1', 'stamp', '2026-10-13', 1, 50, 1, V, TIGER); add('3', 'shop', '2026-10-14', 1, 5, 1, V, RAT); add('5', 'race', '2026-10-14', 1, 1, 1, V, DOG);
+        add('4', 'race', '2026-10-11', 1, 999, 1, V, RAT); // last week: not this window
+        const board = reader.teamBoard('week');
+        expect(board).toMatchObject({period: 'week', from: '2026-10-12', to: '2026-10-18', closesAt: Date.parse('2026-10-18T15:00:00Z'), entrants: 4});
+        // Tiger: token 1 won Monday's race and Tuesday's stamp (20), token 2 was second on Monday (7). Rat: third on Monday (5) and Wednesday's shop alone (10).
+        expect(teams(board)).toEqual([[1, 'tiger', 27, 2, '1', 20], [2, 'rat', 15, 1, '3', 15], [3, 'dog', 10, 1, '5', 10], ...empty(4, 'tiger', 'rat', 'dog')]);
+        expect(board.rows[0]!.top!.seed).toBe(TIGER);
+    });
+    test('the season board regroups season points, attendance bonus included; before the season, or for another id, it is a bad request', () => {
+        const {add, reader} = setup(season1);
+        for (let i = 0; i < 9; i++) add('1', 'race', addDays('2026-10-05', i), 1, 100, 1, V, TIGER);
+        add('2', 'race', '2026-10-13', 1, 50, 1, V, RAT); add('3', 'race', '2026-10-04', 1, 999, 1, V, OX);
+        const season = reader.teamBoard('s1');
+        expect(season).toMatchObject({period: 's1', from: '2026-10-05', to: '2026-10-14', closesAt: Date.parse('2026-11-01T15:00:00Z'), entrants: 2});
+        expect(teams(season).slice(0, 2)).toEqual([[1, 'tiger', 100, 1, '1', 100], [2, 'rat', 7, 1, '2', 7]]);
+        // The same rows this week: two race wins (20) and one second place (7), no bonus.
+        expect(teams(reader.teamBoard('week')).slice(0, 2)).toEqual([[1, 'tiger', 20, 1, '1', 20], [2, 'rat', 7, 1, '2', 7]]);
+        expect(() => reader.teamBoard('s2')).toThrow('invalid_request');
+        expect(() => setup().reader.teamBoard('s1')).toThrow('invalid_request');
+        const closed = setup({id: 1, start: '2026-10-05', end: '2026-10-10'}); closed.add('1', 'race', '2026-10-10', 1, 1, 1, V, TIGER);
+        expect(closed.reader.teamBoard('s1')).toMatchObject({from: '2026-10-05', to: '2026-10-10', closesAt: null, entrants: 1});
+        expect(closed.reader.teamBoard('s1').rows[0]).toMatchObject({zodiac: 'tiger', points: 10});
+    });
+    test('equal totals share a place in zodiac order; the top member is the higher score, then the lower token; twelve rows always', () => {
+        const {add, reader} = setup();
+        add('40', 'shop', '2026-10-13', 1, 10, 1, V, OX); add('40', 'shop', '2026-10-14', 1, 10, 1, V, OX);
+        add('9', 'race', '2026-10-14', 1, 10, 1, V, DOG); add('3', 'stamp', '2026-10-14', 1, 10, 1, V, DOG); add('1', 'race', '2026-10-14', 1, 5, 1, V, RABBIT);
+        const board = reader.teamBoard('week');
+        expect(board.rows).toHaveLength(12); expect(board.entrants).toBe(4);
+        expect(teams(board)).toEqual([[1, 'ox', 20, 1, '40', 20], [1, 'dog', 20, 2, '3', 10], [3, 'rabbit', 7, 1, '1', 7], ...empty(4, 'ox', 'dog', 'rabbit')]);
+        expect(teams(setup().reader.teamBoard('week'))).toEqual(empty(1));
+    });
+    test('routes: this week or the season by id, no pages, bearer only', async () => {
+        const token = 'ranking-bridge-token'.repeat(3), auth = {Authorization: `Bearer ${token}`};
+        const pending = setup(); pending.add('1', 'race', '2026-10-14', 1, 50, 1, V, TIGER);
+        const app = createRankingApp({token, reader: pending.reader});
+        const ok = await app.request('/board/team/week', {headers: auth});
+        expect(ok.status).toBe(200); expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
+        expect(((await ok.json()) as TeamBoard).rows[0]).toMatchObject({rank: 1, zodiac: 'tiger', points: 10, members: 1, top: {tokenId: '1', points: 10}});
+        for (const path of ['/board/team/s1', '/board/team/s2', '/board/team/today', '/board/team/lastweek', '/board/team/week/from/10', '/board/team/week/around/1', '/board/team/Week'])
+            expect((await app.request(path, {headers: auth})).status).toBe(400);
+        expect((await app.request('/board/team/week')).status).toBe(401);
+        expect((await createRankingApp({token}).request('/board/team/week', {headers: auth})).status).toBe(503);
+        const open = createRankingApp({token, reader: setup(season1).reader});
+        expect((await open.request('/board/team/s1', {headers: auth})).status).toBe(200);
+        expect((await open.request('/board/team/s2', {headers: auth})).status).toBe(400);
+        const second = createRankingApp({token, reader: setup({...season1, id: 2}).reader});
+        expect((await second.request('/board/team/s2', {headers: auth})).status).toBe(200);
+        expect((await second.request('/board/team/s1', {headers: auth})).status).toBe(400);
     });
 });
 
