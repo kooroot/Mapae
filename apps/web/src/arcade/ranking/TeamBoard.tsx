@@ -23,7 +23,8 @@ type View = 'week' | 'season';
 export function TeamBoard({desk, walletWaiting}: {desk: GuardianDesk; walletWaiting: boolean}) {
     const {ko, locale} = desk, status = useSeasonStatus(), phase = status.value?.phase;
     const racing = phase === 'open' || phase === 'closed', seasonId = status.value ? seasonPeriod(status.value) : seasonPeriod(SEASON);
-    const [choice, setChoice] = useState<View | null>(null), view: View = choice ?? (racing ? 'season' : 'week');
+    // Until the season status is known, no view is chosen: showing the week first and switching to the season would swap boards mid-read.
+    const [choice, setChoice] = useState<View | null>(null), view: View | null = choice ?? (status.value ? racing ? 'season' : 'week' : status.error ? 'week' : null);
     const week = view === 'week', enabled = week || racing, remote = useTeamBoard(week ? 'week' : seasonId, enabled);
     const mine = new Set(desk.revealed.map(token => guardianZodiac(token.seed)));
     const overline = week ? remote.value ? `${ko ? '이번 주' : 'This week'} ${remote.value.from} – ${remote.value.to}` : ko ? '이번 주' : 'This week'
@@ -36,7 +37,7 @@ export function TeamBoard({desk, walletWaiting}: {desk: GuardianDesk; walletWait
             </div>
             <div className="rank-periods is-two" role="group" aria-label={ko ? '기간 고르기' : 'Choose a period'}>
                 <button type="button" aria-pressed={week} onClick={() => setChoice('week')}>{ko ? '이번 주' : 'This week'}</button>
-                <button type="button" aria-pressed={!week} onClick={() => setChoice('season')}>{ko ? `시즌 ${SEASON.id}` : `Season ${SEASON.id}`}</button>
+                <button type="button" aria-pressed={view === 'season'} onClick={() => setChoice('season')}>{ko ? `시즌 ${SEASON.id}` : `Season ${SEASON.id}`}</button>
             </div>
             {!week && !status.value ? status.error
                 ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '시즌 정보를 불러오지 못했어요. 잠시 뒤 저절로 다시 읽어 와요.' : 'The season could not load. It will try again shortly.'}</p></div>
