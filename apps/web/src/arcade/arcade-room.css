@@ -101,6 +101,7 @@
 .arc-entry-dock .arc-dock-actions .arc-button { width: 100%; }
 .arc-entry-dock .arc-dock-play > small { text-align: center; }
 .arc-entry-dock .arc-dock-free { justify-self: center; display: inline-flex; align-items: center; gap: 6px; color: var(--arc-gold); font-size: 13px; }
+.arc-entry-dock .arc-dock-team { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--arc-gold); font-size: 13px; word-break: keep-all; }
 @media (hover: hover) { .arc-room-cabinet:hover:not([aria-pressed=true])::before { opacity: .7; } }
 @media (max-width: 900px) and (min-width: 621px) { .arc-room { padding-inline: 20px; } .arc-room-cabinets { gap: 4px; } .arc-room-dock { padding: 20px; } }
 @media (max-width: 760px) { .arc-dock-ready { grid-template-columns: minmax(0, 1fr); } }

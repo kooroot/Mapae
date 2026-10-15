@@ -1,8 +1,10 @@
 import type {ReactNode} from "react";
 import {Link} from "@tanstack/react-router";
-import {ArrowRight, CircleAlert, Clock, Compass, Gamepad2, LoaderCircle, Pause, RefreshCw, Sparkles, Ticket, Trophy} from "lucide-react";
+import {ArrowRight, CircleAlert, Clock, Compass, Gamepad2, LoaderCircle, Pause, RefreshCw, Sparkles, Ticket, Trophy, Users} from "lucide-react";
 import type {GameId} from "@mapae/arcade";
-import {guardianName} from "@mapae/arcade/guardians";
+import {guardianName, type GuardianZodiac} from "@mapae/arcade/guardians";
+import {seasonPeriod} from "@mapae/arcade/season";
+import type {Locale} from "../lib/i18n";
 import {GAME_NAMES} from "./game-names";
 import {GUARDIAN_NAMES} from "./guardian";
 import {GuardianAvatar} from "./GuardianAvatar";
@@ -13,7 +15,17 @@ import type {GuardianToken} from "./profile/guardians";
 import {arcadeSectionLink, outingStatusLabel} from "./sections";
 import {ConnectInvite, GuardianSwitcher} from "./sections/SectionFrame";
 import {FaucetHint} from "./FaucetHint";
+import {useSeasonStatus, useTeamBoard} from "./ranking/client";
+import {teamCheerCopy} from "./ranking/format";
 import {RankLine} from "./ranking/RankLine";
+
+/** While the season runs: where this guardian's zodiac team stands in it, as a line into the team tab; nothing otherwise. */
+function TeamCheer({zodiac, locale}: {zodiac: GuardianZodiac; locale: Locale}) {
+    const status = useSeasonStatus(), open = status.value?.phase === "open";
+    const teams = useTeamBoard(status.value ? seasonPeriod(status.value) : "week", open);
+    if (!open || !teams.value || teams.value.entrants === 0) return null;
+    return <Link className="arc-text-button arc-dock-team" {...arcadeSectionLink("ranking", locale, "team")}><Users size={16} aria-hidden="true" />{teamCheerCopy(teams.value.rows, zodiac, locale)}</Link>;
+}
 
 /** What the lobby offers under the chosen cabinet, from a first free round to playing and sending out one's own guardian. */
 export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, onSendOuting}: {
@@ -34,6 +46,7 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
                         <p>{GUARDIAN_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}</p>
                         <p className="arc-dock-aptitude"><span>{ko ? `${names[game]} 적성` : `${names[game]} aptitude`}</span><meter min={0} max={6} value={traits.aptitudes[game]} aria-hidden="true" /><b>{traits.aptitudes[game]} / 6</b></p>
                         <RankLine locale={locale} game={game} guardian={desk.ranking.standings?.guardians.find(g => g.tokenId === token.tokenId)} leader={desk.ranking.standings?.leaders[game] ?? null} named={false} weekly />
+                        <TeamCheer zodiac={traits.zodiac} locale={locale} />
                         {activeJob && status && <span className="arc-dock-chip" role="status">{activeJob.status === "paused" ? <Pause size={14} aria-hidden="true" /> : <Compass size={14} aria-hidden="true" />}{ko ? `${status} · ${activeJob.spent}/${activeJob.admissions}회` : `${status} · ${activeJob.spent}/${activeJob.admissions} rounds`}</span>}
                     </div>
                 </div>
