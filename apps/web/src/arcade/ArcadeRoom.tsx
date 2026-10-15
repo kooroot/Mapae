@@ -1,10 +1,9 @@
 import {useEffect, useRef, useState, type ReactNode} from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import {ChevronLeft, ChevronRight} from "lucide-react";
-import type {GameId} from "@mapae/arcade";
+import {GAME_NAMES, type GameId} from "@mapae/arcade";
 import type {Locale} from "../lib/i18n";
 import {ArcadeBrand} from "./ArcadeBrand";
-import {GAME_NAMES} from "./game-names";
 import {play, type MotionGate} from "./juice";
 import "./arcade-room.css";
 

@@ -1,11 +1,11 @@
 import {useId, useState} from 'react';
 import {Check, LoaderCircle, ReceiptText, RefreshCw, Stamp} from 'lucide-react';
+import {GAME_NAMES} from '@mapae/arcade';
 import {GUARDIAN_CLAIM_BATCH} from '@mapae/arcade/guardians';
 import {kstDay} from '@mapae/arcade/ranking';
 import {explorerTxUrl} from '../../lib/config';
 import type {Locale} from '../../lib/i18n';
 import {GameThumb} from '../Characters';
-import {GAME_NAMES} from '../game-names';
 import {GuardianAvatar} from '../GuardianAvatar';
 import {pendingGrowth, pendingHonors} from '../nft/model';
 import type {GuardianDesk} from '../nft/useGuardianDesk';

@@ -1,6 +1,7 @@
 import {useState} from 'react';
 import {Link} from '@tanstack/react-router';
 import {ArrowUpRight, Check, Compass, Pause, RefreshCw} from 'lucide-react';
+import {GAME_NAMES} from '@mapae/arcade';
 import type {OutingView} from '@mapae/arcade/outings';
 import {guardianName} from '@mapae/arcade/guardians';
 import {ConfirmDialog} from '../components/ConfirmDialog';
@@ -8,7 +9,6 @@ import type {useGiwaTickets} from './useGiwaTickets';
 import type {Companion} from './state';
 import {arcadeSectionLink} from './sections';
 import {GuardianAvatar} from './GuardianAvatar';
-import {GAME_NAMES} from './game-names';
 import {MOCK_USDC} from '@mapae/shared';
 import {RANKED_ATTEMPTS} from '@mapae/arcade/ranking';
 import './outing.css';

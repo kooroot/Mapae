@@ -1,11 +1,10 @@
 import {useEffect, useRef, useState, type RefObject} from 'react';
 import {Link} from '@tanstack/react-router';
 import {ArrowRight, Check} from 'lucide-react';
-import type {AgentGoal, GameId} from '@mapae/arcade';
+import {GAME_NAMES, type AgentGoal, type GameId} from '@mapae/arcade';
 import {BrandSelect} from '../../components/BrandSelect';
 import {GiwaAllowance} from '../GiwaAllowance';
 import {OutingBoard} from '../OutingBoard';
-import {GAME_NAMES} from '../game-names';
 import {RANKED_ATTEMPTS, RANKED_GAMES} from '@mapae/arcade/ranking';
 import {countdown} from '../ranking/format';
 import {RankLine} from '../ranking/RankLine';

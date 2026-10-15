@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import {useLocation} from '@tanstack/react-router';
 import {CalendarDays, CircleAlert, Compass, Flag, LoaderCircle, RefreshCw, Users} from 'lucide-react';
-import type {GameId} from '@mapae/arcade';
+import {GAME_NAMES, type GameId} from '@mapae/arcade';
 import {guardianName} from '@mapae/arcade/guardians';
 import {
     BOARD_ROWS, DEVOTION_DAYS, GAME_PERIODS, RANKED_ATTEMPTS, RANKED_GAMES, STREAK_FREEZE_EVERY, STREAK_FREEZE_MAX, WEEKLY_COUNTED_DAYS,
@@ -9,7 +9,6 @@ import {
 } from '@mapae/arcade/ranking';
 import {SEASON, SEASON_MAX_DAY_POINTS, SEASON_STREAK_BONUS, SEASON_STREAK_DAYS} from '@mapae/arcade/season';
 import type {Locale} from '../../lib/i18n';
-import {GAME_NAMES} from '../game-names';
 import {GuardianAvatar} from '../GuardianAvatar';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {useRankingBoard} from '../ranking/client';
