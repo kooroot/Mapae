@@ -251,8 +251,19 @@ describe('standings', () => {
         expect(mine.streak).toEqual({current: 3, best: 3, freezes: 0, playedToday: true});
         expect(mine.devotion).toEqual({rank: 1, days: 4});
         expect(mine.titles).toEqual([{game: 'shop', place: 2}]);
-        expect(standings.guardians[1]).toEqual({tokenId: '40', streak: {current: 0, best: 0, freezes: 0, playedToday: false}, devotion: {rank: null, days: 0}, season: null, titles: [],
+        // This week: #12 in today's race (1) and two shop days alone (10 each); last week's shop round is outside the window.
+        expect(mine.weekPoints).toBe(21);
+        expect(standings.guardians[1]).toEqual({tokenId: '40', streak: {current: 0, best: 0, freezes: 0, playedToday: false}, devotion: {rank: null, days: 0}, season: null, weekPoints: 0, titles: [],
             games: {stamp: {attemptsUsed: 0, today: null, week: null}, race: {attemptsUsed: 0, today: null, week: null}, shop: {attemptsUsed: 0, today: null, week: null}}});
+    });
+    test('this week\'s points follow the team board: daily-board points of the open week, no bonus, whatever the season', () => {
+        const {add, reader} = setup(season1);
+        for (let i = 0; i < 9; i++) add('1', 'race', addDays('2026-10-05', i), 1, 100);
+        add('2', 'race', '2026-10-13', 1, 50); add('3', 'race', '2026-10-11', 1, 999);
+        const [one, two, three] = reader.standings(['1', '2', '3']).guardians;
+        expect(one!.season).toMatchObject({points: 97, bonus: 10}); expect(one!.weekPoints).toBe(20);
+        expect(two!.weekPoints).toBe(7); expect(three!.weekPoints).toBe(0);
+        expect(setup().reader.standings(['1']).guardians[0]!.weekPoints).toBe(0);
     });
 });
 
