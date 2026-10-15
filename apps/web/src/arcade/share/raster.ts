@@ -76,13 +76,13 @@ export function drawImage(b: Bitmap, image: Bitmap, dx: number, dy: number, dw: 
         for (let px = x0; px < x1; px++) {
             if (clip && !insidePolygon(clip, px + 0.5, py + 0.5)) continue;
             const u = (px + 0.5 - dx) * sx - 0.5, ux = Math.min(iw - 1, Math.max(0, Math.floor(u))), ux1 = Math.min(iw - 1, ux + 1), fx = Math.min(1, Math.max(0, u - ux));
-            let r = 0, g = 0, bl = 0, a = 0;
-            for (const [ix, iy, w] of [[ux, vy, (1 - fx) * (1 - fy)], [ux1, vy, fx * (1 - fy)], [ux, vy1, (1 - fx) * fy], [ux1, vy1, fx * fy]] as const) {
-                if (!w) continue;
-                const i = (iy * iw + ix) * 4, sa = src[i + 3]! / 255 * w;
-                r += src[i]! * sa; g += src[i + 1]! * sa; bl += src[i + 2]! * sa; a += sa;
-            }
+            const i00 = (vy * iw + ux) * 4, i10 = (vy * iw + ux1) * 4, i01 = (vy1 * iw + ux) * 4, i11 = (vy1 * iw + ux1) * 4;
+            const w00 = src[i00 + 3]! * (1 - fx) * (1 - fy), w10 = src[i10 + 3]! * fx * (1 - fy), w01 = src[i01 + 3]! * (1 - fx) * fy, w11 = src[i11 + 3]! * fx * fy;
+            const a = (w00 + w10 + w01 + w11) / 255;
             if (a <= 0) continue;
+            const r = (src[i00]! * w00 + src[i10]! * w10 + src[i01]! * w01 + src[i11]! * w11) / 255;
+            const g = (src[i00 + 1]! * w00 + src[i10 + 1]! * w10 + src[i01 + 1]! * w01 + src[i11 + 1]! * w11) / 255;
+            const bl = (src[i00 + 2]! * w00 + src[i10 + 2]! * w10 + src[i01 + 2]! * w01 + src[i11 + 2]! * w11) / 255;
             const o = (py * b.width + px) * 4;
             dst[o] = r + dst[o]! * (1 - a); dst[o + 1] = g + dst[o + 1]! * (1 - a); dst[o + 2] = bl + dst[o + 2]! * (1 - a);
         }

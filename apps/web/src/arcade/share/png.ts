@@ -19,15 +19,15 @@ export function crc32(bytes: Uint8Array): number {
     return (c ^ 0xffffffff) >>> 0;
 }
 
-async function pipe(bytes: Uint8Array, stream: {readable: ReadableStream<Uint8Array>; writable: WritableStream<BufferSource>}): Promise<Uint8Array> {
+async function pipe(bytes: Uint8Array<ArrayBuffer>, stream: {readable: ReadableStream<Uint8Array>; writable: WritableStream<BufferSource>}): Promise<Uint8Array<ArrayBuffer>> {
     const writer = stream.writable.getWriter();
     const written = writer.write(bytes).then(() => writer.close());
     const out = new Uint8Array(await new Response(stream.readable).arrayBuffer());
     await written;
     return out;
 }
-const inflate = (bytes: Uint8Array) => pipe(bytes, new DecompressionStream("deflate"));
-const deflate = (bytes: Uint8Array) => pipe(bytes, new CompressionStream("deflate"));
+const inflate = (bytes: Uint8Array<ArrayBuffer>) => pipe(bytes, new DecompressionStream("deflate"));
+const deflate = (bytes: Uint8Array<ArrayBuffer>) => pipe(bytes, new CompressionStream("deflate"));
 
 function paeth(a: number, b: number, c: number): number {
     const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
@@ -35,7 +35,7 @@ function paeth(a: number, b: number, c: number): number {
 }
 
 /** Decodes a PNG the layer pipeline wrote: 8-bit RGB or RGBA, no interlace, no palette. Anything else, or a bad CRC, throws. */
-export async function decodePng(bytes: Uint8Array): Promise<Bitmap> {
+export async function decodePng(bytes: Uint8Array<ArrayBuffer>): Promise<Bitmap> {
     if (bytes.length < 33 || SIGNATURE.some((b, i) => bytes[i] !== b)) throw new Error("Not a PNG");
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     let offset = 8, width = 0, height = 0, channels = 0;
@@ -85,7 +85,7 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
 }
 
 /** Encodes an opaque RGB PNG (the card has no transparent pixel), Sub-filtered: flat colour runs deflate well and it costs one pass. */
-export async function encodePng({width, height, data}: Bitmap): Promise<Uint8Array> {
+export async function encodePng({width, height, data}: Bitmap): Promise<Uint8Array<ArrayBuffer>> {
     const stride = width * 3, raw = new Uint8Array((stride + 1) * height);
     for (let y = 0; y < height; y++) {
         const at = y * (stride + 1), src = y * width * 4;
