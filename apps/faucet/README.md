@@ -2,7 +2,7 @@
 
 faucet.mapae.io 뒤에서 faucet 지갑 키를 쥐는 유일한 서비스. 테스트넷
 tUSDC(실제 돈 아님)를 지불 계정에 목표 잔액까지 채워 주고, 운영자가 켜면
-GIWA Sepolia ETH(테스트넷)를 지갑에 0.05개씩 보낸다.
+GIWA Sepolia ETH(테스트넷)를 지갑에 0.005개씩 보낸다.
 
 브라우저는 이 서비스에 닿지 않는다. faucet Worker(`apps/web/src/faucet/api.ts`)가
 SIWE로 지갑 소유를 확인하고, Turnstile을 검사하고, IP·서브넷 키를 HMAC으로 만든
@@ -84,8 +84,8 @@ ETH 청구 여럿이 같은 잔액을 보고 바닥까지 함께 쓰는 일을 �
 | `FAUCET_SERVICE_TOKEN` | 필수 | 32자 이상. Worker 비밀과 같은 값 |
 | `STORE_PATH` | `./data/faucet.sqlite` | 청구 원장 |
 | `FAUCET_ETH_MISSIONS` | 비어 있음 | 비어 있으면 ETH 탭 꺼짐 |
-| `FAUCET_ETH_DAILY_WEI` | `500000000000000000` (0.5 ETH = 10건) | ETH 하루 상한 |
-| `FAUCET_MIN_BALANCE_WEI` | `20000000000000000` (0.02 ETH) | 스테이블코인 민팅 가스용 바닥. ETH 탭은 이 아래로 보내지 않는다(측정 수수료로 약 200일치 민팅) |
+| `FAUCET_ETH_DAILY_WEI` | `500000000000000000` (0.5 ETH = 100건) | ETH 하루 상한 |
+| `FAUCET_MIN_BALANCE_WEI` | `20000000000000000` (0.02 ETH) | 스테이블코인 민팅 가스용 바닥. ETH 탭은 이 아래로 보내지 않는다(측정 수수료로 약 200일치 민팅, ETH 청구 4건 몫) |
 | `ETH_MAINNET_RPC_URL` | `https://ethereum-rpc.publicnode.com` | ETH 자격 읽기 전용, 5초 타임아웃 |
 | `DELEGATION_DEPLOYMENT_PATH` | `../../deployments/giwa-sepolia.framework.json` | 지불 계정 유도용. GIWA Sepolia가 아니면 기동 거부 |
 | `BOOTSTRAP_ADDRESS`, `FACILITATOR_SIGNER_ADDRESS`, `DEPLOYER_ADDRESS`, `REVOCATION_SPONSOR_ADDRESS` | 선택 | 넣으면 faucet 지갑과 같은지 검사해 같으면 기동 거부 |

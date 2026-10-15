@@ -31,8 +31,12 @@ export function planTopUp(params: {balance: bigint; target: bigint}): bigint {
 export type FaucetKind = "musdc" | "eth";
 export const FAUCET_KINDS: readonly FaucetKind[] = ["musdc", "eth"];
 
-/** 0.05 GIWA Sepolia ETH per claim — about two million transfers at GIWA's measured fees. */
-export const FAUCET_ETH_AMOUNT_WEI = 50_000_000_000_000_000n;
+/**
+ * 0.005 GIWA Sepolia ETH per claim — about two hundred thousand transfers at GIWA's measured
+ * fees, or roughly three hundred guardian draws (1.5e13 wei entropy fee + gas each); a wallet
+ * gets three draws for life.
+ */
+export const FAUCET_ETH_AMOUNT_WEI = 5_000_000_000_000_000n;
 /** One ETH claim per wallet per rolling week. */
 export const FAUCET_ETH_WINDOW_MS = 7 * FAUCET_WINDOW_MS;
 /**

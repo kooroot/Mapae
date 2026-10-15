@@ -60,8 +60,8 @@ describe("faucet.mapae.io contract", () => {
         eth: {enabled: false, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: FAUCET_ETH_WINDOW_MS, missions: [], minMainnetNonce: 1},
     };
 
-    test("ETH is 0.05 per claim, once a week; the follow mission links the official account", () => {
-        expect(FAUCET_ETH_AMOUNT_WEI).toBe(5n * 10n ** 16n);
+    test("ETH is 0.005 per claim, once a week; the follow mission links the official account", () => {
+        expect(FAUCET_ETH_AMOUNT_WEI).toBe(5n * 10n ** 15n);
         expect(FAUCET_ETH_WINDOW_MS).toBe(7 * 24 * 60 * 60 * 1000);
         expect(FAUCET_MISSIONS.x_follow_mapae).toEqual({kind: "honour", href: "https://x.com/intent/follow?screen_name=mapae_io"});
         expect(FAUCET_MUSDC_MISSIONS).toEqual(["x_follow_mapae"]);
