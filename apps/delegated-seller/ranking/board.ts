@@ -2,9 +2,9 @@ import type {Database} from 'bun:sqlite';
 import type {Address, Hex} from 'viem';
 import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
 import {
-    addDays, BOARD_ROWS, DEVOTION_DAYS, guardianStreak, kstDay, kstWeek, NEARBY_SPAN, nextReset, RANKED_GAMES, RANKING_PAGE_ROWS, rankingPageOffset, WEEKLY_COUNTED_DAYS, weekCutoff,
-    type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings, type SeasonRowExtras,
-    type SeasonStanding,
+    addDays, BOARD_ROWS, daysBetween, DEVOTION_DAYS, guardianStreak, kstDay, kstWeek, NEARBY_SPAN, nextReset, RANKED_GAMES, RANKING_PAGE_ROWS, rankingPageOffset, WEEKLY_COUNTED_DAYS,
+    weekCutoff, type GuardianStanding, type RankedCard, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding,
+    type RankingStandings, type SeasonCard, type SeasonRowExtras, type SeasonStanding,
 } from '@mapae/arcade/ranking';
 import {
     SEASON, SEASON_ENTRY_POINTS, SEASON_RANK_POINTS, SEASON_TOP10_POINTS, seasonClosesAt, seasonStatus, seasonStreak, seasonWindow, type Season, type SeasonStatus,
@@ -41,6 +41,8 @@ const DEVOTION_BOARD = `WITH days AS (
     SELECT RANK() OVER (ORDER BY score DESC) AS rank, token_id AS tokenId, guardian_seed AS seed, score
     FROM days ORDER BY rank, CAST(token_id AS INTEGER)`;
 
+/** How far back a share card may look: a year, as far as the attendance streak reads. */
+const CARD_DAYS_BACK = 365;
 /** The ruleset a closed week ranked under when it closed: a later ruleset bump never empties it. */
 const WEEK_RULESET = 'SELECT MAX(ruleset) AS ruleset FROM arcade_guardian_ranked WHERE collection=? AND week=? AND created_at<?';
 /**
@@ -154,6 +156,30 @@ export class RankingReader {
         });
         return {day: today, week, closesAt: {day: nextReset(at, 'day'), week: nextReset(at, 'week')},
             leaders: Object.fromEntries(RANKED_GAMES.map(game => [game, boards[game].today[0]?.score ?? null])) as RankingStandings['leaders'], guardians};
+    }
+
+    /**
+     * One guardian's place on a day's board for a share card: today's, or any day back to a year ago, ranked under the current
+     * ruleset like the yesterday board (a day before a ruleset bump reads empty, so its cards are gone). The season standing is
+     * the current one, whatever day the card shows.
+     */
+    card(game: GameId, day: string, tokenId: string): RankedCard {
+        const at = this.now(), today = kstDay(at), back = daysBetween(day, today);
+        if (back < 0 || back > CARD_DAYS_BACK) throw new OutingError('invalid_request');
+        const {rows} = this.window(game, 'today', at, back), row = rows.find(r => r.tokenId === tokenId);
+        if (!row) throw new OutingError('not_found');
+        const season = this.seasonWindows(today), raced = season?.current.rows.find(r => r.tokenId === tokenId);
+        return {game, day, tokenId, seed: row.seed, score: row.score, rank: row.rank, entrants: rows.length, leader: rows[0]!.score, final: back > 0,
+            season: season && raced ? seasonStanding(raced, season, previousRanks(season.current, season.earlier)) : null};
+    }
+
+    /** One guardian's season standing for a share card: only while the season is open or closed, and only with a record in it. */
+    seasonCard(tokenId: string): SeasonCard {
+        const today = kstDay(this.now()), season = this.seasonWindows(today);
+        if (!season) throw new OutingError('invalid_request');
+        const raced = season.current.rows.find(r => r.tokenId === tokenId);
+        if (!raced) throw new OutingError('not_found');
+        return {tokenId, seed: raced.seed, status: this.seasonStatus(), season: seasonStanding(raced, season, previousRanks(season.current, season.earlier))};
     }
 
     /** A board's window at `at` and the one before it. The season reads both from one scan; every other board reads twice. */

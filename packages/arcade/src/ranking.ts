@@ -1,7 +1,7 @@
 import type {Hex} from "viem";
 import {ARCADE_RULESET_VERSION, type GameId} from "./contracts";
 import {GUARDIAN_MAX_SUPPLY} from "./guardians";
-import type {Season} from "./season";
+import type {Season, SeasonStatus} from "./season";
 
 /**
  * Ranked play: the first RANKED_ATTEMPTS settled outing rounds of each game per guardian and Korean calendar day count toward the
@@ -67,6 +67,16 @@ export type RankingStandings = {
     leaders: Record<GameId, number | null>;
     guardians: GuardianStanding[];
 };
+/**
+ * One guardian's place on one day's board of one game, for a share card: the day's best score and where it placed. `final` once
+ * the day has closed (KST), so a card for a past day never changes; the current season standing rides along while a season runs.
+ */
+export type RankedCard = {
+    game: GameId; day: string; tokenId: string; seed: Hex; score: number; rank: number; entrants: number; leader: number; final: boolean;
+    season: SeasonStanding | null;
+};
+/** One guardian's season standing with the seed that draws it and the season's status, for a season share card. */
+export type SeasonCard = {tokenId: string; seed: Hex; status: SeasonStatus; season: SeasonStanding};
 
 const KST_OFFSET = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -92,6 +102,10 @@ export function kstDay(at: number): string {
 }
 export function addDays(day: string, n: number): string {
     return new Date(dayStart(day) + n * DAY_MS).toISOString().slice(0, 10);
+}
+/** Whole days from `from` to `to`, negative when `to` is earlier. */
+export function daysBetween(from: string, to: string): number {
+    return Math.round((dayStart(to) - dayStart(from)) / DAY_MS);
 }
 /** The Monday that starts the KST week holding `day`. */
 export function kstWeek(day: string): string {

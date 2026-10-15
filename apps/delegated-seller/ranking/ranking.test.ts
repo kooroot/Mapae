@@ -386,3 +386,49 @@ describe('season', () => {
         expect((await second.request('/board/season/s1', {headers: auth})).status).toBe(400);
     });
 });
+
+describe('share cards', () => {
+    const token = 'ranking-bridge-token'.repeat(3), auth = {Authorization: `Bearer ${token}`};
+    test('a day card reads the day board under the current ruleset: today open, a past day final, a year back at most', () => {
+        const {add, reader} = setup();
+        add('5', 'race', '2026-10-14', 1, 40); add('5', 'race', '2026-10-14', 2, 90, 30); add('3', 'race', '2026-10-14', 1, 90, 10);
+        add('5', 'race', '2026-10-13', 1, 70); add('5', 'race', addDays('2026-10-14', -365), 1, 7); add('5', 'race', '2026-10-01', 1, 1, 1, ARCADE_RULESET_VERSION - 1);
+        expect(reader.card('race', '2026-10-14', '5')).toEqual({game: 'race', day: '2026-10-14', tokenId: '5', seed: seedOf('5'), score: 90, rank: 2, entrants: 2, leader: 90, final: false, season: null});
+        expect(reader.card('race', '2026-10-13', '5')).toMatchObject({score: 70, rank: 1, entrants: 1, leader: 70, final: true});
+        expect(reader.card('race', addDays('2026-10-14', -365), '5')).toMatchObject({score: 7, final: true});
+        for (const [day, code] of [['2026-10-15', 'invalid_request'], [addDays('2026-10-14', -366), 'invalid_request'], ['2026-10-01', 'not_found'], ['2026-10-14', 'not_found']] as const)
+            expect(() => reader.card('race', day, day === '2026-10-14' ? '9' : '5')).toThrow(code);
+        expect(() => reader.card('stamp', '2026-10-14', '5')).toThrow('not_found');
+    });
+    test('the season standing rides on a day card while a season runs, and the season card needs a record in it', () => {
+        const {add, reader} = setup(season1);
+        for (let i = 0; i < 9; i++) add('12', 'race', addDays('2026-10-06', i), 1, 100);
+        add('88', 'race', '2026-10-14', 1, 50); add('12', 'shop', '2026-10-13', 1, 5);
+        const card = reader.card('race', '2026-10-13', '12');
+        expect(card).toMatchObject({score: 100, rank: 1, entrants: 1, final: true});
+        expect(card.season).toEqual({moves: true, prev: 1, points: 9 * 10 + 10 + 10, rank: 1, entrants: 2, days: 9, streak: 9, bonus: 10, today: 10});
+        expect(reader.seasonCard('12')).toEqual({tokenId: '12', seed: seedOf('12'), status: {id: 1, start: '2026-10-05', end: '2026-11-01', today: '2026-10-14', phase: 'open'}, season: card.season});
+        expect(reader.seasonCard('88')).toMatchObject({season: {points: 7, rank: 2, entrants: 2, days: 1, streak: 1, bonus: 0, today: 7}});
+        expect(() => reader.seasonCard('7')).toThrow('not_found');
+        const pending = setup(); pending.add('12', 'race', '2026-10-14', 1, 100);
+        expect(pending.reader.card('race', '2026-10-14', '12').season).toBeNull();
+        expect(() => pending.reader.seasonCard('12')).toThrow('invalid_request');
+    });
+    test('card routes: strict shapes, 404 without a record, and nothing about the owner in the answer', async () => {
+        const {add, reader} = setup(season1); add('1', 'race', '2026-10-14', 1, 50);
+        const app = createRankingApp({token, reader});
+        const ok = await app.request('/card/race/2026-10-14/1', {headers: auth});
+        expect(ok.status).toBe(200); expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
+        expect(await ok.json()).toMatchObject({game: 'race', day: '2026-10-14', tokenId: '1', score: 50, rank: 1, final: false, season: {points: 10, today: 10}});
+        expect((await app.request('/card/season/1', {headers: auth})).status).toBe(200);
+        for (const path of ['/card/race/2026-10-14/2', '/card/race/2026-10-13/1', '/card/season/2']) expect((await app.request(path, {headers: auth})).status).toBe(404);
+        for (const path of ['/card/xp/2026-10-14/1', '/card/race/2026-13-01/1', '/card/race/2026-10-14/0', '/card/race/2026-10-14/10001', '/card/race/2026-10-15/1', '/card/season/01'])
+            expect((await app.request(path, {headers: auth})).status).toBe(400);
+        expect((await app.request('/card/race/2026-10-14/1')).status).toBe(401);
+        expect((await createRankingApp({token}).request('/card/race/2026-10-14/1', {headers: auth})).status).toBe(503);
+        for (const path of ['/card/race/2026-10-14/1', '/card/season/1']) {
+            const body = await (await app.request(path, {headers: auth})).text();
+            for (const key of ['actor', 'payer', 'transaction', 'paymentTx', 'owner', '0x1111']) expect(body).not.toContain(key);
+        }
+    });
+});

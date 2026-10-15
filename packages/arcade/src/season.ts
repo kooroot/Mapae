@@ -1,4 +1,4 @@
-import {addDays, BOARD_ROWS, isRankingDay, kstDay, RANKED_GAMES, STREAK_FREEZE_EVERY, streakProgress} from "./ranking";
+import {addDays, BOARD_ROWS, daysBetween, isRankingDay, kstDay, RANKED_GAMES, STREAK_FREEZE_EVERY, streakProgress} from "./ranking";
 
 /**
  * A season: a run of KST days in which the daily boards also earn season points. Dates stay null while the season is being
@@ -54,9 +54,6 @@ export function seasonDaysLeft(season: Season, today: string): number {
 /** Days until an announced season starts: D-n. */
 export function seasonCountdown(season: Season, today: string): number {
     return seasonPhase(season, today) === "announced" ? daysBetween(today, season.start!) : 0;
-}
-function daysBetween(from: string, to: string): number {
-    return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 /** What one place on a daily board is worth. */
 export function seasonDayPoints(rank: number): number {

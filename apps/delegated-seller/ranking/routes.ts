@@ -1,7 +1,8 @@
 import {createHash, timingSafeEqual} from 'node:crypto';
 import {Hono} from 'hono';
-import {parseRankingIds, parseRankingPageOffset, validRankingBoard, type RankingPeriod} from '@mapae/arcade/ranking';
+import {isRankingDay, parseRankingIds, parseRankingPageOffset, RANKED_GAMES, validRankingBoard, validRankingTokenId, type RankingPeriod} from '@mapae/arcade/ranking';
 import {SEASON} from '@mapae/arcade/season';
+import type {GameId} from '@mapae/arcade';
 import {OutingError} from '../outings/validation';
 import type {RankingReader} from './board';
 
@@ -43,9 +44,22 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
         if (!options.reader) throw new OutingError('disabled');
         return c.json(options.reader.standings(ids));
     });
+    /** A share card's facts: one guardian on one day's board of one game (404 without a record there), or its season standing. */
+    app.get('/card/:game/:day/:tokenId', c => {
+        const {game, day, tokenId} = c.req.param();
+        if (!RANKED_GAMES.includes(game as GameId) || !isRankingDay(day) || !validRankingTokenId(tokenId)) throw new OutingError('invalid_request');
+        if (!options.reader) throw new OutingError('disabled');
+        return c.json(options.reader.card(game as GameId, day, tokenId));
+    });
+    app.get('/card/season/:tokenId', c => {
+        const tokenId = c.req.param('tokenId');
+        if (!validRankingTokenId(tokenId)) throw new OutingError('invalid_request');
+        if (!options.reader) throw new OutingError('disabled');
+        return c.json(options.reader.seasonCard(tokenId));
+    });
     app.onError(error => {
-        const code = error instanceof OutingError && error.code === 'invalid_request' ? 'invalid_request' : error instanceof OutingError && error.code === 'disabled' ? 'disabled' : 'ranking_unavailable';
-        return Response.json({error: {code}}, {status: code === 'invalid_request' ? 400 : 503, headers: {'Cache-Control': 'private, no-store'}});
+        const code = error instanceof OutingError && (error.code === 'invalid_request' || error.code === 'disabled' || error.code === 'not_found') ? error.code : 'ranking_unavailable';
+        return Response.json({error: {code}}, {status: code === 'invalid_request' ? 400 : code === 'not_found' ? 404 : 503, headers: {'Cache-Control': 'private, no-store'}});
     });
     return app;
 }
