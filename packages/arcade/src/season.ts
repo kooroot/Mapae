@@ -43,9 +43,13 @@ export function seasonWindow(season: Season, today: string): {from: string; to: 
     const phase = seasonPhase(season, today);
     return phase === "open" || phase === "closed" ? {from: season.start!, to: today < season.end! ? today : season.end!} : null;
 }
-/** When an open season closes: 00:00 KST after its last day (epoch ms); null in any other phase. */
+/** The instant a dated season ends: 00:00 KST after its last day (epoch ms); null while the dates are unset. */
+export function seasonEndsAt(season: Season): number | null {
+    return season.end === null ? null : Date.parse(`${addDays(season.end, 1)}T00:00:00Z`) - KST_OFFSET;
+}
+/** When an open season closes; null in any other phase. */
 export function seasonClosesAt(season: Season, today: string): number | null {
-    return seasonPhase(season, today) === "open" ? Date.parse(`${addDays(season.end!, 1)}T00:00:00Z`) - KST_OFFSET : null;
+    return seasonPhase(season, today) === "open" ? seasonEndsAt(season) : null;
 }
 /** Days left in an open season counting today, so the last day reads 1. */
 export function seasonDaysLeft(season: Season, today: string): number {
