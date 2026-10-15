@@ -4,12 +4,12 @@ import {ArrowRight, CircleAlert, ExternalLink, ShieldCheck} from 'lucide-react';
 import type {GameId} from '@mapae/arcade';
 import {MOCK_USDC} from '@mapae/shared';
 import {ARCADE_TICKET_COST} from '@mapae/arcade/tickets';
+import {ZODIAC_NAMES} from '@mapae/arcade/guardian-art';
 import {guardianName} from '@mapae/arcade/guardians';
 import type {useGiwaTickets} from './useGiwaTickets';
 import {AllowanceProgress} from './AllowanceProgress';
 import {AllowanceAmount} from './AllowanceAmount';
 import {GuardianAvatar} from './GuardianAvatar';
-import {GUARDIAN_NAMES} from './guardian';
 import type {Companion} from './state';
 import {FAUCET_HINT,faucetHintUrl} from './faucet-hint';
 import {arcadeSectionLink} from './sections';
@@ -34,7 +34,7 @@ export function GiwaAllowance({ref,giwa,members,onAmountChange,editable,authenti
         <div className="arc-allowance-balance"><span>{ko?'스마트 계정 잔액':'Smart-account balance'}</span><strong>{giwa.balance??'—'} {MOCK_USDC.symbol}</strong><a className="arc-inline-link" href={faucetHintUrl(ko?'ko':'en','musdc')}>{FAUCET_HINT[ko?'ko':'en'].action}<ExternalLink size={14} aria-hidden="true"/></a></div>
         <div className="arc-friend-allowances">{members.map(c=>{
             const active=giwa.jobs.some(j=>activeGuardianOuting(j,c.nft));
-            return <div className="arc-friend-allowance" key={c.id}><div className="arc-friend-identity"><GuardianAvatar appearance={c.appearance} color={c.color} portrait/><div><strong>{c.name}</strong><small>{active?(ko?'외출 기록에서 확인해요':'Check their outing below'):`${c.appearance?`${GUARDIAN_NAMES[ko?'ko':'en'][c.appearance.zodiac]} · `:''}${TEMPERAMENT_NAMES[ko?'ko':'en'][c.temperament]}`}</small></div></div>
+            return <div className="arc-friend-allowance" key={c.id}><div className="arc-friend-identity"><GuardianAvatar appearance={c.appearance} color={c.color} portrait/><div><strong>{c.name}</strong><small>{active?(ko?'외출 기록에서 확인해요':'Check their outing below'):`${c.appearance?`${ZODIAC_NAMES[ko?'ko':'en'][c.appearance.zodiac]} · `:''}${TEMPERAMENT_NAMES[ko?'ko':'en'][c.temperament]}`}</small></div></div>
                 <AllowanceAmount name={c.name} value={c.agent.rounds} disabled={!editable||active||giwa.busy} ko={ko} onChange={n=>onAmountChange(c.id,n)} onValidityChange={ok=>setInvalid(v=>v[c.id]===!ok?v:{...v,[c.id]:!ok})}/></div>;
         })}</div>
         {!members.length&&<p>{ko?'함께할 친구를 먼저 골라 주세요.':'Choose a friend first.'}</p>}

@@ -1,4 +1,5 @@
 import type {GameId} from "@mapae/arcade";
+import {ZODIAC_NAMES} from "@mapae/arcade/guardian-art";
 import {guardianName, type GuardianHonors, type GuardianZodiac} from "@mapae/arcade/guardians";
 import {
     addDays, DEVOTION_DAYS, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
@@ -7,7 +8,6 @@ import {
 import {SEASON_MAX_DAY_POINTS, seasonCountdown, seasonDaysLeft, type SeasonStatus} from "@mapae/arcade/season";
 import {teamGap, type TeamRow} from "@mapae/arcade/team";
 import type {Locale} from "../../lib/i18n";
-import {GUARDIAN_NAMES} from "../guardian";
 
 const KST_MINUTES = 9 * 60;
 const MINUTE = 60_000;
@@ -198,7 +198,7 @@ export function seasonBannerCopy(status: SeasonStatus, mine: SeasonStanding | nu
 }
 /** A zodiac team's name: 호랑이팀 / Team Tiger. */
 export function teamName(zodiac: GuardianZodiac, locale: Locale): string {
-    return locale === "ko" ? `${GUARDIAN_NAMES.ko[zodiac]}팀` : `Team ${GUARDIAN_NAMES.en[zodiac]}`;
+    return locale === "ko" ? `${ZODIAC_NAMES.ko[zodiac]}팀` : `Team ${ZODIAC_NAMES.en[zodiac]}`;
 }
 /** Points a member of the team: one decimal, none when whole; shown beside the total, never ranked by. */
 export function averagePoints(points: number, members: number, locale: Locale): string {

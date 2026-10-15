@@ -1,6 +1,7 @@
 import {useId} from "react";
 import type {Color} from "./state";
-import {BACKDROP_COLORS, SEAL_COLORS, type Guardian} from "./guardian";
+import {BACKDROP_COLORS, SEAL_COLORS} from "@mapae/arcade/guardian-art";
+import type {Guardian} from "./guardian";
 import {guardianLayers} from "./guardian-layers";
 import "./guardian.css";
 

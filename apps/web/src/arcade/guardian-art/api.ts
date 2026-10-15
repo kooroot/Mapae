@@ -2,7 +2,8 @@ import {BaseError, ContractFunctionRevertedError, createPublicClient, http, isAd
 import {giwaSepolia, parseNodeRpcUrl} from "@mapae/shared";
 import {guardianAbi} from "@mapae/arcade/guardian-abi";
 import {GUARDIAN_MAX_SUPPLY, guardianName, guardianTraits, guardianTokenId} from "@mapae/arcade/guardians";
-import {BACKDROP_COLORS, guardianAppearance, SEAL_COLORS} from "../guardian";
+import {BACKDROP_COLORS, SEAL_COLORS} from "@mapae/arcade/guardian-art";
+import {guardianAppearance} from "../guardian";
 import {guardianLayers} from "../guardian-layers";
 
 type Birth = {seed: Hex; revealed: boolean};

@@ -1,5 +1,5 @@
 import type {Companion} from "./state";
-import {BACKDROP_COLORS, SEAL_COLORS} from "./guardian";
+import {BACKDROP_COLORS, SEAL_COLORS} from "@mapae/arcade/guardian-art";
 import {guardianCanvas} from "./guardian-layers";
 
 export async function guardianImage(member: Companion): Promise<string> {
