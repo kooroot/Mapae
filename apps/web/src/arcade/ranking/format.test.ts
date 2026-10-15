@@ -88,7 +88,7 @@ describe("streak, titles, scores", () => {
         expect([1, 3, 10, 11].map(p => titleName(p, "ko"))).toEqual(["장원", "급제", "입격", null]);
         expect(boardScore("devotion", 1, "en")).toBe("1 day"); expect(boardScore("race", 2500, "ko")).toBe("2,500점");
         const games = {stamp: {attemptsUsed: 3, today: null, week: null}, race: {attemptsUsed: 1, today: null, week: null}, shop: {attemptsUsed: 1, today: null, week: null}};
-        const g = {tokenId: "1", streak: {current: 0, best: 0, freezes: 0, playedToday: false}, devotion: {rank: null, days: 0}, season: null, titles: [], games};
+        const g = {tokenId: "1", streak: {current: 0, best: 0, freezes: 0, playedToday: false}, devotion: {rank: null, days: 0}, season: null, weekPoints: 0, titles: [], games};
         const standings = {guardians: [g, {...g, tokenId: "2"}]} as unknown as RankingStandings;
         expect(attemptsLeft(standings)).toBe(8); expect(attemptsLeft(null)).toBe(0);
         expect(attemptsBadge(8, "ko")).toBe("도전 8"); expect(attemptsBadge(0, "en")).toBeUndefined();

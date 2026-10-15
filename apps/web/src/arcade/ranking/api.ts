@@ -180,8 +180,10 @@ function guardian(v: unknown, tokenId: string): GuardianStanding | null {
         if (today === undefined || week === undefined || (today && g.attemptsUsed < 1)) return null;
         games[game] = {attemptsUsed: g.attemptsUsed, today, week};
     }
+    // This week's points: at most the daily maximum over seven days, and at least a point once a round placed today.
+    if (!uint(v.weekPoints) || v.weekPoints > SEASON_MAX_DAY_POINTS * 7 || (v.weekPoints < 1 && RANKED_GAMES.some(game => games[game].today))) return null;
     return {tokenId, streak: {current: streak.current, best: streak.best, freezes: streak.freezes, playedToday: streak.playedToday},
-        devotion: {rank: devotion.rank as number | null, days: devotion.days}, season, titles, games};
+        devotion: {rank: devotion.rank as number | null, days: devotion.days}, season, weekPoints: v.weekPoints, titles, games};
 }
 
 /** The season's status: our season's id, its dates (none, or two ranking days in order) and a phase that follows from them today. */

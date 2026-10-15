@@ -146,6 +146,7 @@ export class RankingReader {
             return [game, {today: today.rows, week: week.rows, lastweek: lastweek.rows, todayMoves: previousRanks(today, yesterday), weekMoves: previousRanks(week, lastweek)}];
         })) as Record<GameId, Record<'today' | 'week' | 'lastweek', RankingRow[]> & {todayMoves: Moves; weekMoves: Moves}>;
         const devotion = this.window('devotion', '28d', at).rows, season = this.seasonWindows(today), seasonMoves = season && previousRanks(season.current, season.earlier);
+        const weekPoints = new Map(this.pointTotals(week, addDays(week, 6)).map(row => [row.tokenId, row.points]));
         const guardians = tokenIds.map((tokenId): GuardianStanding => {
             const taken = this.store.rankedAttemptsTaken(this.collection, tokenId, today);
             const devoted = devotion.find(row => row.tokenId === tokenId), raced = season?.current.rows.find(row => row.tokenId === tokenId);
@@ -153,6 +154,7 @@ export class RankingReader {
                 tokenId, streak: guardianStreak(this.playedDays(tokenId, today), today),
                 devotion: {rank: devoted?.rank ?? null, days: devoted?.score ?? 0},
                 season: season && raced ? seasonStanding(raced, season, seasonMoves) : null,
+                weekPoints: weekPoints.get(tokenId) ?? 0,
                 titles: RANKED_GAMES.flatMap(game => {const row = boards[game].lastweek.find(r => r.tokenId === tokenId); return row && row.rank <= BOARD_ROWS ? [{game, place: row.rank}] : [];}),
                 games: Object.fromEntries(RANKED_GAMES.map(game => [game, {
                     attemptsUsed: taken[game].length, today: standing(boards[game].today, tokenId, boards[game].todayMoves),

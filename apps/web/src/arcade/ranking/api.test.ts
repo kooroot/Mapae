@@ -26,7 +26,7 @@ const empty = {attemptsUsed: 0, today: null, week: null};
 const mySeason = (): SeasonStanding => ({moves: true, prev: 4, points: 187, rank: 2, entrants: 212, days: 9, streak: 9, bonus: 10, today: 30});
 function standings(): RankingStandings {
     return {day: "2026-10-14", week: "2026-10-12", closesAt: {day: now + 1000, week: now + 5000}, leaders: {stamp: null, race: 99, shop: null}, guardians: [{
-        tokenId: "2", streak: {current: 2, best: 4, freezes: 0, playedToday: true}, devotion: {rank: 1, days: 6}, season: mySeason(), titles: [{game: "race", place: 3}],
+        tokenId: "2", streak: {current: 2, best: 4, freezes: 0, playedToday: true}, devotion: {rank: 1, days: 6}, season: mySeason(), weekPoints: 45, titles: [{game: "race", place: 3}],
         games: {stamp: empty, race: {attemptsUsed: 2, today: {rank: 2, score: 98, moves: true, prev: 5, entrants: 2, leader: 99, above: rowOf(1), nearby: [rowOf(1), rowOf(2)]}, week: null}, shop: empty},
     }]};
 }
@@ -213,10 +213,15 @@ describe("strict copies", () => {
             s => {s.guardians[0]!.season!.streak = 10;}, s => {s.guardians[0]!.season!.bonus = 5;}, s => {s.guardians[0]!.season!.bonus = 20;}, s => {s.guardians[0]!.season!.today = 31;},
             s => {s.guardians[0]!.season!.points = 281;}, s => {s.guardians[0]!.season!.points = 18;}, s => {s.guardians[0]!.season!.days = 0;}, s => {s.guardians[0]!.season!.prev = 0;},
             s => {s.guardians[0]!.season!.moves = false;}, s => {s.guardians[0]!.season = {} as SeasonStanding;},
+            // This week's points: a count, no more than seven full days, and never zero with a place on today's board.
+            s => {delete (s.guardians[0] as Partial<typeof s.guardians[0]>).weekPoints;}, s => {s.guardians[0]!.weekPoints = 211;}, s => {s.guardians[0]!.weekPoints = -1;},
+            s => {s.guardians[0]!.weekPoints = 1.5;}, s => {s.guardians[0]!.weekPoints = 0;},
         ];
         for (const change of corrupt) {const value = standings(); change(value); expect(parseRankingStandings(value, ["2"])).toBeNull();}
         const none = standings(); none.guardians[0]!.season = null;
         expect(parseRankingStandings(none, ["2"])?.guardians[0]!.season).toBeNull();
+        const idle = standings(); idle.guardians[0]!.games.race = empty; idle.guardians[0]!.weekPoints = 0;
+        expect(parseRankingStandings(idle, ["2"])?.guardians[0]!.weekPoints).toBe(0);
         expect(parseRankingStandings({...standings(), guardians: [{...standings().guardians[0]!, season: {...mySeason(), points: 280, bonus: 10, today: 30}}]}, ["2"])?.guardians[0]!.season?.points).toBe(280);
     });
     test("season status: our id, dates as a pair of ranking days or none, and the phase those dates give today", () => {
@@ -253,6 +258,7 @@ describe("real seller contract", () => {
         expect(mine.guardians[0]!.games.race.today).toMatchObject({rank: 12, entrants: 14, moves: true, prev: 1});
         // Token 12: #1 alone on 13 Oct (10) and #12 today (1); its shop round of 6 Oct settled after that week sealed, so it earns nothing. Tokens 3 and 4 played before the season.
         expect(mine.guardians[0]!.season).toEqual({moves: true, prev: 1, points: 11, rank: 1, entrants: 14, days: 2, streak: 2, bonus: 0, today: 1});
+        expect(mine.guardians[0]!.weekPoints).toBe(11);
         expect(await (await rankingApi(new Request(origin + "/season"), deps)).json<unknown>()).toEqual({...season, today: "2026-10-14", phase: "open"});
         const s1 = await (await rankingApi(new Request(origin + "/board/season/s1"), deps)).json() as RankingBoard;
         expect(s1.rows[0]).toMatchObject({tokenId: "12", score: 11, days: 2, streak: 2}); expect(s1.entrants).toBe(14); expect(s1.closesAt).toBe(Date.parse("2026-11-01T15:00:00Z"));

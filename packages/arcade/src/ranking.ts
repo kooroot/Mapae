@@ -57,6 +57,8 @@ export type GuardianStanding = {
     tokenId: string; streak: GuardianStreak; devotion: {rank: number | null; days: number};
     /** Null outside a season window, or with no ranked day inside it yet. */
     season: SeasonStanding | null;
+    /** This week's daily-board points so far, with no attendance bonus: the guardian's share of its zodiac team's weekly total. */
+    weekPoints: number;
     /** Last week's places 1–10, per game. */
     titles: {game: GameId; place: number}[];
     games: Record<GameId, {attemptsUsed: number; today: RankingStanding | null; week: RankingStanding | null}>;
