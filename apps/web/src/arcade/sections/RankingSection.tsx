@@ -19,6 +19,7 @@ import {SeasonBoard} from '../ranking/SeasonBoard';
 import {TeamBoard} from '../ranking/TeamBoard';
 import {GameThumb} from '../Characters';
 import {RankLine, TitleChips} from '../ranking/RankLine';
+import {SeasonMarks} from '../ranking/SeasonMark';
 import {ShareActions} from '../share/ShareButton';
 import {DeskGate, SectionHeading} from './SectionFrame';
 
@@ -36,13 +37,13 @@ const TEAM_NAME = {ko: '띠 팀전', en: 'Zodiac teams'};
 /**
  * Rankings: the season race, the zodiac teams, each game's boards for today, this week, yesterday and last week, the 28-day
  * devotion board, and where the owner's guardians stand with a way to send the next ranked round. The boards are public; only
- * the "my guardians" panels need a wallet. A `#season` or `#team` hash opens that tab, read after hydration so the server and
- * client agree on the first paint.
+ * the "my guardians" panels need a wallet. A `#season`, `#hall` or `#team` hash opens that tab (the hall sits on the season
+ * tab), read after hydration so the server and client agree on the first paint.
  */
 export function RankingSection({desk, walletWaiting, onSendOuting}: {desk: GuardianDesk; walletWaiting: boolean; onSendOuting: (game: GameId, tokenId: string) => void}) {
     const {ko, locale} = desk;
     const [board, setBoard] = useState<TabId>('stamp'), hash = useLocation({select: location => location.hash});
-    useEffect(() => {if (hash === 'season' || hash === 'team') setBoard(hash);}, [hash]);
+    useEffect(() => {if (hash === 'season' || hash === 'team') setBoard(hash); else if (hash === 'hall') setBoard('season');}, [hash]);
     return <div className="nft-arcade">
         <SectionHeading section="ranking" desk={desk} />
         <div className="rank-tabs" role="group" aria-label={ko ? '순위표 고르기' : 'Choose a board'}>
@@ -100,12 +101,12 @@ function MyGuardians({desk, onSendOuting}: {desk: GuardianDesk; onSendOuting: (g
                 {revealed.map((token, index) => {
                     const standing = standings.guardians.find(g => g.tokenId === token.tokenId);
                     if (!standing) return null;
-                    const streak = streakCopy(standing.streak, locale), member = crew[index];
+                    const streak = streakCopy(standing.streak, locale), member = crew[index], marks = desk.marksOf(token.tokenId);
                     const devotion = standing.devotion.rank === null ? (ko ? `최근 ${DEVOTION_DAYS}일 출석 없음` : `No ranked days in the last ${DEVOTION_DAYS}`)
                         : ko ? `최근 ${DEVOTION_DAYS}일 중 ${standing.devotion.days}일 · 꾸준함 ${standing.devotion.rank}위` : `${standing.devotion.days} of the last ${DEVOTION_DAYS} days · devotion #${standing.devotion.rank}`;
                     return <li key={token.tokenId} className="rank-guardian">
-                        <GuardianAvatar appearance={member?.appearance} color={member?.color} portrait />
-                        <div><h3>{guardianName(token.tokenId, locale)}</h3><p className="rank-line">{streak.title}</p><small>{streak.detail} · {devotion}</small><TitleChips locale={locale} titles={standing.titles} onNft={titlesOnNft(token.honors, standings.week)} /></div>
+                        <GuardianAvatar appearance={member?.appearance} color={member?.color} portrait marks={marks} />
+                        <div><h3>{guardianName(token.tokenId, locale)}<SeasonMarks marks={marks} locale={locale} /></h3><p className="rank-line">{streak.title}</p><small>{streak.detail} · {devotion}</small><TitleChips locale={locale} titles={standing.titles} onNft={titlesOnNft(token.honors, standings.week)} /></div>
                         <ul className="rank-games">
                             {RANKED_GAMES.map(game => {
                                 const left = RANKED_ATTEMPTS - standing.games[game].attemptsUsed, today = standing.games[game].today;

@@ -2,7 +2,7 @@ import {useEffect, useId, useRef, useState} from 'react';
 import {ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleAlert, Crosshair, LoaderCircle, RefreshCw} from 'lucide-react';
 import {BOARD_ROWS, RANKING_PAGE_ROWS, type RankingBoard} from '@mapae/arcade/ranking';
 import type {Locale} from '../../lib/i18n';
-import {BoardRow} from './BoardRow';
+import {BoardRow, type MarksOf} from './BoardRow';
 import {useRankingPage, type RankingPageAt} from './client';
 
 /**
@@ -11,7 +11,7 @@ import {useRankingPage, type RankingPageAt} from './client';
  * owner's revealed guardians; `mineBelow` says whether one of them places below the top rows, null when the standings do not say
  * (yesterday, last week, or before they load), which still offers the jump. Mount it keyed by board and period so it starts closed.
  */
-export function FullBoard({board, mine, mineBelow, locale}: {board: RankingBoard; mine: readonly string[]; mineBelow: boolean | null; locale: Locale}) {
+export function FullBoard({board, mine, mineBelow, locale, marksOf}: {board: RankingBoard; mine: readonly string[]; mineBelow: boolean | null; locale: Locale; marksOf?: MarksOf}) {
     const ko = locale === 'ko', id = useId();
     const [at, setAt] = useState<RankingPageAt | null>(null);
     // A board that shrank to its top rows (a new day) hides the list, and stops reading it.
@@ -60,7 +60,7 @@ export function FullBoard({board, mine, mineBelow, locale}: {board: RankingBoard
             {value ? value.rows.length > 0
                 ? <ol className="rank-list" aria-label={range(value.offset)}>
                     {value.rows.map(row => <BoardRow key={row.tokenId} board={value} row={row} mine={mine.includes(row.tokenId)} focused={row.tokenId === focus}
-                        ref={row.tokenId === focus ? found : undefined} locale={locale} />)}
+                        ref={row.tokenId === focus ? found : undefined} locale={locale} marksOf={marksOf} />)}
                 </ol>
                 : <p className="rank-full-note" role="status">{ko ? '이 쪽에는 이제 순위가 없어요. 순위표가 새로 시작됐을 수 있어요.' : 'Nothing on this page now; the board may have restarted.'}</p>
             : page.error ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '이 쪽을 불러오지 못했어요.' : 'This page could not load.'}</p>

@@ -9,9 +9,10 @@ import {GuardianAvatar} from '../GuardianAvatar';
 import type {GuardianDesk} from '../nft/useGuardianDesk';
 import {DeskGate} from '../sections/SectionFrame';
 import {BoardChips} from './Board';
-import {useSeasonStatus, useTeamBoard} from './client';
-import {myTeamShare, points, seasonPhaseLabel, teamCheerCopy, teamIntro, teamName, teamRowDetail} from './format';
+import {useTeamBoard} from './client';
+import {myTeamShare, points, seasonPhaseLabel, teamCheerCopy, teamIntro, teamName, teamRowDetail, type TeamFinal} from './format';
 import {RankMedal} from './RankMedal';
+import {SeasonMarks} from './SeasonMark';
 
 type View = 'week' | 'season';
 
@@ -21,14 +22,15 @@ type View = 'week' | 'season';
  * plain words what the race will be and leaves the weekly board as the one to watch.
  */
 export function TeamBoard({desk, walletWaiting}: {desk: GuardianDesk; walletWaiting: boolean}) {
-    const {ko, locale} = desk, status = useSeasonStatus(), phase = status.value?.phase;
+    const {ko, locale, season: status} = desk, phase = status.value?.phase, sealed = desk.hall.value?.sealed === true;
     const racing = phase === 'open' || phase === 'closed', seasonId = status.value ? seasonPeriod(status.value) : seasonPeriod(SEASON);
+    const final: TeamFinal = phase === 'closed' ? sealed ? 'sealed' : 'pending' : null;
     // Until the season status is known, no view is chosen: showing the week first and switching to the season would swap boards mid-read.
     const [choice, setChoice] = useState<View | null>(null), view: View | null = choice ?? (status.value ? racing ? 'season' : 'week' : status.error ? 'week' : null);
     const week = view === 'week', enabled = week || racing, remote = useTeamBoard(week ? 'week' : seasonId, enabled);
     const mine = new Set(desk.revealed.map(token => guardianZodiac(token.seed)));
     const overline = week ? remote.value ? `${ko ? '이번 주' : 'This week'} ${remote.value.from} – ${remote.value.to}` : ko ? '이번 주' : 'This week'
-        : status.value ? seasonPhaseLabel(status.value, locale) : ko ? '시즌' : 'Season';
+        : status.value ? seasonPhaseLabel(status.value, locale, sealed) : ko ? '시즌' : 'Season';
     return <>
         <section className="nft-panel rank-board" aria-labelledby="rank-board-title" aria-busy={status.loading || remote.loading}>
             <div className="rank-board-head">
@@ -45,12 +47,12 @@ export function TeamBoard({desk, walletWaiting}: {desk: GuardianDesk; walletWait
                 : !enabled ? <><p className="rank-team-note">{ko ? `시즌 ${SEASON.id}이 열리면 띠 팀전 시즌 순위가 시작돼요. 그동안은 이번 주 팀 순위를 봐요.` : `The season team race starts when Season ${SEASON.id} opens. Until then, see this week's team board.`}</p>
                     <TeamIntro locale={locale} /></>
                 : remote.value ? <><Rows board={remote.value} mine={mine} locale={locale} />
-                    <details className="rank-season-more"><summary>{ko ? '팀전 규칙과 우승 표식' : 'Team rules and the winners’ mark'}</summary><TeamIntro locale={locale} /></details></>
+                    <details className="rank-season-more"><summary>{ko ? '팀전 규칙과 우승 표식' : 'Team rules and the winners’ mark'}</summary><TeamIntro locale={locale} sealed={!week && sealed} /></details></>
                 : remote.error ? <div className="rank-error" role="alert"><CircleAlert size={18} aria-hidden="true" /><p>{ko ? '순위표를 불러오지 못했어요. 잠시 뒤 저절로 다시 읽어 와요.' : 'The board could not load. It will try again shortly.'}</p>
                     <button type="button" className="arc-button arc-button-paper" disabled={remote.loading} onClick={remote.retry}><RefreshCw size={16} aria-hidden="true" />{ko ? '지금 다시 불러오기' : 'Retry now'}</button></div>
                 : <Loading ko={ko} />}
         </section>
-        {enabled && remote.value && remote.value.entrants > 0 && <DeskGate desk={desk} walletWaiting={walletWaiting} need="guardian"><MyTeam desk={desk} board={remote.value} week={week} /></DeskGate>}
+        {enabled && remote.value && remote.value.entrants > 0 && <DeskGate desk={desk} walletWaiting={walletWaiting} need="guardian"><MyTeam desk={desk} board={remote.value} week={week} final={week ? null : final} /></DeskGate>}
     </>;
 }
 const Loading = ({ko}: {ko: boolean}) => <p role="status" className="rank-empty"><LoaderCircle size={16} className="arc-loading-icon" aria-hidden="true" /> {ko ? '순위표를 불러오고 있어요…' : 'Loading the board…'}</p>;
@@ -71,13 +73,13 @@ function Rows({board, mine, locale}: {board: Teams; mine: ReadonlySet<TeamRow['z
     </>;
 }
 
-/** The race in five lines: who is on a team, what counts, how places are decided, who is a member, and what the winners get. */
-function TeamIntro({locale}: {locale: Locale}) {
-    return <ul className="rank-season-intro">{teamIntro(locale).map(item => <li key={item}><span className="rank-season-dot" aria-hidden="true" /><span>{item}</span></li>)}</ul>;
+/** The race in five lines: who is on a team, what counts, how places are decided, who is a member, and what the winners get (or got). */
+function TeamIntro({locale, sealed = false}: {locale: Locale; sealed?: boolean}) {
+    return <ul className="rank-season-intro">{teamIntro(locale, sealed).map(item => <li key={item}><span className="rank-season-dot" aria-hidden="true" /><span>{item}</span></li>)}</ul>;
 }
 
-/** One line per guardian: its team's place and the gap to first, and what the guardian itself brought to the total. */
-function MyTeam({desk, board, week}: {desk: GuardianDesk; board: Teams; week: boolean}) {
+/** One line per guardian: its team's place and the gap to first (or how it finished), and what the guardian itself brought to the total. */
+function MyTeam({desk, board, week, final}: {desk: GuardianDesk; board: Teams; week: boolean; final: TeamFinal}) {
     const {ko, locale, revealed, crew, ranking} = desk, standings = ranking.standings;
     return <section className="nft-panel" aria-labelledby="rank-team-mine-title">
         <span className="arc-overline">{ko ? '띠 팀전' : 'Zodiac teams'}</span>
@@ -88,11 +90,11 @@ function MyTeam({desk, board, week}: {desk: GuardianDesk; board: Teams; week: bo
             : <ul className="rank-guardians">
                 {revealed.map((token, index) => {
                     const zodiac = guardianZodiac(token.seed), standing = standings.guardians.find(g => g.tokenId === token.tokenId), member = crew[index];
-                    const brought = !standing ? 0 : week ? standing.weekPoints : standing.season?.points ?? 0, team = board.rows.find(row => row.zodiac === zodiac)!;
+                    const brought = !standing ? 0 : week ? standing.weekPoints : standing.season?.points ?? 0, team = board.rows.find(row => row.zodiac === zodiac)!, marks = desk.marksOf(token.tokenId);
                     return <li key={token.tokenId} className="rank-guardian">
-                        <GuardianAvatar appearance={member?.appearance} color={member?.color} portrait />
-                        <div><h3>{guardianName(token.tokenId, locale)}</h3>
-                            <p className="rank-line"><b>{teamName(zodiac, locale)}</b><span>{teamCheerCopy(board.rows, zodiac, locale)}</span></p>
+                        <GuardianAvatar appearance={member?.appearance} color={member?.color} portrait marks={marks} />
+                        <div><h3>{guardianName(token.tokenId, locale)}<SeasonMarks marks={marks} locale={locale} /></h3>
+                            <p className="rank-line"><b>{teamName(zodiac, locale)}</b><span>{teamCheerCopy(board.rows, zodiac, locale, final)}</span></p>
                             <small>{myTeamShare(brought, team.points, locale)}</small>
                         </div>
                     </li>;
