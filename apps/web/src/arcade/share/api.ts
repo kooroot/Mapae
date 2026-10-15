@@ -27,8 +27,9 @@ const DAYS_BACK = 365;
 /** A card PNG from the seller is a few hundred KB; anything near this is not one. */
 const CARD_LIMIT = {type: "image/png", maxBytes: 2 * 1024 * 1024};
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
-/** The seller's ETag is stored and echoed, so it must look like one of its card tags and nothing else. */
+/** The seller's ETag is stored and echoed, so it must be this card's tag — its token, game and day, or its season — and nothing else. */
 const CARD_TAG = /^"card-[0-9a-z-]{1,80}"$/;
+const cardTagPrefix = (target: ShareTarget) => `"card-${target.tokenId}-${target.kind === "run" ? `${target.game}-${target.day}` : "season"}-`;
 /** A settled day or a closed season never changes; the edge keeps it an hour and browsers five minutes. A live board turns every minute. */
 const SETTLED = {edge: "public, max-age=3600", client: "public, max-age=300"}, LIVE = "public, max-age=60";
 const IMAGE_HEADERS = {"Content-Type": "image/png", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Access-Control-Allow-Origin": "*"};
@@ -39,15 +40,15 @@ const PAGE_HEADERS = {
 const error = (status: number, extra: Record<string, string> = {}) => new Response(null, {status, headers: {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...extra}});
 
 /**
- * The seller's PNG, admitted only as the card it claims to be: a PNG of the card's size, a card tag and one of the two cache
- * lives the seller may ask for. Headers are read here and never passed through.
+ * The seller's PNG, admitted only as the card that was asked for: a PNG of the card's size, the tag of this target and one of
+ * the two cache lives the seller may ask for. Headers are read here and never passed through.
  */
-function cardImage(bytes: Uint8Array, headers: Headers): {tag: string; settled: boolean} | null {
+function cardImage(bytes: Uint8Array, headers: Headers, target: ShareTarget): {tag: string; settled: boolean} | null {
     if (bytes.length < 24 || PNG_SIGNATURE.some((byte, i) => bytes[i] !== byte)) return null;
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (view.getUint32(16) !== CARD_WIDTH || view.getUint32(20) !== CARD_HEIGHT) return null;
     const tag = headers.get("ETag"), life = headers.get("Cache-Control");
-    if (!tag || !CARD_TAG.test(tag) || (life !== SETTLED.edge && life !== LIVE)) return null;
+    if (!tag || !CARD_TAG.test(tag) || !tag.startsWith(cardTagPrefix(target)) || (life !== SETTLED.edge && life !== LIVE)) return null;
     return {tag, settled: life === SETTLED.edge};
 }
 
@@ -98,7 +99,7 @@ export async function shareApi(request: Request, deps: ShareDependencies): Promi
         } else {
             const upstream = await upstreamBytes(`${path}/png`, deps, CARD_LIMIT);
             if (!upstream.found) return missing("public, max-age=30");
-            const card = cardImage(upstream.bytes, upstream.headers);
+            const card = cardImage(upstream.bytes, upstream.headers, target);
             if (!card) return unavailable();
             stored = new Response(upstream.bytes, {headers: {...IMAGE_HEADERS, ETag: card.tag, "Cache-Control": card.settled ? SETTLED.edge : LIVE}});
             client = card.settled ? SETTLED.client : LIVE;

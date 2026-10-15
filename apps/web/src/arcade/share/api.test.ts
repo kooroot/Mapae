@@ -89,12 +89,12 @@ describe("share card image", () => {
         expect((await get(CARD, setup(undefined, {receiptToken: "short"}).deps)).status).toBe(503);
         const down = await get(CARD, setup(() => new Response("nope", {status: 500})).deps);
         expect(down.status).toBe(503); expect(down.headers.get("Retry-After")).toBe("5"); expect(down.headers.get("Cache-Control")).toBe("no-store");
-        // Not a PNG, too large by its header or by its body, not card-sized, no card tag, or a cache life the seller may not ask for.
+        // Not a PNG, too large by its header or by its body, not card-sized, no card tag, another card's tag, or a cache life the seller may not ask for.
         for (const answer of [
             () => png(ranked(), {"Content-Type": "text/html"}), () => Response.json(ranked()), () => png(ranked(), {"Content-Length": String(3 * 1024 * 1024)}),
             () => png(ranked(), {}, new Uint8Array(2 * 1024 * 1024 + 1)), () => png(ranked(), {}, tinyPng.slice()), () => png(ranked(), {}, new TextEncoder().encode("<svg/>")),
             () => png(ranked(), {ETag: ""}), () => png(ranked(), {ETag: 'W/"card-407"'}), () => png(ranked(), {ETag: '"card-407"; evil'}), () => png(ranked(), {"Cache-Control": "public, max-age=86400"}),
-            () => png(ranked(), {"Cache-Control": "no-store"}),
+            () => png(ranked(), {"Cache-Control": "no-store"}), () => png(ranked("2026-10-13")), () => png(seasonCard()), () => png({...ranked(), tokenId: "408"}),
         ]) {
             const response = await get(CARD, setup(answer).deps);
             expect(response.status).toBe(503); expect(response.headers.get("Retry-After")).toBe("5");
