@@ -1,12 +1,11 @@
 import type {ReactNode} from "react";
 import {Link} from "@tanstack/react-router";
 import {ArrowRight, CircleAlert, Clock, Compass, Gamepad2, LoaderCircle, Pause, RefreshCw, Sparkles, Ticket, Trophy, Users} from "lucide-react";
-import type {GameId} from "@mapae/arcade";
+import {GAME_NAMES, type GameId} from "@mapae/arcade";
+import {ZODIAC_NAMES} from "@mapae/arcade/guardian-art";
 import {guardianName, type GuardianZodiac} from "@mapae/arcade/guardians";
 import {seasonPeriod} from "@mapae/arcade/season";
 import type {Locale} from "../lib/i18n";
-import {GAME_NAMES} from "./game-names";
-import {GUARDIAN_NAMES} from "./guardian";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {SignInCard} from "./SignInCard";
 import {TEMPERAMENT_NAMES} from "./nft/model";
@@ -43,7 +42,7 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
                     <div>
                         <span className="arc-dock-label">{ko ? "함께할 전령" : "Your guardian"}</span>
                         <h2>{guardianName(token.tokenId, locale)}</h2>
-                        <p>{GUARDIAN_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}</p>
+                        <p>{ZODIAC_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}</p>
                         <p className="arc-dock-aptitude"><span>{ko ? `${names[game]} 적성` : `${names[game]} aptitude`}</span><meter min={0} max={6} value={traits.aptitudes[game]} aria-hidden="true" /><b>{traits.aptitudes[game]} / 6</b></p>
                         <RankLine locale={locale} game={game} guardian={desk.ranking.standings?.guardians.find(g => g.tokenId === token.tokenId)} leader={desk.ranking.standings?.leaders[game] ?? null} named={false} weekly />
                         <TeamCheer zodiac={traits.zodiac} locale={locale} />

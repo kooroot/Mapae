@@ -1,3 +1,4 @@
+import {GAME_NAMES} from "@mapae/arcade";
 import {ARCADE_TICKET_COST} from "@mapae/arcade/tickets";
 import {MOCK_USDC} from "@mapae/shared";
 import {useEffect, useState, type Ref} from "react";
@@ -5,7 +6,6 @@ import type {Locale} from "../lib/i18n";
 import type {Activity} from "./activity";
 import {explorerTxUrl} from "../lib/config";
 import {isHash} from "viem";
-import {GAME_NAMES} from "./game-names";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {guardianCanvas} from "./guardian-layers";
 import {GameArt, gameArt} from "./Characters";

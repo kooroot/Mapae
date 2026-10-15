@@ -1,11 +1,10 @@
 import {GameGuide} from "./GameGuide";
 import {StampChallenges, StampCoach} from "./StampChallenges";
-import type {GameId, ActivityOutcome} from "@mapae/arcade";
+import {GAME_NAMES, type GameId, type ActivityOutcome} from "@mapae/arcade";
 import {ConfirmDialog} from "../components/ConfirmDialog";
 import {Arena, RaceGame, ShopGame, GameViewport} from "./PracticeGames";
 import {AgentReceipt} from "./AgentReceipt";
 import {admitHumanActivity, completeActivity, practiceBest, latestShopMemory, type Activity} from "./activity";
-import {GAME_NAMES} from "./game-names";
 import "./practice.css";
 import {BrandSelect} from "../components/BrandSelect";
 import {PlaySettings} from "./PlaySettings";

@@ -1,9 +1,10 @@
 import type {Hex} from "viem";
+import {GAME_NAMES} from "@mapae/arcade";
+import {BACKDROP_COLORS, SEAL_COLORS, ZODIAC_NAMES} from "@mapae/arcade/guardian-art";
 import {guardianName, guardianTraits} from "@mapae/arcade/guardians";
 import type {RankedCard, SeasonCard} from "@mapae/arcade/ranking";
 import {SEASON} from "@mapae/arcade/season";
-import {GAME_NAMES} from "../game-names";
-import {BACKDROP_COLORS, GUARDIAN_NAMES, guardianAppearance, SEAL_COLORS} from "../guardian";
+import {guardianAppearance} from "../guardian";
 import {guardianLayers, type ArtLayer} from "../guardian-layers";
 import type {Bitmap} from "./png";
 import {GLYPH_HEIGHT, textWidth} from "./pixel-font";
@@ -84,7 +85,7 @@ export function renderRankedCard(card: RankedCard, images: LayerImages): Bitmap 
     scoreBlock(b, card.score, "PTS");
     placeLine(b, card.rank, `#${card.rank} OF ${card.entrants} · ${card.final ? monthDay(card.day) : "TODAY"}`);
     line(b, card.season ? `SEASON ${SEASON.id} · ${card.season.points.toLocaleString("en")} PTS · #${card.season.rank}/${card.season.entrants}`
-        : `${GUARDIAN_NAMES.en[t.zodiac]} · ${t.charm === "none" ? "NO CHARM" : `CHARM: ${t.charm}`} · ${t.temperament}`, 492, 3, INK.dim);
+        : `${ZODIAC_NAMES.en[t.zodiac]} · ${t.charm === "none" ? "NO CHARM" : `CHARM: ${t.charm}`} · ${t.temperament}`, 492, 3, INK.dim);
     return b;
 }
 /** A season standing's card: the season and its dates, total points and place, days played, the run and its bonus. */
