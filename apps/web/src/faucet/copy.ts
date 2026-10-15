@@ -1,4 +1,4 @@
-import type {FaucetKind, FaucetMissionId} from "@mapae/delegation/faucet-policy";
+import {FAUCET_ETH_AMOUNT_WEI, type FaucetKind, type FaucetMissionId} from "@mapae/delegation/faucet-policy";
 import {MOCK_USDC} from "@mapae/shared";
 import {formatUnits} from "viem";
 import type {Locale} from "../lib/i18n";
@@ -22,6 +22,8 @@ export function formatAmount(raw: string | bigint, kind: FaucetKind): string {
     const value = formatUnits(BigInt(raw), kind === "musdc" ? MOCK_USDC.decimals : 18);
     return value.includes(".") ? value.replace(/\.?0+$/, "") : value;
 }
+/** The ETH claim as the FAQ states it, read from the policy so the sentence cannot drift from the amount. */
+const ETH_PER_CLAIM = formatAmount(FAUCET_ETH_AMOUNT_WEI, "eth");
 
 /** Time until `nextAt`, to the minute and never below one: "3시간 12분", "6 d 2 h". */
 export function formatWait(ms: number, locale: Locale): string {
@@ -149,7 +151,7 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         switchChain: "GIWA Sepolia로 바꾸기",
         missionDone: "완료",
         soon: "준비 중",
-        soonMission: "미션은 곧 공개돼요",
+        soonMission: "ETH 탭이 열리면 @mapae_io 팔로우로 받아요",
         claim: {musdc: (amount) => `${amount} ${SYM}까지 받기`, eth: (amount) => `${amount} ETH 받기`},
         claimHint: {
             musdc: (amount) => `지불 계정 잔액이 ${amount} ${TESTNET_TOKEN.ko}가 되도록 채워요. 하루에 한 번이에요.`,
@@ -187,7 +189,7 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
             {id: "follow", q: "왜 팔로우해야 하나요?", a: "팔로우가 이 faucet의 값이에요. 받을 때마다 @mapae_io 팔로우 링크를 열어야 받기 버튼이 켜지고, 그 대가로 테스트넷 토큰을 보내요. 마패 소식도 거기서 먼저 나와요."},
             {id: "use", q: "어디에 쓰나요?", a: `${SYM}는 아케이드에서 가디언에게 주는 용돈과, Studio에서 만든 에이전트의 결제 연습에 써요. 가디언과 에이전트가 테스트넷에서 돈을 쓰는 흉내를 내는 토큰이에요.`},
             {id: "where", q: "어디로 들어오나요?", a: `${SYM}는 지갑 주소에서 정해지는 지불 계정(스마트 계정)으로 들어와요. 아케이드와 Studio가 결제할 때 쓰는 계정이고, 아직 만들어지지 않았어도 미리 받아 둘 수 있어요. GIWA Sepolia ETH는 연결한 지갑으로 들어와요.`},
-            {id: "often", q: "얼마나 자주 받을 수 있나요?", a: `${SYM}는 하루에 한 번, 잔액이 1000이 되도록 채워요. 이미 1000 이상이면 보내지 않아요. GIWA Sepolia ETH는 7일에 한 번 0.005개예요.`},
+            {id: "often", q: "얼마나 자주 받을 수 있나요?", a: `${SYM}는 하루에 한 번, 잔액이 1000이 되도록 채워요. 이미 1000 이상이면 보내지 않아요. GIWA Sepolia ETH는 7일에 한 번 ${ETH_PER_CLAIM}개예요.`},
             {id: "wallet", q: "지갑에 안 보여요", a: `${SYM}는 지갑 주소가 아니라 지불 계정에 들어가요. 위의 지불 계정 주소를 누르면 탐색기에서 잔액을 볼 수 있어요. 지갑에서 토큰을 옮기거나 볼 때를 위해 ${SYM}를 지갑에 추가해 둘 수도 있어요.`},
             {id: "eth", q: "ETH는 누가 받을 수 있나요?", a: "이더리움 메인넷 거래 기록이 1건 이상 있는 일반 지갑이 @mapae_io를 팔로우하면 받아요. 한 사람이 지갑을 여러 개 만들어 모두 가져가지 못하게 하려는 조건이에요."},
             {id: "money", q: "실제 돈인가요?", a: "아니요. GIWA Sepolia 테스트넷에서만 쓰는 토큰이라 팔거나 바꿀 수 없어요."},
@@ -223,7 +225,7 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         switchChain: "Switch to GIWA Sepolia",
         missionDone: "Done",
         soon: "Coming soon",
-        soonMission: "Missions are announced soon",
+        soonMission: "Once the ETH tab opens, a follow of @mapae_io unlocks it",
         claim: {musdc: (amount) => `Top up to ${amount} ${SYM}`, eth: (amount) => `Get ${amount} ETH`},
         claimHint: {
             musdc: (amount) => `Fills your payer account up to ${amount} ${TESTNET_TOKEN.en}. Once a day.`,
@@ -261,7 +263,7 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
             {id: "follow", q: "Why do I have to follow?", a: "The follow is the price. Every claim asks you to open the @mapae_io follow link before the button turns on, and the testnet tokens are what you get for it. Mapae news lands there first."},
             {id: "use", q: "What is it for?", a: `${SYM} is the allowance you give guardians in the arcade, and practice money for agents you create in Studio. It lets them act out spending on a testnet.`},
             {id: "where", q: "Where does it go?", a: `${SYM} goes to your payer account — a smart account derived from your wallet address that the arcade and Studio pay from. It can receive tokens before it is deployed. GIWA Sepolia ETH goes to your connected wallet.`},
-            {id: "often", q: "How often can I claim?", a: `${SYM} tops your balance up to 1000 once a day, and sends nothing if you already hold 1000. GIWA Sepolia ETH is 0.005 once every 7 days.`},
+            {id: "often", q: "How often can I claim?", a: `${SYM} tops your balance up to 1000 once a day, and sends nothing if you already hold 1000. GIWA Sepolia ETH is ${ETH_PER_CLAIM} once every 7 days.`},
             {id: "wallet", q: "I don’t see it in my wallet", a: `${SYM} lands in your payer account, not your wallet address. Tap the payer account address above to see its balance on the explorer. You can still add ${SYM} to your wallet for when you move tokens there.`},
             {id: "eth", q: "Who can get ETH?", a: "A regular wallet with at least one Ethereum mainnet transaction, once it follows @mapae_io. The rule stops one person from draining the faucet with many new wallets."},
             {id: "money", q: "Is this real money?", a: "No. These tokens exist only on the GIWA Sepolia testnet and cannot be sold or exchanged."},

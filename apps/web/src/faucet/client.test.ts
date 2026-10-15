@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import {createSiweMessage} from "viem/siwe";
+import {FAUCET_ETH_AMOUNT_WEI} from "@mapae/delegation/faucet-policy";
 import {checkFaucetSiweMessage, claimFaucet, FaucetError, readFaucetAccount, readFaucetStatus} from "./client";
 
 const OWNER = "0x00000000000000000000000000000000000000a1";
@@ -46,7 +47,7 @@ describe("the SIWE message the page agrees to sign", () => {
 
 describe("faucet requests", () => {
     test("status keeps the Turnstile site key and refuses a missing one", async () => {
-        const status = {musdc: {enabled: true, targetBase: "1000000000", windowMs: 86_400_000, missions: ["x_follow_mapae"]}, eth: {enabled: false, amountWei: "50000000000000000", windowMs: 604_800_000, missions: [], minMainnetNonce: 1}};
+        const status = {musdc: {enabled: true, targetBase: "1000000000", windowMs: 86_400_000, missions: ["x_follow_mapae"]}, eth: {enabled: false, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: 604_800_000, missions: [], minMainnetNonce: 1}};
         answer(200, {...status, siteKey: "0x4AAAAAAA-test"});
         expect((await readFaucetStatus()).siteKey).toBe("0x4AAAAAAA-test");
         answer(200, status);
