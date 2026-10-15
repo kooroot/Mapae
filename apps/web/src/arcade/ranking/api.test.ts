@@ -154,6 +154,10 @@ describe("strict copies", () => {
         expect(parseRankingBoard({...seasonBoard(), closesAt: Date.parse("2026-10-14T15:00:00Z")}, "season", "s1")?.closesAt).toBe(Date.parse("2026-10-14T15:00:00Z"));
         // A first day: nothing to compare with, one day each, a point for taking part.
         expect(parseRankingBoard({...seasonBoard([seasonRow(1, "3", 30, 1), seasonRow(2, "9", 1, 1)], false), from: "2026-10-14"}, "season", "s1")?.rows.map(r => r.score)).toEqual([30, 1]);
+        // A row says nothing about its bonus: seven scattered days at a point each, or fourteen days with one run and 20 points, are whole boards.
+        expect(parseRankingBoard(seasonBoard([seasonRow(1, "3", 7, 7, 1)], false), "season", "s1")?.rows[0]!.score).toBe(7);
+        expect(parseRankingBoard({...seasonBoard([seasonRow(1, "3", 20, 14, 2)], false), from: "2026-10-01"}, "season", "s1")?.rows[0]!.score).toBe(20);
+        expect(parseRankingBoard(seasonBoard([seasonRow(1, "3", 6, 7, 1)], false), "season", "s1")).toBeNull();
         const edit = (change: (rows: ReturnType<typeof seasonRow>[]) => void) => {const b = seasonBoard(); change(b.rows as ReturnType<typeof seasonRow>[]); return b;};
         const bad: unknown[] = [
             {...seasonBoard(), closesAt: Date.parse("2026-10-13T15:00:00Z")}, {...seasonBoard(), closesAt: Date.parse("2026-10-14T16:00:00Z")}, {...seasonBoard(), period: "s2"},

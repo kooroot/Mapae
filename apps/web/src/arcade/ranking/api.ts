@@ -93,10 +93,12 @@ const instant = (v: unknown): v is number => uint(v) && v <= 8_640_000_000_000_0
 /** An earlier rank: a place on a board, or null for no entry there. With no comparison every one is null. */
 const earlierRank = (v: unknown, moves: boolean): v is number | null => v === null || (moves && uint(v) && v >= 1 && v <= GUARDIAN_MAX_SUPPLY);
 const daysOf = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS) + 1;
-/** Season points over `days` played: at least one a day, at most the daily maximum plus a bonus per full run. */
+/** The largest attendance bonus `days` played can hold: one per full run. */
+const maxSeasonBonus = (days: number) => SEASON_STREAK_BONUS * Math.floor(days / SEASON_STREAK_DAYS);
+/** Season points over `days` played: at least one a day plus the bonus known to be in, at most the daily maximum plus the bonus those days could hold. */
 const seasonPoints = (points: unknown, days: number, bonus: number): points is number =>
-    uint(points) && points >= days + bonus && points <= SEASON_MAX_DAY_POINTS * days + bonus;
-const seasonBonus = (v: unknown, days: number): v is number => uint(v) && v % SEASON_STREAK_BONUS === 0 && v <= SEASON_STREAK_BONUS * Math.floor(days / SEASON_STREAK_DAYS);
+    uint(points) && points >= days + bonus && points <= SEASON_MAX_DAY_POINTS * days + maxSeasonBonus(days);
+const seasonBonus = (v: unknown, days: number): v is number => uint(v) && v % SEASON_STREAK_BONUS === 0 && v <= maxSeasonBonus(days);
 /** The season's own columns: days played in it and the current run there, which a run cannot exceed, nor the days the window has. */
 const seasonExtras = (v: Record<string, unknown>, span: number): v is Record<string, unknown> & {days: number; streak: number} =>
     uint(v.days) && v.days >= 1 && v.days <= span && uint(v.streak) && v.streak <= v.days;
@@ -136,7 +138,8 @@ function placedRows(v: Record<string, unknown>, board: RankingBoardId, start: nu
     if (!prevs.every(p => earlierRank(p, moves)) || (!shared && new Set(held).size !== held.length)) return null;
     if (!season) return raw.some(r => "days" in r || "streak" in r) ? null : list.map((r, i) => ({...r, prev: prevs[i] as number | null}));
     const span = daysOf(v.from as string, v.to as string);
-    if (!raw.every(r => seasonExtras(r, span) && seasonPoints(r.score, r.days, SEASON_STREAK_BONUS * Math.floor(r.days / SEASON_STREAK_DAYS)))) return null;
+    // A row carries no bonus of its own, so only a run-less floor can be asked of it.
+    if (!raw.every(r => seasonExtras(r, span) && seasonPoints(r.score, r.days, 0))) return null;
     return list.map((r, i) => ({...r, prev: prevs[i] as number | null, days: raw[i]!.days as number, streak: raw[i]!.streak as number}));
 }
 
