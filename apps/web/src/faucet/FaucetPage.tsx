@@ -43,8 +43,9 @@ function FaucetScreen() {
     const {signMessageAsync} = useSignMessage();
     const status = useQuery({queryKey: ["faucet-status"], queryFn: readFaucetStatus, staleTime: 30_000, retry: 1});
 
-    // The arcade links straight to the ETH tab with `#eth`; it opens even while that tab says it is coming soon.
-    const [tab, setTab] = useState<FaucetKind>(() => typeof location !== "undefined" && location.hash === "#eth" ? "eth" : "musdc");
+    const [tab, setTab] = useState<FaucetKind>("musdc");
+    // The arcade links straight to the ETH tab with `#eth`, read after hydration so the served markup still matches; it opens even while that tab says it is coming soon.
+    useEffect(() => {if (location.hash === "#eth") setTab("eth");}, []);
     const [views, setViews] = useState<Views>(NO_VIEWS);
     const [recipient, setRecipient] = useState<Address>();
     const [signedIn, setSignedIn] = useState(false);
