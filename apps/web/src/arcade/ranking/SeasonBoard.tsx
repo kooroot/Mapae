@@ -67,7 +67,7 @@ export function SeasonIntro({status, locale}: {status: SeasonStatus; locale: Loc
     return <ul className="rank-season-intro">{items.map((item, i) => <li key={item}>{i === 3 ? <Coffee size={16} aria-hidden="true" /> : <span className="rank-season-dot" aria-hidden="true" />}<span>{item}</span></li>)}</ul>;
 }
 
-/** One line per guardian: season points and place with its movement, today's take, days, run and bonus. */
+/** One line per guardian: season points and place with its movement, today's take (while the season runs), days, run and bonus. */
 function MySeason({desk, period, closed}: {desk: GuardianDesk; period: `s${number}`; closed: boolean}) {
     const {ko, locale, revealed, crew, ranking} = desk, standings = ranking.standings;
     return <section className="nft-panel" aria-labelledby="rank-season-mine-title">
@@ -85,8 +85,8 @@ function MySeason({desk, period, closed}: {desk: GuardianDesk; period: `s${numbe
                             {season ? <p className="rank-line"><b>{points(season.points, locale)}</b><span>{ko ? `${season.rank}위/${season.entrants}` : `#${season.rank} of ${season.entrants}`}
                                 <RankMove rank={season.rank} move={season} period={period} locale={locale} /></span></p>
                                 : <p className="rank-line"><span>{closed ? ko ? '이번 시즌에는 기록이 없어요' : 'No record this season' : ko ? '아직 시즌 점수가 없어요 · 랭크 도전 한 판이면 1점' : 'No season points yet · one ranked round earns 1'}</span></p>}
-                            {season && <small>{ko ? `오늘 +${season.today}점 · ${season.days}일 참가 · 연속 ${season.streak}일 · 보너스 +${season.bonus}`
-                                : `today +${season.today} ${season.today === 1 ? 'pt' : 'pts'} · ${season.days} ${season.days === 1 ? 'day' : 'days'} · ${season.streak}-day run · bonus +${season.bonus}`}</small>}
+                            {season && <small>{[...closed ? [] : [ko ? `오늘 +${season.today}점` : `today +${season.today} ${season.today === 1 ? 'pt' : 'pts'}`],
+                                ko ? `${season.days}일 참가 · 연속 ${season.streak}일 · 보너스 +${season.bonus}` : `${season.days} ${season.days === 1 ? 'day' : 'days'} · ${season.streak}-day run · bonus +${season.bonus}`].join(' · ')}</small>}
                         </div>
                     </li>;
                 })}
