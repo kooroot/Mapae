@@ -1,6 +1,6 @@
-import {FAUCET_MISSIONS, FAUCET_MUSDC_MISSIONS, type FaucetClaimView, type FaucetKind, type FaucetMissionId} from "@mapae/delegation/faucet-policy";
+import {FAUCET_ETH_AMOUNT_WEI, FAUCET_MISSIONS, FAUCET_MUSDC_MISSIONS, FAUCET_TARGET_BASE, type FaucetClaimView, type FaucetKind, type FaucetMissionId} from "@mapae/delegation/faucet-policy";
 import {useQuery} from "@tanstack/react-query";
-import {ArrowUpRight, Check, CircleAlert, Clock3, Droplets, LoaderCircle, PartyPopper, ShieldCheck} from "lucide-react";
+import {ArrowUpRight, AtSign, Check, CircleAlert, Clock3, Droplets, LoaderCircle, PartyPopper, ShieldCheck} from "lucide-react";
 import {useEffect, useState, type ReactNode} from "react";
 import type {Address} from "viem";
 import {MOCK_USDC} from "@mapae/shared";
@@ -66,7 +66,7 @@ export function ClaimPanel(props: ClaimPanelProps) {
     const enabled = !!config?.enabled && !props.statusFailed;
     const missions: readonly FaucetMissionId[] = config?.missions ?? (kind === "musdc" ? FAUCET_MUSDC_MISSIONS : []);
     const missionsComplete = missions.every((id) => props.missionsDone.includes(id));
-    const amount = kind === "musdc" ? formatAmount(status?.musdc.targetBase ?? "1000000000", "musdc") : formatAmount(status?.eth.amountWei ?? "50000000000000000", "eth");
+    const amount = kind === "musdc" ? formatAmount(status?.musdc.targetBase ?? String(FAUCET_TARGET_BASE), "musdc") : formatAmount(status?.eth.amountWei ?? String(FAUCET_ETH_AMOUNT_WEI), "eth");
     const nextAt = view?.nextAt ?? (error?.code === "cooldown" ? error.nextAt : undefined);
     const coolingDown = nextAt !== undefined && nextAt > now;
     const pending = view?.state === "pending";
@@ -94,7 +94,7 @@ export function ClaimPanel(props: ClaimPanelProps) {
             <div className="fct-allowance">
                 <div className="fct-allowance-label"><span>{t.amountLabel[kind]}</span><span className="fct-badge">{t.testnet}</span></div>
                 <p className="fct-amount">{amount.replace(/^\d+/, (integer) => integer.replace(/\B(?=(\d{3})+(?!\d))/g, ","))}<span>{kind === "musdc" ? MOCK_USDC.symbol : "ETH"}</span></p>
-                <div className="fct-allowance-meta"><span>{t.destination[kind]}</span>{config && <span><Clock3 size={13} aria-hidden="true" />{t.cadence(formatWait(config.windowMs, locale))}</span>}</div>
+                <div className="fct-allowance-meta"><span>{t.destination[kind]}</span><span><AtSign size={13} aria-hidden="true" />{t.price}</span>{config && <span><Clock3 size={13} aria-hidden="true" />{t.cadence(formatWait(config.windowMs, locale))}</span>}</div>
             </div>
             {off && (kind === "eth" ? (
                 <div className="fct-notice fct-notice-soon"><Clock3 size={20} aria-hidden="true" /><div><strong>{t.ethSoon.title}</strong><p>{t.ethSoon.body(amount)}</p></div></div>

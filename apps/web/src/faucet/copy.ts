@@ -17,7 +17,7 @@ const SYM = MOCK_USDC.symbol;
 /** The stablecoin's name wherever an amount is read: symbol plus "testnet, not real money". */
 export const TESTNET_TOKEN: Record<Locale, string> = {ko: `${SYM}(테스트넷, 실제 돈 아님)`, en: `${SYM} (testnet, not real money)`};
 
-/** A base-unit or wei amount as a short decimal: "1000", "0.05". */
+/** A base-unit or wei amount as a short decimal: "1000", "0.005". */
 export function formatAmount(raw: string | bigint, kind: FaucetKind): string {
     const value = formatUnits(BigInt(raw), kind === "musdc" ? MOCK_USDC.decimals : 18);
     return value.includes(".") ? value.replace(/\.?0+$/, "") : value;
@@ -35,15 +35,15 @@ export function formatWait(ms: number, locale: Locale): string {
 
 export const MISSION_COPY: Record<FaucetMissionId, Record<Locale, {title: string; detail: string; action: string}>> = {
     x_follow_mapae: {
-        ko: {title: "@mapae_io 팔로우", detail: "마패의 새로운 소식을 만나보세요.", action: "팔로우"},
-        en: {title: "Follow @mapae_io", detail: "Stay close to what’s next at Mapae.", action: "Follow"},
+        ko: {title: "@mapae_io 팔로우", detail: "팔로우가 받기의 값이에요. 받을 때마다 한 번 열어요.", action: "팔로우"},
+        en: {title: "Follow @mapae_io", detail: "The follow is the price of every claim.", action: "Follow"},
     },
 };
 
 export const ERROR_COPY: Record<FaucetPageError, Record<Locale, string>> = {
     faucet_off: {ko: "지금은 faucet이 쉬고 있어요. 잠시 뒤 다시 와 주세요.", en: "The faucet is resting right now. Please come back a little later."},
     login_required: {ko: "지갑으로 다시 로그인해 주세요. 받기를 누르면 로그인 서명을 다시 요청해요.", en: "Please sign in again. Pressing the button asks your wallet for a new sign-in signature."},
-    mission_incomplete: {ko: "미션을 먼저 마쳐 주세요.", en: "Finish the missions first."},
+    mission_incomplete: {ko: "@mapae_io 팔로우를 먼저 마쳐 주세요.", en: "Follow @mapae_io first."},
     turnstile_failed: {ko: "사람 확인을 통과하지 못했어요. 다시 시도해 주세요.", en: "The human check did not pass. Please try again."},
     rate_limited: {ko: "요청이 많아요. 잠시 후 다시 시도해 주세요.", en: "Too many requests. Please try again shortly."},
     cooldown: {ko: "아직 다시 받을 수 없어요.", en: "You can’t claim again yet."},
@@ -64,6 +64,12 @@ export interface FaucetCopy {
     title: string;
     titleEnd: string;
     intro: string;
+    /** The hero button: the follow is the price of the tokens, said before anything else. */
+    followHero: string;
+    followDone: string;
+    followNote: string;
+    /** "Price: follow @mapae_io" beside the amount on each tab. */
+    price: string;
     explore: {arcade: string; studio: string};
     tokenUse: Record<FaucetKind, string>;
     amountLabel: Record<FaucetKind, string>;
@@ -118,9 +124,13 @@ export interface FaucetCopy {
 
 export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
     ko: {
-        title: "새로운 실험의",
-        titleEnd: "시작은 여기서.",
-        intro: "테스트 토큰으로 나만의 에이전트를 만들고, 마패 아케이드에서 새로운 모험을 시작하세요.",
+        title: "@mapae_io를 팔로우하면",
+        titleEnd: "테스트 토큰이 열려요.",
+        intro: `팔로우 한 번이 이 faucet의 값이에요. 전령을 뽑는 GIWA Sepolia ETH와 놀이에 쓰는 ${SYM} — 둘 다 테스트넷 토큰이고 실제 돈이 아니에요.`,
+        followHero: "@mapae_io 팔로우하고 받기",
+        followDone: "@mapae_io 팔로우 완료",
+        followNote: "받을 때마다 팔로우 창을 한 번 열어요. 이미 팔로우 중이면 그대로 닫으면 돼요.",
+        price: "값: @mapae_io 팔로우",
         explore: {arcade: "캐릭터와 함께하는 작은 모험", studio: "나만의 에이전트를 만드는 곳"},
         tokenUse: {musdc: "아케이드 · 에이전트 결제", eth: "네트워크 가스비"},
         amountLabel: {musdc: "이 잔액까지 채워드려요", eth: "한 번에 받을 수 있어요"},
@@ -132,7 +142,7 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         nav: {arcade: "아케이드", studio: "Studio"},
         tabs: {musdc: SYM, eth: "ETH"},
         tabsLabel: "받을 토큰",
-        steps: {connect: "지갑 연결", missions: "마패 팔로우", claim: "테스트 토큰 받기"},
+        steps: {connect: "지갑 연결", missions: "@mapae_io 팔로우 — 토큰을 여는 열쇠", claim: "테스트 토큰 받기"},
         connected: "연결됨",
         disconnect: "연결 해제",
         wrongChain: "지갑이 다른 네트워크에 있어요.",
@@ -146,7 +156,7 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
             eth: (amount) => `연결한 지갑에 ${amount} ETH(테스트넷)를 보내요. 7일에 한 번이에요.`,
         },
         needConnect: "먼저 지갑을 연결해 주세요.",
-        needMissions: "미션을 마치면 버튼이 켜져요.",
+        needMissions: "@mapae_io를 팔로우하면 받기 버튼이 켜져요.",
         signing: "지갑에서 로그인 서명을 확인해 주세요…",
         signingNote: "로그인 서명은 결제 권한이 아니고, 가스비도 들지 않아요.",
         checking: "사람인지 확인하는 중…",
@@ -167,18 +177,19 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         alreadyEnough: {musdc: (amount) => `이미 ${amount} ${TESTNET_TOKEN.ko} 이상 있어요. 쓰고 나서 다시 와 주세요.`, eth: (amount) => `이미 ${amount} ETH 이상 있어요. 쓰고 나서 다시 와 주세요.`},
         failedBefore: "지난 요청은 보내지 못했어요. 다시 받아 보세요.",
         musdcOff: {title: "지금은 쉬고 있어요", body: "faucet을 점검하는 중이에요. 잠시 뒤 다시 와 주세요."},
-        ethSoon: {title: "준비 중이에요", body: (amount) => `곧 열려요. 미션을 마치면 7일에 한 번 ${amount} ETH(테스트넷)를 받아요.`},
+        ethSoon: {title: "준비 중이에요", body: (amount) => `곧 열려요. @mapae_io를 팔로우하면 7일에 한 번 ${amount} ETH(테스트넷)를 받아요.`},
         ethRules: {title: "받을 수 있는 지갑", items: (amount) => [
             "이더리움 메인넷 거래 기록이 1건 이상 있는 지갑",
             "스마트 계정이 아닌 일반 지갑(EOA)",
-            `7일에 한 번, ${amount} ETH(테스트넷)`,
+            `7일에 한 번, ${amount} ETH(테스트넷) — 값은 @mapae_io 팔로우`,
         ]},
         howTo: {title: "자주 묻는 질문", items: [
+            {id: "follow", q: "왜 팔로우해야 하나요?", a: "팔로우가 이 faucet의 값이에요. 받을 때마다 @mapae_io 팔로우 링크를 열어야 받기 버튼이 켜지고, 그 대가로 테스트넷 토큰을 보내요. 마패 소식도 거기서 먼저 나와요."},
             {id: "use", q: "어디에 쓰나요?", a: `${SYM}는 아케이드에서 가디언에게 주는 용돈과, Studio에서 만든 에이전트의 결제 연습에 써요. 가디언과 에이전트가 테스트넷에서 돈을 쓰는 흉내를 내는 토큰이에요.`},
             {id: "where", q: "어디로 들어오나요?", a: `${SYM}는 지갑 주소에서 정해지는 지불 계정(스마트 계정)으로 들어와요. 아케이드와 Studio가 결제할 때 쓰는 계정이고, 아직 만들어지지 않았어도 미리 받아 둘 수 있어요. GIWA Sepolia ETH는 연결한 지갑으로 들어와요.`},
-            {id: "often", q: "얼마나 자주 받을 수 있나요?", a: `${SYM}는 하루에 한 번, 잔액이 1000이 되도록 채워요. 이미 1000 이상이면 보내지 않아요. GIWA Sepolia ETH는 7일에 한 번 0.05개예요.`},
+            {id: "often", q: "얼마나 자주 받을 수 있나요?", a: `${SYM}는 하루에 한 번, 잔액이 1000이 되도록 채워요. 이미 1000 이상이면 보내지 않아요. GIWA Sepolia ETH는 7일에 한 번 0.005개예요.`},
             {id: "wallet", q: "지갑에 안 보여요", a: `${SYM}는 지갑 주소가 아니라 지불 계정에 들어가요. 위의 지불 계정 주소를 누르면 탐색기에서 잔액을 볼 수 있어요. 지갑에서 토큰을 옮기거나 볼 때를 위해 ${SYM}를 지갑에 추가해 둘 수도 있어요.`},
-            {id: "eth", q: "ETH는 누가 받을 수 있나요?", a: "이더리움 메인넷 거래 기록이 1건 이상 있는 일반 지갑이 미션을 모두 마치면 받아요. 한 사람이 지갑을 여러 개 만들어 모두 가져가지 못하게 하려는 조건이에요."},
+            {id: "eth", q: "ETH는 누가 받을 수 있나요?", a: "이더리움 메인넷 거래 기록이 1건 이상 있는 일반 지갑이 @mapae_io를 팔로우하면 받아요. 한 사람이 지갑을 여러 개 만들어 모두 가져가지 못하게 하려는 조건이에요."},
             {id: "money", q: "실제 돈인가요?", a: "아니요. GIWA Sepolia 테스트넷에서만 쓰는 토큰이라 팔거나 바꿀 수 없어요."},
         ]},
         watchAsset: `지갑에 ${SYM} 추가`,
@@ -187,9 +198,13 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         footer: "Mapae · GIWA Sepolia 테스트넷",
     },
     en: {
-        title: "Your next idea",
-        titleEnd: "starts here.",
-        intro: "Fuel your agents. Explore the arcade. Pick up free test tokens and see what you can build with Mapae.",
+        title: "Follow @mapae_io,",
+        titleEnd: "and the faucet opens.",
+        intro: `One follow is the price of this faucet. GIWA Sepolia ETH to draw a guardian and ${SYM} to play — both testnet tokens, not real money.`,
+        followHero: "Follow @mapae_io to claim",
+        followDone: "Following @mapae_io",
+        followNote: "Each claim opens the follow page once. Already following? Just close it.",
+        price: "Price: follow @mapae_io",
         explore: {arcade: "A little adventure with your character", studio: "A place to build your own agents"},
         tokenUse: {musdc: "Arcade & agent payments", eth: "Network gas fees"},
         amountLabel: {musdc: "Top up your balance to", eth: "Receive per claim"},
@@ -201,7 +216,7 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         nav: {arcade: "Arcade", studio: "Studio"},
         tabs: {musdc: SYM, eth: "ETH"},
         tabsLabel: "Token to receive",
-        steps: {connect: "Connect wallet", missions: "Follow Mapae", claim: "Get test tokens"},
+        steps: {connect: "Connect wallet", missions: "Follow @mapae_io — this unlocks the tokens", claim: "Get test tokens"},
         connected: "Connected",
         disconnect: "Disconnect",
         wrongChain: "Your wallet is on another network.",
@@ -215,7 +230,7 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
             eth: (amount) => `Sends ${amount} ETH (testnet) to your connected wallet. Once every 7 days.`,
         },
         needConnect: "Connect your wallet first.",
-        needMissions: "Finish the missions to turn the button on.",
+        needMissions: "Follow @mapae_io to turn the claim button on.",
         signing: "Confirm the sign-in signature in your wallet…",
         signingNote: "Signing in grants no payment authority and costs no gas.",
         checking: "Checking you’re human…",
@@ -236,18 +251,19 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         alreadyEnough: {musdc: (amount) => `You already hold ${amount} ${TESTNET_TOKEN.en} or more. Come back after you spend some.`, eth: (amount) => `You already hold ${amount} ETH or more. Come back after you spend some.`},
         failedBefore: "Your last request wasn’t sent. Please try again.",
         musdcOff: {title: "Resting for now", body: "The faucet is under maintenance. Please come back a little later."},
-        ethSoon: {title: "Coming soon", body: (amount) => `Opening soon. Finish the missions to receive ${amount} ETH (testnet) once every 7 days.`},
+        ethSoon: {title: "Coming soon", body: (amount) => `Opening soon. Follow @mapae_io to receive ${amount} ETH (testnet) once every 7 days.`},
         ethRules: {title: "Who can claim", items: (amount) => [
             "A wallet with at least one Ethereum mainnet transaction",
             "A regular wallet (EOA), not a smart account",
-            `${amount} ETH (testnet) once every 7 days`,
+            `${amount} ETH (testnet) once every 7 days — the price is a follow of @mapae_io`,
         ]},
         howTo: {title: "Questions", items: [
+            {id: "follow", q: "Why do I have to follow?", a: "The follow is the price. Every claim asks you to open the @mapae_io follow link before the button turns on, and the testnet tokens are what you get for it. Mapae news lands there first."},
             {id: "use", q: "What is it for?", a: `${SYM} is the allowance you give guardians in the arcade, and practice money for agents you create in Studio. It lets them act out spending on a testnet.`},
             {id: "where", q: "Where does it go?", a: `${SYM} goes to your payer account — a smart account derived from your wallet address that the arcade and Studio pay from. It can receive tokens before it is deployed. GIWA Sepolia ETH goes to your connected wallet.`},
-            {id: "often", q: "How often can I claim?", a: `${SYM} tops your balance up to 1000 once a day, and sends nothing if you already hold 1000. GIWA Sepolia ETH is 0.05 once every 7 days.`},
+            {id: "often", q: "How often can I claim?", a: `${SYM} tops your balance up to 1000 once a day, and sends nothing if you already hold 1000. GIWA Sepolia ETH is 0.005 once every 7 days.`},
             {id: "wallet", q: "I don’t see it in my wallet", a: `${SYM} lands in your payer account, not your wallet address. Tap the payer account address above to see its balance on the explorer. You can still add ${SYM} to your wallet for when you move tokens there.`},
-            {id: "eth", q: "Who can get ETH?", a: "A regular wallet with at least one Ethereum mainnet transaction, once it finishes every mission. The rule stops one person from draining the faucet with many new wallets."},
+            {id: "eth", q: "Who can get ETH?", a: "A regular wallet with at least one Ethereum mainnet transaction, once it follows @mapae_io. The rule stops one person from draining the faucet with many new wallets."},
             {id: "money", q: "Is this real money?", a: "No. These tokens exist only on the GIWA Sepolia testnet and cannot be sold or exchanged."},
         ]},
         watchAsset: `Add ${SYM} to wallet`,

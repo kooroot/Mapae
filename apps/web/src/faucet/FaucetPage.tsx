@@ -1,8 +1,8 @@
 import {Tabs} from "@base-ui/react/tabs";
-import {FAUCET_KINDS, type FaucetClaimView, type FaucetKind, type FaucetMissionId} from "@mapae/delegation/faucet-policy";
+import {FAUCET_ETH_AMOUNT_WEI, FAUCET_KINDS, FAUCET_MISSIONS, type FaucetClaimView, type FaucetKind, type FaucetMissionId} from "@mapae/delegation/faucet-policy";
 import {MOCK_USDC} from "@mapae/shared";
 import {useQuery} from "@tanstack/react-query";
-import {ArrowUpRight, ChevronDown, Coins, Flame, Gamepad2, Plus, Terminal} from "lucide-react";
+import {ArrowUpRight, AtSign, ChevronDown, Coins, Flame, Gamepad2, Plus, Terminal} from "lucide-react";
 import {useCallback, useEffect, useRef, useState} from "react";
 import type {Address} from "viem";
 import {useAccount, useDisconnect, useSignMessage, useSwitchChain, useWatchAsset} from "wagmi";
@@ -44,7 +44,8 @@ function FaucetScreen() {
     const {signMessageAsync} = useSignMessage();
     const status = useQuery({queryKey: ["faucet-status"], queryFn: readFaucetStatus, staleTime: 30_000, retry: 1});
 
-    const [tab, setTab] = useState<FaucetKind>("musdc");
+    // The arcade links straight to the ETH tab with `#eth`; it opens even while that tab says it is coming soon.
+    const [tab, setTab] = useState<FaucetKind>(() => typeof location !== "undefined" && location.hash === "#eth" ? "eth" : "musdc");
     const [views, setViews] = useState<Views>(NO_VIEWS);
     const [recipient, setRecipient] = useState<Address>();
     const [signedIn, setSignedIn] = useState(false);
@@ -125,7 +126,8 @@ function FaucetScreen() {
         </div>
     ) : <WalletPicker context="faucet" reconnecting={walletStatus === "reconnecting" || walletStatus === "connecting"} />;
 
-    const ethAmount = formatAmount(status.data?.eth.amountWei ?? "50000000000000000", "eth");
+    const ethAmount = formatAmount(status.data?.eth.amountWei ?? String(FAUCET_ETH_AMOUNT_WEI), "eth");
+    const followed = missions.includes("x_follow_mapae");
     const arcadeHref = localizeUrl(`${landingUrl.replace(/\/$/, "")}/arcade`, locale);
     return (
         <div className="fct-page">
@@ -144,6 +146,10 @@ function FaucetScreen() {
                             <p className="fct-eyebrow"><span />GIWA SEPOLIA TESTNET</p>
                             <h1 id="fct-title">{t.title}<br /><span>{t.titleEnd}</span></h1>
                             <p className="fct-lead">{t.intro}</p>
+                            <a className="fct-follow" data-done={followed} href={FAUCET_MISSIONS.x_follow_mapae.href} target="_blank" rel="noopener noreferrer" onClick={() => onMission("x_follow_mapae")}>
+                                <AtSign size={18} aria-hidden="true" />{followed ? t.followDone : t.followHero}<ArrowUpRight size={17} aria-hidden="true" />
+                            </a>
+                            <p className="fct-follow-note">{t.followNote}</p>
                         </div>
                         <div className="fct-emblem-scene" aria-hidden="true">
                             <div className="fct-orbit fct-orbit-outer" /><div className="fct-orbit fct-orbit-inner" />

@@ -7,7 +7,7 @@ describe("faucet copy", () => {
     test("amounts read as short decimals in each kind's units", () => {
         expect(formatAmount("1000000000", "musdc")).toBe("1000");
         expect(formatAmount(1_500_000n, "musdc")).toBe("1.5");
-        expect(formatAmount("50000000000000000", "eth")).toBe("0.05");
+        expect(formatAmount("5000000000000000", "eth")).toBe("0.005");
         expect(formatAmount(0n, "eth")).toBe("0");
     });
 
@@ -42,6 +42,18 @@ describe("faucet copy", () => {
                 expect(line).toContain(TESTNET_TOKEN[locale]);
             }
             expect(t.subline).toMatch(/실제 돈이 아니에요|not real money/);
+        }
+    });
+
+    test("the follow is named as the price in both languages", () => {
+        for (const locale of ["ko", "en"] as const) {
+            const t = FAUCET_COPY[locale];
+            for (const line of [t.title + t.titleEnd, t.steps.missions, t.needMissions, t.followHero, t.price, MISSION_COPY.x_follow_mapae[locale].detail, ERROR_COPY.mission_incomplete[locale]]) {
+                expect(line).toMatch(/@mapae_io|the price|값/);
+            }
+            for (const line of [t.title + t.titleEnd, t.steps.missions, t.needMissions, t.followHero, ERROR_COPY.mission_incomplete[locale]]) expect(line).toContain("@mapae_io");
+            expect(t.intro).toMatch(/실제 돈이 아니에요|not real money/);
+            expect(t.howTo.items[0]?.id).toBe("follow");
         }
     });
 });
