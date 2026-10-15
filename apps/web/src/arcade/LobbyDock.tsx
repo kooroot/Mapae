@@ -5,7 +5,6 @@ import {GAME_NAMES, type GameId} from "@mapae/arcade";
 import {ZODIAC_NAMES} from "@mapae/arcade/guardian-art";
 import {guardianName, type GuardianZodiac} from "@mapae/arcade/guardians";
 import {seasonPeriod} from "@mapae/arcade/season";
-import type {Locale} from "../lib/i18n";
 import {GuardianAvatar} from "./GuardianAvatar";
 import {SignInCard} from "./SignInCard";
 import {TEMPERAMENT_NAMES} from "./nft/model";
@@ -14,16 +13,18 @@ import type {GuardianToken} from "./profile/guardians";
 import {arcadeSectionLink, outingStatusLabel} from "./sections";
 import {ConnectInvite, GuardianSwitcher} from "./sections/SectionFrame";
 import {FaucetHint} from "./FaucetHint";
-import {useSeasonStatus, useTeamBoard} from "./ranking/client";
+import {useTeamBoard} from "./ranking/client";
 import {teamCheerCopy} from "./ranking/format";
 import {RankLine} from "./ranking/RankLine";
+import {SeasonMarks} from "./ranking/SeasonMark";
 
-/** While the season runs: where this guardian's zodiac team stands in it, as a line into the team tab; nothing otherwise. */
-function TeamCheer({zodiac, locale}: {zodiac: GuardianZodiac; locale: Locale}) {
-    const status = useSeasonStatus(), open = status.value?.phase === "open";
-    const teams = useTeamBoard(status.value ? seasonPeriod(status.value) : "week", open);
-    if (!open || !teams.value || teams.value.entrants === 0) return null;
-    return <Link className="arc-text-button arc-dock-team" {...arcadeSectionLink("ranking", locale, "team")}><Users size={16} aria-hidden="true" />{teamCheerCopy(teams.value.rows, zodiac, locale)}</Link>;
+/** While the season runs or once it is over: where this guardian's zodiac team stands (or finished), as a line into the team tab. */
+function TeamCheer({desk, zodiac}: {desk: GuardianDesk; zodiac: GuardianZodiac}) {
+    const {locale, season: status} = desk, phase = status.value?.phase, racing = phase === "open" || phase === "closed";
+    const teams = useTeamBoard(status.value ? seasonPeriod(status.value) : "week", racing);
+    if (!racing || !teams.value || teams.value.entrants === 0) return null;
+    const final = phase === "closed" ? desk.hall.value?.sealed ? "sealed" : "pending" : null;
+    return <Link className="arc-text-button arc-dock-team" {...arcadeSectionLink("ranking", locale, "team")}><Users size={16} aria-hidden="true" />{teamCheerCopy(teams.value.rows, zodiac, locale, final)}</Link>;
 }
 
 /** What the lobby offers under the chosen cabinet, from a first free round to playing and sending out one's own guardian. */
@@ -34,18 +35,18 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
     const {ko, locale, stage, nft, token, member, traits, activeJob, revealed} = desk, names = GAME_NAMES[locale];
     const guardians = arcadeSectionLink("guardians", locale);
     if (stage === "ready" && token && member && traits) {
-        const status = activeJob ? outingStatusLabel(activeJob.status, locale) : null;
+        const status = activeJob ? outingStatusLabel(activeJob.status, locale) : null, marks = desk.marksOf(token.tokenId);
         return <div className="arc-entry-dock arc-dock-ready">
             <div className="arc-dock-side">
                 <div className="arc-dock-guardian">
-                    <GuardianAvatar appearance={member.appearance} color={member.color} portrait />
+                    <GuardianAvatar appearance={member.appearance} color={member.color} portrait marks={marks} />
                     <div>
                         <span className="arc-dock-label">{ko ? "함께할 전령" : "Your guardian"}</span>
                         <h2>{guardianName(token.tokenId, locale)}</h2>
-                        <p>{ZODIAC_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}</p>
+                        <p>{ZODIAC_NAMES[locale][traits.zodiac]} · {TEMPERAMENT_NAMES[locale][traits.temperament]}{marks.length > 0 && <SeasonMarks marks={marks} locale={locale} />}</p>
                         <p className="arc-dock-aptitude"><span>{ko ? `${names[game]} 적성` : `${names[game]} aptitude`}</span><meter min={0} max={6} value={traits.aptitudes[game]} aria-hidden="true" /><b>{traits.aptitudes[game]} / 6</b></p>
                         <RankLine locale={locale} game={game} guardian={desk.ranking.standings?.guardians.find(g => g.tokenId === token.tokenId)} leader={desk.ranking.standings?.leaders[game] ?? null} named={false} weekly />
-                        <TeamCheer zodiac={traits.zodiac} locale={locale} />
+                        <TeamCheer desk={desk} zodiac={traits.zodiac} />
                         {activeJob && status && <span className="arc-dock-chip" role="status">{activeJob.status === "paused" ? <Pause size={14} aria-hidden="true" /> : <Compass size={14} aria-hidden="true" />}{ko ? `${status} · ${activeJob.spent}/${activeJob.admissions}회` : `${status} · ${activeJob.spent}/${activeJob.admissions} rounds`}</span>}
                     </div>
                 </div>
