@@ -34,10 +34,15 @@ export function guardianName(tokenId: string | bigint | number, locale: "ko" | "
     return `${GUARDIAN_NAME_MODIFIERS[locale][index % 100]} ${GUARDIAN_GIVEN_NAMES[locale][Math.floor(index / 100)]}`;
 }
 
+export type GuardianZodiac = typeof GUARDIAN_ZODIACS[number];
+/** One trait word of a birth seed: GuardianTraits.sol's `keccak256(abi.encodePacked(seed, index)) % values.length`. */
+function pickTrait<T>(seed: Hex, index: number, values: readonly T[]): T {
+    return values[Number(BigInt(keccak256(encodePacked(["bytes32", "uint8"], [seed, index]))) % BigInt(values.length))]!;
+}
 /** Birth-word decoder shared with GuardianTraits.sol. No clocks, wallet keys or rerolls. */
 export function guardianTraits(seed: Hex) {
     if (!isHash(seed)) throw new Error("Invalid guardian birth seed");
-    const pick = <T,>(index: number, values: readonly T[]): T => values[Number(BigInt(keccak256(encodePacked(["bytes32", "uint8"], [seed, index]))) % BigInt(values.length))]!;
+    const pick = <T,>(index: number, values: readonly T[]): T => pickTrait(seed, index, values);
     const [stamp, race, shop] = pick(8, GUARDIAN_APTITUDES);
     return {
         version: GUARDIAN_TRAITS_VERSION, seed,
@@ -45,6 +50,11 @@ export function guardianTraits(seed: Hex) {
         backdrop: pick(4, GUARDIAN_BACKDROPS), charm: pick(5, GUARDIAN_CHARMS), color: pick(6, GUARDIAN_COLORS),
         temperament: pick(7, GUARDIAN_TEMPERAMENTS), aptitudes: {stamp, race, shop} as GuardianAptitudes,
     };
+}
+/** The zodiac alone, one hash instead of the nine `guardianTraits` spends: the team a guardian is born into. */
+export function guardianZodiac(seed: Hex): GuardianZodiac {
+    if (!isHash(seed)) throw new Error("Invalid guardian birth seed");
+    return pickTrait(seed, 0, GUARDIAN_ZODIACS);
 }
 export type GuardianTraits = ReturnType<typeof guardianTraits>;
 export type GuardianSnapshot = {

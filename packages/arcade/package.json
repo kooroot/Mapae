@@ -16,6 +16,7 @@
     "./challenge": "./src/challenge.ts",
     "./ranking": "./src/ranking.ts",
     "./season": "./src/season.ts",
+    "./team": "./src/team.ts",
     "./guardians": "./src/guardians.ts",
     "./guardian-abi": "./src/guardian-abi.ts"
   },
