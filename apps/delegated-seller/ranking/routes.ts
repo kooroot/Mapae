@@ -21,9 +21,11 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
         if (!options.reader) throw new OutingError('disabled');
         return c.json(options.reader.seasonStatus());
     });
+    /** The season whose board exists: the reader's, which a test may set; the shipped one until a reader is wired. */
+    const season = () => options.reader?.season ?? SEASON;
     app.get('/board/:board/:period', c => {
         const {board, period} = c.req.param();
-        if (!validRankingBoard(board, period, SEASON)) throw new OutingError('invalid_request');
+        if (!validRankingBoard(board, period, season())) throw new OutingError('invalid_request');
         if (!options.reader) throw new OutingError('disabled');
         return c.json(options.reader.board(board, period as RankingPeriod));
     });
@@ -31,7 +33,7 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
     app.get('/board/:board/:period/:by/:at', c => {
         const {board, period, by, at} = c.req.param();
         const offset = by === 'from' ? parseRankingPageOffset(at) : null, around = by === 'around' ? parseRankingIds(at) : null;
-        if (!validRankingBoard(board, period, SEASON) || (offset === null && !around)) throw new OutingError('invalid_request');
+        if (!validRankingBoard(board, period, season()) || (offset === null && !around)) throw new OutingError('invalid_request');
         if (!options.reader) throw new OutingError('disabled');
         return c.json(options.reader.page(board, period as RankingPeriod, around ? {around} : {offset: offset!}));
     });

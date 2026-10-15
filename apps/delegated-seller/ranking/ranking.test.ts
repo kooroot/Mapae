@@ -380,5 +380,9 @@ describe('season', () => {
         expect((await app.request('/board/season/s1/around/1', {headers: auth})).status).toBe(200);
         expect((await app.request('/season')).status).toBe(401);
         expect((await createRankingApp({token}).request('/season', {headers: auth})).status).toBe(503);
+        // The board answers to the reader's season, not the shipped constant.
+        const second = createRankingApp({token, reader: setup({...season1, id: 2}).reader});
+        expect((await second.request('/board/season/s2', {headers: auth})).status).toBe(200);
+        expect((await second.request('/board/season/s1', {headers: auth})).status).toBe(400);
     });
 });
