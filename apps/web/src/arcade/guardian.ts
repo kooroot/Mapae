@@ -13,10 +13,6 @@ export type Charm = typeof CHARMS[number];
 export type Guardian = {version: 1; seed: string; zodiac: Zodiac; backdrop: Backdrop; charm: Charm; wardrobe?: Wardrobe};
 export const ROLL_FIELDS = ["zodiac", "hat", "outfit", "shoes", "backdrop", "charm", "color", "temperament", "goal"] as const;
 export type RollLock = typeof ROLL_FIELDS[number];
-export const GUARDIAN_NAMES = {
-    ko: {rat: "쥐", ox: "소", tiger: "호랑이", rabbit: "토끼", dragon: "용", snake: "뱀", horse: "말", goat: "양", monkey: "원숭이", rooster: "닭", dog: "개", pig: "돼지"},
-    en: {rat: "Rat", ox: "Ox", tiger: "Tiger", rabbit: "Rabbit", dragon: "Dragon", snake: "Snake", horse: "Horse", goat: "Goat", monkey: "Monkey", rooster: "Rooster", dog: "Dog", pig: "Pig"},
-};
 export const GUARDIAN_STORIES: Record<Zodiac, {ko: string; en: string}> = {
     rat: {ko: "작은 틈에서 기회를 찾는 골목길 전령", en: "A nimble messenger with an eye for opportunity"},
     ox: {ko: "맡은 일을 끝까지 해내는 든든한 길잡이", en: "A steady guide who always finishes the journey"},
@@ -31,8 +27,6 @@ export const GUARDIAN_STORIES: Record<Zodiac, {ko: string; en: string}> = {
     dog: {ko: "약속한 자리를 지키는 믿음직한 벗", en: "A loyal friend who always keeps a promise"},
     pig: {ko: "작은 즐거움을 모으는 복스러운 장터 친구", en: "A cheerful friend collecting life's little joys"},
 };
-export const BACKDROP_COLORS: Record<Backdrop, [string, string]> = {dawn: ["#ead3a5", "#bd785a"], moon: ["#a9abc8", "#43465f"], jade: ["#bbd7b7", "#416c60"], ember: ["#e3a18a", "#733b3d"]};
-export const SEAL_COLORS: Record<Color, string> = {red: "#c7483d", jade: "#347c6e", ink: "#303445"};
 /** The appearance a minted guardian's birth seed decodes to: what the NFT image and the share card both draw. */
 export function guardianAppearance(seed: Hex): Guardian {
     const t = guardianTraits(seed);
