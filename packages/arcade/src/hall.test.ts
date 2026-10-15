@@ -29,6 +29,8 @@ describe("hall of fame", () => {
     test("the podium keeps every shared place within three; the winning teams are the rows at first", () => {
         expect(hallPodium(rows).map(row => row.tokenId)).toEqual(["12", "407", "9"]);
         expect(hallTeams([team(1, "tiger", 10), team(1, "ox", 10), team(3, "rat", 1)]).map(row => row.zodiac)).toEqual(["tiger", "ox"]);
+        // A season nobody entered ranks all twelve teams first at zero: none of them won.
+        expect(hallTeams(GUARDIAN_ZODIACS.map(zodiac => ({...team(1, zodiac, 0), members: 0})))).toEqual([]);
     });
     test("marks come podium, team, entrant; a guardian off the boards or an unsealed hall has none", () => {
         expect(seasonMarks(hall, "407", seedFor("tiger"))).toEqual([{season: 1, kind: "podium", place: 2}, {season: 1, kind: "team", zodiac: "tiger"}, {season: 1, kind: "entrant"}]);

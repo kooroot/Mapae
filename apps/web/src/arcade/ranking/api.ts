@@ -271,7 +271,8 @@ export function parseSeasonHall(v: unknown, season: number): SeasonHall | null {
         if (item.rank !== rank || rank > HALL_PODIUM || (previous && (item.points > previous.points || (item.points === previous.points && Number(item.tokenId) < Number(previous.tokenId))))) return null;
         podium.push({rank, tokenId: item.tokenId, seed: seeds.get(item.tokenId)!, points: item.points, days: item.days});
     }
-    if (!Array.isArray(v.teams) || v.teams.length < 1 || v.teams.length > GUARDIAN_ZODIACS.length) return null;
+    // A season with an entrant has a winning team; one nobody entered has none.
+    if (!Array.isArray(v.teams) || (v.teams.length === 0) !== (participants.length === 0) || v.teams.length > GUARDIAN_ZODIACS.length) return null;
     const teams: TeamRow[] = [];
     for (const [i, item] of v.teams.entries()) {
         const row = teamRow(item, i, teams, cap);
@@ -285,7 +286,7 @@ export function parseSeasonHall(v: unknown, season: number): SeasonHall | null {
     const champions: HallChampion[] = [];
     for (const item of v.champions) {
         if (!object(item) || !keys(item, "week", "game", "tokenId", "seed", "score") || !weeks.includes(item.week as string) || !RANKED_GAMES.includes(item.game as GameId) ||
-            !member(item.tokenId, item.seed) || !score(item.score) || item.score < 1) return null;
+            !member(item.tokenId, item.seed) || !score(item.score)) return null;
         const previous = champions.at(-1), order = (c: {week: string; game: GameId}) => weeks.indexOf(c.week) * RANKED_GAMES.length + RANKED_GAMES.indexOf(c.game);
         const champion = {week: item.week as string, game: item.game as GameId, tokenId: item.tokenId, seed: seeds.get(item.tokenId)!, score: item.score};
         if (previous && order(previous) >= order(champion)) return null;

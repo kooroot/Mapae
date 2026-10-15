@@ -317,13 +317,18 @@ describe("strict copies", () => {
             {...ok, podium: [{...podium[0]!, seed: seedFor("ox")}, podium[1]!, podium[2]!]}, {...ok, podium: [{...podium[0]!, days: 0}, podium[1]!, podium[2]!]}, {...ok, podium: [{...podium[0]!, points: 8}, podium[1]!, podium[2]!]},
             {...ok, teams: []}, {...ok, teams: [{...teams[0]!, rank: 2}]}, {...ok, teams: [teams[0]!, teamRow(1, "ox", 307, 3, ["5", 120])]}, {...ok, teams: [teamRow(1, "tiger", 307, 2, ["13", 187])]},
             {...ok, champions: [champions[1]!, champions[0]!, champions[2]!]}, {...ok, champions: [champions[0]!, champions[0]!]}, {...ok, champions: [{...champions[0]!, week: "2026-09-28"}]},
-            {...ok, champions: [{...champions[0]!, week: "2026-10-06"}]}, {...ok, champions: [{...champions[0]!, game: "golf"}]}, {...ok, champions: [{...champions[0]!, score: 0}]},
+            {...ok, champions: [{...champions[0]!, week: "2026-10-06"}]}, {...ok, champions: [{...champions[0]!, game: "golf"}]}, {...ok, champions: [{...champions[0]!, score: -1}]},
             {...ok, streakPool: [pool[1]!, pool[0]!]}, {...ok, streakPool: [{...pool[0]!, runs: 0}]}, {...ok, streakPool: [{...pool[0]!, runs: 5}]}, {...ok, streakPool: [{...pool[0]!, tokenId: "6"}]},
             {...ok, raffle: [...ok.raffle].reverse()}, {...ok, raffle: ok.raffle.slice(1)}, {...ok, closeBlock: {number: "031700000", hash: BLOCK_HASH}}, {...ok, closeBlock: {number: "1", hash: "0x12"}},
             {...ok, closeBlock: {number: 31700000, hash: BLOCK_HASH}}, {...ok, more: 1}, [], null,
         ]) expect(parseSeasonHall(bad, 1)).toBeNull();
         expect(parseSeasonHall({...ok, streakPool: [], raffle: []}, 1)).toMatchObject({raffle: []});
         expect((parseSeasonHall({...ok, teams: [teams[0]!, teamRow(1, "pig", 307, 2, ["7", 187])]}, 1) as SealedHall).teams).toHaveLength(2);
+        // A week's champion may have scored nothing (every entrant at zero), and a season nobody entered seals empty, with no winning team.
+        expect(parseSeasonHall({...ok, champions: [{...champions[0]!, score: 0}]}, 1)).not.toBeNull();
+        const nobody = {...ok, entrants: 0, participants: [], podium: [], teams: [], champions: [], streakPool: [], raffle: []};
+        expect(parseSeasonHall(nobody, 1)).toEqual(nobody);
+        expect(parseSeasonHall({...nobody, teams}, 1)).toBeNull();
     });
     test("season status: our id, dates as a pair of ranking days or none, and the phase those dates give today", () => {
         for (const phase of ["pending", "announced", "open", "closed"] as const) expect(parseSeasonStatus(status(phase))).toEqual(status(phase));

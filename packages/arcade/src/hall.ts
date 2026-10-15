@@ -34,8 +34,8 @@ export function hallSealsAt(season: Season): number | null {
 }
 /** The rows on the podium: places 1–3, more than three guardians when a place is shared. */
 export const hallPodium = (rows: readonly HallRow[]): HallRow[] => rows.filter(row => row.rank <= HALL_PODIUM);
-/** The winning team or, on a shared first place, every team on it. */
-export const hallTeams = (rows: readonly TeamRow[]): TeamRow[] => rows.filter(row => row.rank === 1);
+/** The winning team or, on a shared first place, every team on it; a team nobody played for never wins (a season nobody entered has no winner). */
+export const hallTeams = (rows: readonly TeamRow[]): TeamRow[] => rows.filter(row => row.rank === 1 && row.members > 0);
 export const byTokenId = (a: string, b: string): number => Number(a) - Number(b);
 
 /**
