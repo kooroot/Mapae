@@ -249,7 +249,7 @@ describe("real seller contract", () => {
         expect(mine.guardians[0]!.games.race.today).toMatchObject({rank: 12, entrants: 14, moves: true, prev: 1});
         // Token 12: #1 alone on 13 Oct (10) and #12 today (1); its shop round of 6 Oct settled after that week sealed, so it earns nothing. Tokens 3 and 4 played before the season.
         expect(mine.guardians[0]!.season).toEqual({moves: true, prev: 1, points: 11, rank: 1, entrants: 14, days: 2, streak: 2, bonus: 0, today: 1});
-        expect(await (await rankingApi(new Request(origin + "/season"), deps)).json()).toEqual({...season, today: "2026-10-14", phase: "open"});
+        expect(await (await rankingApi(new Request(origin + "/season"), deps)).json<unknown>()).toEqual({...season, today: "2026-10-14", phase: "open"});
         const s1 = await (await rankingApi(new Request(origin + "/board/season/s1"), deps)).json() as RankingBoard;
         expect(s1.rows[0]).toMatchObject({tokenId: "12", score: 11, days: 2, streak: 2}); expect(s1.entrants).toBe(14); expect(s1.closesAt).toBe(Date.parse("2026-11-01T15:00:00Z"));
         const race = await (await rankingApi(new Request(origin + "/board/race/today"), deps)).json() as RankingBoard;

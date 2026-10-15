@@ -30,7 +30,7 @@
 .rank-move.is-new{border:1px solid var(--medal-gold-rim);background:var(--medal-gold-light);color:var(--medal-gold-ink);font:800 9px/1 var(--sans);letter-spacing:.06em}
 
 /* The board: game tabs on the dark shell, then the board on paper with its chips, period control, podium and rows. */
-.rank-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:18px 0 0}
+.rank-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:18px 0 0}
 .rank-tabs button{display:flex;align-items:center;justify-content:center;gap:10px;min-width:0;min-height:56px;padding:6px 14px;border:1px solid var(--arc-hair);border-radius:var(--r-md);background:#ffffff05;color:var(--arc-cream);font:600 15px var(--sans);cursor:pointer;word-break:keep-all}
 .rank-tabs button .arc-game-thumb{width:36px;height:36px;flex:none}.rank-tabs button>svg{flex:none;color:var(--arc-gold)}
 .rank-tabs button[aria-pressed=true]{border-color:var(--arc-gold);background:#e9c99f1f;color:#f8eee0;box-shadow:inset 0 -3px 0 var(--arc-gold)}
@@ -121,11 +121,17 @@
 .rank-nearby b{font:600 13px var(--mono);color:#5d4c36}
 .rank-nearby strong{font:500 13px var(--mono)}
 .rank-nearby li.is-mine{font-weight:700;color:var(--jade-ink)}
+/* The season's rules and prizes: six lines on paper, a coffee cup on the prize line; folded under the board once it is open. */
+.rank-season-intro{display:grid;gap:10px;margin:20px 0 4px;padding:0;list-style:none;color:var(--card-ink);font-size:14px;line-height:1.7;word-break:keep-all;overflow-wrap:anywhere}
+.rank-season-intro li{display:flex;gap:10px}.rank-season-intro li>svg{flex:none;margin-top:4px;color:var(--medal-gold-ink)}
+.rank-season-dot{flex:none;width:6px;height:6px;margin:9px 5px 0;border-radius:50%;background:var(--jade)}
+.rank-season-more{margin:18px 0 0;padding-top:14px;border-top:1px dashed #e0d3bc}.rank-season-more summary{min-height:44px;align-content:center;cursor:pointer;font-weight:600;color:var(--card-ink)}
+.rank-season-more .rank-season-intro{margin-top:8px}
 .rank-rules{margin:22px 0;color:var(--arc-cream)}
 .rank-rules summary{min-height:44px;align-content:center;cursor:pointer;font-weight:600}
 .rank-rules ul{margin:4px 0 0;padding-left:20px;color:var(--arc-dim);font-size:14px;line-height:1.8}
 @media(max-width:700px){
-    .rank-tabs{gap:6px}.rank-tabs button{flex-direction:column;gap:4px;min-height:64px;padding:6px 4px;font-size:13px}.rank-tabs button .arc-game-thumb{width:28px;height:28px}
+    .rank-tabs{gap:4px}.rank-tabs button{flex-direction:column;gap:4px;min-height:64px;padding:6px 2px;font-size:12px}.rank-tabs button .arc-game-thumb{width:28px;height:28px}
     .rank-periods{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%}.rank-periods button{padding:0 4px;font-size:13px}
     .rank-podium{gap:6px;margin-top:30px}.rank-card{padding:20px 4px 12px}.rank-step.is-pos-1 .rank-card{padding-top:26px}
     .rank-portrait .arc-guardian-portrait{width:56px;height:56px}.rank-step.is-pos-1 .rank-portrait .arc-guardian-portrait{width:72px;height:72px}
