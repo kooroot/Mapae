@@ -79,6 +79,7 @@
 .rank-row>span:not(.rank-place){min-width:0;font-size:15px;word-break:keep-all;overflow-wrap:anywhere}
 .rank-row>strong{font:700 16px var(--display)}
 .rank-row.is-mine{box-shadow:inset 3px 0 0 var(--jade)}
+.rank-season-days{display:block;margin-top:1px;font-size:12px;line-height:1.5;color:var(--card-muted)}
 .rank-mine-tag{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:var(--r-pill);background:var(--jade);color:#fff;font-size:11px;font-weight:700;vertical-align:1px}
 /* The whole board: a toggle and a jump under the top rows, then pages of fifty that step back and forth. A jump lands with the podium's jade ring. */
 .rank-full{margin:18px 0 0;padding-top:16px;border-top:1px dashed #e0d3bc}

@@ -1,7 +1,8 @@
 import {useEffect, useState} from "react";
 import type {RankingBoard, RankingBoardId, RankingPage, RankingPeriod, RankingStandings} from "@mapae/arcade/ranking";
+import type {SeasonStatus} from "@mapae/arcade/season";
 
-type Remote<T> = {value: T | null; loading: boolean; error: boolean};
+export type Remote<T> = {value: T | null; loading: boolean; error: boolean};
 const REFRESH_MS = 60_000;
 
 /** The proxy validated every field; the browser keeps no copy of its own, so a refetch reaches the edge cache. */
@@ -41,10 +42,15 @@ function useVisibleTick(): number {
     return tick;
 }
 
-/** One board, refreshed every minute while the page is in view, and at once on `retry`. */
-export function useRankingBoard(board: RankingBoardId, period: RankingPeriod): Remote<RankingBoard> & {retry: () => void} {
+/** One board, refreshed every minute while the page is in view, and at once on `retry`; nothing is read while not `enabled`. */
+export function useRankingBoard(board: RankingBoardId, period: RankingPeriod, enabled = true): Remote<RankingBoard> & {retry: () => void} {
     const [attempt, setAttempt] = useState(0), tick = useVisibleTick();
-    return {...useRemote<RankingBoard>(`/board/${board}/${period}`, `${tick}:${attempt}`), retry: () => setAttempt(a => a + 1)};
+    return {...useRemote<RankingBoard>(enabled ? `/board/${board}/${period}` : null, `${tick}:${attempt}`), retry: () => setAttempt(a => a + 1)};
+}
+
+/** Where the season stands today, refreshed every minute so the phase turns over at midnight KST without a reload. */
+export function useSeasonStatus(): Remote<SeasonStatus> {
+    return useRemote<SeasonStatus>("/season", String(useVisibleTick()));
 }
 
 /** Which page of a whole board to read: one at an offset, or the one holding the best placed of up to three guardians. */

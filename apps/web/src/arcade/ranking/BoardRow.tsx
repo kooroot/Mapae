@@ -20,9 +20,13 @@ export function BoardRow({board, row, mine, focused = false, locale, ref}: {
 }) {
     return <li ref={ref} tabIndex={focused ? -1 : undefined} className={`rank-row${mine ? ' is-mine' : ''}${focused ? ' is-focus' : ''}`}>
         <span className="rank-place"><RankMedal rank={row.rank} locale={locale} /><Move board={board} row={row} locale={locale} /></span><Portrait row={row} />
-        <span>{guardianName(row.tokenId, locale)}{mine && <MineTag ko={locale === 'ko'} />}</span><strong>{boardScore(board.board, row.score, locale)}</strong>
+        <span>{guardianName(row.tokenId, locale)}{mine && <MineTag ko={locale === 'ko'} />}{board.board === 'season' && row.days !== undefined && row.streak !== undefined && <SeasonDays days={row.days} streak={row.streak} locale={locale} />}</span>
+        <strong>{boardScore(board.board, row.score, locale)}</strong>
     </li>;
 }
+/** A season row's second line: days played in the season and the attendance run inside it. */
+export const SeasonDays = ({days, streak, locale}: {days: number; streak: number; locale: Locale}) =>
+    <small className="rank-season-days">{locale === 'ko' ? `${days}일 참가 · 연속 ${streak}일` : `${days} ${days === 1 ? 'day' : 'days'} · ${streak}-day run`}</small>;
 export const Move = ({board, row, locale}: {board: RowBoard; row: RankingBoard['rows'][number]; locale: Locale}) =>
     <RankMove rank={row.rank} move={{moves: board.moves, prev: row.prev}} period={board.period} locale={locale} />;
 export function Portrait({row}: {row: RankingRow}) {

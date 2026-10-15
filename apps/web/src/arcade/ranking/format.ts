@@ -2,8 +2,9 @@ import type {GameId} from "@mapae/arcade";
 import {guardianName, type GuardianHonors} from "@mapae/arcade/guardians";
 import {
     addDays, DEVOTION_DAYS, RANKED_ATTEMPTS, RANKED_GAMES, rankingWeekIndex, STREAK_FREEZE_EVERY, STREAK_MILESTONES, titlePlace,
-    type GuardianStreak, type RankingBoardId, type RankingMove, type RankingPeriod, type RankingStanding, type RankingStandings,
+    type GamePeriod, type GuardianStreak, type RankingBoardId, type RankingMove, type RankingPeriod, type RankingStanding, type RankingStandings, type SeasonStanding,
 } from "@mapae/arcade/ranking";
+import {SEASON_MAX_DAY_POINTS, seasonCountdown, seasonDaysLeft, type SeasonStatus} from "@mapae/arcade/season";
 import type {Locale} from "../../lib/i18n";
 
 const KST_MINUTES = 9 * 60;
@@ -58,14 +59,14 @@ export function rankShift(rank: number, {moves, prev}: RankingMove): RankShift |
     if (prev === null) return {kind: "new"};
     return prev === rank ? {kind: "same"} : prev > rank ? {kind: "up", by: prev - rank} : {kind: "down", by: rank - prev};
 }
-/** The earlier window each period is measured against, with the Korean comparison particle it takes. */
-const SINCE: Record<RankingPeriod, {ko: [string, string]; en: string}> = {
+/** The earlier window each period is measured against, with the Korean comparison particle it takes; a season (`s1`) against yesterday's totals. */
+const SINCE: Record<GamePeriod | "28d" | "season", {ko: [string, string]; en: string}> = {
     today: {ko: ["어제", "와"], en: "yesterday"}, yesterday: {ko: ["전날", "과"], en: "the day before"},
-    week: {ko: ["지난주", "와"], en: "last week"}, lastweek: {ko: ["전주", "와"], en: "the week before"}, "28d": {ko: ["어제", "와"], en: "yesterday"},
+    week: {ko: ["지난주", "와"], en: "last week"}, lastweek: {ko: ["전주", "와"], en: "the week before"}, "28d": {ko: ["어제", "와"], en: "yesterday"}, season: {ko: ["어제", "와"], en: "yesterday"},
 };
 /** The movement tick's short mark and the sentence that says it in words, so colour and arrows never carry it alone. */
 export function shiftCopy(shift: RankShift, period: RankingPeriod, locale: Locale): {mark: string; label: string} {
-    const [since, particle] = SINCE[period].ko, en = SINCE[period].en;
+    const {ko: [since, particle], en} = period in SINCE ? SINCE[period as keyof typeof SINCE] : SINCE.season;
     switch (shift.kind) {
     case "up": return {mark: `▲${shift.by}`, label: locale === "ko" ? `${since}보다 ${shift.by}계단 올라감` : `Up ${shift.by} from ${en}`};
     case "down": return {mark: `▼${shift.by}`, label: locale === "ko" ? `${since}보다 ${shift.by}계단 내려감` : `Down ${shift.by} from ${en}`};
@@ -77,12 +78,14 @@ export function shiftCopy(shift: RankShift, period: RankingPeriod, locale: Local
     }
 }
 
+/** Which close a clock counts to: the day's, the week's, or the season's. */
+export type ClockPeriod = "day" | "week" | "season";
 /**
  * Time left in a window, in Korean time, plus the reset in the visitor's own clock when it is not KST. `offsetMinutes` is the
  * visitor's UTC offset (east positive), passed in so the line is the same on the server and in tests.
  */
 export function countdown({now, closesAt, period, locale, offsetMinutes}: {
-    now: number; closesAt: number; period: "day" | "week"; locale: Locale; offsetMinutes: number;
+    now: number; closesAt: number; period: ClockPeriod; locale: Locale; offsetMinutes: number;
 }): string {
     const ko = locale === "ko", left = Math.max(MINUTE, closesAt - now);
     const days = Math.floor(left / (24 * 60 * MINUTE)), hours = Math.floor(left / (60 * MINUTE)) % 24, minutes = Math.floor(left / MINUTE) % 60;
@@ -90,16 +93,16 @@ export function countdown({now, closesAt, period, locale, offsetMinutes}: {
         ? days ? `${days}일 ${hours}시간` : hours ? `${hours}시간 ${minutes}분` : `${minutes}분`
         : days ? `${days}d ${hours}h` : hours ? `${hours}h ${minutes}m` : `${minutes}m`;
     const local = offsetMinutes === KST_MINUTES ? "" : ko ? ` (내 시간 ${clock(closesAt, offsetMinutes, period, locale)})` : ` (${clock(closesAt, offsetMinutes, period, locale)} your time)`;
-    if (ko) return `${period === "day" ? "한국 시간 자정까지" : "월요일 0시까지"} ${span}${local}`;
-    return `Resets in ${span} (${period === "day" ? "midnight KST" : "Monday 00:00 KST"})${local}`;
+    if (ko) return `${period === "day" ? "한국 시간 자정까지" : period === "week" ? "월요일 0시까지" : "시즌 종료까지"} ${span}${local}`;
+    return `${period === "season" ? "Season ends in" : "Resets in"} ${span} (${period === "week" ? "Monday 00:00 KST" : "midnight KST"})${local}`;
 }
 /** The reset chip: a ticking clock to the window's close, flagged under an hour and pulsing in the last ten minutes. */
-export function resetClock({now, closesAt, period, locale}: {now: number; closesAt: number; period: "day" | "week"; locale: Locale}): {label: string; soon: boolean; final: boolean} {
+export function resetClock({now, closesAt, period, locale}: {now: number; closesAt: number; period: ClockPeriod; locale: Locale}): {label: string; soon: boolean; final: boolean} {
     const left = Math.max(0, closesAt - now), seconds = Math.floor(left / 1000) % 60, minutes = Math.floor(left / MINUTE) % 60;
     const hours = Math.floor(left / (60 * MINUTE)) % 24, days = Math.floor(left / (24 * 60 * MINUTE)), ko = locale === "ko";
     const time = `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
     const span = days ? ko ? `${days}일 ${time}` : `${days}d ${time}` : time;
-    const label = ko ? `${period === "day" ? "자정까지" : "월요일 0시까지"} ${span}` : `Resets in ${span}`;
+    const label = ko ? `${period === "day" ? "자정까지" : period === "week" ? "월요일 0시까지" : "시즌 종료까지"} ${span}` : `${period === "season" ? "Season ends in" : "Resets in"} ${span}`;
     return {label, soon: left < 60 * MINUTE, final: left < 10 * MINUTE};
 }
 /** Medal names for places 1–3, which always travel with the numeral; colour alone never carries the rank. */
@@ -107,10 +110,10 @@ export function medalName(rank: number, locale: Locale): string | null {
     if (rank < 1 || rank > 3) return null;
     return (locale === "ko" ? ["금메달", "은메달", "동메달"] : ["Gold medal", "Silver medal", "Bronze medal"])[rank - 1]!;
 }
-function clock(at: number, offsetMinutes: number, period: "day" | "week", locale: Locale): string {
+function clock(at: number, offsetMinutes: number, period: ClockPeriod, locale: Locale): string {
     const local = new Date(at + offsetMinutes * MINUTE), hour = local.getUTCHours(), minute = String(local.getUTCMinutes()).padStart(2, "0");
     const twelve = hour % 12 || 12, ko = locale === "ko";
-    const weekday = period === "week" ? ko ? `${"일월화수목금토"[local.getUTCDay()]}요일 ` : `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][local.getUTCDay()]} ` : "";
+    const weekday = period !== "day" ? ko ? `${"일월화수목금토"[local.getUTCDay()]}요일 ` : `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][local.getUTCDay()]} ` : "";
     return ko ? `${weekday}${hour < 12 ? "오전" : "오후"} ${twelve}:${minute}` : `${weekday}${twelve}:${minute} ${hour < 12 ? "AM" : "PM"}`;
 }
 
@@ -155,4 +158,43 @@ export function attemptsBadge(left: number, locale: Locale): string | undefined 
 /** The game with the most ranked tries left for a guardian, the first in game order on a tie. */
 export function freshestGame(standing: RankingStandings["guardians"][number] | undefined): GameId {
     return RANKED_GAMES.reduce((best, game) => (standing?.games[game].attemptsUsed ?? 0) < (standing?.games[best].attemptsUsed ?? 0) ? game : best, RANKED_GAMES[0]);
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** A ranking day as a short date: 11월 2일, Nov 2. */
+export function seasonDate(day: string, locale: Locale): string {
+    const month = Number(day.slice(5, 7)), date = Number(day.slice(8, 10));
+    return locale === "ko" ? `${month}월 ${date}일` : `${MONTHS[month - 1]} ${date}`;
+}
+/** The season board's overline: where the season stands today. */
+export function seasonPhaseLabel(status: SeasonStatus, locale: Locale): string {
+    const ko = locale === "ko";
+    switch (status.phase) {
+    case "pending": return ko ? "준비 중" : "Coming soon";
+    case "announced": {const n = seasonCountdown(status, status.today); return ko ? `D-${n}` : `${n} ${n === 1 ? "day" : "days"} to go`;}
+    case "open": {const n = seasonDaysLeft(status, status.today); return ko ? `진행 중 · 남은 ${n}일` : `Live · ${n} ${n === 1 ? "day" : "days"} left`;}
+    case "closed": return ko ? "종료" : "Final";
+    }
+}
+/** The lobby strip, one line per phase: what is on, what is at stake, and where my best guardian stands once there is a score. */
+export function seasonBannerCopy(status: SeasonStatus, mine: SeasonStanding | null, locale: Locale): string {
+    const ko = locale === "ko", name = ko ? `시즌 ${status.id}` : `Season ${status.id}`;
+    switch (status.phase) {
+    case "pending": return ko ? `${name} 준비 중 · 커피 기프티콘과 한정 문양이 걸려요 · 규칙 미리 보기` : `${name} is coming · coffee gift cards and a limited mark · Preview the rules`;
+    case "announced": {
+        const n = seasonCountdown(status, status.today);
+        if (n === 1) return ko ? `${name} · D-1 · 내일 시작` : `${name} · starts tomorrow`;
+        return ko ? `${name} · D-${n} · ${seasonDate(status.start!, locale)} 시작` : `${name} · ${n} days to go · starts ${seasonDate(status.start!, locale)}`;
+    }
+    case "open": {
+        const n = seasonDaysLeft(status, status.today), left = n === 1 ? ko ? "오늘 마지막 날" : "last day today" : ko ? `남은 ${n}일` : `${n} days left`;
+        if (mine) return ko ? `${name} 진행 중 · ${left} · 내 전령 ${points(mine.points, locale)} · ${mine.rank}위` : `${name} live · ${left} · my guardian ${points(mine.points, locale)} · #${mine.rank}`;
+        return ko ? `${name} 진행 중 · ${left} · 매일 최대 ${SEASON_MAX_DAY_POINTS}점` : `${name} live · ${left} · up to ${SEASON_MAX_DAY_POINTS} pts a day`;
+    }
+    case "closed": return ko ? `${name} 종료 · 최종 순위 보기` : `${name} is over · See the final board`;
+    }
+}
+/** The guardian whose season place is best: the one the banner speaks for. */
+export function bestSeasonStanding(standings: RankingStandings | null, tokenIds: readonly string[]): SeasonStanding | null {
+    return standings?.guardians.filter(g => tokenIds.includes(g.tokenId)).reduce<SeasonStanding | null>((best, g) => g.season && (!best || g.season.rank < best.rank) ? g.season : best, null) ?? null;
 }
