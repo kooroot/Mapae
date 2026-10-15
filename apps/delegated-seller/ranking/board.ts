@@ -1,10 +1,15 @@
 import type {Database} from 'bun:sqlite';
-import type {Address} from 'viem';
+import type {Address, Hex} from 'viem';
 import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
 import {
     addDays, BOARD_ROWS, DEVOTION_DAYS, guardianStreak, kstDay, kstWeek, NEARBY_SPAN, nextReset, RANKED_GAMES, RANKING_PAGE_ROWS, rankingPageOffset, WEEKLY_COUNTED_DAYS, weekCutoff,
-    type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings,
+    type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings, type SeasonRowExtras,
+    type SeasonStanding,
 } from '@mapae/arcade/ranking';
+import {
+    SEASON, SEASON_ENTRY_POINTS, SEASON_RANK_POINTS, SEASON_TOP10_POINTS, seasonClosesAt, seasonStatus, seasonStreak, seasonWindow, type Season, type SeasonStatus,
+} from '@mapae/arcade/season';
+import {OutingError} from '../outings/validation';
 import type {OutingStore} from '../outings/store';
 
 /** A guardian's best ranked attempt per board day; ties go to whoever reached the score first, then the lower token. */
@@ -38,10 +43,36 @@ const DEVOTION_BOARD = `WITH days AS (
 
 /** The ruleset a closed week ranked under when it closed: a later ruleset bump never empties it. */
 const WEEK_RULESET = 'SELECT MAX(ruleset) AS ruleset FROM arcade_guardian_ranked WHERE collection=? AND week=? AND created_at<?';
+/**
+ * Season points per guardian over the season's days so far (?: collection, from, to, yesterday, today), summed from each day's
+ * boards as DAY_BOARD ranks them. A day's board ranks under the highest ruleset played that day, like a closed week does, and
+ * rows settled at or after their week's cutoff never count, so a sealed week's points never change. Yesterday's total comes from
+ * the same scan for the movement column.
+ */
+const SEASON_TOTALS = `WITH rows AS (
+        SELECT token_id, guardian_seed, game, day, ruleset, attempt, score, created_at FROM arcade_guardian_ranked
+        WHERE collection=? AND day BETWEEN ? AND ? AND created_at<(strftime('%s', week, '+8 days') - 32400) * 1000),
+    day_ruleset AS (SELECT game, day, MAX(ruleset) AS ruleset FROM rows GROUP BY game, day),
+    best AS (
+        SELECT r.token_id, r.guardian_seed, r.game, r.day, r.score, r.created_at,
+            ROW_NUMBER() OVER (PARTITION BY r.token_id, r.game, r.day ORDER BY r.score DESC, r.created_at, r.attempt) AS n
+        FROM rows r JOIN day_ruleset d ON d.game=r.game AND d.day=r.day AND d.ruleset=r.ruleset),
+    placed AS (
+        SELECT token_id, guardian_seed, day, ROW_NUMBER() OVER (PARTITION BY game, day ORDER BY score DESC, created_at, CAST(token_id AS INTEGER)) AS rank
+        FROM best WHERE n=1),
+    daily AS (
+        SELECT token_id, MAX(guardian_seed) AS guardian_seed, day,
+            SUM(CASE ${SEASON_RANK_POINTS.map((points, i) => `WHEN rank=${i + 1} THEN ${points}`).join(' ')} WHEN rank<=${BOARD_ROWS} THEN ${SEASON_TOP10_POINTS} ELSE ${SEASON_ENTRY_POINTS} END) AS points
+        FROM placed GROUP BY token_id, day)
+    SELECT token_id AS tokenId, MAX(guardian_seed) AS seed, SUM(points) AS points, COALESCE(SUM(points) FILTER (WHERE day<=?), 0) AS before,
+        COALESCE(SUM(points) FILTER (WHERE day=?), 0) AS today, GROUP_CONCAT(day) AS days
+    FROM daily GROUP BY token_id`;
 
-/** A board window; `ruleset` is the one its rows ranked under, null for devotion, which counts days across rulesets. */
-type Window = {from: string; to: string; closesAt: number | null; ruleset: number | null; rows: RankingRow[]};
+/** A board window; `ruleset` is the one its rows ranked under, null for devotion and the season, which count across rulesets. */
+type Window = {from: string; to: string; closesAt: number | null; ruleset: number | null; rows: (RankingRow & Partial<SeasonRowExtras>)[]};
 type Moves = ReadonlyMap<string, number> | null;
+/** The season board at `to` and at the day before, from one scan, with what each guardian's bonus and today added. */
+type SeasonWindows = {current: Window; earlier: Window; totals: ReadonlyMap<string, {bonus: number; today: number}>};
 
 /** Every entrant of one game's week board at `at`: the open week under the current ruleset, a closed one under its own. */
 export function weekBoard(db: Database, collection: Address, game: GameId, week: string, at: number): {ruleset: number; rows: RankingRow[]} {
@@ -72,11 +103,15 @@ const placed = (rows: RankingRow[], offset: number, count: number, moves: Moves)
  * week keeps the ruleset it closed under.
  */
 export class RankingReader {
-    constructor(readonly store: OutingStore, readonly collection: Address, readonly now: () => number = Date.now) {}
+    constructor(readonly store: OutingStore, readonly collection: Address, readonly now: () => number = Date.now, readonly season: Season = SEASON) {}
+
+    seasonStatus(): SeasonStatus {
+        return seasonStatus(this.season, this.now());
+    }
 
     /** A board's top rows, each with its rank one window earlier: reading the earlier board doubles the work of a request, nothing more. */
     board(board: RankingBoardId, period: RankingPeriod): RankingBoard {
-        const at = this.now(), window = this.window(board, period, at), moves = previousRanks(window, this.window(board, period, at, 1));
+        const [window, earlier] = this.windows(board, period, this.now()), moves = previousRanks(window, earlier);
         return {board, period, from: window.from, to: window.to, closesAt: window.closesAt, entrants: window.rows.length, moves: moves !== null,
             rows: placed(window.rows, 0, BOARD_ROWS, moves)};
     }
@@ -88,7 +123,7 @@ export class RankingReader {
      * functions rank every entrant before any LIMIT could apply, so a SQL page would only save copying rows this request reads.
      */
     page(board: RankingBoardId, period: RankingPeriod, at: {offset: number} | {around: readonly string[]}): RankingPage {
-        const now = this.now(), window = this.window(board, period, now), moves = previousRanks(window, this.window(board, period, now, 1));
+        const [window, earlier] = this.windows(board, period, this.now()), moves = previousRanks(window, earlier);
         const found = 'around' in at ? window.rows.findIndex((row, index) => index >= BOARD_ROWS && at.around.includes(row.tokenId)) : -1;
         const offset = 'offset' in at ? at.offset : rankingPageOffset(found);
         return {board, period, from: window.from, to: window.to, entrants: window.rows.length, moves: moves !== null, offset,
@@ -102,13 +137,14 @@ export class RankingReader {
             const [today, yesterday, week, lastweek] = (['today', 'yesterday', 'week', 'lastweek'] as const).map(period => this.window(game, period, at)) as [Window, Window, Window, Window];
             return [game, {today: today.rows, week: week.rows, lastweek: lastweek.rows, todayMoves: previousRanks(today, yesterday), weekMoves: previousRanks(week, lastweek)}];
         })) as Record<GameId, Record<'today' | 'week' | 'lastweek', RankingRow[]> & {todayMoves: Moves; weekMoves: Moves}>;
-        const devotion = this.window('devotion', '28d', at).rows;
+        const devotion = this.window('devotion', '28d', at).rows, season = this.seasonWindows(today), seasonMoves = season && previousRanks(season.current, season.earlier);
         const guardians = tokenIds.map((tokenId): GuardianStanding => {
             const taken = this.store.rankedAttemptsTaken(this.collection, tokenId, today);
-            const devoted = devotion.find(row => row.tokenId === tokenId);
+            const devoted = devotion.find(row => row.tokenId === tokenId), raced = season?.current.rows.find(row => row.tokenId === tokenId);
             return {
                 tokenId, streak: guardianStreak(this.playedDays(tokenId, today), today),
                 devotion: {rank: devoted?.rank ?? null, days: devoted?.score ?? 0},
+                season: season && raced ? seasonStanding(raced, season, seasonMoves) : null,
                 titles: RANKED_GAMES.flatMap(game => {const row = boards[game].lastweek.find(r => r.tokenId === tokenId); return row && row.rank <= BOARD_ROWS ? [{game, place: row.rank}] : [];}),
                 games: Object.fromEntries(RANKED_GAMES.map(game => [game, {
                     attemptsUsed: taken[game].length, today: standing(boards[game].today, tokenId, boards[game].todayMoves),
@@ -120,8 +156,37 @@ export class RankingReader {
             leaders: Object.fromEntries(RANKED_GAMES.map(game => [game, boards[game].today[0]?.score ?? null])) as RankingStandings['leaders'], guardians};
     }
 
+    /** A board's window at `at` and the one before it. The season reads both from one scan; every other board reads twice. */
+    private windows(board: RankingBoardId, period: RankingPeriod, at: number): [Window, Window] {
+        if (board !== 'season') return [this.window(board, period, at), this.window(board, period, at, 1)];
+        const season = this.seasonWindows(kstDay(at));
+        if (!season) throw new OutingError('invalid_request');
+        return [season.current, season.earlier];
+    }
+
+    /**
+     * The season board as of `today` (or its last day) and as of the day before, or null before the season opens. Points are
+     * summed per day in SQL; the attendance bonus and the shared ranks are added here from each guardian's season days.
+     */
+    private seasonWindows(today: string): SeasonWindows | null {
+        const window = seasonWindow(this.season, today);
+        if (!window) return null;
+        const {from, to} = window, yesterday = addDays(to, -1), totals = new Map<string, {bonus: number; today: number}>();
+        const current: (RankingRow & SeasonRowExtras)[] = [], earlier: RankingRow[] = [];
+        for (const row of this.store.db.query<{tokenId: string; seed: Hex; points: number; before: number; today: number; days: string}, [string, string, string, string, string]>(SEASON_TOTALS)
+            .all(this.collection.toLowerCase(), from, to, yesterday, to)) {
+            const days = row.days.split(','), run = seasonStreak(days, to), before = days.filter(day => day <= yesterday);
+            current.push({rank: 0, tokenId: row.tokenId, seed: row.seed, score: row.points + run.bonus, days: days.length, streak: run.current});
+            totals.set(row.tokenId, {bonus: run.bonus, today: row.today});
+            if (before.length) earlier.push({rank: 0, tokenId: row.tokenId, seed: row.seed, score: row.before + seasonStreak(before, yesterday).bonus});
+        }
+        return {current: {from, to, closesAt: seasonClosesAt(this.season, today), ruleset: null, rows: sharedRanks(current)},
+            earlier: {from, to: yesterday, closesAt: null, ruleset: null, rows: sharedRanks(earlier)}, totals};
+    }
+
     /** The board's window at `at`, or `back` windows earlier: the day, week or 28-day span ending `back` days or weeks sooner. */
     private window(board: RankingBoardId, period: RankingPeriod, at: number, back = 0): Window {
+        if (board === 'season') throw new Error('season windows read in pairs');
         const today = kstDay(at), week = kstWeek(today), collection = this.collection.toLowerCase(), db = this.store.db;
         const rows = (sql: string, ...args: (string | number)[]) => db.query<RankingRow, (string | number)[]>(sql).all(...args)
             .map(r => ({rank: r.rank, tokenId: r.tokenId, seed: r.seed, score: r.score}));
@@ -146,6 +211,16 @@ export class RankingReader {
     }
 }
 
+/** Equal scores share a place and sort by token inside it, as devotion ranks; the next place counts every row above it. */
+function sharedRanks<T extends RankingRow>(rows: T[]): T[] {
+    rows.sort((a, b) => b.score - a.score || Number(a.tokenId) - Number(b.tokenId));
+    let rank = 0;
+    return rows.map((row, i) => {if (i === 0 || rows[i - 1]!.score !== row.score) rank = i + 1; return {...row, rank};});
+}
+function seasonStanding(row: RankingRow & Partial<SeasonRowExtras>, season: SeasonWindows, moves: Moves): SeasonStanding {
+    const {bonus, today} = season.totals.get(row.tokenId)!;
+    return {...move(moves, row.tokenId), points: row.score, rank: row.rank, entrants: season.current.rows.length, days: row.days!, streak: row.streak!, bonus, today};
+}
 function standing(rows: RankingRow[], tokenId: string, moves: Moves): RankingStanding | null {
     const index = rows.findIndex(row => row.tokenId === tokenId);
     if (index < 0) return null;

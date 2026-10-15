@@ -1,6 +1,7 @@
 import {createHash, timingSafeEqual} from 'node:crypto';
 import {Hono} from 'hono';
 import {parseRankingIds, parseRankingPageOffset, validRankingBoard, type RankingPeriod} from '@mapae/arcade/ranking';
+import {SEASON} from '@mapae/arcade/season';
 import {OutingError} from '../outings/validation';
 import type {RankingReader} from './board';
 
@@ -15,9 +16,14 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
         if (!options.token || !timingSafeEqual(digest(c.req.header('Authorization') ?? ''), digest(`Bearer ${options.token}`))) return c.json({error: {code: 'unauthorized'}}, 401);
         await next();
     });
+    /** The season's id, dates and phase today: the web shows the phase from here and never needs a deploy for a date change. */
+    app.get('/season', c => {
+        if (!options.reader) throw new OutingError('disabled');
+        return c.json(options.reader.seasonStatus());
+    });
     app.get('/board/:board/:period', c => {
         const {board, period} = c.req.param();
-        if (!validRankingBoard(board, period)) throw new OutingError('invalid_request');
+        if (!validRankingBoard(board, period, SEASON)) throw new OutingError('invalid_request');
         if (!options.reader) throw new OutingError('disabled');
         return c.json(options.reader.board(board, period as RankingPeriod));
     });
@@ -25,7 +31,7 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
     app.get('/board/:board/:period/:by/:at', c => {
         const {board, period, by, at} = c.req.param();
         const offset = by === 'from' ? parseRankingPageOffset(at) : null, around = by === 'around' ? parseRankingIds(at) : null;
-        if (!validRankingBoard(board, period) || (offset === null && !around)) throw new OutingError('invalid_request');
+        if (!validRankingBoard(board, period, SEASON) || (offset === null && !around)) throw new OutingError('invalid_request');
         if (!options.reader) throw new OutingError('disabled');
         return c.json(options.reader.page(board, period as RankingPeriod, around ? {around} : {offset: offset!}));
     });
