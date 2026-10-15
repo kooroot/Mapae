@@ -12,6 +12,7 @@ import type {DeskStage, GuardianDesk} from "./nft/useGuardianDesk";
 import type {GuardianToken} from "./profile/guardians";
 import {arcadeSectionLink, outingStatusLabel} from "./sections";
 import {ConnectInvite, GuardianSwitcher} from "./sections/SectionFrame";
+import {FaucetHint} from "./FaucetHint";
 import {RankLine} from "./ranking/RankLine";
 
 /** What the lobby offers under the chosen cabinet, from a first free round to playing and sending out one's own guardian. */
@@ -52,12 +53,12 @@ export function LobbyDock({desk, game, walletWaiting, onPlayGuest, onPractice, o
     const guardian: Record<DeskStage, ReactNode> = {
         ready: null,
         guest: <><p>{ko ? "내 전령과 이어서 모험하려면" : "To continue with your own guardian"}</p>
-            <ConnectInvite ko={ko} walletWaiting={walletWaiting} secondary /></>,
+            <ConnectInvite ko={ko} walletWaiting={walletWaiting} secondary /><FaucetHint locale={locale} compact /></>,
         pending: <p className="arc-dock-pending" role="status"><LoaderCircle size={18} className="arc-loading-icon" aria-hidden="true" />{ko ? "지갑과 전령단을 확인하고 있어요…" : "Checking your wallet and guardians…"}</p>,
         signin: desk.owner ? <SignInCard owner={desk.owner} session={desk.session} ko={ko} /> : null,
         unavailable: <div className="arc-notice nft-notice" role="alert"><CircleAlert size={16} aria-hidden="true" /><p>{nft.error}</p><button type="button" className="arc-text-button" disabled={nft.loading} onClick={() => void nft.refresh()}><RefreshCw size={16} aria-hidden="true" />{ko ? "다시 불러오기" : "Retry"}</button></div>,
         closed: <div className="arc-dock-next"><p>{ko ? "전령단이 곧 문을 열어요. 그동안 무료 게임을 즐겨 보세요." : "Guardians are on their way. Enjoy the free games meanwhile."}</p></div>,
-        empty: <div className="arc-dock-next"><p>{ko ? "아직 함께할 전령이 없어요. 첫 전령을 뽑으면 이 게임기에서 같이 놀 수 있어요." : "No guardian yet. Draw your first and play this cabinet together."}</p><Link className="arc-button arc-button-paper" {...guardians}><Sparkles size={18} aria-hidden="true" />{ko ? "첫 전령 뽑기" : "Draw my first guardian"}</Link></div>,
+        empty: <div className="arc-dock-next"><p>{ko ? "아직 함께할 전령이 없어요. 첫 전령을 뽑으면 이 게임기에서 같이 놀 수 있어요." : "No guardian yet. Draw your first and play this cabinet together."}</p><Link className="arc-button arc-button-paper" {...guardians}><Sparkles size={18} aria-hidden="true" />{ko ? "첫 전령 뽑기" : "Draw my first guardian"}</Link><FaucetHint locale={locale} /></div>,
         waiting: <div className="arc-dock-next"><p><Clock size={16} aria-hidden="true" />{ko ? "전령의 탄생을 기다리고 있어요." : "Your guardian is on the way."}</p><Link className="arc-button arc-button-paper" {...guardians}><Sparkles size={18} aria-hidden="true" />{ko ? "탄생 확인하러 가기" : "Check the reveal"}</Link>{revealed[0] && <button type="button" className="arc-text-button" onClick={() => void nft.select(revealed[0]!.tokenId)}>{ko ? "다른 전령과 놀기" : "Play with another guardian"}</button>}</div>,
     };
     return <div className="arc-entry-dock">
