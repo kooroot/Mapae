@@ -4,11 +4,14 @@ import {ARCADE_RULESET_VERSION, type GameId} from '@mapae/arcade';
 import {guardianTraitsHash, guardianZodiac, type GuardianZodiac} from '@mapae/arcade/guardians';
 import {addDays, kstWeek, rankedSeed, type RankingBoard, type RankingPage, type RankingStandings} from '@mapae/arcade/ranking';
 import {type Season, type SeasonStatus} from '@mapae/arcade/season';
+import {CARD_REVISION} from '@mapae/arcade/share-card/contract';
+import {decodePng} from '@mapae/arcade/share-card/png';
 import type {TeamBoard} from '@mapae/arcade/team';
 import {OutingStore} from '../outings/store';
 import {RankingReader} from './board';
 import {GuardianHonorBook} from './honors';
 import {createRankingApp} from './routes';
+import {shareCardArt} from './share-card';
 
 const collection = '0x5555555555555555555555555555555555555555' as Address;
 const owner = '0x1111111111111111111111111111111111111111' as Address;
@@ -19,6 +22,8 @@ const stores: OutingStore[] = [];
 afterEach(() => {for (const s of stores.splice(0)) s.close();});
 /** Season 1 open since last Monday, so the seller's week seal (Tuesday 00:00 KST) falls inside it. */
 const season1: Season = {id: 1, start: '2026-10-05', end: '2026-11-01'};
+/** The share card's layer art, present when the asset repository has been copied into the web's public directory (as CI does). */
+const ART_DIR = new URL('../../web/public/arcade/', import.meta.url).pathname, hasArt = await Bun.file(`${ART_DIR}share/head-dragon.png`).exists();
 function setup(season?: Season) {
     const store = new OutingStore(':memory:'); stores.push(store);
     const add = (tokenId: string, game: GameId | string, day: string, attempt: number, score: number, minute = attempt, ruleset = ARCADE_RULESET_VERSION, seed = seedOf(tokenId)) => {
@@ -504,5 +509,50 @@ describe('share cards', () => {
             const body = await (await app.request(path, {headers: auth})).text();
             for (const key of ['actor', 'payer', 'transaction', 'paymentTx', 'owner', '0x1111']) expect(body).not.toContain(key);
         }
+    });
+    const pixel = (png: {width: number; data: Uint8ClampedArray}, x: number, y: number) => [...png.data.subarray((y * png.width + x) * 4, (y * png.width + x) * 4 + 3)].map(c => c.toString(16).padStart(2, '0')).join('');
+    const hasInk = (png: {width: number; data: Uint8ClampedArray}, x0: number, y0: number, w: number, h: number, hex: string) => {
+        for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (pixel(png, x, y) === hex) return true;
+        return false;
+    };
+    test.skipIf(!hasArt)('a card PNG is drawn from the layer art with the tag and cache life the Worker stores it under, and says nothing about the owner', async () => {
+        const {add, reader} = setup(season1); add('1', 'race', '2026-10-14', 1, 50);
+        const past = setup(); past.add('1', 'race', '2026-10-13', 1, 40);
+        const art = shareCardArt(ART_DIR), app = createRankingApp({token, reader, art});
+        const ok = await app.request('/card/race/2026-10-14/1/png', {headers: auth});
+        expect(ok.status).toBe(200); expect(ok.headers.get('Content-Type')).toBe('image/png');
+        expect(ok.headers.get('Cache-Control')).toBe('public, max-age=60'); expect(ok.headers.get('X-Content-Type-Options')).toBe('nosniff');
+        expect(ok.headers.get('ETag')).toBe(`"card-1-race-2026-10-14-50-1-1-10-1-${CARD_REVISION}"`);
+        const bytes = new Uint8Array(await ok.arrayBuffer()), png = await decodePng(bytes);
+        expect(Number(ok.headers.get('Content-Length'))).toBe(bytes.byteLength);
+        expect(png.width).toBe(1200); expect(png.height).toBe(630);
+        expect(pixel(png, 10, 10)).toBe('0e0c0a'); // the card's own background
+        expect(hasInk(png, 600, 318, 528, 80, 'f2c14e')).toBe(true); // the score's gold
+        expect(hasInk(png, 600, 96, 528, 24, 'e9c99f')).toBe(true); // MAPAE ARCADE
+        expect(new TextDecoder('latin1').decode(bytes)).not.toContain('0x1111');
+        if (process.env.MAPAE_SHARE_CARD_DIR) await Bun.write(`${process.env.MAPAE_SHARE_CARD_DIR}/seller-card-race-1.png`, bytes);
+        const settled = await createRankingApp({token, reader: past.reader, art}).request('/card/race/2026-10-13/1/png', {headers: auth});
+        expect(settled.status).toBe(200); expect(settled.headers.get('Cache-Control')).toBe('public, max-age=3600');
+        expect(settled.headers.get('ETag')).toMatch(new RegExp(`^"card-1-race-2026-10-13-40-1-1-.*-${CARD_REVISION}"$`));
+        const season = await app.request('/card/season/1/png', {headers: auth});
+        expect(season.status).toBe(200); expect(season.headers.get('ETag')).toBe(`"card-1-season-10-1-1-${CARD_REVISION}"`);
+        expect((await decodePng(new Uint8Array(await season.arrayBuffer()))).height).toBe(630);
+        for (const path of ['/card/race/2026-10-14/2/png', '/card/season/2/png']) {
+            const missing = await app.request(path, {headers: auth});
+            expect(missing.status).toBe(404); expect(missing.headers.get('Cache-Control')).toBe('private, no-store');
+        }
+        expect((await app.request('/card/race/2026-10-14/1/png')).status).toBe(401);
+        expect((await app.request('/card/season/01/png', {headers: auth})).status).toBe(400);
+    });
+    test('without the layer art the PNG routes are unavailable, and the next card tries the files again; without an art source they are disabled', async () => {
+        const {add, reader} = setup(season1); add('1', 'race', '2026-10-14', 1, 50);
+        const missing = createRankingApp({token, reader, art: shareCardArt(`${ART_DIR}no-such-dir/`)});
+        for (let i = 0; i < 2; i++) {
+            const response = await missing.request('/card/race/2026-10-14/1/png', {headers: auth});
+            expect(response.status).toBe(503); expect(await response.json()).toEqual({error: {code: 'ranking_unavailable'}});
+        }
+        expect((await missing.request('/card/race/2026-10-14/1', {headers: auth})).status).toBe(200);
+        const disabled = await createRankingApp({token, reader}).request('/card/season/1/png', {headers: auth});
+        expect(disabled.status).toBe(503); expect(await disabled.json()).toEqual({error: {code: 'disabled'}});
     });
 });

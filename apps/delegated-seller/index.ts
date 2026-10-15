@@ -2,7 +2,7 @@ import {createMapae} from "@mapae/seller";
 import {isLoopbackHost} from "@mapae/shared";
 import {openStore} from "@mapae/store";
 import {createShopApp} from "./app.js";
-import {readStorePath} from "./env.js";
+import {readArcadeArtDir, readStorePath} from "./env.js";
 import {readGuardianConfig, createGuardianReader, createGuardianClaims} from "./guardians/runtime";
 import {createGuardianApp} from "./guardians/routes";
 import {OutingStore} from "./outings/store";
@@ -12,6 +12,7 @@ import {createOutingApp, OUTING_BODY_LIMIT} from "./outings/routes";
 import {RankingReader} from "./ranking/board";
 import {GuardianHonorBook} from "./ranking/honors";
 import {createRankingApp} from "./ranking/routes";
+import {shareCardArt} from "./ranking/share-card";
 
 /**
  * Timeout budgets, and why the idle timeout is set explicitly.
@@ -117,6 +118,7 @@ const HOST = process.env.HOST?.trim() || "127.0.0.1";
 const PORT = readInteger("PORT", 3001, 1, 65_535);
 const IDLE_TIMEOUT_SECONDS = readInteger("IDLE_TIMEOUT_SECONDS", 45, SETTLE_TIMEOUT_SECONDS + 1, 255);
 const STORE_PATH = readStorePath();
+const ARCADE_ART_DIR = readArcadeArtDir();
 // Validated by createMapae: HTTP(S), no credentials, HTTPS unless loopback.
 const FACILITATOR_URL = process.env.FACILITATOR_URL?.trim() || "http://127.0.0.1:8081";
 const BASE_URL = readBaseUrl(HOST, PORT);
@@ -148,7 +150,8 @@ app.route("/arcade/outing", createOutingApp({token: ARCADE_RECEIPT_TOKEN, store:
 const guardianHonors = outingStore && guardianReader ? new GuardianHonorBook(outingStore.db, guardianReader.collection) : undefined;
 app.route("/arcade/guardians", createGuardianApp({token: ARCADE_RECEIPT_TOKEN, reader: guardianReader, ledger: outingStore?.guardians, honors: guardianHonors,
     claim: guardianConfig && guardianReader && outingStore && guardianHonors ? createGuardianClaims(guardianConfig, outingStore.guardians, guardianReader, guardianHonors) : undefined}));
-app.route("/arcade/ranking", createRankingApp({token: ARCADE_RECEIPT_TOKEN, reader: outingStore && guardianReader ? new RankingReader(outingStore, guardianReader.collection) : undefined}));
+app.route("/arcade/ranking", createRankingApp({token: ARCADE_RECEIPT_TOKEN, reader: outingStore && guardianReader ? new RankingReader(outingStore, guardianReader.collection) : undefined,
+    art: shareCardArt(ARCADE_ART_DIR)}));
 outingRunner?.start();
 
 const shops = store.sellers.list().filter((seller) => seller.kind === "hosted");
@@ -157,6 +160,7 @@ console.log(`  base URL    ${BASE_URL}`);
 console.log(`  facilitator ${mapae.facilitator}`);
 console.log(`  advertised  ${PUBLIC_FACILITATOR_URL}`);
 console.log(`  store       ${STORE_PATH}`);
+console.log(`  art         ${ARCADE_ART_DIR}`);
 console.log(`  shops       ${shops.length === 0 ? "none — run `bun run seed`" : shops.map((seller) => seller.slug).join(", ")}`);
 console.log(`  metrics     ${METRICS_TOKEN === undefined ? "disabled (METRICS_TOKEN unset)" : "enabled"}`);
 export default {
