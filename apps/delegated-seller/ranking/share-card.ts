@@ -37,7 +37,7 @@ export function shareCardArt(dir: string): ShareCardArtSource {
 export const cardSettled = (card: RankedCard | SeasonCard): boolean => 'game' in card ? card.final : card.status.phase === 'closed';
 /** The tag the Worker stores and echoes: the card's identity and standing, so a changed score is a new card. */
 export function cardEtag(card: RankedCard | SeasonCard): string {
-    const standing = 'game' in card ? `${card.score}-${card.rank}-${card.entrants}-${card.season?.points ?? '-'}-${card.season?.rank ?? '-'}` : `${card.season.points}-${card.season.rank}-${card.season.entrants}`;
+    const standing = 'game' in card ? `${card.score}-${card.rank}-${card.entrants}-${card.season?.points ?? '-'}-${card.season?.rank ?? '-'}` : `${card.season.points}-${card.season.rank}-${card.season.entrants}-${card.marks.length}`;
     return `"card-${card.tokenId}-${'game' in card ? `${card.game}-${card.day}` : 'season'}-${standing}-${CARD_REVISION}"`;
 }
 export const renderCardPng = (card: RankedCard | SeasonCard, art: ShareCardArt): Promise<Uint8Array<ArrayBuffer>> =>

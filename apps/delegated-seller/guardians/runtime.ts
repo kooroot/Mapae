@@ -5,12 +5,14 @@ import {giwaSepolia, parseNodeRpcUrl, MOCK_USDC} from '@mapae/shared';
 import {ARCADE_RULESET_VERSION} from '@mapae/arcade';
 import {ARCADE_PAY_TO, ARCADE_REDEEMER, ARCADE_TICKET_AMOUNT} from '@mapae/arcade/tickets';
 import {guardianAbi} from '@mapae/arcade/guardian-abi';
+import {findCloseBlock} from '@mapae/arcade/hall';
 import {
     guardianHonorFromJson, guardianHonorJson, guardianTraitsHash, guardianResultDomain, guardianResultFromJson, honorAdvances, GUARDIAN_CLAIM_BATCH, GUARDIAN_HONOR_TYPES, GUARDIAN_RESULT_TYPES,
 } from '@mapae/arcade/guardians';
 import {OutingError, validTokenId} from '../outings/validation';
 import {type GuardianReader, type GuardianToken, type GuardianRoster, type GuardianSnapshot, type GuardianClaimBatch, type Progress, type ReceiptEvidence} from './types';
 import type {GuardianLedger, StoredResult} from './ledger';
+import type {CloseBlock} from '../ranking/board';
 import type {GuardianHonorBook} from '../ranking/honors';
 
 export function readGuardianConfig(env: Record<string,string | undefined> = process.env) {
@@ -33,6 +35,10 @@ export function readGuardianConfig(env: Record<string,string | undefined> = proc
 }
 type Config = NonNullable<ReturnType<typeof readGuardianConfig>>;
 export type GuardianClient = Pick<PublicClient, 'readContract' | 'getBlock' | 'getTransactionReceipt' | 'getChainId'>;
+/** The season's close block for the hall of fame: a binary search over the chain on the guardian RPC, about 25 block reads once per season. */
+export function createCloseBlockReader(config: Config, client: Pick<GuardianClient, 'getBlock'> = createPublicClient({chain: giwaSepolia, transport: throttledHttp(config.rpcUrl, {}, {timeout: 15_000, retryCount: 1})})): CloseBlock {
+    return at => findCloseBlock(query => client.getBlock(query), at);
+}
 /** How far behind the wall clock honors are sealed: well past any lag between the chain head and this process. */
 export const HONOR_CLOCK_MARGIN_MS = 10 * 60_000;
 export function createGuardianReader(config: Config, client: GuardianClient = createPublicClient({chain: giwaSepolia, transport: throttledHttp(config.rpcUrl, {}, {timeout: 15_000, retryCount: 1})})): GuardianReader {

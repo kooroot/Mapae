@@ -1,9 +1,10 @@
+import {SEASON} from "@mapae/arcade/season";
 import {createMapae} from "@mapae/seller";
 import {isLoopbackHost} from "@mapae/shared";
 import {openStore} from "@mapae/store";
 import {createShopApp} from "./app.js";
 import {readArcadeArtDir, readStorePath} from "./env.js";
-import {readGuardianConfig, createGuardianReader, createGuardianClaims} from "./guardians/runtime";
+import {readGuardianConfig, createGuardianReader, createGuardianClaims, createCloseBlockReader} from "./guardians/runtime";
 import {createGuardianApp} from "./guardians/routes";
 import {OutingStore} from "./outings/store";
 import {OutingRunner} from "./outings/runner";
@@ -150,7 +151,8 @@ app.route("/arcade/outing", createOutingApp({token: ARCADE_RECEIPT_TOKEN, store:
 const guardianHonors = outingStore && guardianReader ? new GuardianHonorBook(outingStore.db, guardianReader.collection) : undefined;
 app.route("/arcade/guardians", createGuardianApp({token: ARCADE_RECEIPT_TOKEN, reader: guardianReader, ledger: outingStore?.guardians, honors: guardianHonors,
     claim: guardianConfig && guardianReader && outingStore && guardianHonors ? createGuardianClaims(guardianConfig, outingStore.guardians, guardianReader, guardianHonors) : undefined}));
-app.route("/arcade/ranking", createRankingApp({token: ARCADE_RECEIPT_TOKEN, reader: outingStore && guardianReader ? new RankingReader(outingStore, guardianReader.collection) : undefined,
+app.route("/arcade/ranking", createRankingApp({token: ARCADE_RECEIPT_TOKEN,
+    reader: outingStore && guardianReader && guardianConfig ? new RankingReader(outingStore, guardianReader.collection, Date.now, SEASON, createCloseBlockReader(guardianConfig)) : undefined,
     art: shareCardArt(ARCADE_ART_DIR)}));
 outingRunner?.start();
 

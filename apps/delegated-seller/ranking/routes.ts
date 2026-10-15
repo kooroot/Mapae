@@ -61,12 +61,17 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
         if (!options.reader) throw new OutingError('disabled');
         return options.reader.card(game as GameId, day, tokenId);
     };
-    const seasonCard = (c: Context): SeasonCard => {
+    const seasonCard = (c: Context): Promise<SeasonCard> => {
         const tokenId = c.req.param('tokenId');
         if (!validRankingTokenId(tokenId)) throw new OutingError('invalid_request');
         if (!options.reader) throw new OutingError('disabled');
         return options.reader.seasonCard(tokenId);
     };
+    /** A season's hall of fame by its id: unsealed until the cutoff of its last week, then on record for good (404 for a season never held). */
+    app.get('/hall/:period', async c => {
+        if (!options.reader) throw new OutingError('disabled');
+        return c.json(await options.reader.hall(c.req.param('period')));
+    });
     /**
      * The card itself, drawn here rather than on the web Worker, which the Free plan's CPU budget would cut off: the layer art
      * loads once, then each card is about 90ms of synchronous CPU that holds this event loop — bounded by the Worker's edge
@@ -80,10 +85,10 @@ export function createRankingApp(options: {token?: string; reader?: RankingReade
         return c.body(png, 200, {'Content-Type': 'image/png', 'Content-Length': String(png.byteLength), ETag: cardEtag(card), 'Cache-Control': cardSettled(card) ? 'public, max-age=3600' : 'public, max-age=60'});
     };
     // Registered before the day card: `/card/season/1/png` would otherwise read as game `season`, day `1`, token `png`.
-    app.get('/card/season/:tokenId/png', c => cardPng(c, seasonCard(c)));
+    app.get('/card/season/:tokenId/png', async c => cardPng(c, await seasonCard(c)));
     app.get('/card/:game/:day/:tokenId/png', c => cardPng(c, dayCard(c)));
     app.get('/card/:game/:day/:tokenId', c => c.json(dayCard(c)));
-    app.get('/card/season/:tokenId', c => c.json(seasonCard(c)));
+    app.get('/card/season/:tokenId', async c => c.json(await seasonCard(c)));
     app.onError(error => {
         const code = error instanceof OutingError && (error.code === 'invalid_request' || error.code === 'disabled' || error.code === 'not_found') ? error.code : 'ranking_unavailable';
         return Response.json({error: {code}}, {status: code === 'invalid_request' ? 400 : code === 'not_found' ? 404 : 503, headers: {'Cache-Control': 'private, no-store'}});
