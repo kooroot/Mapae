@@ -256,6 +256,16 @@ seller는 체인에서 기록됨을 확인한 결과를 DB에 표시해 두고 �
 - **배포 순서.** seller 재시작(카드 경로) → `deploy:landing`(`/share/*` 페이지는 랜딩 Worker가 받는다) → `deploy:app`. 두 Worker 모두 `ARCADE_RECEIPT_TOKEN`이 있어야 seller를 읽는다. WAF나 봇 차단 규칙이 있다면 `Twitterbot`·`facebookexternalhit`·카카오 미리 보기 크롤러가 `/share/*`와 `/api/arcade/share/*`를 읽을 수 있어야 미리 보기가 뜬다.
 - **다음 단계.** 카드 글자는 영문 대문자 픽셀 폰트뿐이다. 한글 전령 이름을 카드에 올리려면 한글 글리프 아틀라스를 레이어처럼 에셋 저장소에 넣는 작업(3b)이 따로 필요하다.
 
+### 띠 팀전
+
+전령은 태어난 띠(seed의 첫 특성)대로 열두 팀 중 하나에 속하고, 같은 띠 전령의 점수를 더해 팀끼리 겨룬다. 계약·seller 저장소·테이블은 바뀌지 않는다: seller가 읽을 때마다 `arcade_guardian_ranked`를 한 번 훑어(`SEASON_TOTALS`, 시즌 보드와 같은 질의) `guardian_seed`로 띠를 유도해 묶는다(RPC 없음, seed→띠는 `packages/arcade/src/guardians.ts`의 `guardianZodiac`).
+
+- **계산 규칙.** 팀 점수 = 팀원 점수의 합. `week`는 이번 주 월–일 창의 일별 순위 점수만 더하고(출석 보너스 없음, 시즌과 무관하게 연중), `s<id>`는 시즌 보드의 점수(보너스 포함)를 그대로 묶는다. 순위는 합계로, 동점은 순위를 공유하고 띠 순서(쥐→돼지)로 보여 준다. 팀원은 그 창에 랭크 도전 기록이 한 번이라도 있는 전령이고, `top`은 그 팀에서 점수가 가장 높은 전령(동점이면 낮은 token). 12행이 항상 오고 0명 팀은 `members 0 · top null · points 0`. `/guardians/:ids`의 `weekPoints`는 같은 주간 합에서 내 전령의 몫이다.
+- **경로.** seller `GET /arcade/ranking/board/team/<week | s<id>>`(bearer, 페이지 없음, 시즌 전·다른 id는 400, reader 없음 503). 웹 프록시 `/api/arcade/ranking/board/team/<period>`는 보드와 같은 30초 가장자리 캐시·IP 예산이며 사본을 엄격히 검증한다(12띠 각 한 번, 합계 내림차순·순위 공유, `members ≤ points ≤ members×상한`, `top`의 seed가 그 띠, `Σmembers = entrants`). 검증에 걸리면 503.
+- **웹.** 랭킹 `#team` 탭(이번 주 | 시즌 N 토글, 시즌이 진행·종료면 시즌이 기본), "우리 팀" 표식과 내 기여 비율, 로비 도크의 "우리 호랑이팀 3위 · 1위까지 120점" 줄(시즌이 열려 있고 참가자가 있을 때만).
+- **배포 순서.** **seller 재시작이 먼저**, 그다음 `deploy:app`. 새 웹이 옛 seller를 읽는 동안은 `/guardians/:ids` 사본에 `weekPoints`가 없어 프록시가 503을 내므로 "내 전령의 자리"·도크의 순위 줄이 잠시 비고, 띠 팀전 탭도 503 안내를 띄운다. 공개 보드(`/board/...`)와 시즌 상태는 영향이 없다. 반대 순서(seller만 새것)는 옛 웹이 `weekPoints`를 무시하므로 안전하다.
+- **다음 단계.** 시즌이 끝날 때 1위 팀 전령에게 주는 우승 팀 표식은 아직 문구뿐이다. 표식을 NFT 특성으로 남기는 작업은 시즌 1 한정 문양과 함께 다음 단계에서 다룬다. 팀 순위 ▲▼ 변동도 이번에는 넣지 않았다.
+
 ### 신뢰 경계
 
 - 관리자는 모든 상태를 신뢰받는다. 업그레이드는 즉시 적용되고(timelock 없음) birth·성장·소유권을 바꿀 수 있으며, 결과 서명자를 자기 키로 바꿔 성장을 직접 발급할 수도 있다. 관리자/서명자 분리는 서명 키가 유출돼도 관리자 권한을 얻지 못하게 하는 키 위생 규칙이다. 테스트넷 밖에서 쓰기 전에 owner를 multisig(필요하면 TimelockController)로 `transferOwnership` → `acceptOwnership`한다.
