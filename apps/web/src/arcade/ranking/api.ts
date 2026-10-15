@@ -1,8 +1,9 @@
 import {isHash, type Hex} from "viem";
 import type {GameId} from "@mapae/arcade";
 import {GUARDIAN_MAX_SUPPLY, GUARDIAN_ZODIACS, guardianZodiac, type GuardianZodiac} from "@mapae/arcade/guardians";
+import {HALL_PODIUM, hallSealsAt, raffleDraw, type HallChampion, type HallRow, type HallStreak, type SeasonHall} from "@mapae/arcade/hall";
 import {
-    BOARD_ROWS, DEVOTION_DAYS, isRankingDay, NEARBY_SPAN, parseRankingIds, parseRankingPageOffset, RANKED_ATTEMPTS, RANKED_GAMES, RANKING_PAGE_ROWS, rankingPageOffset,
+    addDays, BOARD_ROWS, DEVOTION_DAYS, isRankingDay, kstWeek, NEARBY_SPAN, parseRankingIds, parseRankingPageOffset, RANKED_ATTEMPTS, RANKED_GAMES, RANKING_PAGE_ROWS, rankingPageOffset,
     STREAK_FREEZE_MAX, validRankingBoard, validRankingTokenId,
     type GuardianStanding, type RankingBoard, type RankingBoardId, type RankingPage, type RankingPeriod, type RankingRow, type RankingStanding, type RankingStandings, type SeasonStanding,
 } from "@mapae/arcade/ranking";
@@ -17,8 +18,13 @@ const TEAM_PATH = /^\/api\/arcade\/ranking\/board\/team\/([a-z0-9]{1,8})$/;
 const BOARD_PATH = /^\/api\/arcade\/ranking\/board\/([a-z]{1,16})\/([a-z0-9]{1,16})(?:\/(from|around)\/([0-9,]{1,20}))?$/;
 const STANDINGS_PATH = /^\/api\/arcade\/ranking\/guardians\/([0-9,]{1,20})$/;
 const STATUS_PATH = /^\/api\/arcade\/ranking\/season$/;
-/** Boards change when a round settles; a short shared cache absorbs a crowd without hiding a new record for long. The season's phase turns once a day. */
-const MAX_AGE = {board: 30, standings: 10, season: 60};
+/** A season's hall of fame by its id: any season ever held, so a past season's hall stays readable after the id moves on. */
+const HALL_PATH = /^\/api\/arcade\/ranking\/hall\/(s[1-9]\d{0,3})$/;
+/**
+ * Boards change when a round settles; a short shared cache absorbs a crowd without hiding a new record for long. The season's
+ * phase turns once a day. A sealed hall never changes and is kept an hour; before the seal it is read again every minute.
+ */
+const MAX_AGE = {board: 30, standings: 10, season: 60, hall: 3600};
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "Referrer-Policy": "no-referrer"};
 
@@ -38,8 +44,8 @@ const failure = (code: string, status: number, extra: Record<string, string> = {
  */
 export async function rankingApi(request: Request, deps: RankingDependencies): Promise<Response> {
     const url = new URL(request.url), team = TEAM_PATH.exec(url.pathname), board = team ? null : BOARD_PATH.exec(url.pathname);
-    const standing = STANDINGS_PATH.exec(url.pathname), status = STATUS_PATH.test(url.pathname);
-    if (!team && !board && !standing && !status) return failure("not_found", 404);
+    const standing = STANDINGS_PATH.exec(url.pathname), status = STATUS_PATH.test(url.pathname), hall = HALL_PATH.exec(url.pathname);
+    if (!team && !board && !standing && !status && !hall) return failure("not_found", 404);
     if (request.method !== "GET") return failure("method_not_allowed", 405, {Allow: "GET"});
     const season = deps.season ?? SEASON, ids = standing ? parseRankingIds(standing[1]!) : null, by = board?.[3] as "from" | "around" | undefined;
     const at = by === "from" ? parseRankingPageOffset(board![4]!) : by === "around" ? parseRankingIds(board![4]!) : null;
@@ -59,11 +65,13 @@ export async function rankingApi(request: Request, deps: RankingDependencies): P
         if (!upstream.found) throw new Error("upstream");
         value = upstream.value;
     } catch {return failure("ranking_unavailable", 503);}
-    const copy = status ? parseSeasonStatus(value, season) : team ? parseTeamBoard(value, team[1] as TeamPeriod) : !board ? parseRankingStandings(value, ids!)
+    const copy = status ? parseSeasonStatus(value, season) : hall ? parseSeasonHall(value, Number(hall[1]!.slice(1))) : team ? parseTeamBoard(value, team[1] as TeamPeriod)
+        : !board ? parseRankingStandings(value, ids!)
         : by ? parseRankingPage(value, board[1] as RankingBoardId, board[2] as RankingPeriod, typeof at === "number" ? {offset: at} : {around: at!})
         : parseRankingBoard(value, board[1] as RankingBoardId, board[2] as RankingPeriod);
     if (!copy) return failure("ranking_unavailable", 503);
-    const response = Response.json(copy, {headers: {...HEADERS, "Cache-Control": `public, max-age=${status ? MAX_AGE.season : board || team ? MAX_AGE.board : MAX_AGE.standings}`}});
+    const maxAge = hall ? ((copy as SeasonHall).sealed ? MAX_AGE.hall : MAX_AGE.season) : status ? MAX_AGE.season : board || team ? MAX_AGE.board : MAX_AGE.standings;
+    const response = Response.json(copy, {headers: {...HEADERS, "Cache-Control": `public, max-age=${maxAge}`}});
     await cache?.put(key, response.clone()).catch(() => {/* A cold cache only costs the next visitor one seller call. */});
     return response;
 }
@@ -204,26 +212,98 @@ export function parseTeamBoard(v: unknown, period: TeamPeriod): TeamBoard | null
     if (week ? span !== 7 || v.closesAt !== midnight : v.closesAt !== null && (v.closesAt < midnight || (v.closesAt - midnight) % DAY_MS !== 0)) return null;
     // What one member can bring over the window: every day's maximum, plus the attendance bonus a season window can hold.
     const cap = SEASON_MAX_DAY_POINTS * span + (week ? 0 : maxSeasonBonus(span)), rows: TeamRow[] = [];
-    let members = 0;
     for (const [i, item] of v.rows.entries()) {
-        if (!object(item) || !(GUARDIAN_ZODIACS as readonly unknown[]).includes(item.zodiac) || rows.some(r => r.zodiac === item.zodiac) || !uint(item.members) ||
-            item.members > GUARDIAN_MAX_SUPPLY || !uint(item.points) || item.points < item.members || item.points > item.members * cap || (item.members === 0) !== (item.top === null)) return null;
-        const zodiac = item.zodiac as GuardianZodiac, previous = rows.at(-1);
-        const rank = !previous ? 1 : item.points === previous.points ? previous.rank : i + 1;
-        if (item.rank !== rank || (previous && (item.points > previous.points ||
-            (item.points === previous.points && GUARDIAN_ZODIACS.indexOf(zodiac) < GUARDIAN_ZODIACS.indexOf(previous.zodiac))))) return null;
-        let top: TeamMember | null = null;
-        if (item.top !== null) {
-            const t = item.top;
-            if (!object(t) || !validRankingTokenId(t.tokenId) || typeof t.seed !== "string" || !isHash(t.seed) || !uint(t.points) || t.points < 1 || t.points > cap ||
-                t.points > item.points || t.points * item.members < item.points || guardianZodiac(t.seed) !== zodiac) return null;
-            top = {tokenId: t.tokenId, seed: t.seed.toLowerCase() as Hex, points: t.points};
-        }
-        members += item.members;
-        rows.push({rank, zodiac, points: item.points, members: item.members, top});
+        const row = teamRow(item, i, rows, cap);
+        if (!row) return null;
+        rows.push(row);
     }
-    if (members !== v.entrants) return null;
+    if (rows.reduce((n, r) => n + r.members, 0) !== v.entrants) return null;
     return {period, from: v.from, to: v.to, closesAt: v.closesAt, entrants: v.entrants, rows};
+}
+/** One team row after `rows`: its place from its points and the row before, its top member born into the team and carrying at least the average. */
+function teamRow(item: unknown, i: number, rows: readonly TeamRow[], cap: number): TeamRow | null {
+    if (!object(item) || !(GUARDIAN_ZODIACS as readonly unknown[]).includes(item.zodiac) || rows.some(r => r.zodiac === item.zodiac) || !uint(item.members) ||
+        item.members > GUARDIAN_MAX_SUPPLY || !uint(item.points) || item.points < item.members || item.points > item.members * cap || (item.members === 0) !== (item.top === null)) return null;
+    const zodiac = item.zodiac as GuardianZodiac, previous = rows.at(-1);
+    const rank = !previous ? 1 : item.points === previous.points ? previous.rank : i + 1;
+    if (item.rank !== rank || (previous && (item.points > previous.points ||
+        (item.points === previous.points && GUARDIAN_ZODIACS.indexOf(zodiac) < GUARDIAN_ZODIACS.indexOf(previous.zodiac))))) return null;
+    let top: TeamMember | null = null;
+    if (item.top !== null) {
+        const t = item.top;
+        if (!object(t) || !validRankingTokenId(t.tokenId) || typeof t.seed !== "string" || !isHash(t.seed) || !uint(t.points) || t.points < 1 || t.points > cap ||
+            t.points > item.points || t.points * item.members < item.points || guardianZodiac(t.seed) !== zodiac) return null;
+        top = {tokenId: t.tokenId, seed: t.seed.toLowerCase() as Hex, points: t.points};
+    }
+    return {rank, zodiac, points: item.points, members: item.members, top};
+}
+
+/** The exact keys, no more and no fewer. */
+const keys = (v: Record<string, unknown>, ...names: string[]) => Object.keys(v).length === names.length && names.every(name => name in v);
+const sortedIds = (v: unknown): v is string[] => Array.isArray(v) && v.every(validRankingTokenId) && v.every((id, i) => i === 0 || Number(v[i - 1]) < Number(id));
+/**
+ * A season's hall of fame as the seller sealed it, checked the way the seller built it: the podium's shared places over the
+ * participants (every one of them with a seed that never changes between lists), the winning teams as team rows at first place,
+ * one champion per week and game in order, the streak pool sorted by guardian number, and a raffle that is exactly what the
+ * close block's hash draws from that pool. Unsealed, only the seal instant, which must be a week cutoff after the close.
+ */
+export function parseSeasonHall(v: unknown, season: number): SeasonHall | null {
+    if (!object(v) || v.season !== season || typeof v.sealed !== "boolean") return null;
+    if (!v.sealed) return keys(v, "season", "sealed", "sealsAt") && instant(v.sealsAt) && v.sealsAt % DAY_MS === 15 * 60 * 60 * 1000 ? {season, sealed: false, sealsAt: v.sealsAt} : null;
+    if (!keys(v, "season", "sealed", "sealedAt", "start", "end", "entrants", "podium", "teams", "champions", "streakPool", "closeBlock", "raffle", "participants")) return null;
+    if (!isRankingDay(v.start) || !isRankingDay(v.end) || v.start > v.end || !instant(v.sealedAt) || v.sealedAt < hallSealsAt({id: season, start: v.start, end: v.end})!) return null;
+    const {start, end} = v, span = daysOf(start, end), cap = SEASON_MAX_DAY_POINTS * span + maxSeasonBonus(span);
+    if (!sortedIds(v.participants) || v.participants.length !== v.entrants || v.participants.length > GUARDIAN_MAX_SUPPLY) return null;
+    const participants = v.participants, seeds = new Map<string, Hex>();
+    const member = (tokenId: unknown, seed: unknown): tokenId is string => {
+        if (!validRankingTokenId(tokenId) || !participants.includes(tokenId) || typeof seed !== "string" || !isHash(seed)) return false;
+        const known = seeds.get(tokenId), lower = seed.toLowerCase() as Hex;
+        if (known === undefined) seeds.set(tokenId, lower);
+        return known === undefined || known === lower;
+    };
+    if (!Array.isArray(v.podium) || v.podium.length < Math.min(HALL_PODIUM, participants.length) || v.podium.length > participants.length) return null;
+    const podium: HallRow[] = [];
+    for (const [i, item] of v.podium.entries()) {
+        const previous = podium.at(-1);
+        if (!object(item) || !keys(item, "rank", "tokenId", "seed", "points", "days") || !member(item.tokenId, item.seed) || podium.some(r => r.tokenId === item.tokenId) ||
+            !uint(item.days) || item.days < 1 || item.days > span || !uint(item.points) || item.points < item.days || item.points > cap) return null;
+        const rank = !previous ? 1 : item.points === previous.points ? previous.rank : i + 1;
+        if (item.rank !== rank || rank > HALL_PODIUM || (previous && (item.points > previous.points || (item.points === previous.points && Number(item.tokenId) < Number(previous.tokenId))))) return null;
+        podium.push({rank, tokenId: item.tokenId, seed: seeds.get(item.tokenId)!, points: item.points, days: item.days});
+    }
+    if (!Array.isArray(v.teams) || v.teams.length < 1 || v.teams.length > GUARDIAN_ZODIACS.length) return null;
+    const teams: TeamRow[] = [];
+    for (const [i, item] of v.teams.entries()) {
+        const row = teamRow(item, i, teams, cap);
+        if (!row || row.rank !== 1 || !row.top || !member(row.top.tokenId, row.top.seed)) return null;
+        teams.push(row);
+    }
+    if (teams.reduce((n, r) => n + r.members, 0) > participants.length) return null;
+    const weeks: string[] = [];
+    for (let week = kstWeek(start); week <= end; week = addDays(week, 7)) weeks.push(week);
+    if (!Array.isArray(v.champions) || v.champions.length > weeks.length * RANKED_GAMES.length) return null;
+    const champions: HallChampion[] = [];
+    for (const item of v.champions) {
+        if (!object(item) || !keys(item, "week", "game", "tokenId", "seed", "score") || !weeks.includes(item.week as string) || !RANKED_GAMES.includes(item.game as GameId) ||
+            !member(item.tokenId, item.seed) || !score(item.score) || item.score < 1) return null;
+        const previous = champions.at(-1), order = (c: {week: string; game: GameId}) => weeks.indexOf(c.week) * RANKED_GAMES.length + RANKED_GAMES.indexOf(c.game);
+        const champion = {week: item.week as string, game: item.game as GameId, tokenId: item.tokenId, seed: seeds.get(item.tokenId)!, score: item.score};
+        if (previous && order(previous) >= order(champion)) return null;
+        champions.push(champion);
+    }
+    if (!Array.isArray(v.streakPool) || v.streakPool.length > participants.length) return null;
+    const streakPool: HallStreak[] = [];
+    for (const item of v.streakPool) {
+        const previous = streakPool.at(-1);
+        if (!object(item) || !keys(item, "tokenId", "seed", "runs") || !member(item.tokenId, item.seed) || !uint(item.runs) || item.runs < 1 || item.runs > Math.floor(span / SEASON_STREAK_DAYS) ||
+            (previous && Number(previous.tokenId) >= Number(item.tokenId))) return null;
+        streakPool.push({tokenId: item.tokenId, seed: seeds.get(item.tokenId)!, runs: item.runs});
+    }
+    const block = v.closeBlock;
+    if (!object(block) || !keys(block, "number", "hash") || typeof block.number !== "string" || !/^(0|[1-9]\d{0,15})$/.test(block.number) || typeof block.hash !== "string" || !isHash(block.hash)) return null;
+    const closeBlock = {number: block.number, hash: block.hash.toLowerCase() as Hex}, raffle = raffleDraw(closeBlock.hash, streakPool.map(row => row.tokenId));
+    if (!Array.isArray(v.raffle) || v.raffle.length !== raffle.length || v.raffle.some((id, i) => id !== raffle[i])) return null;
+    return {season, sealed: true, sealedAt: v.sealedAt, start, end, entrants: participants.length, podium, teams, champions, streakPool, closeBlock, raffle, participants};
 }
 
 /** The season's status: our season's id, its dates (none, or two ranking days in order) and a phase that follows from them today. */

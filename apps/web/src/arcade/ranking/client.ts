@@ -1,4 +1,5 @@
 import {useEffect, useState} from "react";
+import type {SeasonHall} from "@mapae/arcade/hall";
 import type {RankingBoard, RankingBoardId, RankingPage, RankingPeriod, RankingStandings} from "@mapae/arcade/ranking";
 import type {SeasonStatus} from "@mapae/arcade/season";
 import type {TeamBoard, TeamPeriod} from "@mapae/arcade/team";
@@ -58,6 +59,11 @@ export function useTeamBoard(period: TeamPeriod, enabled = true): Remote<TeamBoa
 /** Where the season stands today, refreshed every minute so the phase turns over at midnight KST without a reload. */
 export function useSeasonStatus(): Remote<SeasonStatus> {
     return useRemote<SeasonStatus>("/season", String(useVisibleTick()));
+}
+
+/** The hall of fame of a closed season, read every minute until it seals and then kept; nothing while the season is not closed. */
+export function useSeasonHall(status: SeasonStatus | null): Remote<SeasonHall> {
+    return useRemote<SeasonHall>(status?.phase === "closed" ? `/hall/s${status.id}` : null, String(useVisibleTick()));
 }
 
 /** Which page of a whole board to read: one at an offset, or the one holding the best placed of up to three guardians. */

@@ -5,7 +5,8 @@ import {GUARDIAN_ZODIACS, guardianZodiac, type GuardianZodiac} from "@mapae/arca
 import {kstWeek, type RankingBoard, type RankingPage, type RankingStanding, type RankingStandings, type SeasonStanding} from "@mapae/arcade/ranking";
 import type {SeasonStatus} from "@mapae/arcade/season";
 import type {TeamBoard, TeamRow} from "@mapae/arcade/team";
-import {parseRankingBoard, parseRankingPage, parseRankingStandings, parseSeasonStatus, parseTeamBoard, rankingApi, type RankingDependencies} from "./api";
+import {raffleDraw, type SealedHall, type SeasonHall} from "@mapae/arcade/hall";
+import {parseRankingBoard, parseRankingPage, parseRankingStandings, parseSeasonHall, parseSeasonStatus, parseTeamBoard, rankingApi, type RankingDependencies} from "./api";
 
 const receiptToken = "ranking-receipt-token".repeat(3), now = Date.parse("2026-10-14T03:00:00Z");
 const origin = "https://app.mapae.io/api/arcade/ranking";
@@ -33,6 +34,19 @@ const teamRows = (): TeamRow[] => [teamRow(1, "tiger", 307, 2, ["12", 187]), tea
 const teamBoard = (rows = teamRows()): TeamBoard => ({period: "week", from: "2026-10-12", to: "2026-10-18", closesAt: Date.parse("2026-10-18T15:00:00Z"), entrants: rows.reduce((n, r) => n + r.members, 0), rows});
 const seasonTeams = (rows = teamRows()): TeamBoard => ({...teamBoard(rows), period: "s1", from: "2026-10-05", to: "2026-10-14", closesAt: Date.parse("2026-11-01T15:00:00Z")});
 const empty = {attemptsUsed: 0, today: null, week: null};
+const BLOCK_HASH = `0x${"ab".repeat(32)}` as Hex;
+/** Season 1 sealed: 12 (tiger) first, 5 (ox) and 88 (rat) sharing second, 7 (pig) off the podium; two full runs in the raffle pool. */
+function hall(): SealedHall {
+    const seed = {12: seedFor("tiger"), 5: seedFor("ox"), 88: seedFor("rat"), 7: seedFor("pig")};
+    const streakPool = [{tokenId: "5", seed: seed[5], runs: 1}, {tokenId: "12", seed: seed[12], runs: 2}];
+    return {season: 1, sealed: true, sealedAt: Date.parse("2026-11-02T15:00:00Z"), start: "2026-10-05", end: "2026-11-01", entrants: 4,
+        podium: [{rank: 1, tokenId: "12", seed: seed[12], points: 187, days: 9}, {rank: 2, tokenId: "5", seed: seed[5], points: 120, days: 8}, {rank: 2, tokenId: "88", seed: seed[88], points: 120, days: 9}],
+        teams: [teamRow(1, "tiger", 307, 2, ["12", 187])],
+        champions: [{week: "2026-10-05", game: "race", tokenId: "12", seed: seed[12], score: 500}, {week: "2026-10-05", game: "shop", tokenId: "88", seed: seed[88], score: 40},
+            {week: "2026-10-12", game: "stamp", tokenId: "7", seed: seed[7], score: 60}],
+        streakPool, closeBlock: {number: "31700000", hash: BLOCK_HASH}, raffle: raffleDraw(BLOCK_HASH, ["5", "12"]), participants: ["5", "7", "12", "88"]};
+}
+const unsealed: SeasonHall = {season: 1, sealed: false, sealsAt: Date.parse("2026-11-02T15:00:00Z")};
 /** Nine days in: a full run's bonus and three wins today. */
 const mySeason = (): SeasonStanding => ({moves: true, prev: 4, points: 187, rank: 2, entrants: 212, days: 9, streak: 9, bonus: 10, today: 30});
 function standings(): RankingStandings {
@@ -103,6 +117,22 @@ describe("public ranking proxy", () => {
         expect((await setup(() => Response.json(status()), {season: {id: 2, start: null, end: null}}).call("/board/season/s1")).status).toBe(400);
         expect((await setup(() => Response.json(seasonBoard())).call("/board/season/s1")).headers.get("Cache-Control")).toBe("public, max-age=30");
         expect(await (await setup(() => Response.json(seasonBoard())).call("/board/season/s1")).json<unknown>()).toEqual(seasonBoard());
+    });
+    test("the hall of fame: its own path by season id, a minute until it seals and an hour after, and a bad copy is 503", async () => {
+        const {calls, entries, call} = setup(() => Response.json(unsealed));
+        const pending = await call("/hall/s1");
+        expect(pending.status).toBe(200); expect(pending.headers.get("Cache-Control")).toBe("public, max-age=60"); expect(await pending.json<unknown>()).toEqual(unsealed);
+        expect(calls[0]!.url).toBe("https://seller.mapae.io/arcade/ranking/hall/s1"); expect([...entries.keys()]).toEqual(["https://app.mapae.io/api/arcade/ranking/hall/s1"]);
+        const sealed = setup(() => Response.json(hall()));
+        const ok = await sealed.call("/hall/s1");
+        expect(ok.status).toBe(200); expect(ok.headers.get("Cache-Control")).toBe("public, max-age=3600"); expect(await ok.json<unknown>()).toEqual(hall());
+        await sealed.call("/hall/s1"); expect(sealed.calls).toHaveLength(1);
+        // Any season id ever held reads, whatever the current season is; the shape is strict.
+        expect((await setup(() => Response.json({...hall(), season: 12}), {season: {id: 2, start: null, end: null}}).call("/hall/s12")).status).toBe(200);
+        for (const path of ["/hall/s0", "/hall/S1", "/hall/s01", "/hall/1", "/hall/s12345", "/hall/s1/x", "/hall", "/hall/"]) expect((await sealed.call(path)).status).toBe(404);
+        expect((await sealed.call("/hall/s1?x=1")).status).toBe(400);
+        const other = setup(() => Response.json(hall()));
+        expect((await other.call("/hall/s2")).status).toBe(503); expect(other.entries.size).toBe(0);
     });
     test("team boards travel like boards: their own path, a half-minute cache, and a bad copy is 503", async () => {
         const {calls, entries, call} = setup(() => Response.json(teamBoard()));
@@ -273,6 +303,27 @@ describe("strict copies", () => {
         const idle = standings(); idle.guardians[0]!.games.race = empty; idle.guardians[0]!.weekPoints = 0;
         expect(parseRankingStandings(idle, ["2"])?.guardians[0]!.weekPoints).toBe(0);
         expect(parseRankingStandings({...standings(), guardians: [{...standings().guardians[0]!, season: {...mySeason(), points: 280, bonus: 10, today: 30}}]}, ["2"])?.guardians[0]!.season?.points).toBe(280);
+    });
+    test("hall of fame: podium places over the participants, winning teams, champions in week order, a sorted pool and the raffle the block draws", () => {
+        const ok = hall();
+        expect(parseSeasonHall(ok, 1)).toEqual(ok);
+        expect(parseSeasonHall({...ok, podium: ok.podium.map(r => ({...r, seed: r.seed.toUpperCase().replace("0X", "0x")}))}, 1)).toEqual(ok);
+        expect(parseSeasonHall(unsealed, 1)).toEqual(unsealed);
+        const pool = ok.streakPool, teams = ok.teams, podium = ok.podium, champions = ok.champions;
+        for (const bad of [
+            {...ok, season: 2}, {...ok, sealed: "yes"}, {...unsealed, sealsAt: unsealed.sealsAt + 1}, {...unsealed, extra: 1}, {...ok, sealedAt: ok.sealedAt - 1}, {...ok, end: "2026-10-04"},
+            {...ok, entrants: 5}, {...ok, participants: ["5", "12", "7", "88"]}, {...ok, participants: ["5", "7", "12", "88", "88"]}, {...ok, podium: []}, {...ok, podium: podium.slice(0, 2)},
+            {...ok, podium: [podium[0]!, {...podium[1]!, rank: 3}, podium[2]!]}, {...ok, podium: [podium[0]!, podium[2]!, podium[1]!]}, {...ok, podium: [{...podium[0]!, tokenId: "13"}, podium[1]!, podium[2]!]},
+            {...ok, podium: [{...podium[0]!, seed: seedFor("ox")}, podium[1]!, podium[2]!]}, {...ok, podium: [{...podium[0]!, days: 0}, podium[1]!, podium[2]!]}, {...ok, podium: [{...podium[0]!, points: 8}, podium[1]!, podium[2]!]},
+            {...ok, teams: []}, {...ok, teams: [{...teams[0]!, rank: 2}]}, {...ok, teams: [teams[0]!, teamRow(1, "ox", 307, 3, ["5", 120])]}, {...ok, teams: [teamRow(1, "tiger", 307, 2, ["13", 187])]},
+            {...ok, champions: [champions[1]!, champions[0]!, champions[2]!]}, {...ok, champions: [champions[0]!, champions[0]!]}, {...ok, champions: [{...champions[0]!, week: "2026-09-28"}]},
+            {...ok, champions: [{...champions[0]!, week: "2026-10-06"}]}, {...ok, champions: [{...champions[0]!, game: "golf"}]}, {...ok, champions: [{...champions[0]!, score: 0}]},
+            {...ok, streakPool: [pool[1]!, pool[0]!]}, {...ok, streakPool: [{...pool[0]!, runs: 0}]}, {...ok, streakPool: [{...pool[0]!, runs: 5}]}, {...ok, streakPool: [{...pool[0]!, tokenId: "6"}]},
+            {...ok, raffle: [...ok.raffle].reverse()}, {...ok, raffle: ok.raffle.slice(1)}, {...ok, closeBlock: {number: "031700000", hash: BLOCK_HASH}}, {...ok, closeBlock: {number: "1", hash: "0x12"}},
+            {...ok, closeBlock: {number: 31700000, hash: BLOCK_HASH}}, {...ok, more: 1}, [], null,
+        ]) expect(parseSeasonHall(bad, 1)).toBeNull();
+        expect(parseSeasonHall({...ok, streakPool: [], raffle: []}, 1)).toMatchObject({raffle: []});
+        expect((parseSeasonHall({...ok, teams: [teams[0]!, teamRow(1, "pig", 307, 2, ["7", 187])]}, 1) as SealedHall).teams).toHaveLength(2);
     });
     test("season status: our id, dates as a pair of ranking days or none, and the phase those dates give today", () => {
         for (const phase of ["pending", "announced", "open", "closed"] as const) expect(parseSeasonStatus(status(phase))).toEqual(status(phase));
