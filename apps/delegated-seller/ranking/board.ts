@@ -8,11 +8,15 @@ import {
     type RankingStandings, type SeasonCard, type SeasonRowExtras, type SeasonStanding,
 } from '@mapae/arcade/ranking';
 import {
-    SEASON, SEASON_ENTRY_POINTS, SEASON_RANK_POINTS, SEASON_TOP10_POINTS, seasonClosesAt, seasonPeriod, seasonStatus, seasonStreak, seasonWindow, type Season, type SeasonStatus,
+    SEASON, SEASON_ENTRY_POINTS, SEASON_RANK_POINTS, SEASON_TOP10_POINTS, seasonClosesAt, seasonEndsAt, seasonPeriod, seasonPhase, seasonStatus, seasonStreak, seasonWindow,
+    type Season, type SeasonStatus,
 } from '@mapae/arcade/season';
+import {hallPodium, hallSealsAt, hallTeams, raffleDraw, seasonMarks, type HallChampion, type HallStreak, type SealedHall, type SeasonHall} from '@mapae/arcade/hall';
 import {teamBoardRows, type TeamBoard, type TeamMember, type TeamPeriod} from '@mapae/arcade/team';
+import {redactForLog} from '@mapae/shared';
 import {OutingError} from '../outings/validation';
 import type {OutingStore} from '../outings/store';
+import {SeasonHallBook} from './hall';
 
 /** A guardian's best ranked attempt per board day; ties go to whoever reached the score first, then the lower token. */
 const DAY_BOARD = `WITH best AS (
@@ -45,6 +49,10 @@ const DEVOTION_BOARD = `WITH days AS (
 
 /** How far back a share card may look: a year, as far as the attendance streak reads. */
 const CARD_DAYS_BACK = 365;
+/** A hall of fame period: a season by its id, whether or not it is the current one. */
+const HALL_PERIOD = /^s([1-9]\d*)$/;
+/** The first GIWA block at or after an instant: the seed of the season raffle. */
+export type CloseBlock = (at: number) => Promise<{number: string; hash: Hex}>;
 /** The ruleset a closed week ranked under when it closed: a later ruleset bump never empties it. */
 const WEEK_RULESET = 'SELECT MAX(ruleset) AS ruleset FROM arcade_guardian_ranked WHERE collection=? AND week=? AND created_at<?';
 /**
@@ -111,7 +119,11 @@ const placed = (rows: RankingRow[], offset: number, count: number, moves: Moves)
 export class RankingReader {
     /** Each seed's zodiac, hashed once: a seed never changes, and there are at most as many as guardians. */
     private readonly zodiacs = new Map<Hex, GuardianZodiac>();
-    constructor(readonly store: OutingStore, readonly collection: Address, readonly now: () => number = Date.now, readonly season: Season = SEASON) {}
+    private readonly halls: SeasonHallBook;
+    /** `closeBlock` finds the season's close block on the chain; without it a closed season is never sealed. */
+    constructor(readonly store: OutingStore, readonly collection: Address, readonly now: () => number = Date.now, readonly season: Season = SEASON, readonly closeBlock?: CloseBlock) {
+        this.halls = new SeasonHallBook(store.db, collection);
+    }
 
     seasonStatus(): SeasonStatus {
         return seasonStatus(this.season, this.now());
@@ -206,12 +218,57 @@ export class RankingReader {
     }
 
     /** One guardian's season standing for a share card: only while the season is open or closed, and only with a record in it. */
-    seasonCard(tokenId: string): SeasonCard {
+    async seasonCard(tokenId: string): Promise<SeasonCard> {
         const today = kstDay(this.now()), season = this.seasonWindows(today);
         if (!season) throw new OutingError('invalid_request');
         const raced = season.current.rows.find(r => r.tokenId === tokenId);
         if (!raced) throw new OutingError('not_found');
-        return {tokenId, seed: raced.seed, status: this.seasonStatus(), season: seasonStanding(raced, season, previousRanks(season.current, season.earlier))};
+        const hall = seasonPhase(this.season, today) === 'closed' ? await this.hall(seasonPeriod(this.season)) : null;
+        return {tokenId, seed: raced.seed, status: this.seasonStatus(), season: seasonStanding(raced, season, previousRanks(season.current, season.earlier)), marks: seasonMarks(hall, tokenId, raced.seed)};
+    }
+
+    /**
+     * A season's hall of fame: on record once sealed, whatever season is current now; the current season's, unsealed, from its
+     * close until the cutoff of its last week, then sealed at the first read after it. Sealing needs the close block from the
+     * chain: when that read fails the season stays unsealed and the next read tries again, so a sealed hall always names a block.
+     */
+    async hall(period: string): Promise<SeasonHall> {
+        const id = Number(HALL_PERIOD.exec(period)?.[1]);
+        if (!id) throw new OutingError('invalid_request');
+        const held = this.halls.get(id);
+        if (held) return held;
+        if (id !== this.season.id) throw new OutingError('not_found');
+        const at = this.now(), sealsAt = hallSealsAt(this.season);
+        if (sealsAt === null || seasonPhase(this.season, kstDay(at)) !== 'closed') throw new OutingError('invalid_request');
+        if (at < sealsAt) return {season: id, sealed: false, sealsAt};
+        let closeBlock: {number: string; hash: Hex};
+        try {
+            if (!this.closeBlock) throw new Error('no close block reader');
+            closeBlock = await this.closeBlock(seasonEndsAt(this.season)!);
+        } catch (error) {
+            console.error(`[ranking] season ${id} not sealed — close block unavailable: ${redactForLog(error)}`);
+            return {season: id, sealed: false, sealsAt};
+        }
+        return this.halls.seal(id, () => this.buildHall(closeBlock, this.now()));
+    }
+    /** The sealed hall from the season's final board, team board, weekly champions and streak runs, all as of its last day. */
+    private buildHall(closeBlock: {number: string; hash: Hex}, sealedAt: number): SealedHall {
+        const {start, end} = this.season as {start: string; end: string}, season = this.seasonWindows(end)!, rows = season.current.rows;
+        const champions: HallChampion[] = [], streakPool: HallStreak[] = [];
+        for (let week = kstWeek(start); week <= end; week = addDays(week, 7)) for (const game of RANKED_GAMES) {
+            const first = weekBoard(this.store.db, this.collection, game, week, sealedAt).rows[0];
+            if (first) champions.push({week, game, tokenId: first.tokenId, seed: first.seed, score: first.score});
+        }
+        for (const row of this.pointTotals(start, end)) {
+            const runs = seasonStreak(row.days.split(','), end).completed;
+            if (runs) streakPool.push({tokenId: row.tokenId, seed: row.seed, runs});
+        }
+        streakPool.sort((a, b) => Number(a.tokenId) - Number(b.tokenId));
+        const participants = rows.map(row => row.tokenId).sort((a, b) => Number(a) - Number(b));
+        return {season: this.season.id, sealed: true, sealedAt, start, end, entrants: rows.length,
+            podium: hallPodium(rows.map(row => ({rank: row.rank, tokenId: row.tokenId, seed: row.seed, points: row.score, days: row.days!}))),
+            teams: hallTeams(this.teamBoard(seasonPeriod(this.season)).rows), champions, streakPool, closeBlock,
+            raffle: raffleDraw(closeBlock.hash, streakPool.map(row => row.tokenId)), participants};
     }
 
     /** A board's window at `at` and the one before it. The season reads both from one scan; every other board reads twice. */

@@ -29,7 +29,7 @@ const art: ShareCardArt = hasArt ? {
 };
 const season: SeasonStanding = {moves: true, prev: 3, points: 187, rank: 2, entrants: 212, days: 9, streak: 9, bonus: 10, today: 10};
 const ranked: RankedCard = {game: "race", day: "2026-10-14", tokenId: "407", seed: SEED_A, score: 12_340, rank: 3, entrants: 41, leader: 15_000, final: false, season};
-const closed: SeasonCard = {tokenId: "12", seed: SEED_B, status: {id: 1, start: "2026-10-05", end: "2026-11-01", today: "2026-11-03", phase: "closed"}, season: {...season, rank: 1, today: 0}};
+const closed: SeasonCard = {tokenId: "12", seed: SEED_B, status: {id: 1, start: "2026-10-05", end: "2026-11-01", today: "2026-11-03", phase: "closed"}, season: {...season, rank: 1, today: 0}, marks: []};
 const inkAt = (b: Bitmap, x: number, y: number, color: string) => pixelAt(b, x, y).every((c, i) => c === rgb(color)[i]);
 const hasInk = (b: Bitmap, x0: number, y0: number, w: number, h: number, color: string) => {
     for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (inkAt(b, x, y, color)) return true;

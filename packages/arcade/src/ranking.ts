@@ -1,6 +1,7 @@
 import type {Hex} from "viem";
 import {ARCADE_RULESET_VERSION, type GameId} from "./contracts";
 import {GUARDIAN_MAX_SUPPLY} from "./guardians";
+import type {SeasonMark} from "./hall";
 import type {Season, SeasonStatus} from "./season";
 
 /**
@@ -78,7 +79,8 @@ export type RankedCard = {
     season: SeasonStanding | null;
 };
 /** One guardian's season standing with the seed that draws it and the season's status, for a season share card. */
-export type SeasonCard = {tokenId: string; seed: Hex; status: SeasonStatus; season: SeasonStanding};
+/** `marks` are the season marks the hall of fame sealed for this guardian: empty until the season seals. */
+export type SeasonCard = {tokenId: string; seed: Hex; status: SeasonStatus; season: SeasonStanding; marks: SeasonMark[]};
 
 const KST_OFFSET = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;

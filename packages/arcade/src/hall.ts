@@ -61,3 +61,22 @@ export function seasonMarks(hall: SeasonHall | null, tokenId: string, seed: Hex)
     marks.push({season: hall.season, kind: "entrant"});
     return marks;
 }
+
+/** What the block search reads: a block by number or the latest, as viem's `getBlock` returns it. */
+export type BlockReader = (query: {blockNumber: bigint} | {blockTag: "latest"}) => Promise<{number: bigint | null; hash: Hex | null; timestamp: bigint}>;
+/**
+ * The first block at or after an instant: a binary search over the chain so far (about 25 reads), which the raffle script runs
+ * again on the public RPC to check the seller's answer. Throws while the chain has not reached the instant.
+ */
+export async function findCloseBlock(getBlock: BlockReader, at: number): Promise<{number: string; hash: Hex}> {
+    const latest = await getBlock({blockTag: "latest"}), second = BigInt(Math.ceil(at / 1000));
+    if (latest.number === null || latest.timestamp < second) throw new Error("Chain has not reached the season close");
+    let low = 0n, high = latest.number;
+    while (low < high) {
+        const mid = (low + high) / 2n;
+        if ((await getBlock({blockNumber: mid})).timestamp >= second) high = mid; else low = mid + 1n;
+    }
+    const block = low === latest.number ? latest : await getBlock({blockNumber: low});
+    if (block.hash === null) throw new Error("Close block has no hash");
+    return {number: block.number!.toString(), hash: block.hash};
+}
