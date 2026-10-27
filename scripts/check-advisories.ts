@@ -15,20 +15,9 @@
  * A third, quieter one: an acceptance whose advisory is no longer reported also fails, so
  * the list cannot silently accumulate permissions nobody needs.
  *
- * Unlike the other gate scripts this one wants the network. It degrades instead of
- * failing, and the three states are distinguishable rather than assumed — measured
- * against bun 1.3.14:
- *
- *   | situation                  | exit | stdout            |
- *   |----------------------------|------|-------------------|
- *   | vulnerabilities found      |  1   | `{"pkg":[…]}`     |
- *   | tree is clean              |  0   | `{}`              |
- *   | registry unreachable       |  1   | *empty*           |
- *
- * The exit code alone cannot tell "found something" from "could not ask" — both are 1.
- * stdout can, which is why the classification below reads stdout and ignores the status.
- * When the registry is unreachable the comparison is skipped and said out loud, but the
- * proofs still run: they are local, and it is the proofs that rot.
+ * Network failures and malformed reports fail closed. A clean audit requires both a
+ * valid empty report and a successful process exit; exit 1 with findings is a report,
+ * while exit 1 without findings means the registry check did not complete.
  */
 const REPO = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 
@@ -76,13 +65,7 @@ export type AuditReport =
     | {kind: "unavailable"}
     | {kind: "report"; findings: Record<string, Finding[]>};
 
-/**
- * Classify by stdout, never by exit status — `bun audit` exits 1 both when it finds
- * something and when it cannot reach the registry, so the status cannot separate a real
- * report from a failed run. Empty stdout is the only signal that the question went
- * unanswered, and treating it as `{}` would read "could not ask" as "nothing to report".
- */
-export function classifyAudit(stdout: string): AuditReport {
+export function classifyAudit(stdout: string, exitCode?: number): AuditReport {
     const trimmed = stdout.trim();
     if (trimmed === "") return {kind: "unavailable"};
     let parsed: unknown;
@@ -94,6 +77,18 @@ export function classifyAudit(stdout: string): AuditReport {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         return {kind: "unavailable"};
     }
+    for (const entries of Object.values(parsed)) {
+        if (!Array.isArray(entries) || entries.length === 0) return {kind: "unavailable"};
+        for (const entry of entries) {
+            if (!entry || typeof entry !== "object" ||
+                !Number.isInteger(entry.id) ||
+                !["url", "title", "severity", "vulnerable_versions"].every(
+                    (key) => typeof entry[key] === "string" && entry[key].length > 0,
+                )) return {kind: "unavailable"};
+        }
+    }
+    const expectedExit = Object.keys(parsed).length === 0 ? 0 : 1;
+    if (exitCode !== undefined && exitCode !== expectedExit) return {kind: "unavailable"};
     return {kind: "report", findings: parsed as Record<string, Finding[]>};
 }
 
@@ -144,8 +139,7 @@ async function runAudit(): Promise<AuditReport> {
         stderr: "ignore",
     });
     const stdout = await new Response(proc.stdout).text();
-    await proc.exited;
-    return classifyAudit(stdout);
+    return classifyAudit(stdout, await proc.exited);
 }
 
 async function main(): Promise<void> {
@@ -161,6 +155,8 @@ async function main(): Promise<void> {
     const audit = await runAudit();
     if (audit.kind === "report") {
         failures.push(...compareFindings(audit.findings, ACCEPTED));
+    } else {
+        failures.push("Audit unavailable: registry request failed or returned an invalid report. Retry before proceeding.");
     }
 
     if (failures.length > 0) {
@@ -170,17 +166,13 @@ async function main(): Promise<void> {
         process.exit(1);
     }
 
-    const note =
-        audit.kind === "unavailable"
-            ? " (registry unreachable — proofs ran, findings not compared)"
-            : "";
     const count = ACCEPTED.length;
     const accepted =
         count === 0
             ? "nothing accepted"
             : `${count} accepted ${count === 1 ? "one" : "ones"} still ` +
               `${count === 1 ? "matches its" : "match their"} stated reason`;
-    console.log(`[advisories] no unaccepted advisories; ${accepted}${note}`);
+    console.log(`[advisories] no unaccepted advisories; ${accepted}`);
 }
 
 if (import.meta.main) await main();

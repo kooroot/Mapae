@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-1940%20TS%20%2B%2078%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-1941%20TS%20%2B%2078%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -108,7 +108,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://docs.mapae.io).
-- Regression suite: **1940 TypeScript tests (1307 shared/delegation/seller/store/facilitator/shop/scripts/scheduler/faucet + 3 MCP + 595 web + 35 docs)
+- Regression suite: **1941 TypeScript tests (1308 shared/delegation/seller/store/facilitator/shop/scripts/scheduler/faucet + 3 MCP + 595 web + 35 docs)
   + 78 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a
@@ -175,7 +175,8 @@ Being explicit about the edges matters more than a longer list of green checks.
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/)
+- [Bun](https://bun.sh/) 1.4.4
+- [Node.js](https://nodejs.org/) 24.22.1 (see `.nvmrc`; `nvm install && nvm use`)
 - [Foundry](https://book.getfoundry.sh/getting-started/installation)
 - Docker Compose for the x402 facilitator
 - Anvil for the local Framework integration
@@ -193,10 +194,10 @@ bun run check
 checks — documentation, logging, dependency advisories, test counts — the shared
 and delegation suites, the MCP server smoke tests, the web render tests, a
 real web build, and the Foundry contract suite. It needs no keys. Only the
-advisory check wants the network, and it says so and carries on without it.
+advisory check needs the network; an unreachable registry or malformed report fails the gate.
 The same command and the hermetic 23-case delegation suite run in GitHub Actions
 on every pull request and every push to `main`, from a recursive-submodule checkout
-with Bun and Foundry pinned to the versions used for the latest full-gate re-run.
+with Node, Bun and Foundry pinned to the versions used for the latest full-gate re-run.
 
 The documentation check is in the gate because this README is the primary
 description of the system, which turns doc rot into a correctness bug. It

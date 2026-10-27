@@ -38,7 +38,7 @@ const finding = (overrides: Partial<Finding> = {}): Finding => ({
 describe("classifyAudit", () => {
     test("empty stdout is 'could not ask', not 'nothing to report'", () => {
         // Measured: with an unreachable registry bun prints nothing to stdout and exits 1.
-        // Reading that as `{}` would mark every acceptance stale and fail the gate offline.
+        // Reading that as `{}` would let an unchecked tree pass.
         expect(classifyAudit("")).toEqual({kind: "unavailable"});
         expect(classifyAudit("   \n ")).toEqual({kind: "unavailable"});
     });
@@ -58,6 +58,13 @@ describe("classifyAudit", () => {
         expect(classifyAudit("error: audit request failed")).toEqual({kind: "unavailable"});
         expect(classifyAudit("[]")).toEqual({kind: "unavailable"});
         expect(classifyAudit("null")).toEqual({kind: "unavailable"});
+        for (const invalid of ['{"pkg":null}', '{"pkg":[]}', '{"pkg":[{}]}']) {
+            expect(classifyAudit(invalid)).toEqual({kind: "unavailable"});
+        }
+        expect(classifyAudit("{}", 1)).toEqual({kind: "unavailable"});
+        expect(classifyAudit(REAL_REPORT, 0)).toEqual({kind: "unavailable"});
+        expect(classifyAudit("{}", 0).kind).toBe("report");
+        expect(classifyAudit(REAL_REPORT, 1).kind).toBe("report");
     });
 });
 
@@ -111,4 +118,27 @@ describe("compareFindings", () => {
         expect(failures).toHaveLength(1);
         expect(failures[0]).toContain("no longer reported");
     });
+});
+
+// Exercise the CLI: classification alone must not let main silently skip a failed audit.
+test("advisory CLI fails closed when the audit subprocess is unavailable", async () => {
+    const {mkdtemp, writeFile, rm} = await import("node:fs/promises");
+    const {tmpdir} = await import("node:os");
+    const {join} = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "mapae-audit-offline-"));
+    try {
+        await writeFile(join(dir, "bun"), "#!/bin/sh\nexit 1\n", {mode: 0o755});
+        const proc = Bun.spawn([process.execPath, new URL("./check-advisories.ts", import.meta.url).pathname], {
+            env: {...process.env, PATH: `${dir}:${process.env.PATH}`},
+            stdout: "pipe", stderr: "pipe",
+        });
+        const [stdout, stderr, code] = await Promise.all([
+            new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited,
+        ]);
+        expect(code).toBe(1);
+        expect(stderr).toContain("Audit unavailable");
+        expect(stdout).not.toContain("no unaccepted advisories");
+    } finally {
+        await rm(dir, {recursive: true, force: true});
+    }
 });

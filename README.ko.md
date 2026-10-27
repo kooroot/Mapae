@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-1940%20TS%20%2B%2078%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-1941%20TS%20%2B%2078%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -105,7 +105,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 문서](https://docs.mapae.io)에 있다.
-- 회귀 검증: **1940 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts/scheduler/arcade/faucet 1307 + MCP 3 + 웹 595 + 문서 35)
+- 회귀 검증: **1941 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts/scheduler/arcade/faucet 1308 + MCP 3 + 웹 595 + 문서 35)
   + 78 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이
@@ -163,7 +163,8 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 
 ### 준비 사항
 
-- [Bun](https://bun.sh/)
+- [Bun](https://bun.sh/) 1.4.4
+- [Node.js](https://nodejs.org/) 24.22.1 (`.nvmrc`; `nvm install && nvm use`)
 - [Foundry](https://book.getfoundry.sh/getting-started/installation)
 - Docker Compose — x402 facilitator 실행 시
 - Anvil — 로컬 Framework 통합 검증 시
@@ -180,11 +181,10 @@ bun run check
 `bun run check`는 전체 패키지의 strict TypeScript, 네 가지 상시 검사(문서·로깅·
 의존성 권고·테스트 수치), shared/delegation 테스트, MCP 서버 스모크, 웹 렌더
 테스트, 실제 웹 빌드, Foundry 테스트를 모두 실행합니다. 키는 필요 없습니다.
-네트워크를 원하는 것은 권고 검사 하나뿐이고, 그것도 닿지 못하면 그렇다고 말하고
-계속 갑니다.
+권고 검사에는 네트워크가 필요하며, 레지스트리 연결 실패나 잘못된 응답은 게이트 실패로 처리합니다.
 같은 명령과 hermetic 23-case 위임 수트를 모든 pull request와 `main` push에서
 GitHub Actions가 실행합니다. 재귀 submodule checkout 뒤 최근 전체 게이트 재검증에 사용한
-Bun·Foundry 버전을 고정하므로, 로컬에서만 녹색인 상태를 완료로 세지 않습니다.
+Node·Bun·Foundry 버전을 고정하므로, 로컬에서만 녹색인 상태를 완료로 세지 않습니다.
 
 문서 검사를 게이트에 넣은 이유는 이 README가 시스템의 1차 설명이기 때문입니다 —
 그러면 문서 부패가 정합성 버그가 됩니다. 코드 블록에 적힌 모든 `bun run`·`make`

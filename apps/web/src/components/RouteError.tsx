@@ -38,12 +38,13 @@ const COPY: Record<Locale, {title: string; body: string; retry: string; detail: 
 export function RouteError({error}: ErrorComponentProps) {
     const {locale} = useLocale();
     const t = COPY[locale];
+    const message = error instanceof Error ? error.message : "";
     return (
         <main className="route-error">
             <div className="wrap">
                 <h1>{t.title}</h1>
                 <p>{t.body}</p>
-                {error.message ? <details><summary>{t.detail}</summary><code className="route-error-detail">{error.message}</code></details> : null}
+                {message ? <details><summary>{t.detail}</summary><code className="route-error-detail">{message}</code></details> : null}
                 <button type="button" className="route-error-action" onClick={() => window.location.reload()}>
                     <span>{t.retry}</span>
                 </button>
