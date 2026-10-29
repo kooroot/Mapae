@@ -269,3 +269,46 @@ describe("nonces, history and pruning", () => {
         expect(store.get(stuck.id)?.state).toBe("signed");
     });
 });
+
+describe("refusal counts", () => {
+    test("counts each refusal per UTC day, kind and reason, beside the claims by state", () => {
+        const store = open();
+        store.countRefusal("eth", "not_eligible", T0);
+        store.countRefusal("eth", "not_eligible", T0 + 1);
+        store.countRefusal("eth", "cooldown", T0 + 2);
+        store.countRefusal("musdc", "mission_incomplete", T0 + DAY);
+        const done = reserved(store, input(), T0);
+        confirm(store, done.id, 0, T0);
+        store.markSkipped(reserved(store, input({kind: "eth", owner: owner(2), recipient: owner(2)}), T0, ETH).id, T0);
+        const day = (at: number) => new Date(at).toISOString().slice(0, 10);
+        expect(store.outcomes(T0)).toEqual({
+            claims: [{kind: "eth", state: "skipped", count: 1}, {kind: "musdc", state: "confirmed", count: 1}],
+            refusals: [
+                {day: day(T0), kind: "eth", reason: "cooldown", count: 1},
+                {day: day(T0), kind: "eth", reason: "not_eligible", count: 2},
+                {day: day(T0 + DAY), kind: "musdc", reason: "mission_incomplete", count: 1},
+            ],
+        });
+        expect(store.outcomes(T0 + 2 * DAY)).toEqual({claims: [], refusals: []});
+    });
+
+    test("survives a restart and is pruned with the ledger, a whole day at a time", () => {
+        const path = tempPath();
+        const first = openFaucetStore(path);
+        first.countRefusal("eth", "not_eligible", T0);
+        first.close();
+        const store = open(path);
+        store.countRefusal("eth", "not_eligible", T0 + DAY);
+        expect(store.outcomes(T0).refusals.map((row) => row.count)).toEqual([1, 1]);
+        expect(store.prune(T0 + DAY)).toBe(1);
+        expect(store.outcomes(0).refusals).toEqual([{day: new Date(T0 + DAY).toISOString().slice(0, 10), kind: "eth", reason: "not_eligible", count: 1}]);
+    });
+
+    test("refuses a reason outside the code shape, so nothing but a code is stored", () => {
+        const store = open();
+        expect(() => store.countRefusal("eth", "0xabc owner", T0)).toThrow(TypeError);
+        expect(() => store.countRefusal("btc" as "eth", "not_eligible", T0)).toThrow(TypeError);
+        expect(() => store.countRefusal("eth", "not_eligible", -1)).toThrow(TypeError);
+        expect(store.outcomes(0).refusals).toEqual([]);
+    });
+});

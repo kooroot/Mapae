@@ -26,6 +26,10 @@ import {dirname} from "node:path";
  * "Active" claims — reserved, signed, sent or confirmed — are the ones every window and
  * limit counts. `skipped` (the recipient already held enough) and `failed` (nothing
  * landed) never consume a window: a refusal must not lock anyone out.
+ *
+ * A refusal before `reserve` leaves no claim row, so each one is counted per UTC day,
+ * kind and reason in `faucet_refusals`. The count names no owner and no network key; it
+ * is how the operator tells a door nobody tried from one that turned everyone away.
  */
 
 export type FaucetClaimKind = "musdc" | "eth";
@@ -105,7 +109,23 @@ CREATE INDEX IF NOT EXISTS faucet_claims_kind_created ON faucet_claims (kind, cr
 CREATE INDEX IF NOT EXISTS faucet_claims_ip ON faucet_claims (ip_key, kind, created_at);
 CREATE INDEX IF NOT EXISTS faucet_claims_subnet ON faucet_claims (subnet_key, kind, created_at);
 CREATE INDEX IF NOT EXISTS faucet_claims_owner ON faucet_claims (owner, kind, created_at);
+CREATE TABLE IF NOT EXISTS faucet_refusals (
+    day INTEGER NOT NULL CHECK (day >= 0),
+    kind TEXT NOT NULL CHECK (kind IN ('musdc','eth')),
+    reason TEXT NOT NULL CHECK (reason GLOB '[a-z_]*' AND length(reason) BETWEEN 1 AND 40),
+    count INTEGER NOT NULL CHECK (count > 0),
+    PRIMARY KEY (day, kind, reason)
+) WITHOUT ROWID;
 `;
+
+const DAY_MS = 86_400_000;
+const REASON = /^[a-z_]{1,40}$/;
+
+/** A claim state's count, or a refusal reason's count on one UTC day, as the operator reads them. */
+export interface FaucetOutcomeCounts {
+    claims: {kind: FaucetClaimKind; state: FaucetClaimState; count: number}[];
+    refusals: {day: string; kind: FaucetClaimKind; reason: string; count: number}[];
+}
 
 const ADDRESS = /^0x[0-9a-f]{40}$/;
 const KEY = /^[0-9a-f]{64}$/;
@@ -243,9 +263,29 @@ export function openFaucetStore(path: string) {
             const row = db.query<{n: number | null}, []>("SELECT max(nonce) AS n FROM faucet_claims WHERE state IN ('signed','sent','confirmed')").get();
             return row?.n === null || row?.n === undefined ? 0 : row.n + 1;
         },
-        /** Drop finished rows created before `before`. In-flight rows are never pruned. */
+        /** Count one refusal that left no claim row. */
+        countRefusal(kind: FaucetClaimKind, reason: string, now: number): void {
+            if (kind !== "musdc" && kind !== "eth") throw new TypeError("kind must be musdc or eth");
+            if (!REASON.test(reason)) throw new TypeError("reason must be a lowercase refusal code");
+            if (!Number.isSafeInteger(now) || now < 0) throw new TypeError("now must be a non-negative integer");
+            db.query(
+                "INSERT INTO faucet_refusals (day, kind, reason, count) VALUES (?, ?, ?, 1) ON CONFLICT (day, kind, reason) DO UPDATE SET count = count + 1",
+            ).run(Math.floor(now / DAY_MS), kind, reason);
+        },
+        /** Claims created since `since` by kind and state, and refusals on the UTC days since then. */
+        outcomes(since: number): FaucetOutcomeCounts {
+            const claims = db.query<{kind: FaucetClaimKind; state: FaucetClaimState; count: number}, [number]>(
+                "SELECT kind, state, count(*) AS count FROM faucet_claims WHERE created_at >= ? GROUP BY kind, state ORDER BY kind, state",
+            ).all(since);
+            const refusals = db.query<{day: number; kind: FaucetClaimKind; reason: string; count: number}, [number]>(
+                "SELECT day, kind, reason, count FROM faucet_refusals WHERE day >= ? ORDER BY day, kind, reason",
+            ).all(Math.floor(since / DAY_MS));
+            return {claims, refusals: refusals.map((row) => ({...row, day: new Date(row.day * DAY_MS).toISOString().slice(0, 10)}))};
+        },
+        /** Drop finished rows created before `before`, and the refusal counts of days that ended before it. In-flight rows are never pruned. */
         prune(before: number): number {
-            return db.query("DELETE FROM faucet_claims WHERE created_at < ? AND state IN ('confirmed','failed','skipped')").run(before).changes;
+            const claims = db.query("DELETE FROM faucet_claims WHERE created_at < ? AND state IN ('confirmed','failed','skipped')").run(before).changes;
+            return claims + db.query("DELETE FROM faucet_refusals WHERE day < ?").run(Math.floor(before / DAY_MS)).changes;
         },
         close() {
             db.close();
