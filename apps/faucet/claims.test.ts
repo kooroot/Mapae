@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, test} from "bun:test";
+import {afterEach, describe, expect, spyOn, test} from "bun:test";
 import {
     FAUCET_ETH_AMOUNT_WEI,
     FAUCET_ETH_WINDOW_MS,
@@ -495,6 +495,42 @@ describe("broadcast and recovery", () => {
         await faucet.claim(request({owner: owner(2), ipKey: key(2)}));
         // The node's pending count is still 0, but the ledger knows nonce 0 is spoken for.
         expect(signs.map((s) => s.nonce)).toEqual([0, 1]);
+    });
+});
+
+describe("refusal counts", () => {
+    test("every refusal is counted by reason and logged once; a claim that pays is not", async () => {
+        const {chain, faucet, tick, at} = setup();
+        const log = spyOn(console, "log").mockImplementation(() => {});
+        try {
+            expect(await faucet.claim(ethRequest(1))).toMatchObject({refusal: "not_eligible"});
+            expect(await faucet.claim(ethRequest(1))).toMatchObject({refusal: "not_eligible"});
+            expect(await faucet.claim(request({missions: []}))).toMatchObject({refusal: "mission_incomplete"});
+            expect(log.mock.calls.map(([line]) => line)).toEqual([
+                `[faucet] eth refused not_eligible owner=${owner(1).toLowerCase()}`,
+                `[faucet] eth refused not_eligible owner=${owner(1).toLowerCase()}`,
+                `[faucet] musdc refused mission_incomplete owner=${owner(1).toLowerCase()}`,
+            ]);
+            chain.mainnet.set(owner(1).toLowerCase(), 1);
+            tick(1_000);
+            expect(await faucet.claim(ethRequest(1))).toMatchObject({ok: true, view: {state: "confirmed"}});
+            const day = new Date(T0).toISOString().slice(0, 10);
+            expect(faucet.outcomes(T0)).toEqual({
+                claims: [{kind: "eth", state: "confirmed", count: 1}],
+                refusals: [{day, kind: "eth", reason: "not_eligible", count: 2}, {day, kind: "musdc", reason: "mission_incomplete", count: 1}],
+            });
+            expect(faucet.outcomes(at() + 86_400_000)).toEqual({claims: [], refusals: []});
+        } finally {log.mockRestore();}
+    });
+
+    test("a count that cannot be written still answers the refusal", async () => {
+        const {store, faucet} = setup();
+        const log = spyOn(console, "log").mockImplementation(() => {}), warn = spyOn(console, "warn").mockImplementation(() => {});
+        const write = spyOn(store, "countRefusal").mockImplementation(() => {throw new Error("disk full");});
+        try {
+            expect(await faucet.claim(ethRequest(1))).toEqual({ok: false, refusal: "not_eligible", status: 403});
+            expect(warn).toHaveBeenCalledTimes(1);
+        } finally {write.mockRestore(); log.mockRestore(); warn.mockRestore();}
     });
 });
 

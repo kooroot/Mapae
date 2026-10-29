@@ -48,6 +48,8 @@ import {
 const BALANCE_ABI = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
 const MAX_BODY_BYTES = 4_096;
 const RECONCILE_INTERVAL_MS = 15_000;
+/** How far back `/health` reports claims by state and refusals by reason. */
+const OUTCOME_WINDOW_MS = 7 * 86_400_000;
 const DEFAULT_MAINNET_RPC = "https://ethereum-rpc.publicnode.com";
 
 function readPort(): number {
@@ -216,7 +218,8 @@ app.use("*", async (c, next) => {
 /**
  * Loopback only, and not in the tunnel's path rule: it names the wallet and its balance,
  * a targeting oracle for anyone deciding whether a drain is worth starting. A request
- * that crossed the tunnel carries `CF-Connecting-IP`.
+ * that crossed the tunnel carries `CF-Connecting-IP`. `last7Days` is the week's claims by
+ * state and refusals by reason: what the operator reads when a tab pays nobody.
  */
 app.get("/health", async (c) => {
     if (c.req.header("cf-connecting-ip") !== undefined) return c.body(null, 404);
@@ -234,6 +237,7 @@ app.get("/health", async (c) => {
         balanceWei: balance,
         ethMissions: ETH_MISSIONS,
         unsettled: store.unsettled().length,
+        last7Days: faucet.outcomes(Date.now() - OUTCOME_WINDOW_MS),
     });
 });
 

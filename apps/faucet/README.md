@@ -46,10 +46,12 @@ faucet 지갑의 가스를 지키는 장치다. ETH가 실제로 노릴 만한 �
 | `GET /faucet/status` | `{musdc:{enabled,targetBase,windowMs,missions}, eth:{enabled,amountWei,windowMs,missions,minMainnetNonce}}`. 잔액은 내보내지 않고, 바닥 잔액 아래면 `enabled`만 끈다 |
 | `GET /faucet/claims/:owner` | `{owner, recipients:{musdc, eth}, musdc: ClaimView\|null, eth: ClaimView\|null}` |
 | `POST /faucet/claims` `{kind, owner, ipKey, subnetKey, missions}` | `200 ClaimView` 또는 `{reason, nextAt?}`(400/403/429/503) |
-| `GET /health` | loopback 전용(터널을 거친 요청은 404). 지갑 주소·잔액·미결 청구 수 |
+| `GET /health` | loopback 전용(터널을 거친 요청은 404). 지갑 주소·잔액·미결 청구 수, `last7Days`(최근 7일 청구 상태별 수, UTC 날짜별 거절 이유 수) |
 
 `ClaimView = {kind, state: "pending"|"confirmed"|"failed"|"already_enough", amount, recipient, transaction?, nextAt?}`.
-거절 이유는 `FAUCET_REFUSALS`의 닫힌 집합뿐이다.
+거절 이유는 `FAUCET_REFUSALS`의 닫힌 집합뿐이다. 거절은 모두 `faucet_refusals`에
+이유별로 세고(지갑·IP 없음) `[faucet] eth refused not_eligible owner=0x…` 한 줄을 남긴다.
+탭이 아무에게도 지급하지 않으면 `curl -s 127.0.0.1:8084/health`의 `last7Days`부터 본다.
 
 ## 청구 상태와 복구
 

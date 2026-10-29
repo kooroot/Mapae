@@ -19,6 +19,8 @@
  * 7. Under one mutex: nonce, sign, persist the signed bytes, broadcast.
  * 8. A bounded receipt wait. A timeout leaves the claim `sent` and answers `pending`; the
  *    reconciler finishes it.
+ *
+ * Every refusal is counted by reason and logged once, so a tab that pays nobody shows why.
  */
 import {
     FAUCET_ETH_AMOUNT_WEI,
@@ -279,6 +281,20 @@ export function createFaucet(deps: {
     }
 
     async function claim(request: ClaimRequest): Promise<ClaimOutcome> {
+        const outcome = await decide(request);
+        if (!outcome.ok) {
+            console.log(`[faucet] ${request.kind} refused ${outcome.refusal} owner=${request.owner.toLowerCase()}`);
+            // The count is the operator's view; failing to write it must not change the answer.
+            try {
+                store.countRefusal(request.kind, outcome.refusal, now());
+            } catch (error) {
+                console.warn(`[faucet] refusal count not written — ${redactForLog(error)}`);
+            }
+        }
+        return outcome;
+    }
+
+    async function decide(request: ClaimRequest): Promise<ClaimOutcome> {
         const {kind} = request;
         if (!kindOn(kind)) return refuse("faucet_off");
         if (!missionsOf(kind).every((id) => request.missions.includes(id))) return refuse("mission_incomplete");
@@ -493,7 +509,10 @@ export function createFaucet(deps: {
         }
     }
 
-    return {status, account, claim, reconcile};
+    /** Claims and refusals since `since`, for the operator's loopback health read. */
+    const outcomes = (since: number) => store.outcomes(since);
+
+    return {status, account, claim, reconcile, outcomes};
 }
 
 export type Faucet = ReturnType<typeof createFaucet>;
