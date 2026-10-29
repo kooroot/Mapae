@@ -15,9 +15,12 @@ test("a ranked card answer is copied only when it echoes the request and holds t
     const today = "2026-10-14", raw = {...ranked, seed: SEED_A.toUpperCase().replace("0X", "0x")};
     expect(parseRankedCard(raw, "race", "2026-10-14", "407", today)).toEqual(ranked);
     expect(parseRankedCard({...ranked, season: null}, "race", "2026-10-14", "407", today)?.season).toBeNull();
+    // A tie goes to whoever reached the score first, so third place can hold the leading score; first place always does.
+    expect(parseRankedCard({...ranked, leader: 12_340}, "race", "2026-10-14", "407", today)?.rank).toBe(3);
+    expect(parseRankedCard({...ranked, rank: 1, leader: 12_340}, "race", "2026-10-14", "407", today)?.rank).toBe(1);
     for (const bad of [
         {...ranked, game: "shop"}, {...ranked, day: "2026-10-13"}, {...ranked, tokenId: "408"}, {...ranked, seed: "0x12"}, {...ranked, score: -1}, {...ranked, score: 1e10},
-        {...ranked, rank: 0}, {...ranked, rank: 42}, {...ranked, entrants: 10_001, rank: 10_001}, {...ranked, leader: 12_000}, {...ranked, rank: 1}, {...ranked, leader: 12_340},
+        {...ranked, rank: 0}, {...ranked, rank: 42}, {...ranked, entrants: 10_001, rank: 10_001}, {...ranked, leader: 12_000}, {...ranked, rank: 1},
         {...ranked, final: true}, {...ranked, season: {...season, points: 5}}, {...ranked, extra: 1}, [], null, "card",
     ]) expect(parseRankedCard(bad, "race", "2026-10-14", "407", today)).toBeNull();
     expect(parseRankedCard({...ranked, day: "2026-10-13", final: true}, "race", "2026-10-13", "407", today)?.final).toBe(true);

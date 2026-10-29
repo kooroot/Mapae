@@ -13,13 +13,14 @@ const keys = (v: Record<string, unknown>, ...names: string[]) => Object.keys(v).
 
 /**
  * The seller's answer for a ranked round, checked against the card that was asked for: the seed is a hash, the place fits the
- * entrant count, only the leader holds the leading score, and the round is final exactly when its day has passed.
+ * entrant count, the leader holds the leading score, and the round is final exactly when its day has passed. A board breaks a
+ * tie by who reached the score first, so a place below the first may hold the leading score too.
  */
 export function parseRankedCard(v: unknown, game: GameId, day: string, tokenId: string, today: string): RankedCard | null {
     if (!object(v) || !keys(v, "game", "day", "tokenId", "seed", "score", "rank", "entrants", "leader", "final", "season")) return null;
     if (v.game !== game || v.day !== day || v.tokenId !== tokenId || typeof v.seed !== "string" || !isHash(v.seed)) return null;
     if (!uint(v.score) || v.score > MAX_SCORE || !uint(v.rank) || v.rank < 1 || !uint(v.entrants) || v.entrants < v.rank || v.entrants > GUARDIAN_MAX_SUPPLY) return null;
-    if (!uint(v.leader) || v.leader > MAX_SCORE || v.leader < v.score || (v.rank === 1) !== (v.leader === v.score) || v.final !== (day < today)) return null;
+    if (!uint(v.leader) || v.leader > MAX_SCORE || v.leader < v.score || (v.rank === 1 && v.leader !== v.score) || v.final !== (day < today)) return null;
     const season = v.season === null ? null : seasonStanding(v.season);
     if (season === null && v.season !== null) return null;
     return {game, day, tokenId, seed: v.seed.toLowerCase() as Hex, score: v.score, rank: v.rank, entrants: v.entrants, leader: v.leader, final: v.final, season};
