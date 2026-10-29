@@ -242,7 +242,7 @@ export async function guardiansReport(options:ReportOptions,client?:ChainClient)
         complete:human.coverage.status==='available'&&agent.coverage.status==='available'&&chain?.coverage.status==='complete',
         sources:{engagement:human.coverage,seller:agent.coverage,chain:chain?{status:chain.coverage.status}:{status:'missing',reason:'chain_verification_not_requested'}},
         engagement:human.report,autonomous:agent.report,repeatOperatorsLast7Days:repeats,
-        repeatOperatorDefinition:'Authenticated foreground operator_action on at least two Seoul calendar days in the last seven, plus a completed verified paid admission in that interval.',
+        repeatOperatorDefinition:'Authenticated foreground operator actions (operator_action, mint_started, outing_started) on at least two Seoul calendar days in the last seven, plus a completed verified paid admission in that interval.',
         chain,limitations:['Missing or incomplete sources are unknown, never zero.','No wallet, visitor, session, token or transaction identifiers are printed.','Collection block range coverage is operator-declared; this report cannot prove acquisition causality, unique people, anti-Sybil quality, or revenue.','Staff and operational canaries are included if present in supplied sources. Validate the real pilot cohort separately before claiming adoption.']};
 }
 export function parseReportOptions(argv:string[]):ReportOptions{

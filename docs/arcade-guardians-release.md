@@ -87,7 +87,7 @@ bun --no-env-file scripts/arcade-guardians-preflight.ts --collection <배포한_
 
 ## 3. D1와 서버 환경 연결
 
-두 Worker는 같은 `mapae-arcade-profiles` D1을 사용한다. 새 지표 테이블만 추가하며 기존 프로필을 삭제하지 않는다.
+랜딩·앱·faucet Worker는 같은 `mapae-arcade-profiles` D1을 사용하고, 셋 다 지표를 기록한다. 지표 스키마를 바꾼 변경은 아래 `schema.sql`을 **먼저** 적용한 뒤 세 Worker를 배포한다. 새 표가 없는 동안 새 Worker는 처음 온 브라우저의 기록을 받지 못하고, 그 사이 쌓인 중복 도착 기록 때문에 나중의 적용이 고유 색인에서 실패할 수 있다. 새 지표 테이블만 추가하며 기존 프로필을 삭제하지 않는다.
 
 ```sh
 cd apps/web
