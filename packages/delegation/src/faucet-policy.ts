@@ -32,11 +32,11 @@ export type FaucetKind = "musdc" | "eth";
 export const FAUCET_KINDS: readonly FaucetKind[] = ["musdc", "eth"];
 
 /**
- * 0.005 GIWA Sepolia ETH per claim — about two hundred thousand transfers at GIWA's measured
- * fees, or roughly three hundred guardian draws (1.5e13 wei entropy fee + gas each); a wallet
- * gets three draws for life.
+ * 0.0005 GIWA Sepolia ETH per claim: a wallet's three lifetime guardian draws (1.5e13 wei
+ * entropy fee + gas each) and a couple of hundred result claims at GIWA's measured fees.
+ * More than the arcade can spend is only more worth farming.
  */
-export const FAUCET_ETH_AMOUNT_WEI = 5_000_000_000_000_000n;
+export const FAUCET_ETH_AMOUNT_WEI = 500_000_000_000_000n;
 /** One ETH claim per wallet per rolling week. */
 export const FAUCET_ETH_WINDOW_MS = 7 * FAUCET_WINDOW_MS;
 /**

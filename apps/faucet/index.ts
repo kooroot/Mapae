@@ -100,7 +100,7 @@ if (TOKEN.length < 32) throw new Error("FAUCET_SERVICE_TOKEN must be at least 32
 const RPC_URL = parseNodeRpcUrl(process.env.GIWA_SEPOLIA_RPC_URL?.trim() || giwaSepolia.rpcUrls.default.http[0]);
 const MAINNET_RPC_URL = parseNodeRpcUrl(process.env.ETH_MAINNET_RPC_URL?.trim() || DEFAULT_MAINNET_RPC);
 const ETH_MISSIONS = parseFaucetMissionList(process.env.FAUCET_ETH_MISSIONS);
-const ETH_DAILY_WEI = readPositiveInteger("FAUCET_ETH_DAILY_WEI", 500_000_000_000_000_000n);
+const ETH_DAILY_WEI = readPositiveInteger("FAUCET_ETH_DAILY_WEI", 50_000_000_000_000_000n);
 const MIN_BALANCE_WEI = readPositiveInteger("FAUCET_MIN_BALANCE_WEI", 20_000_000_000_000_000n);
 const STORE_PATH = process.env.STORE_PATH?.trim() || "./data/faucet.sqlite";
 if (ENABLED && STORE_PATH === ":memory:") throw new Error("an enabled faucet requires a persistent STORE_PATH; a restart must not reset every window");

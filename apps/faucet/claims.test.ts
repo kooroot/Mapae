@@ -218,7 +218,7 @@ describe("ETH claims", () => {
         chain.mainnet.set(owner(n).toLowerCase(), 3);
     }
 
-    test("sends 0.005 ETH to the wallet itself once the missions are done", async () => {
+    test("sends the ETH grant to the wallet itself once the missions are done", async () => {
         const {chain, faucet, signs} = setup();
         eligible(chain, 1);
         expect(await faucet.claim(ethRequest(1))).toMatchObject({
@@ -256,7 +256,7 @@ describe("ETH claims", () => {
         expect(await faucet.claim(ethRequest(2))).toMatchObject({ok: true, view: {state: "confirmed"}});
     });
 
-    test("a wallet that already holds 0.005 ETH is skipped", async () => {
+    test("a wallet that already holds the ETH grant is skipped", async () => {
         const {chain, faucet, signs} = setup();
         eligible(chain, 1);
         chain.eth.set(owner(1).toLowerCase(), FAUCET_ETH_AMOUNT_WEI);
