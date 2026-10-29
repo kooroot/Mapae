@@ -26,7 +26,7 @@ GIWA Chain 위에서 에이전트가 **위임받은 한도 안에서** 정산을
 | `apps/payment-scheduler` | 같은 판매자 리소스를 고정 간격으로 구매 — 슬롯·예산·실행 이력·재시도를 DB에 들고 claim 단위로 결제 | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | owner 서명 회수 UserOp 수신 → `handleOps` — 핀(단일 payer·loopback) / 스폰서드(공개, 예치금 대납) 두 모드 | Bun + Hono |
 | `apps/account-bootstrap` | 배포 전 서명에서 owner 복원 → payer 계정 CREATE2 대납 배포 | Bun + Hono |
-| `apps/faucet` | faucet.mapae.io 뒤의 테스트넷 지급: 지불 계정 tUSDC 목표 잔액 보충, 운영자가 켜면 지갑에 GIWA Sepolia ETH 0.005 | Bun + Hono + SQLite |
+| `apps/faucet` | faucet.mapae.io 뒤의 테스트넷 지급: 지불 계정 tUSDC 목표 잔액 보충, 운영자가 켜면 지갑에 GIWA Sepolia ETH 0.0005 | Bun + Hono + SQLite |
 | `apps/delegation-lab` | 배포 preview·negative-path·e2e 수트·fork 오케스트레이션 | Bun |
 | `apps/web` | 공개 랜딩 + Studio (스폰서드 온보딩·위임 발급·조회·회수) | TanStack Start + Cloudflare |
 
@@ -293,7 +293,7 @@ revert하는 계정을 돈 내고 배포하게 된다.
 묶인 SIWE 세션, Turnstile(호스트·청구 종류·지갑에 묶임), IP·서브넷을 비밀 소금으로
 HMAC한 키를 확인한 뒤 Bearer로 서비스를 부른다. 서비스는 tUSDC(테스트넷, 실제
 돈 아님)를 지갑의 지불 계정에 1000까지 채우고(24시간 1회), ETH 탭이 켜지면
-이더리움 메인넷 거래 기록이 있는 지갑에만 GIWA Sepolia ETH 0.005를 보낸다(7일
+이더리움 메인넷 거래 기록이 있는 지갑에만 GIWA Sepolia ETH 0.0005를 보낸다(7일
 1회, IP당 하루 1건·서브넷 3건, 하루 wei 상한, 민팅 가스용 바닥 잔액). 청구
 원장은 서명한 바이트를 방송 전에 디스크에 남겨 재시작 뒤에도 같은 거래로
 마무리한다.
