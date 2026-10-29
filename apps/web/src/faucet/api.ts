@@ -51,6 +51,8 @@ export type FaucetApiDependencies = {
     cache?: Promise<Cache>;
     development?: boolean;
     verify?: SiweVerifier;
+    /** Told of every claim the service accepted (not `failed`). Counting only: a failure here never changes the answer. */
+    onClaimed?: (request: Request, owner: string, kind: FaucetKind, now: number) => Promise<void>;
     now?: number;
 };
 
@@ -90,7 +92,7 @@ export async function faucetApi(request: Request, deps: FaucetApiDependencies): 
             if (account.owner.toLowerCase() !== owner) throw new Error("upstream answered for another owner");
             return json(account);
         }
-        return await claim(request, owner, now, {...service, ipSalt, turnstileSecret, repo: deps.repo, development: local});
+        return await claim(request, owner, now, {...service, ipSalt, turnstileSecret, repo: deps.repo, development: local, onClaimed: deps.onClaimed});
     } catch (e) {
         if (e instanceof Error && e.message === "body_too_large") return error("body_too_large", 413);
         if (e instanceof SyntaxError) return error("invalid_json", 400);
@@ -116,7 +118,7 @@ async function status(url: URL, siteKey: string, service: Service, cachePromise?
  * the service), then Turnstile bound to this hostname, the claim's kind and the owner,
  * then the service. Only a validated claim view or a refusal from the closed set leaves.
  */
-async function claim(request: Request, owner: string, now: number, deps: Service & {ipSalt: string; turnstileSecret: string; repo: ProfileRepository; development: boolean}): Promise<Response> {
+async function claim(request: Request, owner: string, now: number, deps: Service & {ipSalt: string; turnstileSecret: string; repo: ProfileRepository; development: boolean} & Pick<FaucetApiDependencies, "onClaimed">): Promise<Response> {
     const input = await body(request, 4096);
     if (!object(input) || (input.kind !== "musdc" && input.kind !== "eth") || typeof input.turnstile !== "string" || input.turnstile.length < 1 || input.turnstile.length > 2048 ||
         !Array.isArray(input.missions) || input.missions.length > 16 || !input.missions.every((m) => typeof m === "string" && /^[a-z0-9_]{1,64}$/.test(m))) {
@@ -140,7 +142,11 @@ async function claim(request: Request, owner: string, now: number, deps: Service
         body: JSON.stringify({kind, owner, ipKey, subnetKey, missions: input.missions}),
     }, 45_000);
     const value = await boundedJson(response);
-    if (response.ok) return json(parseFaucetClaimView(value, kind));
+    if (response.ok) {
+        const view = parseFaucetClaimView(value, kind);
+        if (view.state !== "failed") try {await deps.onClaimed?.(request, owner, kind, now);} catch { /* Measurement never blocks a claim. */ }
+        return json(view);
+    }
     const refused = parseFaucetRefusal(value);
     if (!refused || ![400, 403, 429, 503].includes(response.status)) return refusal("unavailable", 503);
     return refusal(refused.reason, response.status, refused.nextAt);

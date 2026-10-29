@@ -65,6 +65,7 @@ const entry = createServerEntry({fetch: (request, options) => {
     if (path.startsWith("/api/faucet/")) return faucetApi(request, {
         repo: profileRepository(env.ARCADE_DB), development: import.meta.env.DEV, cache: caches.open("mapae-faucet"),
         serviceToken: env.FAUCET_SERVICE_TOKEN, ipSalt: env.FAUCET_IP_SALT, turnstileSecret: env.TURNSTILE_SECRET_KEY, siteKey: env.TURNSTILE_SITE_KEY,
+        onClaimed: (r, owner, kind, now) => recordAuthenticatedEngagement(r, engagementRepository(env.ARCADE_DB), owner, kind === "eth" ? "faucet_eth_claimed" : "faucet_musdc_claimed", now),
     });
     if (path.startsWith("/api/arcade/profile")) {
         const profiles = profileRepository(env.ARCADE_DB);

@@ -8,6 +8,7 @@ import type {Address} from "viem";
 import {useAccount, useDisconnect, useSignMessage, useSwitchChain, useWatchAsset} from "wagmi";
 import {Lockup, PassEmblem} from "../brand/marks";
 import {WalletPicker} from "../components/WalletPicker";
+import {trackEngagement} from "../arcade/engagement/client";
 import {Web3Providers} from "../dapp/Web3Providers";
 import {appUrl, chain, docsUrl, faucetUrl, landingUrl} from "../lib/config";
 import {shortAddress} from "../lib/dial";
@@ -46,6 +47,8 @@ function FaucetScreen() {
     const [tab, setTab] = useState<FaucetKind>("musdc");
     // The arcade links straight to the ETH tab with `#eth`, read after hydration so the served markup still matches; it opens even while that tab says it is coming soon.
     useEffect(() => {if (location.hash === "#eth") setTab("eth");}, []);
+    // Arriving is counted once per page load, under the faucet origin's own browser ID; claims are counted by the server.
+    useEffect(() => {trackEngagement({event: "faucet_opened", locale});}, []);
     const [views, setViews] = useState<Views>(NO_VIEWS);
     const [recipient, setRecipient] = useState<Address>();
     const [signedIn, setSignedIn] = useState(false);

@@ -325,6 +325,26 @@ describe("claim", () => {
         }
     });
 
+    test("an accepted claim is counted for its owner and kind; a failed one is not, and a counting failure never changes the answer", async () => {
+        const repository = repo();
+        let owner = "", state = "confirmed";
+        const net = network({siteverify: () => passing(owner, "eth")(), service: () => Response.json({...view(owner, "eth"), state})});
+        const signed = await login(repository, net.fetcher);
+        owner = signed.owner;
+        const counted: string[] = [];
+        const onClaimed = async (_r: Request, who: string, kind: string) => {counted.push(`${who}:${kind}`);};
+        expect((await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed}))).status).toBe(200);
+        state = "already_enough";
+        expect((await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed}))).status).toBe(200);
+        state = "failed";
+        expect((await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed}))).status).toBe(200);
+        expect(counted).toEqual([`${owner}:eth`, `${owner}:eth`]);
+        state = "confirmed";
+        const broken = await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed: async () => {throw new Error("d1 down");}}));
+        expect(broken.status).toBe(200);
+        expect(await broken.json<unknown>()).toEqual(view(owner, "eth"));
+    });
+
     test("a view for another kind than the one claimed is not forwarded", async () => {
         const repository = repo();
         let owner = "";
