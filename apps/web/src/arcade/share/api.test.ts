@@ -151,7 +151,7 @@ describe("share page", () => {
         expect(html).toContain(`<link rel="alternate" hreflang="x-default" href="https://mapae.io${PAGE}">`);
         expect(html).toContain("오늘 3위/41명 · 시즌 1 187점 2위 · 기세 좋게 앞장서는 산골 수호대장. GIWA Sepolia 테스트넷 오락실, @mapae_io");
         expect(html).toContain(`<img class="share-card" src="${CARD}"`);
-        expect(html).toContain('href="/ko/arcade">아케이드 열기</a>');
+        expect(html).toContain('href="/ko/arcade?ref=share">아케이드 열기</a>');
         expect(html).toContain('href="https://x.com/intent/follow?screen_name=mapae_io" rel="noopener noreferrer">@mapae_io 팔로우</a>');
         expect(html).toContain('<link rel="stylesheet" href="/share.css">');
         expect(html).not.toContain("<script"); expect(html).not.toContain("style="); expect(html).not.toContain("<style");
@@ -160,7 +160,7 @@ describe("share page", () => {
         const en = await (await get(PAGE, setup().deps)).text();
         expect(en).toContain('<html lang="en">'); expect(en).toContain("<title>Playful Gamdori · Auto Race 12,340 pts · Mapae Arcade</title>");
         expect(en).toContain("#3 of 41 today · Season 1 187 pts, #2 · A spirited guardian of the mountain paths.");
-        expect(en).toContain('href="/arcade">Open the arcade</a>'); expect(en).toContain(`href="/ko${PAGE}" hreflang="ko">한국어</a>`);
+        expect(en).toContain('href="/arcade?ref=share">Open the arcade</a>'); expect(en).toContain(`href="/ko${PAGE}" hreflang="ko">한국어</a>`);
         const past = await (await get("/ko/share/g/407/race/2026-10-13", setup().deps)).text();
         expect(past).toContain("10월 13일 3위/41명");
         const s = await (await get("/ko/share/s/407", setup().deps)).text();
@@ -179,7 +179,7 @@ describe("share page", () => {
     test("a card that is not there or cannot be fetched gets a page of its own, cached only when the seller said so", async () => {
         const missing = await get(`/ko${PAGE}`, setup(() => new Response(null, {status: 404})).deps), text = await missing.text();
         expect(missing.status).toBe(404); expect(missing.headers.get("Cache-Control")).toBe("public, max-age=30");
-        expect(text).toContain("이 카드는 없어요"); expect(text).toContain('href="/ko/arcade">아케이드 열기</a>'); expect(text).not.toContain("<script");
+        expect(text).toContain("이 카드는 없어요"); expect(text).toContain('href="/ko/arcade?ref=share">아케이드 열기</a>'); expect(text).not.toContain("<script");
         const down = await get(PAGE, setup(() => new Response(null, {status: 502})).deps);
         expect(down.status).toBe(503); expect(down.headers.get("Retry-After")).toBe("5"); expect(down.headers.get("Cache-Control")).toBe("no-store");
         expect(await down.text()).toContain("Try again in a moment");

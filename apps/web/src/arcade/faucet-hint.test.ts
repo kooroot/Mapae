@@ -20,8 +20,9 @@ describe('arcade faucet hint', () => {
     });
 
     test('the link opens the faucet in the reader\'s language, on the ETH tab only when gas is what is missing', () => {
-        expect(faucetHintUrl('ko')).toBe(`${localizeUrl(faucetUrl, 'ko')}#eth`);
-        expect(faucetHintUrl('en', 'musdc')).toBe(localizeUrl(faucetUrl, 'en'));
+        expect(faucetHintUrl('ko')).toBe(`${localizeUrl(`${faucetUrl}?ref=arcade`, 'ko')}#eth`);
+        expect(faucetHintUrl('en', 'musdc')).toBe(localizeUrl(`${faucetUrl}?ref=arcade`, 'en'));
         expect(faucetHintUrl('en', 'musdc')).not.toContain('#');
+        expect(new URL(faucetHintUrl('ko'), 'https://mapae.invalid').searchParams.get('ref')).toBe('arcade');
     });
 });

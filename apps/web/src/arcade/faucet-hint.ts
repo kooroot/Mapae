@@ -22,5 +22,5 @@ export const FAUCET_HINT: Record<Locale, {need: string; unlock: string; action: 
     },
 };
 
-/** The faucet in the reader's language, opened on the ETH tab when gas is what they are missing. */
-export const faucetHintUrl = (locale: Locale, kind: 'eth' | 'musdc' = 'eth') => `${localizeUrl(faucetUrl, locale)}${kind === 'eth' ? '#eth' : ''}`;
+/** The faucet in the reader's language, opened on the ETH tab when gas is what they are missing, and tagged as sent from the arcade. */
+export const faucetHintUrl = (locale: Locale, kind: 'eth' | 'musdc' = 'eth') => `${localizeUrl(`${faucetUrl}?ref=arcade`, locale)}${kind === 'eth' ? '#eth' : ''}`;

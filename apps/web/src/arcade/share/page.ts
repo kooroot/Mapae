@@ -59,7 +59,7 @@ export function sharePage(target: ShareTarget, card: RankedCard | SeasonCard, lo
     ].join("");
     const body = `<p class="share-brand">Mapae Arcade</p><img class="share-card" src="${escapeHtml(cardPath)}" width="1200" height="630" alt="${escapeHtml(copy.alt)}">` +
         `<h1>${escapeHtml(copy.title.replace(/ · Mapae Arcade$/, ""))}</h1><p class="share-desc">${escapeHtml(copy.description)}</p>` +
-        `<p class="share-actions"><a class="share-button" href="${escapeHtml(localizePath("/arcade", locale))}">${cta.open}</a><a class="share-button share-follow" href="${FOLLOW_URL}" rel="noopener noreferrer">${cta.follow}</a></p>` +
+        `<p class="share-actions"><a class="share-button" href="${escapeHtml(`${localizePath("/arcade", locale)}?ref=share`)}">${cta.open}</a><a class="share-button share-follow" href="${FOLLOW_URL}" rel="noopener noreferrer">${cta.follow}</a></p>` +
         `<p class="share-fine">${cta.fine} · <a href="${escapeHtml(localizePath(page, locale === "ko" ? "en" : "ko"))}" hreflang="${locale === "ko" ? "en" : "ko"}">${cta.other}</a></p>`;
     return shell(locale, head, body);
 }
@@ -70,5 +70,5 @@ export function shareFallbackPage(status: 404 | 503, locale: Locale): string {
     const text = status === 404 ? ko ? "주소가 틀렸거나, 그날 그 전령의 기록이 없어요." : "The link is off, or that guardian has no record for that day."
         : ko ? "카드를 그리는 서버가 잠시 쉬고 있어요. 곧 돌아와요." : "The card server is resting for a moment. It will be back shortly.";
     return shell(locale, `<title>${escapeHtml(title)} · Mapae Arcade</title><meta name="robots" content="noindex">`,
-        `<p class="share-brand">Mapae Arcade</p><h1>${escapeHtml(title)}</h1><p class="share-desc">${escapeHtml(text)}</p><p class="share-actions"><a class="share-button" href="${escapeHtml(localizePath("/arcade", locale))}">${cta.open}</a></p>`);
+        `<p class="share-brand">Mapae Arcade</p><h1>${escapeHtml(title)}</h1><p class="share-desc">${escapeHtml(text)}</p><p class="share-actions"><a class="share-button" href="${escapeHtml(`${localizePath("/arcade", locale)}?ref=share`)}">${cta.open}</a></p>`);
 }
