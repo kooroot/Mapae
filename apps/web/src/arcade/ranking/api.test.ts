@@ -55,10 +55,16 @@ function standings(): RankingStandings {
         games: {stamp: empty, race: {attemptsUsed: 2, today: {rank: 2, score: 98, moves: true, prev: 5, entrants: 2, leader: 99, above: rowOf(1), nearby: [rowOf(1), rowOf(2)]}, week: null}, shop: empty},
     }]};
 }
+/** The edge cache as the zone serves it: an entry comes back with the Browser Cache TTL in place of the life it was stored with. */
 function memoryCache() {
     const entries = new Map<string, Response>();
     const cache = {
-        async match(key: Request) {return entries.get(key.url)?.clone();},
+        async match(key: Request) {
+            const hit = entries.get(key.url)?.clone();
+            if (!hit) return undefined;
+            const headers = new Headers(hit.headers); headers.set("Cache-Control", "public, max-age=14400");
+            return new Response(hit.body, {status: hit.status, headers});
+        },
         async put(key: Request, value: Response) {entries.set(key.url, value);},
     } as unknown as Cache;
     return {entries, cache};
@@ -90,12 +96,14 @@ describe("public ranking proxy", () => {
         expect(new Headers(calls[0]!.init?.headers).get("Authorization")).toBe(`Bearer ${receiptToken}`);
         expect(new Headers(calls[0]!.init?.headers).has("Cookie")).toBe(false); expect(new Headers(calls[0]!.init?.headers).has("X-Mapae-Owner")).toBe(false);
     });
-    test("a miss is cached with its max-age; a hit skips both the seller and the rate limit", async () => {
+    test("a miss is cached with its max-age; a hit skips both the seller and the rate limit and keeps that max-age", async () => {
         const {calls, limits, entries, call} = setup(() => Response.json(board()));
         const first = await call("/board/race/today", {headers: {"CF-Connecting-IP": "203.0.113.9"}});
         expect(first.headers.get("Cache-Control")).toBe("public, max-age=30"); expect(first.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
-        expect(entries.has("https://app.mapae.io/api/arcade/ranking/board/race/today")).toBe(true);
-        expect(await (await call("/board/race/today", {headers: {"CF-Connecting-IP": "203.0.113.9"}})).json<unknown>()).toEqual(board());
+        expect(entries.get("https://app.mapae.io/api/arcade/ranking/board/race/today")?.headers.get("Cache-Control")).toBe("public, max-age=30");
+        const hit = await call("/board/race/today", {headers: {"CF-Connecting-IP": "203.0.113.9"}});
+        expect(hit.headers.get("Cache-Control")).toBe("public, max-age=30"); expect(hit.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
+        expect(await hit.json<unknown>()).toEqual(board());
         expect(calls).toHaveLength(1); expect(limits).toHaveLength(1); expect(limits[0]).not.toContain("203.0.113.9");
         const standing = setup(() => Response.json(standings()));
         expect((await standing.call("/guardians/2")).headers.get("Cache-Control")).toBe("public, max-age=10");
@@ -118,15 +126,17 @@ describe("public ranking proxy", () => {
         expect((await setup(() => Response.json(seasonBoard())).call("/board/season/s1")).headers.get("Cache-Control")).toBe("public, max-age=30");
         expect(await (await setup(() => Response.json(seasonBoard())).call("/board/season/s1")).json<unknown>()).toEqual(seasonBoard());
     });
-    test("the hall of fame: its own path by season id, a minute until it seals and an hour after, and a bad copy is 503", async () => {
+    test("the hall of fame: its own path by season id, a minute in browsers, an hour at the edge once sealed, and a bad copy is 503", async () => {
         const {calls, entries, call} = setup(() => Response.json(unsealed));
         const pending = await call("/hall/s1");
         expect(pending.status).toBe(200); expect(pending.headers.get("Cache-Control")).toBe("public, max-age=60"); expect(await pending.json<unknown>()).toEqual(unsealed);
         expect(calls[0]!.url).toBe("https://seller.mapae.io/arcade/ranking/hall/s1"); expect([...entries.keys()]).toEqual(["https://app.mapae.io/api/arcade/ranking/hall/s1"]);
         const sealed = setup(() => Response.json(hall()));
         const ok = await sealed.call("/hall/s1");
-        expect(ok.status).toBe(200); expect(ok.headers.get("Cache-Control")).toBe("public, max-age=3600"); expect(await ok.json<unknown>()).toEqual(hall());
-        await sealed.call("/hall/s1"); expect(sealed.calls).toHaveLength(1);
+        expect(ok.status).toBe(200); expect(ok.headers.get("Cache-Control")).toBe("public, max-age=60"); expect(await ok.json<unknown>()).toEqual(hall());
+        expect(sealed.entries.get("https://app.mapae.io/api/arcade/ranking/hall/s1")?.headers.get("Cache-Control")).toBe("public, max-age=3600");
+        expect(entries.get("https://app.mapae.io/api/arcade/ranking/hall/s1")?.headers.get("Cache-Control")).toBe("public, max-age=60");
+        expect((await sealed.call("/hall/s1")).headers.get("Cache-Control")).toBe("public, max-age=60"); expect(sealed.calls).toHaveLength(1);
         // Any season id ever held reads, whatever the current season is; the shape is strict.
         expect((await setup(() => Response.json({...hall(), season: 12}), {season: {id: 2, start: null, end: null}}).call("/hall/s12")).status).toBe(200);
         for (const path of ["/hall/s0", "/hall/S1", "/hall/s01", "/hall/1", "/hall/s12345", "/hall/s1/x", "/hall", "/hall/"]) expect((await sealed.call(path)).status).toBe(404);

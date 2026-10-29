@@ -8,6 +8,7 @@ import {
 } from "@mapae/delegation/faucet-policy";
 import {ipBucket, subnetBucket} from "@mapae/shared/net";
 import type {ProfileRepository} from "../arcade/profile/repository";
+import {fromEdgeCache} from "../lib/edge-cache";
 import {
     body, error, json, limited, object, siweChallenge, siweLogin, siweLogout, siweWalletOwner, type SiweSite, type SiweVerifier,
 } from "../lib/siwe-session";
@@ -102,7 +103,7 @@ type Service = {token: string; fetcher: (url: string, init?: RequestInit) => Pro
 async function status(url: URL, siteKey: string, service: Service, cachePromise?: Promise<Cache>): Promise<Response> {
     const key = new Request(`${url.origin}/api/faucet/status`), cache = cachePromise ? await cachePromise.catch(() => undefined) : undefined;
     const hit = await cache?.match(key);
-    if (hit) return hit;
+    if (hit) return fromEdgeCache(hit, `public, max-age=${STATUS_MAX_AGE}`);
     const value: FaucetPageStatus = {...parseFaucetStatus(await upstream(service, "/status", {method: "GET"}, 10_000).then(okJson)), siteKey};
     const response = json(value);
     response.headers.set("Cache-Control", `public, max-age=${STATUS_MAX_AGE}`);

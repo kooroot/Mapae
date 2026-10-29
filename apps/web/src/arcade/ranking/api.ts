@@ -9,6 +9,7 @@ import {
 } from "@mapae/arcade/ranking";
 import {SEASON, SEASON_MAX_DAY_POINTS, SEASON_STREAK_BONUS, SEASON_STREAK_DAYS, seasonPhase, type Season, type SeasonStatus} from "@mapae/arcade/season";
 import {validTeamPeriod, type TeamBoard, type TeamMember, type TeamPeriod, type TeamRow} from "@mapae/arcade/team";
+import {fromEdgeCache} from "../../lib/edge-cache";
 import {hasReceiptToken, ipBudget, upstreamJson, type UpstreamDependencies} from "./upstream";
 
 const MAX_SCORE = 1_000_000_000;
@@ -22,9 +23,10 @@ const STATUS_PATH = /^\/api\/arcade\/ranking\/season$/;
 const HALL_PATH = /^\/api\/arcade\/ranking\/hall\/(s[1-9]\d{0,3})$/;
 /**
  * Boards change when a round settles; a short shared cache absorbs a crowd without hiding a new record for long. The season's
- * phase turns once a day. A sealed hall never changes and is kept an hour; before the seal it is read again every minute.
+ * phase turns once a day, and the hall is read again every minute until it seals. A sealed hall never changes, so the edge
+ * keeps it an hour; browsers keep any hall a minute, since their life is chosen by path before the cache is read.
  */
-const MAX_AGE = {board: 30, standings: 10, season: 60, hall: 3600};
+const MAX_AGE = {board: 30, standings: 10, season: 60, sealedHall: 3600};
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "Referrer-Policy": "no-referrer"};
 
@@ -54,8 +56,9 @@ export async function rankingApi(request: Request, deps: RankingDependencies): P
     }
     if (!hasReceiptToken(deps)) return failure("ranking_unavailable", 503);
     const key = new Request(`${url.origin}${url.pathname}`), cache = deps.cache ? await deps.cache.catch(() => undefined) : undefined;
+    const life = `public, max-age=${hall || status ? MAX_AGE.season : board || team ? MAX_AGE.board : MAX_AGE.standings}`;
     const hit = await cache?.match(key);
-    if (hit) return hit;
+    if (hit) return fromEdgeCache(hit, life);
     const retryAfter = await ipBudget(request, deps);
     if (retryAfter !== null) return failure("rate_limited", 429, {"Retry-After": String(retryAfter)});
     let value: unknown;
@@ -70,10 +73,9 @@ export async function rankingApi(request: Request, deps: RankingDependencies): P
         : by ? parseRankingPage(value, board[1] as RankingBoardId, board[2] as RankingPeriod, typeof at === "number" ? {offset: at} : {around: at!})
         : parseRankingBoard(value, board[1] as RankingBoardId, board[2] as RankingPeriod);
     if (!copy) return failure("ranking_unavailable", 503);
-    const maxAge = hall ? ((copy as SeasonHall).sealed ? MAX_AGE.hall : MAX_AGE.season) : status ? MAX_AGE.season : board || team ? MAX_AGE.board : MAX_AGE.standings;
-    const response = Response.json(copy, {headers: {...HEADERS, "Cache-Control": `public, max-age=${maxAge}`}});
-    await cache?.put(key, response.clone()).catch(() => {/* A cold cache only costs the next visitor one seller call. */});
-    return response;
+    const edge = hall && (copy as SeasonHall).sealed ? `public, max-age=${MAX_AGE.sealedHall}` : life;
+    await cache?.put(key, Response.json(copy, {headers: {...HEADERS, "Cache-Control": edge}})).catch(() => {/* A cold cache only costs the next visitor one seller call. */});
+    return Response.json(copy, {headers: {...HEADERS, "Cache-Control": life}});
 }
 
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);

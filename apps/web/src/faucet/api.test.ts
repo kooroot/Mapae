@@ -112,17 +112,23 @@ describe("status", () => {
         } finally {nativeFetch.mockRestore();}
     });
 
-    test("is the service's status, validated, with the site key, cached at the edge", async () => {
+    test("is the service's status, validated, with the site key, cached at the edge, and a hit keeps its max-age", async () => {
         const net = network(), repository = repo(), store = new Map<string, Response>();
+        // The zone hands an entry back with its Browser Cache TTL in place of the stored life.
         const cache = Promise.resolve({
-            match: async (key: Request) => store.get(key.url)?.clone(),
+            match: async (key: Request) => {
+                const hit = store.get(key.url)?.clone();
+                return hit && new Response(hit.body, {status: hit.status, headers: {...Object.fromEntries(hit.headers), "cache-control": "public, max-age=14400"}});
+            },
             put: async (key: Request, value: Response) => {store.set(key.url, value);},
         } as unknown as Cache);
         const first = await faucetApi(request("/status"), deps(repository, net.fetcher, {cache}));
         expect(await first.json<unknown>()).toEqual({...STATUS, siteKey: SITE_KEY});
         expect(first.headers.get("Cache-Control")).toBe("public, max-age=30");
         expect(net.service()[0]?.init?.headers).toMatchObject({Authorization: `Bearer ${TOKEN}`});
-        await faucetApi(request("/status"), deps(repository, net.fetcher, {cache}));
+        const hit = await faucetApi(request("/status"), deps(repository, net.fetcher, {cache}));
+        expect(hit.headers.get("Cache-Control")).toBe("public, max-age=30");
+        expect(await hit.json<unknown>()).toEqual({...STATUS, siteKey: SITE_KEY});
         expect(net.service()).toHaveLength(1);
     });
 
