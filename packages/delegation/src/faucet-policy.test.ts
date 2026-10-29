@@ -12,6 +12,7 @@ import {
     isFaucetMissionId,
     parseFaucetAccount,
     parseFaucetClaimView,
+    parseFaucetEligibility,
     parseFaucetMissionList,
     parseFaucetRefusal,
     parseFaucetStatus,
@@ -111,6 +112,12 @@ describe("faucet.mapae.io contract", () => {
         expect(parseFaucetAccount(account)).toEqual(account);
         expect(() => parseFaucetAccount({...account, recipients: {musdc: PAYER, eth: OTHER}})).toThrow();
         expect(() => parseFaucetAccount({...account, musdc: {kind: "eth", state: "pending", amount: "0", recipient: ACCOUNT}})).toThrow();
+    });
+
+    test("parseFaucetEligibility keeps exactly one boolean", () => {
+        expect(parseFaucetEligibility({eligible: true})).toEqual({eligible: true});
+        expect(parseFaucetEligibility({eligible: false, owner: PAYER})).toEqual({eligible: false});
+        for (const bad of [{eligible: "true"}, {eligible: 1}, {}, null, [true]]) expect(() => parseFaucetEligibility(bad)).toThrow();
     });
 
     test("parseFaucetRefusal admits only the closed set", () => {

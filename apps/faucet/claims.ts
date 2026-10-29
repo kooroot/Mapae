@@ -35,6 +35,7 @@ import {
     planTopUp,
     type FaucetAccount,
     type FaucetClaimView,
+    type FaucetEligibility,
     type FaucetKind,
     type FaucetMissionId,
     type FaucetRefusal,
@@ -268,16 +269,28 @@ export function createFaucet(deps: {
             }
         }
         if (kind !== "eth") return undefined;
-        let sent: number, code: Hex | undefined;
+        let met: boolean;
         try {
-            [sent, code] = await Promise.all([chain.mainnetNonce(owner), chain.code(owner)]);
+            met = await ethRuleMet(owner);
         } catch (error) {
             console.warn(`[faucet] eligibility read failed — ${redactForLog(error)}`);
             return refuse("eligibility_unavailable");
         }
-        if (sent < FAUCET_MAINNET_MIN_NONCE) return refuse("not_eligible");
-        if (code && code !== "0x" && !DELEGATED_EOA.test(code)) return refuse("not_eligible");
-        return undefined;
+        return met ? undefined : refuse("not_eligible");
+    }
+
+    /** The ETH rule alone: Ethereum main-chain history and no contract code on GIWA. A failed read throws. */
+    async function ethRuleMet(owner: Address): Promise<boolean> {
+        const [sent, code] = await Promise.all([chain.mainnetNonce(owner), chain.code(owner)]);
+        return sent >= FAUCET_MAINNET_MIN_NONCE && (!code || code === "0x" || DELEGATED_EOA.test(code));
+    }
+
+    /**
+     * The same rule, read for the page before it asks for anything. Not a claim: nothing is
+     * counted, and a failed read throws for the route to answer `eligibility_unavailable`.
+     */
+    async function ethEligibility(owner: Address): Promise<FaucetEligibility> {
+        return {eligible: await ethRuleMet(owner)};
     }
 
     async function claim(request: ClaimRequest): Promise<ClaimOutcome> {
@@ -512,7 +525,7 @@ export function createFaucet(deps: {
     /** Claims and refusals since `since`, for the operator's loopback health read. */
     const outcomes = (since: number) => store.outcomes(since);
 
-    return {status, account, claim, reconcile, outcomes};
+    return {status, account, ethEligibility, claim, reconcile, outcomes};
 }
 
 export type Faucet = ReturnType<typeof createFaucet>;

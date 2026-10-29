@@ -139,6 +139,14 @@ export interface FaucetAccount {
     eth: FaucetClaimView | null;
 }
 
+/**
+ * Whether a wallet meets the ETH tab's rule — main-chain history and no contract code —
+ * read once it connects, before the page asks for a follow, a signature or a bot check.
+ */
+export interface FaucetEligibility {
+    eligible: boolean;
+}
+
 /** A refusal body: the reason, and for `cooldown` when the window opens. */
 export interface FaucetRefusalBody {
     reason: FaucetRefusal;
@@ -220,6 +228,11 @@ export function parseFaucetAccount(input: unknown): FaucetAccount {
         musdc: input.musdc === null ? null : parseFaucetClaimView(input.musdc, "musdc"),
         eth: input.eth === null ? null : parseFaucetClaimView(input.eth, "eth"),
     };
+}
+
+export function parseFaucetEligibility(input: unknown): FaucetEligibility {
+    if (!record(input) || typeof input.eligible !== "boolean") throw new Error("faucet eligibility is malformed");
+    return {eligible: input.eligible};
 }
 
 /** A refusal body, or `undefined` when the value is not one this contract defines. */

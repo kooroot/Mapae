@@ -256,6 +256,21 @@ describe("ETH claims", () => {
         expect(await faucet.claim(ethRequest(2))).toMatchObject({ok: true, view: {state: "confirmed"}});
     });
 
+    test("the eligibility read answers the ETH rule before any claim, and counts nothing", async () => {
+        const {chain, faucet, signs} = setup();
+        expect(await faucet.ethEligibility(owner(1))).toEqual({eligible: false});
+        eligible(chain, 1);
+        expect(await faucet.ethEligibility(owner(1))).toEqual({eligible: true});
+        chain.codes.set(owner(1).toLowerCase(), "0x6080604052");
+        expect(await faucet.ethEligibility(owner(1))).toEqual({eligible: false});
+        chain.codes.set(owner(1).toLowerCase(), `0xef0100${"12".repeat(20)}`);
+        expect(await faucet.ethEligibility(owner(1))).toEqual({eligible: true});
+        chain.failMainnet = true;
+        await expect(faucet.ethEligibility(owner(1))).rejects.toThrow(/mainnet read failed/);
+        expect(faucet.outcomes(0)).toEqual({claims: [], refusals: []});
+        expect(signs).toHaveLength(0);
+    });
+
     test("a wallet that already holds the ETH grant is skipped", async () => {
         const {chain, faucet, signs} = setup();
         eligible(chain, 1);

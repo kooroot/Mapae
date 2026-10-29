@@ -254,6 +254,17 @@ app.get("/faucet/claims/:owner", async (c) => {
     return c.json(await faucet.account(getAddress(owner)));
 });
 
+app.get("/faucet/eligibility/:owner", async (c) => {
+    const owner = c.req.param("owner");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(owner)) return c.json({reason: "malformed_request"}, 400);
+    try {
+        return c.json(await faucet.ethEligibility(getAddress(owner)));
+    } catch (error) {
+        console.warn(`[faucet] eligibility read failed — ${redactForLog(error)}`);
+        return c.json({reason: "eligibility_unavailable"}, 503);
+    }
+});
+
 app.post("/faucet/claims", async (c) => {
     const request = parseClaimRequest(await readJson(c));
     if (!request) return c.json({reason: "malformed_request"}, 400);
