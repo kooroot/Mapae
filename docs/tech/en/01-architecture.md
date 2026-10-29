@@ -15,7 +15,7 @@
 | `apps/payment-scheduler` | Buys the same seller resource at a fixed interval — slots, budget, run history and retries live in a DB, and each claim is one payment | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | Receives an owner-signed revocation UserOp → `handleOps` — two modes: pinned (single payer, loopback) / sponsored (public, sponsor-funded deposit) | Bun + Hono |
 | `apps/account-bootstrap` | Recovers the owner from a pre-deployment signature → sponsored CREATE2 deploy of the payer account | Bun + Hono |
-| `apps/faucet` | Testnet tokens behind faucet.mapae.io: tops the payer account's tUSDC up to a target and, once the operator turns it on, sends 0.005 GIWA Sepolia ETH to the wallet | Bun + Hono + SQLite |
+| `apps/faucet` | Testnet tokens behind faucet.mapae.io: tops the payer account's tUSDC up to a target and, once the operator turns it on, sends 0.0005 GIWA Sepolia ETH to the wallet | Bun + Hono + SQLite |
 | `apps/delegation-lab` | Deployment previews, negative-path and e2e suites, fork orchestration | Bun |
 | `apps/web` | Public landing + Studio (sponsored onboarding; grant, inspect, and revoke a delegation) | TanStack Start + Cloudflare |
 

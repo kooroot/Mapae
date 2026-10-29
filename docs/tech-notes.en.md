@@ -26,7 +26,7 @@ gate in `bun run check` refuses any mismatch between the generated output and th
 | `apps/payment-scheduler` | Buys the same seller resource at a fixed interval — slots, budget, run history and retries live in a DB, and each claim is one payment | Bun + SQLite (`@mapae/store`) |
 | `apps/revocation-submitter` | Receives an owner-signed revocation UserOp → `handleOps` — two modes: pinned (single payer, loopback) / sponsored (public, sponsor-funded deposit) | Bun + Hono |
 | `apps/account-bootstrap` | Recovers the owner from a pre-deployment signature → sponsored CREATE2 deploy of the payer account | Bun + Hono |
-| `apps/faucet` | Testnet tokens behind faucet.mapae.io: tops the payer account's tUSDC up to a target and, once the operator turns it on, sends 0.005 GIWA Sepolia ETH to the wallet | Bun + Hono + SQLite |
+| `apps/faucet` | Testnet tokens behind faucet.mapae.io: tops the payer account's tUSDC up to a target and, once the operator turns it on, sends 0.0005 GIWA Sepolia ETH to the wallet | Bun + Hono + SQLite |
 | `apps/delegation-lab` | Deployment previews, negative-path and e2e suites, fork orchestration | Bun |
 | `apps/web` | Public landing + Studio (sponsored onboarding; grant, inspect, and revoke a delegation) | TanStack Start + Cloudflare |
 
@@ -319,7 +319,7 @@ Testnet tokens come from faucet.mapae.io instead (`apps/faucet`). The Worker che
 SIWE session bound to that origin, Turnstile (bound to the hostname, the claim's kind
 and the wallet) and HMAC'd IP and subnet keys, then calls the service with a bearer.
 The service tops the wallet's payer account up to 1000 tUSDC (testnet, not real money)
-once a day and, once the ETH tab is on, sends 0.005 GIWA Sepolia ETH only to wallets
+once a day and, once the ETH tab is on, sends 0.0005 GIWA Sepolia ETH only to wallets
 with Ethereum mainnet history (once a week, one per IP and three per subnet a day, a
 daily wei cap and a floor kept for mint gas). The claim ledger writes the signed bytes
 to disk before broadcasting, so a restart finishes the same transaction.
