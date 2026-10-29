@@ -7,7 +7,7 @@ const location = (response: Response | undefined) => response?.headers.get("Loca
 
 describe("surfaceRedirect", () => {
     test("the faucet site serves only its own page and API", () => {
-        for (const path of ["/", "/ko", "/ko/", "/api/faucet/status"]) expect(surfaceRedirect("faucet", at(`https://faucet.mapae.io${path}`), SITES)).toBeUndefined();
+        for (const path of ["/", "/ko", "/ko/", "/api/faucet/status", "/api/arcade/engagement"]) expect(surfaceRedirect("faucet", at(`https://faucet.mapae.io${path}`), SITES)).toBeUndefined();
     });
 
     test("the arcade and the Studio on the faucet site go to mapae.io, query kept", () => {

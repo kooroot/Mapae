@@ -9,7 +9,8 @@ import {localizeUrl} from "./i18n";
  * beside the arcade's bearer payments in sessionStorage and the Studio's agent key — and
  * mapae.io/faucet would render a faucet whose API refuses every origin but its own.
  * Each such address is sent to the site that owns it. A combined (dev) server serves
- * everything, so it is never redirected.
+ * everything, so it is never redirected. The faucet also answers the engagement API, so
+ * its own page arrivals and claims are counted under its own browser IDs.
  */
 const FAUCET_DOCUMENT = /^(\/ko)?\/?$/;
 const FAUCET_ALIAS = /^(\/ko)?\/faucet\/?$/;
@@ -21,7 +22,7 @@ export function surfaceRedirect(surface: SiteSurface, url: URL, sites: {landingU
     if (surface !== "faucet") {
         return alias ? Response.redirect(localizeUrl(sites.faucetUrl, alias[1] ? "ko" : "en"), 308) : undefined;
     }
-    if (FAUCET_DOCUMENT.test(path) || path.startsWith("/api/faucet/")) return undefined;
+    if (FAUCET_DOCUMENT.test(path) || path.startsWith("/api/faucet/") || path === "/api/arcade/engagement") return undefined;
     if (alias) return Response.redirect(new URL(alias[1] ? "/ko" : "/", url.origin).href, 308);
     // An API this site does not serve is absent, not elsewhere: a redirected POST would only fail later.
     if (path.startsWith("/api/")) return new Response(null, {status: 404, headers: {"Cache-Control": "no-store"}});

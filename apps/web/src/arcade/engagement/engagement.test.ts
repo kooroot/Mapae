@@ -6,7 +6,7 @@ import {engagementApi, recordAuthenticatedEngagement} from './api';
 import {createEngagementClient} from './client';
 import {engagementRepository} from './repository';
 import {engagementReport} from './report';
-import {DAY_MS, ENGAGEMENT_LIMITS, MAX_EVENT_BYTES, parseEngagement} from './model';
+import {DAY_MS, ENGAGEMENT_LIMITS, MAX_EVENT_BYTES, parseEngagement, trafficSource} from './model';
 const NOW = Date.parse('2026-10-10T12:00:00+09:00');
 const owner = '0x' + '12'.repeat(20);
 function fixture() {
@@ -18,16 +18,18 @@ function fixture() {
     const d1 = {prepare, batch: async (items: {run: () => Promise<unknown>}[]) => {const result: unknown[] = []; db.exec('BEGIN'); try {for (const item of items) result.push(await item.run()); db.exec('COMMIT'); return result;} catch (e) {db.exec('ROLLBACK'); throw e;}}} as unknown as Pick<D1Database, 'prepare' | 'batch'>;
     return {db, repo: engagementRepository(d1)};
 }
-const input = (extra: object = {}) => ({version: 1, id: crypto.randomUUID(), event: 'arcade_entered', locale: 'ko', ...extra});
-function request(value: unknown, cookie?: string, extra?: HeadersInit) {
-    return new Request('https://mapae.io/api/arcade/engagement', {method: 'POST', headers: {'Content-Type': 'application/json', Origin: 'https://mapae.io', ...(cookie ? {Cookie: cookie} : {}), ...extra}, body: JSON.stringify(value)});
+const input = (extra: object = {}) => ({version: 1, id: crypto.randomUUID(), event: 'guardian_cta', locale: 'ko', source: 'direct', ...extra});
+function request(value: unknown, cookie?: string, extra?: HeadersInit, origin = 'https://mapae.io') {
+    return new Request(`${origin}/api/arcade/engagement`, {method: 'POST', headers: {'Content-Type': 'application/json', Origin: origin, ...(cookie ? {Cookie: cookie} : {}), ...extra}, body: JSON.stringify(value)});
 }
 const cookieOf = (r: Response) => r.headers.get('Set-Cookie')!.split(';')[0]!;
 const count = (db: Database, table = 'arcade_engagement_events') => (db.query(`SELECT COUNT(*) AS n FROM ${table}`).get() as {n: number}).n;
 
 describe('bounded first-party engagement', () => {
     test('schema rejects forged authority, scores, timestamps, unknown fields and invalid terminal shapes', () => {
-        for (const extra of [{owner}, {score: 999}, {at: NOW}, {tokenId: 1}, {event: 'profile_authenticated'}, {event: 'practice_finished', game: 'race'}, {event: 'practice_opened', game: 'race', runId: crypto.randomUUID(), result: 'completed'}, {event: 'arcade_entered', result: 'completed'}, {event: {toString: null}}, {locale: {toString: null}}, {game: {toString: null}}]) expect(parseEngagement(input(extra))).toBeNull();
+        for (const extra of [{owner}, {score: 999}, {at: NOW}, {tokenId: 1}, {event: 'profile_authenticated'}, {event: 'practice_finished', game: 'race'}, {event: 'practice_opened', game: 'race', runId: crypto.randomUUID(), result: 'completed'}, {event: 'arcade_entered', result: 'completed'}, {event: {toString: null}}, {locale: {toString: null}}, {game: {toString: null}},
+            {source: undefined}, {source: 'facebook'}, {source: {toString: null}}, {event: 'mint_started', game: 'race'}, {event: 'landing_viewed', runId: crypto.randomUUID()}, {event: 'faucet_eth_claimed'}]) expect(parseEngagement(input(extra))).toBeNull();
+        for (const event of ['landing_viewed', 'faucet_opened', 'arcade_entered', 'mint_started', 'outing_started']) expect(parseEngagement(input({event, source: 'x'}))).not.toBeNull();
         expect(parseEngagement(input({event: 'practice_finished', game: 'stamp', runId: crypto.randomUUID(), result: 'ended_early'}))).not.toBeNull();
     });
     test('first-party cookie, unknown cookies replaced, identity is never a submitted wallet', async () => {
@@ -75,8 +77,8 @@ describe('bounded first-party engagement', () => {
     });
     test('SIWE conversion and operator intent count authenticated owners; anonymous requests cannot choose an owner', async () => {
         const {repo} = fixture(); const r = await engagementApi(request(input()), repo, {now: NOW}); const cookie = cookieOf(r);
-        await recordAuthenticatedEngagement(request({}, cookie), repo, owner, NOW);
-        await recordAuthenticatedEngagement(request({}, cookie), repo, owner, NOW);
+        await recordAuthenticatedEngagement(request({}, cookie), repo, owner, 'profile_authenticated', NOW);
+        await recordAuthenticatedEngagement(request({}, cookie), repo, owner, 'profile_authenticated', NOW);
         let report = await engagementReport(repo, NOW);
         expect(report.daily[0]?.owner_dau).toBe(1); expect(report.daily[0]?.profile_authenticated).toBe(1);
         await engagementApi(request(input({event: 'guardian_cta'}), cookie), repo, {now: NOW, resolveOwner: async () => owner});
@@ -102,8 +104,8 @@ describe('bounded first-party engagement', () => {
     test('retains distinct wallet logins, observes midnight return and rotates inactive sessions', async () => {
         const {db, repo} = fixture(); const before = Date.parse('2026-10-01T23:59:00+09:00');
         const first = await engagementApi(request(input()), repo, {now: before}); const cookie = cookieOf(first);
-        await recordAuthenticatedEngagement(request({}, cookie), repo, owner, before);
-        await recordAuthenticatedEngagement(request({}, cookie), repo, '0x' + '34'.repeat(20), before);
+        await recordAuthenticatedEngagement(request({}, cookie), repo, owner, 'profile_authenticated', before);
+        await recordAuthenticatedEngagement(request({}, cookie), repo, '0x' + '34'.repeat(20), 'profile_authenticated', before);
         await engagementApi(request(input(), cookie), repo, {now: before + 120_000});
         const report = await engagementReport(repo, Date.parse('2026-10-03T00:00:01+09:00'));
         expect(report.cohorts[0]?.d1).toEqual({mature: true, returned: 1, rate: 1});
@@ -129,6 +131,56 @@ describe('bounded first-party engagement', () => {
         expect(count(db, 'arcade_engagement_daily')).toBe(1);
         await repo.cleanup(NOW + 401 * DAY_MS); expect(count(db, 'arcade_engagement_daily')).toBe(0);
     });
+    test('first touch decides the source: an explicit ref, then the referring site, else direct', () => {
+        expect(trafficSource('?ref=X', 'https://t.co/abc')).toBe('x');
+        expect(trafficSource('?ref=share', '')).toBe('share');
+        for (const ref of ['?ref=', '?ref=facebook']) expect(trafficSource(ref, '')).toBe('other');
+        expect(trafficSource('', 'https://t.co/')).toBe('x'); expect(trafficSource('', 'https://mobile.twitter.com/')).toBe('x');
+        expect(trafficSource('', 'https://t.me/')).toBe('telegram'); expect(trafficSource('', 'https://discord.com/channels/1')).toBe('discord');
+        expect(trafficSource('', 'https://open.kakao.com/')).toBe('kakao'); expect(trafficSource('', 'https://www.giwa.io/')).toBe('giwa');
+        expect(trafficSource('', 'https://mapae.io/')).toBe('internal'); expect(trafficSource('', 'https://notmapae.io/')).toBe('other');
+        expect(trafficSource('', 'https://www.google.com/')).toBe('other'); expect(trafficSource('', '')).toBe('direct');
+    });
+    test('the source is written once with the browser, later hints never move it, and it leaves with the visitor', async () => {
+        const {db, repo} = fixture();
+        const r = await engagementApi(request(input({event: 'landing_viewed', source: 'x'})), repo, {now: NOW}); const cookie = cookieOf(r);
+        await engagementApi(request(input({source: 'discord'}), cookie), repo, {now: NOW});
+        expect(db.query('SELECT source FROM arcade_engagement_sources').all()).toEqual([{source: 'x'}]);
+        await repo.cleanup(NOW + 91 * DAY_MS);
+        expect(count(db, 'arcade_engagement_sources')).toBe(0);
+    });
+    test('page arrivals are funnel stages only: deduplicated per session, outside DAU and cohorts', async () => {
+        const {repo} = fixture();
+        const r = await engagementApi(request(input({event: 'landing_viewed', source: 'x'})), repo, {now: NOW}); const cookie = cookieOf(r);
+        for (const event of ['landing_viewed', 'arcade_entered', 'arcade_entered']) await engagementApi(request(input({event}), cookie), repo, {now: NOW});
+        let report = await engagementReport(repo, NOW);
+        expect(report.daily[0]).toMatchObject({browser_visitors: 1, browser_dau: 0, owner_dau: 0});
+        expect(report.cohorts).toEqual([]);
+        expect(report.funnel.total).toMatchObject({landing: 1, arcade: 1, practiced: 0});
+        await engagementApi(request(input(), cookie), repo, {now: NOW, resolveOwner: async () => owner});
+        report = await engagementReport(repo, NOW);
+        expect(report.daily[0]).toMatchObject({browser_visitors: 1, browser_dau: 1, owner_dau: 1}); expect(report.cohorts[0]?.visitors).toBe(1);
+        expect((await engagementReport(repo, NOW)).totals.find(t => t.event === 'landing_viewed')?.count).toBe(1);
+    });
+    test('the funnel counts browsers per stage by first-touch source; the faucet origin is a separate population', async () => {
+        const {repo} = fixture(); const runId = crypto.randomUUID();
+        const site = cookieOf(await engagementApi(request(input({event: 'landing_viewed', source: 'x'})), repo, {now: NOW}));
+        await engagementApi(request(input({event: 'practice_opened', game: 'race', runId}), site), repo, {now: NOW});
+        await engagementApi(request(input({event: 'practice_finished', game: 'race', runId, result: 'completed'}), site), repo, {now: NOW});
+        await recordAuthenticatedEngagement(request({}, site), repo, owner, 'profile_authenticated', NOW);
+        await engagementApi(request(input({event: 'mint_started'}), site), repo, {now: NOW, resolveOwner: async () => owner});
+        await engagementApi(request(input({event: 'arcade_entered', source: 'direct'})), repo, {now: NOW});
+        const faucet = 'https://faucet.mapae.io';
+        const opened = await engagementApi(request(input({event: 'faucet_opened', source: 'arcade'}), undefined, undefined, faucet), repo, {now: NOW});
+        expect(opened.status).toBe(202);
+        await recordAuthenticatedEngagement(request({}, cookieOf(opened), undefined, faucet), repo, owner, 'faucet_eth_claimed', NOW);
+        await recordAuthenticatedEngagement(request({}, undefined, undefined, faucet), repo, owner, 'faucet_musdc_claimed', NOW);
+        const {funnel} = await engagementReport(repo, NOW);
+        expect(funnel.bySource.map(row => row.source)).toEqual(['arcade', 'direct', 'x']);
+        expect(funnel.bySource.find(row => row.source === 'x')).toMatchObject({landing: 1, arcade: 0, practiced: 1, connected: 1, mint_started: 1, faucet_opened: 0});
+        expect(funnel.bySource.find(row => row.source === 'arcade')).toMatchObject({faucet_opened: 1, faucet_eth: 1, faucet_musdc: 0});
+        expect(funnel.total).toMatchObject({landing: 1, arcade: 1, practiced: 1, connected: 1, mint_started: 1, outing_started: 0, faucet_opened: 1, faucet_eth: 1});
+    });
     test('client sends sequentially, retries same IDs once and caps the in-memory queue', async () => {
         const calls: string[] = []; let release!: () => void;
         const blocked = new Promise<void>(resolve => {release = resolve;});
@@ -138,5 +190,13 @@ describe('bounded first-party engagement', () => {
         await new Promise(resolve => setTimeout(resolve, 20));
         expect(calls).toHaveLength(22);
         for (let i = 0; i < calls.length; i += 2) expect(calls[i]).toBe(calls[i + 1]);
+    });
+    test('client sends each page arrival once and stamps every event with the page source', async () => {
+        const bodies: Record<string, unknown>[] = [];
+        const client = createEngagementClient((async (_url: unknown, options: RequestInit) => {bodies.push(JSON.parse(String(options.body))); return new Response(null, {status: 202});}) as typeof fetch, 'telegram');
+        for (const event of ['landing_viewed', 'landing_viewed', 'arcade_entered', 'arcade_entered', 'guardian_cta', 'guardian_cta'] as const) client({event, locale: 'ko'});
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(bodies.map(body => body.event)).toEqual(['landing_viewed', 'arcade_entered', 'guardian_cta', 'guardian_cta']);
+        expect(new Set(bodies.map(body => body.source))).toEqual(new Set(['telegram']));
     });
 });
