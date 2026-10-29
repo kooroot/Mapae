@@ -280,8 +280,8 @@ Testnet tokens come from faucet.mapae.io instead (`apps/faucet`). The Worker che
 SIWE session bound to that origin, Turnstile (bound to the hostname, the claim's kind
 and the wallet) and HMAC'd IP and subnet keys, then calls the service with a bearer.
 The service tops the wallet's payer account up to 1000 tUSDC (testnet, not real money)
-once a day and, once the ETH tab is on, sends 0.0005 GIWA Sepolia ETH only to wallets
-with Ethereum mainnet history (once a week, one per IP and three per subnet a day, a
+once a day and, once the ETH tab is on, sends 0.0005 GIWA Sepolia ETH to any wallet
+that is not a smart account (once a week, one per IP and three per subnet a day, a
 daily wei cap and a floor kept for mint gas). The claim ledger writes the signed bytes
 to disk before broadcasting, so a restart finishes the same transaction.
 

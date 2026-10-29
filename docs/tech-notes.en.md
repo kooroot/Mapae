@@ -319,8 +319,8 @@ Testnet tokens come from faucet.mapae.io instead (`apps/faucet`). The Worker che
 SIWE session bound to that origin, Turnstile (bound to the hostname, the claim's kind
 and the wallet) and HMAC'd IP and subnet keys, then calls the service with a bearer.
 The service tops the wallet's payer account up to 1000 tUSDC (testnet, not real money)
-once a day and, once the ETH tab is on, sends 0.0005 GIWA Sepolia ETH only to wallets
-with Ethereum mainnet history (once a week, one per IP and three per subnet a day, a
+once a day and, once the ETH tab is on, sends 0.0005 GIWA Sepolia ETH to any wallet
+that is not a smart account (once a week, one per IP and three per subnet a day, a
 daily wei cap and a floor kept for mint gas). The claim ledger writes the signed bytes
 to disk before broadcasting, so a restart finishes the same transaction.
 
@@ -1012,7 +1012,7 @@ griefing spread into a settlement outage.
 | Gas DoS via complex delegations | Estimate first, then refuse anything above the configured gas cap |
 | Unauthorized relayer | The intersection of the leaf's `RedeemerEnforcer` and the 402's `facilitatorAddresses` is enforced |
 | Onboarding griefing (repeated deploy requests) | Hourly per-IP cap (a speed bump) + daily gas budget + a small dedicated sponsor wallet — exhaustion stops only that day's onboarding and never touches settlement or funds |
-| Testnet faucet farming (rotating wallets or accounts) | SIWE on the faucet.mapae.io origin + Turnstile + HMAC'd IP and subnet limits + a per-wallet window; ETH also needs one or more mainnet transactions, a daily wei cap and a balance floor — a separate faucet wallet, unrelated to settlement or deploy keys |
+| Testnet faucet farming (rotating wallets or accounts) | SIWE on the faucet.mapae.io origin + Turnstile + HMAC'd IP and subnet limits + a per-wallet window; ETH also refuses smart accounts and keeps a daily wei cap and a balance floor — a separate faucet wallet, unrelated to settlement or deploy keys |
 | Settlement griefing (paying oneself repeatedly with free tUSDC) | Hourly per-IP cap + a per-payer daily gas share (`RELAYER_PAYER_DAILY_WEI`) reserved before the day's total — one payer exhausting its share leaves every other seller settling for the rest of the day. Rejected settle rows are kept in the ledger for 7 days and at most the newest 50,000 (pruned at boot and hourly), so refusals alone cannot grow the sqlite file without bound |
 | Nominating the deploy target address | The request body is `{permissionContext}` only — the owner is recovered from the signature, and the account is `CREATE2(owner)`, which must match the delegator |
 | Non-canonical signatures (high-s, `v ∉ {27,28}`) | Deploy only after an offline canonical-form check — viem accepts them but OZ `ECDSA` reverts, so without the check we would pay to deploy an account whose every grant reverts |
