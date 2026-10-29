@@ -3,6 +3,7 @@ import {giwaSepolia, parseNodeRpcUrl} from "@mapae/shared";
 import {guardianAbi} from "@mapae/arcade/guardian-abi";
 import {GUARDIAN_MAX_SUPPLY, guardianName, guardianTraits, guardianTokenId} from "@mapae/arcade/guardians";
 import {BACKDROP_COLORS, SEAL_COLORS} from "@mapae/arcade/guardian-art";
+import {fromEdgeCache} from "../../lib/edge-cache";
 import {guardianAppearance} from "../guardian";
 import {guardianLayers} from "../guardian-layers";
 
@@ -72,10 +73,7 @@ export async function guardianArtApi(request: Request, deps: ArtDependencies): P
     const id = match[1], key = guardianArtCacheKey(url.origin, id, deps.collection);
     const cache = deps.cache ? await deps.cache.catch(() => undefined) : undefined;
     const hit = await cache?.match(key).catch(() => undefined);
-    if (hit) {
-        const cached = new Headers(hit.headers); cached.set("Cache-Control", CLIENT_CACHE);
-        return new Response(request.method === "HEAD" ? null : hit.body, {headers: cached});
-    }
+    if (hit) return fromEdgeCache(hit, CLIENT_CACHE, request.method);
     let birth: Birth;
     try {
         birth = await (deps.readBirth ?? birthReader(deps.collection, deps.rpcUrl))(BigInt(id));

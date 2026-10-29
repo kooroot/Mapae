@@ -23,9 +23,18 @@ const png = (card: RankedCard | SeasonCard, headers: Record<string, string> = {}
 }});
 const cardOf = (path: string) => path.startsWith("/card/season/") ? seasonCard() : ranked(path.split("/")[3]);
 
+/** The edge cache as the zone serves it: an entry comes back with the Browser Cache TTL in place of the life it was stored with. */
 function memoryCache() {
     const entries = new Map<string, Response>();
-    const cache = {async match(key: Request) {return entries.get(key.url)?.clone();}, async put(key: Request, value: Response) {entries.set(key.url, value);}} as unknown as Cache;
+    const cache = {
+        async match(key: Request) {
+            const hit = entries.get(key.url)?.clone();
+            if (!hit) return undefined;
+            const headers = new Headers(hit.headers); headers.set("Cache-Control", "public, max-age=14400");
+            return new Response(hit.body, {status: hit.status, headers});
+        },
+        async put(key: Request, value: Response) {entries.set(key.url, value);},
+    } as unknown as Cache;
     return {entries, cache};
 }
 function setup(answer: (path: string) => Response | Promise<Response> = path => path.endsWith("/png") ? png(cardOf(path)) : Response.json(cardOf(path)), overrides: Partial<ShareDependencies> = {}) {
@@ -58,16 +67,18 @@ describe("share card image", () => {
         expect([...entries.keys()]).toEqual([`https://mapae.io${CARD}?card=${CARD_REVISION}`]);
         const head = await get(CARD, deps, {method: "HEAD"});
         expect(head.status).toBe(200); expect(head.body).toBeNull(); expect(head.headers.get("ETag")).toBe(response.headers.get("ETag"));
+        expect(head.headers.get("Cache-Control")).toBe("public, max-age=60");
         expect(calls).toHaveLength(1);
     });
-    test("a settled day lives an hour at the edge and five minutes in the browser; a live one a minute everywhere", async () => {
+    test("a settled card lives an hour at the edge, a live one a minute; browsers keep either a minute, a hit included", async () => {
         const {deps, entries} = setup();
         const past = "/api/arcade/share/g/407/race/2026-10-13/card.png", response = await get(past, deps);
-        expect(response.headers.get("Cache-Control")).toBe("public, max-age=300");
+        expect(response.headers.get("Cache-Control")).toBe("public, max-age=60");
         expect(entries.get(`https://mapae.io${past}?card=${CARD_REVISION}`)?.headers.get("Cache-Control")).toBe("public, max-age=3600");
-        expect((await get(past, deps)).headers.get("Cache-Control")).toBe("public, max-age=300");
+        expect((await get(past, deps)).headers.get("Cache-Control")).toBe("public, max-age=60");
         const closed = setup(() => png(seasonCard("closed")), {now: Date.parse("2026-11-03T03:00:00Z")});
-        expect((await get("/api/arcade/share/s/407/card.png", closed.deps)).headers.get("Cache-Control")).toBe("public, max-age=300");
+        expect((await get("/api/arcade/share/s/407/card.png", closed.deps)).headers.get("Cache-Control")).toBe("public, max-age=60");
+        expect(closed.entries.get(`https://mapae.io/api/arcade/share/s/407/card.png?card=${CARD_REVISION}`)?.headers.get("Cache-Control")).toBe("public, max-age=3600");
         const open = await get("/api/arcade/share/s/407/card.png", setup().deps);
         expect(open.headers.get("Cache-Control")).toBe("public, max-age=60");
         expect(open.headers.get("ETag")).toBe(`"card-407-season-187-2-212-${CARD_REVISION}"`);
@@ -157,6 +168,13 @@ describe("share page", () => {
         expect(s).toContain('<meta property="og:image" content="https://mapae.io/api/arcade/share/s/407/card.png">');
         const head = await get(`/ko${PAGE}`, setup().deps, {method: "HEAD"});
         expect(head.status).toBe(200); expect(head.body).toBeNull();
+    });
+    test("a guardian tied with the leader below first place gets its page, and the cached page keeps a minute's life", async () => {
+        const {deps, calls} = setup(() => Response.json({...ranked(), rank: 2, leader: 12_340}));
+        const tied = await get(`/ko${PAGE}`, deps);
+        expect(tied.status).toBe(200); expect(await tied.text()).toContain("오늘 2위/41명");
+        const hit = await get(`/ko${PAGE}`, deps);
+        expect(hit.status).toBe(200); expect(hit.headers.get("Cache-Control")).toBe("public, max-age=60"); expect(calls).toHaveLength(1);
     });
     test("a card that is not there or cannot be fetched gets a page of its own, cached only when the seller said so", async () => {
         const missing = await get(`/ko${PAGE}`, setup(() => new Response(null, {status: 404})).deps), text = await missing.text();

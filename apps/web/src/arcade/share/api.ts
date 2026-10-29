@@ -2,6 +2,7 @@ import type {GameId} from "@mapae/arcade";
 import {daysBetween, isRankingDay, kstDay, validRankingTokenId, type RankedCard, type SeasonCard} from "@mapae/arcade/ranking";
 import {SEASON, type Season} from "@mapae/arcade/season";
 import {landingUrl} from "../../lib/config";
+import {fromEdgeCache} from "../../lib/edge-cache";
 import type {Locale} from "../../lib/i18n";
 import {DOCUMENT_SECURITY_HEADERS} from "../../lib/security";
 import {CARD_HEIGHT, CARD_REVISION, CARD_WIDTH} from "@mapae/arcade/share-card/contract";
@@ -30,8 +31,11 @@ const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 /** The seller's ETag is stored and echoed, so it must be this card's tag — its token, game and day, or its season — and nothing else. */
 const CARD_TAG = /^"card-[0-9a-z-]{1,80}"$/;
 const cardTagPrefix = (target: ShareTarget) => `"card-${target.tokenId}-${target.kind === "run" ? `${target.game}-${target.day}` : "season"}-`;
-/** A settled day or a closed season never changes; the edge keeps it an hour and browsers five minutes. A live board turns every minute. */
-const SETTLED = {edge: "public, max-age=3600", client: "public, max-age=300"}, LIVE = "public, max-age=60";
+/**
+ * A settled day or a sealed season never changes, so the edge keeps its card an hour; a live board turns every minute. Browsers
+ * keep every page and card a minute, because a hit comes back with the zone's header and cannot say which of the two it was.
+ */
+const SETTLED = "public, max-age=3600", LIVE = "public, max-age=60";
 const IMAGE_HEADERS = {"Content-Type": "image/png", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Access-Control-Allow-Origin": "*"};
 const PAGE_HEADERS = {
     ...DOCUMENT_SECURITY_HEADERS, "Content-Type": "text/html; charset=utf-8",
@@ -48,8 +52,8 @@ function cardImage(bytes: Uint8Array, headers: Headers, target: ShareTarget): {t
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (view.getUint32(16) !== CARD_WIDTH || view.getUint32(20) !== CARD_HEIGHT) return null;
     const tag = headers.get("ETag"), life = headers.get("Cache-Control");
-    if (!tag || !CARD_TAG.test(tag) || !tag.startsWith(cardTagPrefix(target)) || (life !== SETTLED.edge && life !== LIVE)) return null;
-    return {tag, settled: life === SETTLED.edge};
+    if (!tag || !CARD_TAG.test(tag) || !tag.startsWith(cardTagPrefix(target)) || (life !== SETTLED && life !== LIVE)) return null;
+    return {tag, settled: life === SETTLED};
 }
 
 /** What a path asks for: a target, and the page's locale when it is a page rather than its card. */
@@ -83,11 +87,11 @@ export async function shareApi(request: Request, deps: ShareDependencies): Promi
     if (!hasReceiptToken(deps)) return unavailable();
     const key = new Request(`${url.origin}${url.pathname}?card=${CARD_REVISION}`), cache = deps.cache ? await deps.cache.catch(() => undefined) : undefined;
     const hit = await cache?.match(key).catch(() => undefined);
-    if (hit) return served(hit, request.method);
+    if (hit) return fromEdgeCache(hit, LIVE, request.method);
     const retryAfter = await ipBudget(request, deps);
     if (retryAfter !== null) return error(429, {"Retry-After": String(retryAfter)});
     const path = target.kind === "run" ? `/card/${target.game}/${target.day}/${target.tokenId}` : `/card/season/${target.tokenId}`;
-    let stored: Response, client: string;
+    let stored: Response;
     try {
         if (parsed.page) {
             const upstream = await upstreamJson(path, deps);
@@ -95,14 +99,12 @@ export async function shareApi(request: Request, deps: ShareDependencies): Promi
             const card: RankedCard | SeasonCard | null = target.kind === "run" ? parseRankedCard(upstream.value, target.game, target.day, target.tokenId, today) : parseSeasonCard(upstream.value, target.tokenId, season);
             if (!card) return unavailable();
             stored = new Response(sharePage(target, card, parsed.page, (deps.base ?? landingUrl).replace(/\/$/, "")), {headers: {...PAGE_HEADERS, "Cache-Control": LIVE}});
-            client = LIVE;
         } else {
             const upstream = await upstreamBytes(`${path}/png`, deps, CARD_LIMIT);
             if (!upstream.found) return missing("public, max-age=30");
             const card = cardImage(upstream.bytes, upstream.headers, target);
             if (!card) return unavailable();
-            stored = new Response(upstream.bytes, {headers: {...IMAGE_HEADERS, ETag: card.tag, "Cache-Control": card.settled ? SETTLED.edge : LIVE}});
-            client = card.settled ? SETTLED.client : LIVE;
+            stored = new Response(upstream.bytes, {headers: {...IMAGE_HEADERS, ETag: card.tag, "Cache-Control": card.settled ? SETTLED : LIVE}});
         }
     } catch (failure) {
         // The reader refuses a season card outright while no season board exists: there is no card, not a fault.
@@ -110,12 +112,6 @@ export async function shareApi(request: Request, deps: ShareDependencies): Promi
         return unavailable();
     }
     await cache?.put(key, stored.clone()).catch(() => {/* A cold cache only costs the next visitor one seller call. */});
-    const headers = new Headers(stored.headers); headers.set("Cache-Control", client);
+    const headers = new Headers(stored.headers); headers.set("Cache-Control", LIVE);
     return new Response(request.method === "HEAD" ? null : stored.body, {headers});
-}
-/** A cached copy, with the browser's own cache life and no body for HEAD. */
-function served(hit: Response, method: string): Response {
-    const headers = new Headers(hit.headers);
-    if (headers.get("Cache-Control") === SETTLED.edge) headers.set("Cache-Control", SETTLED.client);
-    return new Response(method === "HEAD" ? null : hit.body, {status: hit.status, headers});
 }
