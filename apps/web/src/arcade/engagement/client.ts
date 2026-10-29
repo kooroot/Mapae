@@ -1,9 +1,10 @@
-import type {ClientEvent, EngagementInput} from './model';
+import {PASSIVE_EVENTS, trafficSource, type ClientEvent, type EngagementInput, type TrafficSource} from './model';
 
 /** First-party, bounded, in-memory telemetry. It never blocks play or persists credentials. */
-export function createEngagementClient(send: typeof fetch = fetch) {
+export function createEngagementClient(send: typeof fetch = fetch, source: TrafficSource = 'direct') {
     const queue: EngagementInput[] = [];
-    let busy = false, entered = false;
+    const arrived = new Set<string>();
+    let busy = false;
     async function flush() {
         if (busy) return;
         busy = true;
@@ -21,15 +22,17 @@ export function createEngagementClient(send: typeof fetch = fetch) {
         } finally {busy = false;}
     }
     return (event: ClientEvent & {locale: 'ko' | 'en'}) => {
-        if (event.event === 'arcade_entered') {if (entered) return; entered = true;}
+        // One arrival per page load, however often a view mounts.
+        if ((PASSIVE_EVENTS as readonly string[]).includes(event.event)) {if (arrived.has(event.event)) return; arrived.add(event.event);}
         if (queue.length >= 10) return;
-        queue.push({...event, version: 1, id: crypto.randomUUID()});
+        queue.push({...event, version: 1, id: crypto.randomUUID(), source});
         void flush();
     };
 }
 let client: ReturnType<typeof createEngagementClient> | undefined;
 export function trackEngagement(event: ClientEvent & {locale: 'ko' | 'en'}) {
     if (typeof window === 'undefined') return;
-    client ??= createEngagementClient();
+    // Read once, from the address the page loaded with: the source travels with every event, and the server keeps the first.
+    client ??= createEngagementClient(fetch, trafficSource(window.location.search, document.referrer));
     client(event);
 }

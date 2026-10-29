@@ -71,7 +71,7 @@ const entry = createServerEntry({fetch: (request, options) => {
         return profileApi(request, profiles, {
             development: import.meta.env.DEV,
             guardians: (r, owner, input) => guardiansApi(r, owner, input, {receiptToken: env.ARCADE_RECEIPT_TOKEN}),
-            onAuthenticated: (r, owner, now) => recordAuthenticatedEngagement(r, engagementRepository(env.ARCADE_DB), owner, now),
+            onAuthenticated: (r, owner, now) => recordAuthenticatedEngagement(r, engagementRepository(env.ARCADE_DB), owner, "profile_authenticated", now),
             outings: (r, owner, input) => outingsApi(r, owner, input, {receiptToken: env.ARCADE_RECEIPT_TOKEN}),
         });
     }

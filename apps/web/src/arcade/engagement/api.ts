@@ -1,8 +1,9 @@
-import {DAY_MS, ENGAGEMENT_LIMITS, MAX_EVENT_BYTES, VISITOR_TTL_MS, parseEngagement, seoulDay, type StoredEngagement} from './model';
+import {DAY_MS, ENGAGEMENT_LIMITS, MAX_EVENT_BYTES, VISITOR_TTL_MS, parseEngagement, seoulDay, type ServerEvent, type StoredEngagement} from './model';
 import type {EngagementRepository} from './repository';
 
 const COOKIE = '__Host-mapae-arcade-visitor';
-const ORIGINS = new Set(['https://mapae.io', 'https://app.mapae.io']);
+// Each origin keeps its own host-only browser ID: a faucet visitor is never joined to an arcade visitor.
+const ORIGINS = new Set(['https://mapae.io', 'https://app.mapae.io', 'https://faucet.mapae.io']);
 const headers = {'Cache-Control': 'private, no-store', 'Content-Type': 'application/json; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"};
 const json = (body: unknown, status = 202) => Response.json(body, {status, headers});
 const hash = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), n => n.toString(16).padStart(2, '0')).join('');
@@ -47,7 +48,7 @@ export async function engagementApi(request: Request, repo: EngagementRepository
         if (!visitor) {
             if (input.event === 'practice_finished') return json({error: 'practice_not_opened'}, 422);
             created = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
-            visitor = await repo.createVisitor(await hash(created), now, crypto.randomUUID());
+            visitor = await repo.createVisitor(await hash(created), now, crypto.randomUUID(), input.source);
         } else visitor = await repo.touchVisitor(visitor.hash, now, crypto.randomUUID());
         const day = Math.floor(now / DAY_MS);
         if (!await repo.limit(`visitor:${visitor.hash}:${day}`, (day + 1) * DAY_MS, ENGAGEMENT_LIMITS.visitorDay)) return json({error: 'rate_limited'}, 429);
@@ -62,13 +63,17 @@ export async function engagementApi(request: Request, repo: EngagementRepository
         return json({error: e instanceof RangeError ? 'body_too_large' : e instanceof SyntaxError ? 'invalid_json' : 'engagement_unavailable'}, e instanceof RangeError ? 413 : e instanceof SyntaxError ? 400 : 503);
     }
 }
-/** Call only from the successful, server-verified SIWE path. Failure must not block login. */
-export async function recordAuthenticatedEngagement(request: Request, repo: EngagementRepository, owner: string, now = Date.now()): Promise<void> {
+/**
+ * Call only once the server has verified the wallet: a SIWE login, or a faucet claim under
+ * a SIWE session. A browser that never reported anything has no ID here and records nothing.
+ * Failure must not block what it measures.
+ */
+export async function recordAuthenticatedEngagement(request: Request, repo: EngagementRepository, owner: string, event: ServerEvent, now = Date.now()): Promise<void> {
     if (!/^0x[a-f0-9]{40}$/i.test(owner)) return;
     const token = visitorToken(request); if (!token) return;
     const visitor = await repo.visitor(await hash(token), now); if (!visitor) return;
     if (!await allowGlobal(request, repo, now)) return;
     // SIWE has no language field. Do not infer English from the shared /api path.
-    const e: StoredEngagement = {id: crypto.randomUUID(), visitor: visitor.hash, session: visitor.session, owner: owner.toLowerCase(), event: 'profile_authenticated', game: null, runId: null, result: null, locale: 'und', at: now, day: seoulDay(now), trust: 'server_authenticated'};
+    const e: StoredEngagement = {id: crypto.randomUUID(), visitor: visitor.hash, session: visitor.session, owner: owner.toLowerCase(), event, game: null, runId: null, result: null, locale: 'und', at: now, day: seoulDay(now), trust: 'server_authenticated'};
     await repo.record(e);
 }
