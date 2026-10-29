@@ -2,11 +2,9 @@ import {
     FAUCET_REFUSALS,
     parseFaucetAccount,
     parseFaucetClaimView,
-    parseFaucetEligibility,
     parseFaucetStatus,
     type FaucetAccount,
     type FaucetClaimView,
-    type FaucetEligibility,
     type FaucetKind,
     type FaucetMissionId,
     type FaucetStatus,
@@ -84,12 +82,6 @@ export async function readFaucetAccount(owner: Address): Promise<FaucetAccount> 
     const account = validated(() => parseFaucetAccount(value));
     if (account.owner.toLowerCase() !== owner.toLowerCase()) throw new FaucetError("invalid_response");
     return account;
-}
-
-/** Whether the connected wallet meets the ETH rule — asked before any signature, so it needs no session. */
-export async function readFaucetEligibility(owner: Address): Promise<FaucetEligibility> {
-    const value = await request("/eligibility", {owner});
-    return validated(() => parseFaucetEligibility(value));
 }
 
 /**

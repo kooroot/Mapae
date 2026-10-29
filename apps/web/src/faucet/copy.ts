@@ -49,7 +49,7 @@ export const ERROR_COPY: Record<FaucetPageError, Record<Locale, string>> = {
     turnstile_failed: {ko: "사람 확인을 통과하지 못했어요. 다시 시도해 주세요.", en: "The human check did not pass. Please try again."},
     rate_limited: {ko: "요청이 많아요. 잠시 후 다시 시도해 주세요.", en: "Too many requests. Please try again shortly."},
     cooldown: {ko: "아직 다시 받을 수 없어요.", en: "You can’t claim again yet."},
-    not_eligible: {ko: "이 지갑은 받을 수 없어요. 스마트 계정이 아닌 일반 지갑이고, 이더리움 메인넷 거래 기록이 1건 이상 있어야 해요.", en: "This wallet can’t claim. It must be a regular wallet, not a smart account, with at least one Ethereum mainnet transaction."},
+    not_eligible: {ko: "이 지갑은 받을 수 없어요. 스마트 계정이 아닌 일반 지갑이어야 해요.", en: "This wallet can’t claim. It must be a regular wallet, not a smart account."},
     eligibility_unavailable: {ko: "지갑 조건을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.", en: "We couldn’t check this wallet’s eligibility. Please try again shortly."},
     budget_exhausted: {ko: "오늘 나눠 줄 몫이 모두 나갔어요. 내일 다시 와 주세요.", en: "Today’s share has run out. Please come back tomorrow."},
     faucet_empty: {ko: "faucet 지갑이 비었어요. 다시 채워지면 열려요.", en: "The faucet wallet is empty. It reopens once refilled."},
@@ -118,7 +118,7 @@ export interface FaucetCopy {
     musdcOff: {title: string; body: string};
     ethSoon: {title: string; body: (amount: string) => string};
     ethRules: {title: string; items: (amount: string) => string[]};
-    notEligible: {title: string; body: string; action: string};
+    giwaFaucet: string;
     howTo: {title: string; items: {id: string; q: string; a: string}[]};
     watchAsset: string;
     watchAssetNote: string;
@@ -184,22 +184,17 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         musdcOff: {title: "지금은 쉬고 있어요", body: "faucet을 점검하는 중이에요. 잠시 뒤 다시 와 주세요."},
         ethSoon: {title: "준비 중이에요", body: (amount) => `곧 열려요. @mapae_io를 팔로우하면 7일에 한 번 ${amount} ETH(테스트넷)를 받아요.`},
         ethRules: {title: "받을 수 있는 지갑", items: (amount) => [
-            "이더리움 메인넷 거래 기록이 1건 이상 있는 지갑",
             "스마트 계정이 아닌 일반 지갑(EOA)",
             `7일에 한 번, ${amount} ETH(테스트넷) — 값은 @mapae_io 팔로우`,
         ]},
-        notEligible: {
-            title: "이 지갑은 여기서 ETH를 받을 수 없어요",
-            body: "이더리움 메인넷 거래 기록이 1건 이상 있는 일반 지갑만 받아요. GIWA 공식 faucet에서도 GIWA Sepolia ETH(테스트넷)를 받을 수 있어요.",
-            action: "GIWA 공식 faucet 열기",
-        },
+        giwaFaucet: "GIWA 공식 faucet 열기",
         howTo: {title: "자주 묻는 질문", items: [
             {id: "follow", q: "왜 팔로우해야 하나요?", a: "팔로우가 이 faucet의 값이에요. 받을 때마다 @mapae_io 팔로우 링크를 열어야 받기 버튼이 켜지고, 그 대가로 테스트넷 토큰을 보내요. 마패 소식도 거기서 먼저 나와요."},
             {id: "use", q: "어디에 쓰나요?", a: `${SYM}는 아케이드에서 가디언에게 주는 용돈과, Studio에서 만든 에이전트의 결제 연습에 써요. 가디언과 에이전트가 테스트넷에서 돈을 쓰는 흉내를 내는 토큰이에요.`},
             {id: "where", q: "어디로 들어오나요?", a: `${SYM}는 지갑 주소에서 정해지는 지불 계정(스마트 계정)으로 들어와요. 아케이드와 Studio가 결제할 때 쓰는 계정이고, 아직 만들어지지 않았어도 미리 받아 둘 수 있어요. GIWA Sepolia ETH는 연결한 지갑으로 들어와요.`},
             {id: "often", q: "얼마나 자주 받을 수 있나요?", a: `${SYM}는 하루에 한 번, 잔액이 1000이 되도록 채워요. 이미 1000 이상이면 보내지 않아요. GIWA Sepolia ETH는 7일에 한 번 ${ETH_PER_CLAIM}개예요.`},
             {id: "wallet", q: "지갑에 안 보여요", a: `${SYM}는 지갑 주소가 아니라 지불 계정에 들어가요. 위의 지불 계정 주소를 누르면 탐색기에서 잔액을 볼 수 있어요. 지갑에서 토큰을 옮기거나 볼 때를 위해 ${SYM}를 지갑에 추가해 둘 수도 있어요.`},
-            {id: "eth", q: "ETH는 누가 받을 수 있나요?", a: "이더리움 메인넷 거래 기록이 1건 이상 있는 일반 지갑이 @mapae_io를 팔로우하면 받아요. 한 사람이 지갑을 여러 개 만들어 모두 가져가지 못하게 하려는 조건이에요."},
+            {id: "eth", q: "ETH는 누가 받을 수 있나요?", a: "스마트 계정이 아닌 일반 지갑이면 @mapae_io를 팔로우하고 7일에 한 번 받아요. 한 사람이 지갑을 여러 개 만들어 다 가져가지 못하게 IP마다 하루 1건이에요."},
             {id: "money", q: "실제 돈인가요?", a: "아니요. GIWA Sepolia 테스트넷에서만 쓰는 토큰이라 팔거나 바꿀 수 없어요."},
         ]},
         watchAsset: `지갑에 ${SYM} 추가`,
@@ -264,22 +259,17 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         musdcOff: {title: "Resting for now", body: "The faucet is under maintenance. Please come back a little later."},
         ethSoon: {title: "Coming soon", body: (amount) => `Opening soon. Follow @mapae_io to receive ${amount} ETH (testnet) once every 7 days.`},
         ethRules: {title: "Who can claim", items: (amount) => [
-            "A wallet with at least one Ethereum mainnet transaction",
             "A regular wallet (EOA), not a smart account",
             `${amount} ETH (testnet) once every 7 days — the price is a follow of @mapae_io`,
         ]},
-        notEligible: {
-            title: "This wallet can’t claim ETH here",
-            body: "Only a regular wallet with at least one Ethereum mainnet transaction can. GIWA’s official faucet also hands out GIWA Sepolia ETH (testnet).",
-            action: "Open GIWA’s official faucet",
-        },
+        giwaFaucet: "Open GIWA’s official faucet",
         howTo: {title: "Questions", items: [
             {id: "follow", q: "Why do I have to follow?", a: "The follow is the price. Every claim asks you to open the @mapae_io follow link before the button turns on, and the testnet tokens are what you get for it. Mapae news lands there first."},
             {id: "use", q: "What is it for?", a: `${SYM} is the allowance you give guardians in the arcade, and practice money for agents you create in Studio. It lets them act out spending on a testnet.`},
             {id: "where", q: "Where does it go?", a: `${SYM} goes to your payer account — a smart account derived from your wallet address that the arcade and Studio pay from. It can receive tokens before it is deployed. GIWA Sepolia ETH goes to your connected wallet.`},
             {id: "often", q: "How often can I claim?", a: `${SYM} tops your balance up to 1000 once a day, and sends nothing if you already hold 1000. GIWA Sepolia ETH is ${ETH_PER_CLAIM} once every 7 days.`},
             {id: "wallet", q: "I don’t see it in my wallet", a: `${SYM} lands in your payer account, not your wallet address. Tap the payer account address above to see its balance on the explorer. You can still add ${SYM} to your wallet for when you move tokens there.`},
-            {id: "eth", q: "Who can get ETH?", a: "A regular wallet with at least one Ethereum mainnet transaction, once it follows @mapae_io. The rule stops one person from draining the faucet with many new wallets."},
+            {id: "eth", q: "Who can get ETH?", a: "Any regular wallet (not a smart account) that follows @mapae_io, once every 7 days. One claim per network a day stops one person from draining the faucet with many wallets."},
             {id: "money", q: "Is this real money?", a: "No. These tokens exist only on the GIWA Sepolia testnet and cannot be sold or exchanged."},
         ]},
         watchAsset: `Add ${SYM} to wallet`,
