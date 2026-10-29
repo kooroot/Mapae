@@ -69,6 +69,8 @@
 .fct-notice>svg {flex: none; margin-top: 1px; color: var(--ink-3)}
 .fct-notice strong {display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px}
 .fct-notice p {margin: 0; font-size: 13px; line-height: 1.65}
+.fct-giwa {display: inline-flex; align-items: center; gap: 4px; min-height: 36px; font-size: 13px; font-weight: 600; color: inherit; text-underline-offset: 4px}
+.fct-notice .fct-giwa {margin-top: 4px; color: var(--ink)}
 .fct-steps {list-style: none; margin: 0; padding: 0; display: grid; gap: 24px}
 .fct-step {display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; position: relative}
 .fct-step:not(:last-child)::before {content: ""; position: absolute; left: 11.5px; top: 32px; bottom: -16px; width: 1px; background: var(--hair)}

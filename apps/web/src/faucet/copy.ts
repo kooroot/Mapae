@@ -108,7 +108,8 @@ export interface FaucetCopy {
     success: string;
     successAmount: Record<FaucetKind, (amount: string) => string>;
     viewTx: string;
-    toArcade: string;
+    toAllowance: string;
+    toGuardians: string;
     toStudio: string;
     cooldown: (wait: string) => string;
     lastTx: string;
@@ -117,6 +118,7 @@ export interface FaucetCopy {
     musdcOff: {title: string; body: string};
     ethSoon: {title: string; body: (amount: string) => string};
     ethRules: {title: string; items: (amount: string) => string[]};
+    notEligible: {title: string; body: string; action: string};
     howTo: {title: string; items: {id: string; q: string; a: string}[]};
     watchAsset: string;
     watchAssetNote: string;
@@ -172,7 +174,8 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         success: "받았어요",
         successAmount: {musdc: (amount) => `${amount} ${TESTNET_TOKEN.ko}를 지불 계정에 넣었어요.`, eth: (amount) => `${amount} ETH(테스트넷)를 지갑에 보냈어요.`},
         viewTx: "트랜잭션 보기",
-        toArcade: "아케이드로 가서 용돈 주기",
+        toAllowance: "아케이드로 가서 용돈 주기",
+        toGuardians: "전령 뽑으러 가기",
         toStudio: "Studio 열기",
         cooldown: (wait) => `다음 받기까지 ${wait}`,
         lastTx: "지난 받기 트랜잭션",
@@ -185,6 +188,11 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
             "스마트 계정이 아닌 일반 지갑(EOA)",
             `7일에 한 번, ${amount} ETH(테스트넷) — 값은 @mapae_io 팔로우`,
         ]},
+        notEligible: {
+            title: "이 지갑은 여기서 ETH를 받을 수 없어요",
+            body: "이더리움 메인넷 거래 기록이 1건 이상 있는 일반 지갑만 받아요. GIWA 공식 faucet에서도 GIWA Sepolia ETH(테스트넷)를 받을 수 있어요.",
+            action: "GIWA 공식 faucet 열기",
+        },
         howTo: {title: "자주 묻는 질문", items: [
             {id: "follow", q: "왜 팔로우해야 하나요?", a: "팔로우가 이 faucet의 값이에요. 받을 때마다 @mapae_io 팔로우 링크를 열어야 받기 버튼이 켜지고, 그 대가로 테스트넷 토큰을 보내요. 마패 소식도 거기서 먼저 나와요."},
             {id: "use", q: "어디에 쓰나요?", a: `${SYM}는 아케이드에서 가디언에게 주는 용돈과, Studio에서 만든 에이전트의 결제 연습에 써요. 가디언과 에이전트가 테스트넷에서 돈을 쓰는 흉내를 내는 토큰이에요.`},
@@ -246,7 +254,8 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
         success: "Received",
         successAmount: {musdc: (amount) => `${amount} ${TESTNET_TOKEN.en} is in your payer account.`, eth: (amount) => `${amount} ETH (testnet) is in your wallet.`},
         viewTx: "View transaction",
-        toArcade: "Give an allowance in the arcade",
+        toAllowance: "Give an allowance in the arcade",
+        toGuardians: "Draw a guardian",
         toStudio: "Open Studio",
         cooldown: (wait) => `Next claim in ${wait}`,
         lastTx: "Last claim transaction",
@@ -259,6 +268,11 @@ export const FAUCET_COPY: Record<Locale, FaucetCopy> = {
             "A regular wallet (EOA), not a smart account",
             `${amount} ETH (testnet) once every 7 days — the price is a follow of @mapae_io`,
         ]},
+        notEligible: {
+            title: "This wallet can’t claim ETH here",
+            body: "Only a regular wallet with at least one Ethereum mainnet transaction can. GIWA’s official faucet also hands out GIWA Sepolia ETH (testnet).",
+            action: "Open GIWA’s official faucet",
+        },
         howTo: {title: "Questions", items: [
             {id: "follow", q: "Why do I have to follow?", a: "The follow is the price. Every claim asks you to open the @mapae_io follow link before the button turns on, and the testnet tokens are what you get for it. Mapae news lands there first."},
             {id: "use", q: "What is it for?", a: `${SYM} is the allowance you give guardians in the arcade, and practice money for agents you create in Studio. It lets them act out spending on a testnet.`},

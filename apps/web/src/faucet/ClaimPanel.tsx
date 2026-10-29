@@ -4,12 +4,13 @@ import {ArrowUpRight, AtSign, Check, CircleAlert, Clock3, Droplets, LoaderCircle
 import {useEffect, useState, type ReactNode} from "react";
 import type {Address} from "viem";
 import {MOCK_USDC} from "@mapae/shared";
-import {appUrl, explorerAddressUrl, explorerTxUrl, landingUrl} from "../lib/config";
+import {arcadeSectionPath} from "../arcade/sections";
+import {appUrl, explorerAddressUrl, explorerTxUrl, giwaFaucetUrl, landingUrl} from "../lib/config";
 import {publicClient} from "../lib/chain-client";
-import {localizeUrl} from "../lib/i18n";
+import {localizeUrl, type Locale} from "../lib/i18n";
 import {shortAddress} from "../lib/dial";
 import {useLocale} from "../lib/locale";
-import {FaucetError, type FaucetPageStatus} from "./client";
+import {FaucetError, readFaucetEligibility, type FaucetPageStatus} from "./client";
 import {ERROR_COPY, FAUCET_COPY, formatAmount, formatWait, MISSION_COPY} from "./copy";
 import {useTurnstile} from "./Turnstile";
 
@@ -19,6 +20,10 @@ import {useTurnstile} from "./Turnstile";
  * The panel owns only the claim's progress and its error. What the wallet last received
  * (`view`) belongs to the page, which reads it from the session and keeps polling while
  * a claim is pending, so a reload shows the same standing as the moment after a claim.
+ *
+ * The ETH tab asks whether the connected wallet meets its rule before anything else, so
+ * a wallet outside it is pointed at GIWA's own faucet instead of following and signing
+ * for a refusal.
  */
 
 type Phase = "idle" | "signing" | "checking" | "sending";
@@ -64,6 +69,15 @@ export function ClaimPanel(props: ClaimPanelProps) {
 
     const config = status?.[kind];
     const enabled = !!config?.enabled && !props.statusFailed;
+    const eligibility = useQuery({
+        queryKey: ["faucet-eligibility", owner ?? null],
+        queryFn: () => readFaucetEligibility(owner!),
+        enabled: kind === "eth" && !!owner && enabled,
+        staleTime: 10 * 60_000,
+        retry: false,
+    });
+    // A failed read blocks nothing: the claim checks the same rule again.
+    const ineligible = kind === "eth" && !!owner && eligibility.data?.eligible === false;
     const missions: readonly FaucetMissionId[] = config?.missions ?? (kind === "musdc" ? FAUCET_MUSDC_MISSIONS : []);
     const missionsComplete = missions.every((id) => props.missionsDone.includes(id));
     const amount = kind === "musdc" ? formatAmount(status?.musdc.targetBase ?? String(FAUCET_TARGET_BASE), "musdc") : formatAmount(status?.eth.amountWei ?? String(FAUCET_ETH_AMOUNT_WEI), "eth");
@@ -71,7 +85,7 @@ export function ClaimPanel(props: ClaimPanelProps) {
     const coolingDown = nextAt !== undefined && nextAt > now;
     const pending = view?.state === "pending";
     const busy = phase !== "idle";
-    const ready = !!owner && enabled && missionsComplete && !coolingDown && !pending && !busy;
+    const ready = !!owner && enabled && !ineligible && missionsComplete && !coolingDown && !pending && !busy;
 
     async function claim() {
         if (!owner || !status) return;
@@ -101,9 +115,10 @@ export function ClaimPanel(props: ClaimPanelProps) {
             ) : (
                 <div className="fct-notice"><Clock3 size={20} aria-hidden="true" /><div><strong>{t.musdcOff.title}</strong><p>{t.musdcOff.body}</p></div></div>
             ))}
+            {ineligible && <div className="fct-notice" role="status"><CircleAlert size={20} aria-hidden="true" /><div><strong>{t.notEligible.title}</strong><p>{t.notEligible.body}</p><GiwaFaucetLink label={t.notEligible.action} /></div></div>}
             <ol className="fct-steps">
                 <Step n={1} title={t.steps.connect} done={!!owner} active={!owner}>{props.wallet}</Step>
-                <Step n={2} title={t.steps.missions} done={!!owner && missionsComplete && missions.length > 0} active={!!owner && !missionsComplete}>
+                <Step n={2} title={t.steps.missions} done={!!owner && missionsComplete && missions.length > 0} active={!!owner && !missionsComplete && !ineligible}>
                     <ul className="fct-missions">
                         {missions.map((id) => {
                             const copy = MISSION_COPY[id][locale], done = props.missionsDone.includes(id);
@@ -119,7 +134,7 @@ export function ClaimPanel(props: ClaimPanelProps) {
                         {missions.length === 0 && <li data-soon="true"><div><strong>{t.soonMission}</strong></div><span className="fct-badge">{t.soon}</span></li>}
                     </ul>
                 </Step>
-                <Step n={3} title={t.steps.claim} done={!!view && (view.state === "confirmed" || view.state === "already_enough") && (coolingDown || props.fresh)} active={!!owner && missionsComplete && enabled}>
+                <Step n={3} title={t.steps.claim} done={!!view && (view.state === "confirmed" || view.state === "already_enough") && (coolingDown || props.fresh)} active={!!owner && missionsComplete && enabled && !ineligible}>
                     {owner && <Recipient kind={kind} owner={owner} recipient={props.recipient} view={view} />}
                     <Outcome {...props} amount={amount} nextAt={coolingDown ? nextAt : undefined} />
                     <div className="fct-turnstile" ref={slot} />
@@ -128,9 +143,9 @@ export function ClaimPanel(props: ClaimPanelProps) {
                         {phase === "signing" ? t.signing : phase === "checking" ? t.checking : phase === "sending" ? t.sending : pending ? t.pending : t.claim[kind](amount)}
                     </button>
                     <p className="fct-hint">
-                        {!owner ? t.needConnect : !missionsComplete && enabled ? t.needMissions : phase === "signing" ? <><ShieldCheck size={14} aria-hidden="true" />{t.signingNote}</> : t.claimHint[kind](amount)}
+                        {!owner ? t.needConnect : ineligible ? t.notEligible.title : !missionsComplete && enabled ? t.needMissions : phase === "signing" ? <><ShieldCheck size={14} aria-hidden="true" />{t.signingNote}</> : t.claimHint[kind](amount)}
                     </p>
-                    {error && error.code !== "cooldown" && <p className="fct-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{ERROR_COPY[error.code][locale]}</p>}
+                    {error && error.code !== "cooldown" && <p className="fct-error" role="alert"><CircleAlert size={16} aria-hidden="true" /><span>{ERROR_COPY[error.code][locale]}{error.code === "not_eligible" && <> <GiwaFaucetLink label={t.notEligible.action} /></>}</span></p>}
                     {error?.code === "cooldown" && !coolingDown && <p className="fct-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{ERROR_COPY.cooldown[locale]}</p>}
                 </Step>
             </ol>
@@ -189,10 +204,7 @@ function Outcome(props: ClaimPanelProps & {amount: string; nextAt: number | unde
                 <p>{t.successAmount[kind](formatAmount(view.amount, kind))}</p>
                 {view.transaction && <a href={explorerTxUrl(view.transaction)} target="_blank" rel="noopener noreferrer">{t.viewTx}<ArrowUpRight size={14} aria-hidden="true" /></a>}
                 {nextAt !== undefined && <p className="fct-wait"><Clock3 size={14} aria-hidden="true" />{t.cooldown(formatWait(nextAt - Date.now(), locale))}</p>}
-                <div className="fct-next">
-                    {kind === "musdc" && <a className="fct-action fct-action-primary" href={localizeUrl(`${landingUrl.replace(/\/$/, "")}/arcade`, locale)}>{t.toArcade}</a>}
-                    <a className="fct-action fct-action-secondary" href={localizeUrl(appUrl, locale)}>{t.toStudio}</a>
-                </div>
+                <NextSteps kind={kind} locale={locale} />
             </div>
         </div>;
     }
@@ -200,10 +212,27 @@ function Outcome(props: ClaimPanelProps & {amount: string; nextAt: number | unde
         return <div className="fct-outcome" role="status"><Clock3 size={20} aria-hidden="true" /><div><strong>{t.cooldown(formatWait(nextAt - Date.now(), locale))}</strong>{view?.transaction && <a href={explorerTxUrl(view.transaction)} target="_blank" rel="noopener noreferrer">{t.lastTx}<ArrowUpRight size={14} aria-hidden="true" /></a>}</div></div>;
     }
     if (view?.state === "already_enough") {
-        return <div className="fct-outcome" role="status"><Check size={20} aria-hidden="true" /><div><p>{t.alreadyEnough[kind](amount)}</p></div></div>;
+        return <div className="fct-outcome" role="status"><Check size={20} aria-hidden="true" /><div><p>{t.alreadyEnough[kind](amount)}</p><NextSteps kind={kind} locale={locale} /></div></div>;
     }
     if (view?.state === "failed") {
         return <div className="fct-outcome fct-outcome-failed" role="status"><CircleAlert size={20} aria-hidden="true" /><div><p>{t.failedBefore}</p></div></div>;
     }
     return null;
+}
+
+/**
+ * Where a claim is spent: ETH draws a guardian, the stablecoin becomes an outing's
+ * allowance. Studio stays the other way in.
+ */
+export function NextSteps({kind, locale}: {kind: FaucetKind; locale: Locale}) {
+    const t = FAUCET_COPY[locale], arcade = landingUrl.replace(/\/$/, "");
+    const href = kind === "eth" ? `${arcade}${arcadeSectionPath("guardians", locale)}` : `${arcade}${arcadeSectionPath("outings", locale)}#arcade-allowance`;
+    return <div className="fct-next">
+        <a className="fct-action fct-action-primary" href={href}>{kind === "eth" ? t.toGuardians : t.toAllowance}</a>
+        <a className="fct-action fct-action-secondary" href={localizeUrl(appUrl, locale)}>{t.toStudio}</a>
+    </div>;
+}
+
+function GiwaFaucetLink({label}: {label: string}) {
+    return <a className="fct-giwa" href={giwaFaucetUrl} target="_blank" rel="noopener noreferrer">{label}<ArrowUpRight size={14} aria-hidden="true" /></a>;
 }

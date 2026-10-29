@@ -35,6 +35,8 @@ export const githubUrl =
 export const faucetUrl =
     import.meta.env["VITE_FAUCET_URL"]?.trim() ||
     (import.meta.env.DEV ? "/faucet" : "https://faucet.mapae.io");
+/** GIWA's own testnet faucet: where a wallet outside this faucet's ETH rule is sent. */
+export const giwaFaucetUrl = "https://faucet.giwa.io";
 /** The builder's front door — the guide stays in the public tree on purpose. */
 export const sellerGuideUrl = `${githubUrl}/blob/main/docs/seller-guide.md`;
 
