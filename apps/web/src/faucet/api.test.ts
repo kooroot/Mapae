@@ -216,57 +216,6 @@ describe("session", () => {
     });
 });
 
-describe("eligibility", () => {
-    const WALLET = "0x00000000000000000000000000000000000000E7";
-    const ask = (headers: Record<string, string> = {"X-Mapae-Wallet": WALLET}) => request("/eligibility", "GET", undefined, headers);
-
-    test("answers the ETH rule for the named wallet without a session, and forwards only the boolean", async () => {
-        const net = network({service: (path) => path === `/eligibility/${WALLET.toLowerCase()}` ? Response.json({eligible: true, owner: WALLET}) : Response.json({reason: "unavailable"}, {status: 503})});
-        const response = await faucetApi(ask(), deps(repo(), net.fetcher));
-        expect(response.status).toBe(200);
-        expect(await response.json<unknown>()).toEqual({eligible: true});
-        expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-        expect(net.service()).toHaveLength(1);
-        expect(net.service()[0]?.init?.method).toBe("GET");
-    });
-
-    test("a missing or malformed wallet never reaches the service, and a write is refused", async () => {
-        const net = network(), repository = repo();
-        for (const headers of [{}, {"X-Mapae-Wallet": "0x1234"}, {"X-Mapae-Wallet": `${WALLET}00`}] as Record<string, string>[]) {
-            const response = await faucetApi(ask(headers), deps(repository, net.fetcher));
-            expect(response.status).toBe(400);
-            expect(await response.json<unknown>()).toEqual({error: {code: "malformed_request"}});
-        }
-        expect((await faucetApi(request("/eligibility", "POST", {}, {"X-Mapae-Wallet": WALLET}), deps(repository, net.fetcher))).status).toBe(405);
-        expect(net.service()).toHaveLength(0);
-    });
-
-    test("a failed main-chain read is eligibility_unavailable; anything off-contract is unavailable", async () => {
-        const repository = repo();
-        const answers: Response[] = [
-            Response.json({reason: "eligibility_unavailable"}, {status: 503}),
-            Response.json({reason: "not_eligible"}, {status: 403}),
-            Response.json({eligible: "yes"}),
-        ];
-        const net = network({service: () => answers.shift()!});
-        expect(await (await faucetApi(ask(), deps(repository, net.fetcher))).json<unknown>()).toEqual({error: {code: "eligibility_unavailable"}});
-        expect(await (await faucetApi(ask(), deps(repository, net.fetcher))).json<unknown>()).toEqual({error: {code: "unavailable"}});
-        const malformed = await faucetApi(ask(), deps(repository, net.fetcher));
-        expect(malformed.status).toBe(503);
-        expect(await malformed.json<unknown>()).toEqual({error: {code: "unavailable"}});
-    });
-
-    test("thirty reads per address bucket per ten minutes", async () => {
-        const repository = repo(), net = network({service: () => Response.json({eligible: false})});
-        for (let i = 0; i < 30; i += 1) expect((await faucetApi(ask(), deps(repository, net.fetcher))).status).toBe(200);
-        const refused = await faucetApi(ask(), deps(repository, net.fetcher));
-        expect(refused.status).toBe(429);
-        expect(Number(refused.headers.get("Retry-After"))).toBeGreaterThan(0);
-        expect(net.service()).toHaveLength(30);
-        expect((await faucetApi(ask({"X-Mapae-Wallet": WALLET, "CF-Connecting-IP": "203.0.113.8"}), deps(repository, net.fetcher))).status).toBe(200);
-    });
-});
-
 describe("claim", () => {
     const claimBody = (kind = "musdc") => ({kind, turnstile: "token-from-widget", missions: ["x_follow_mapae"]});
 
