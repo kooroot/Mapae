@@ -71,7 +71,7 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         if(receipt.status!=='success'){clearNftTransaction(owner);setTransaction(null);throw Error('reverted');}
         clearNftTransaction(owner);setTransaction(null);if(cancelled)throw Error('cancelled');await refresh();
     }
-    async function perform(action:()=>Promise<void>){if(locked.current||!owner)return;trackEngagement({event:'operator_action',locale:ko?'ko':'en'});locked.current=true;setBusy(true);setError('');setGasShort(false);loadFailed.current=false;setPhase(ko?'지갑에서 확인해 주세요':'Confirm in your wallet');try{await action();}catch(e){const code=giwaWalletError(e)?.code;const reason=e instanceof Error?e.message:'';const short=gasShortfall(e);setGasShort(short);setError(short?FAUCET_HINT[ko?'ko':'en'].gas:code==='rejected'?(ko?'지갑 요청을 취소했어요. 다시 시도할 수 있어요.':'Wallet request cancelled. You can try again.')
+    async function perform(action:()=>Promise<void>,event:'operator_action'|'mint_started'='operator_action'){if(locked.current||!owner)return;trackEngagement({event,locale:ko?'ko':'en'});locked.current=true;setBusy(true);setError('');setGasShort(false);loadFailed.current=false;setPhase(ko?'지갑에서 확인해 주세요':'Confirm in your wallet');try{await action();}catch(e){const code=giwaWalletError(e)?.code;const reason=e instanceof Error?e.message:'';const short=gasShortfall(e);setGasShort(short);setError(short?FAUCET_HINT[ko?'ko':'en'].gas:code==='rejected'?(ko?'지갑 요청을 취소했어요. 다시 시도할 수 있어요.':'Wallet request cancelled. You can try again.')
         :reason==='batch_unavailable'?(ko?'한 번에 기록하기는 전령 컨트랙트 업그레이드 뒤에 열려요. 업그레이드가 끝나면 다시 시도해 주세요.':'Recording in one go opens after the guardian contract upgrade. Try again once it lands.')
         :reason==='claim_rejected'?(ko?'기록이 이미 반영됐거나 상태가 바뀌어 지갑 요청을 보내지 않았어요. 새로고침한 뒤 다시 기록해 주세요.':'Nothing was sent: these outings were already recorded or the guardian changed. Refresh and record again.')
         :reason==='claims_waiting'?(ko?'아직 GIWA에서 확정되지 않은 모험이에요. 몇 분 뒤 다시 기록해 주세요.':'These outings are not final on GIWA yet. Record them again in a few minutes.')
@@ -93,7 +93,7 @@ export function useGuardians(owner:Address|undefined,ready:boolean,ko:boolean){
         const contribution=bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
         const simulation=await publicClient.simulateContract({address:roster.collection,abi:guardianAbi,functionName:'mint',args:[contribution,fee],value:fee,account:owner});
         await wallet();const hash=await writeContract(w,simulation.request);await recorded(hash,'mint');
-    });}
+    },'mint_started');}
     /** Records the oldest unclaimed results and any newly sealed honors (one contract batch) in a single transaction; the rest wait for the next batch. */
     async function claimAll(){await perform(async()=>{
         if(!owner||!roster?.collection||!detail||transaction)throw Error('claim_unavailable');

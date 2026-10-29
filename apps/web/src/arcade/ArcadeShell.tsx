@@ -52,6 +52,8 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
     // send the same transaction twice.
     const desk = useGuardianDesk(owner, walletWaiting, selected);
     const guestStore = useGuestPractice();
+    // Arriving is counted once per page load; what the visitor then does is counted where it happens.
+    useEffect(() => {trackEngagement({event: "arcade_entered", locale});}, []);
     // A wallet change closes its guardian's practice; browser back or forward closes any game, since the URL never held it.
     const [shown, setShown] = useState(owner);
     if (shown !== owner) {
@@ -84,7 +86,7 @@ export function ArcadeShell({reducedMotion}: {reducedMotion: boolean}) {
 
     const go = (change: () => void) => swapScreen(reducedMotion, change);
     const visit = (next: ArcadeSection, target?: string) => void navigate(arcadeSectionLink(next, locale, target));
-    function playGuest(game: GameId) {trackEngagement({event: "arcade_entered", game, locale}); go(() => {setSelected(game); setScreen({kind: "guest", game});});}
+    function playGuest(game: GameId) {go(() => {setSelected(game); setScreen({kind: "guest", game});});}
     function practice(token: GuardianToken, game: GameId) {go(() => {setSelected(game); setScreen({kind: "practice", token, game, seed: dailyChallenge(game, desk.now).seed});});}
     function meetGuardian(game: GameId) {setSelected(game); visit("guardians");}
     // A plan for another guardian waits until the switch lands, since the plan is kept per guardian.

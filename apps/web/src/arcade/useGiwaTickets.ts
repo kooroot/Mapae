@@ -126,7 +126,7 @@ export function useGiwaTickets(locale: Locale, owner: Address | undefined, authe
     }
     async function approve(requests: AllowanceRequest[], choice: GameId | "auto") {
         if (!address || !connector || locked.current) return;
-        trackEngagement({event:'operator_action',locale});
+        trackEngagement({event:'outing_started',locale});
         locked.current = true; setBusy(true); setError("");
         try {
             if (readSubmission(address)) throw new GiwaTicketError("먼저 외출 요청을 확인해 주세요. / Recover the existing outing request first.");
