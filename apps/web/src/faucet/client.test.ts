@@ -1,7 +1,7 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import {createSiweMessage} from "viem/siwe";
 import {FAUCET_ETH_AMOUNT_WEI} from "@mapae/delegation/faucet-policy";
-import {checkFaucetSiweMessage, claimFaucet, FaucetError, readFaucetAccount, readFaucetStatus} from "./client";
+import {checkFaucetSiweMessage, claimFaucet, FaucetError, readFaucetAccount, readFaucetEligibility, readFaucetStatus} from "./client";
 
 const OWNER = "0x00000000000000000000000000000000000000a1";
 const PAYER = "0x00000000000000000000000000000000000000b2";
@@ -79,6 +79,18 @@ describe("faucet requests", () => {
         expect((await refusal(readFaucetAccount(OWNER))).code).toBe("login_required");
         answer(403, {error: {code: "origin_denied"}});
         expect((await refusal(readFaucetAccount(OWNER))).code).toBe("unavailable");
+    });
+
+    test("eligibility names the wallet in a header, never the URL, and keeps only the boolean", async () => {
+        const seen = answer(200, {eligible: false});
+        expect(await readFaucetEligibility(OWNER)).toEqual({eligible: false});
+        expect(new URL(seen[0]!.url).pathname + new URL(seen[0]!.url).search).toBe("/api/faucet/eligibility");
+        expect(seen[0]!.method).toBe("GET");
+        expect(seen[0]!.headers.get("X-Mapae-Wallet")).toBe(OWNER);
+        answer(200, {eligible: "no"});
+        expect((await refusal(readFaucetEligibility(OWNER))).code).toBe("invalid_response");
+        answer(503, {error: {code: "eligibility_unavailable"}});
+        expect((await refusal(readFaucetEligibility(OWNER))).code).toBe("eligibility_unavailable");
     });
 
     test("an account answered for another wallet is refused", async () => {

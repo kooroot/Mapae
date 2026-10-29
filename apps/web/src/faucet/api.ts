@@ -1,6 +1,7 @@
 import {
     parseFaucetAccount,
     parseFaucetClaimView,
+    parseFaucetEligibility,
     parseFaucetRefusal,
     parseFaucetStatus,
     type FaucetKind,
@@ -22,6 +23,10 @@ import {
  * claim's kind and the signed-in owner) and the network identity (the client's address
  * bucket and subnet, HMAC'd with a secret salt so the service never stores a raw IP).
  * The service then trusts the bearer and decides amounts, windows and limits.
+ *
+ * One read needs no session: whether a wallet meets the ETH rule. Its answer is the
+ * wallet's public main-chain history, so the page asks it before any signature, and the
+ * Worker limits it per address bucket instead.
  */
 
 export const FAUCET_ORIGIN = "https://faucet.mapae.io";
@@ -57,7 +62,8 @@ export type FaucetApiDependencies = {
 /** The status as the page reads it: the service's view plus the Turnstile site key. */
 export type FaucetPageStatus = FaucetStatus & {siteKey: string};
 
-const ROUTES = new Set(["/api/faucet/status", "/api/faucet/challenge", "/api/faucet/login", "/api/faucet/session", "/api/faucet/logout", "/api/faucet/claim"]);
+const ROUTES = new Set(["/api/faucet/status", "/api/faucet/eligibility", "/api/faucet/challenge", "/api/faucet/login", "/api/faucet/session", "/api/faucet/logout", "/api/faucet/claim"]);
+const READS = new Set(["/api/faucet/status", "/api/faucet/eligibility", "/api/faucet/session"]);
 const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
 
 const refusal = (code: string, status: number, nextAt?: number) =>
@@ -69,7 +75,7 @@ export async function faucetApi(request: Request, deps: FaucetApiDependencies): 
     if ((url.origin !== FAUCET_ORIGIN && !local) || url.search) return error("origin_denied", 403);
     if (request.headers.get("Sec-Fetch-Site") === "cross-site" || (request.headers.has("Origin") && request.headers.get("Origin") !== url.origin)) return error("origin_denied", 403);
     if (!ROUTES.has(path)) return error("not_found", 404);
-    const write = path !== "/api/faucet/status" && path !== "/api/faucet/session";
+    const write = !READS.has(path);
     if (request.method !== (write ? "POST" : "GET")) return error("method_not_allowed", 405);
     if (write && (request.headers.get("Origin") !== url.origin || request.headers.get("Content-Type")?.split(";")[0] !== "application/json")) return error("origin_denied", 403);
     const {serviceToken, ipSalt, turnstileSecret, siteKey} = deps;
@@ -78,6 +84,7 @@ export async function faucetApi(request: Request, deps: FaucetApiDependencies): 
     const service = {token: serviceToken, fetcher: deps.fetcher ?? ((url: string, init?: RequestInit) => fetch(url, init))};
     try {
         if (path === "/api/faucet/status") return await status(url, siteKey, service, deps.cache);
+        if (path === "/api/faucet/eligibility") return await eligibility(request, now, {...service, ipSalt, repo: deps.repo, development: local});
         if (path === "/api/faucet/challenge") return await siweChallenge(request, deps.repo, FAUCET_SITE, now);
         if (path === "/api/faucet/login") return await siweLogin(request, deps.repo, FAUCET_SITE, now, {verify: deps.verify});
         const owner = await siweWalletOwner(request, deps.repo, FAUCET_SITE, now);
@@ -112,6 +119,25 @@ async function status(url: URL, siteKey: string, service: Service, cachePromise?
 }
 
 /**
+ * Whether the wallet the page names meets the ETH rule. Thirty reads per address bucket
+ * per ten minutes, and only a boolean or `eligibility_unavailable` leaves.
+ */
+async function eligibility(request: Request, now: number, deps: Service & {ipSalt: string; repo: ProfileRepository; development: boolean}): Promise<Response> {
+    const wallet = request.headers.get("X-Mapae-Wallet");
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) return refusal("malformed_request", 400);
+    const ip = clientIp(request, deps.development);
+    if (!ip) return refusal("unavailable", 503);
+    const ipKey = await hmac(deps.ipSalt, `ip:${ipBucket(ip)}`);
+    const window = Math.floor(now / TEN_MINUTES), until = (window + 1) * TEN_MINUTES;
+    if (!await deps.repo.rateLimit(`faucet-eligibility-ip:${ipKey}:${window}`, until, 30)) return limited(until, now, refusal("rate_limited", 429));
+    const response = await upstream(deps, `/eligibility/${wallet.toLowerCase()}`, {method: "GET"}, 15_000);
+    const value = await boundedJson(response);
+    if (response.ok) return json(parseFaucetEligibility(value));
+    const unread = response.status === 503 && parseFaucetRefusal(value)?.reason === "eligibility_unavailable";
+    return refusal(unread ? "eligibility_unavailable" : "unavailable", 503);
+}
+
+/**
  * A claim: a per-IP and per-owner D1 limit first (so a flood never reaches Turnstile or
  * the service), then Turnstile bound to this hostname, the claim's kind and the owner,
  * then the service. Only a validated claim view or a refusal from the closed set leaves.
@@ -123,9 +149,7 @@ async function claim(request: Request, owner: string, now: number, deps: Service
         return refusal("malformed_request", 400);
     }
     const kind: FaucetKind = input.kind;
-    // Only Cloudflare's own header is trusted. Without it the request did not cross the edge,
-    // which only a local development server legitimately does.
-    const ip = request.headers.get("CF-Connecting-IP") ?? (deps.development ? "127.0.0.1" : null);
+    const ip = clientIp(request, deps.development);
     if (!ip) return refusal("unavailable", 503);
     const [ipKey, subnetKey] = await Promise.all([hmac(deps.ipSalt, `ip:${ipBucket(ip)}`), hmac(deps.ipSalt, `subnet:${subnetBucket(ip)}`)]);
     const window = Math.floor(now / TEN_MINUTES), until = (window + 1) * TEN_MINUTES;
@@ -144,6 +168,14 @@ async function claim(request: Request, owner: string, now: number, deps: Service
     const refused = parseFaucetRefusal(value);
     if (!refused || ![400, 403, 429, 503].includes(response.status)) return refusal("unavailable", 503);
     return refusal(refused.reason, response.status, refused.nextAt);
+}
+
+/**
+ * Only Cloudflare's own header is trusted. Without it the request did not cross the edge,
+ * which only a local development server legitimately does.
+ */
+function clientIp(request: Request, development: boolean): string | null {
+    return request.headers.get("CF-Connecting-IP") ?? (development ? "127.0.0.1" : null);
 }
 
 /**
