@@ -171,7 +171,7 @@ export function openFaucetStore(path: string) {
 
     /**
      * The checks `reserve` runs, in its order, without writing. The service calls this
-     * first so a wallet on cooldown never costs an eligibility read on another chain.
+     * first so a wallet on cooldown never costs a mission check or a chain read.
      */
     function admission(input: FaucetReserveInput, now: number, limits: FaucetReserveLimits): FaucetAdmission | undefined {
         const existing = inflight.get(input.kind, input.owner);
