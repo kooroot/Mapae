@@ -44,7 +44,7 @@ test("HTTP 200 with unhealthy body is never green; profile data must remain priv
 test("the faucet is green only while both tabs are on and the status is the contract", () => {
     const status = (musdc: boolean, eth: boolean) => ({
         musdc: {enabled: musdc, targetBase: "1000000000", windowMs: 86_400_000, missions: ["x_follow_mapae"]},
-        eth: {enabled: eth, amountWei: "500000000000000", windowMs: 604_800_000, missions: ["x_follow_mapae"], minMainnetNonce: 1},
+        eth: {enabled: eth, amountWei: "500000000000000", windowMs: 604_800_000, missions: ["x_follow_mapae"]},
         siteKey: "0x4AAAAAAA-site",
     });
     expect(validProbe("faucet", Response.json({}), status(true, true))).toBe(true);

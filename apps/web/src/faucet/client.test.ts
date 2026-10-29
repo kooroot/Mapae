@@ -47,7 +47,7 @@ describe("the SIWE message the page agrees to sign", () => {
 
 describe("faucet requests", () => {
     test("status keeps the Turnstile site key and refuses a missing one", async () => {
-        const status = {musdc: {enabled: true, targetBase: "1000000000", windowMs: 86_400_000, missions: ["x_follow_mapae"]}, eth: {enabled: false, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: 604_800_000, missions: [], minMainnetNonce: 1}};
+        const status = {musdc: {enabled: true, targetBase: "1000000000", windowMs: 86_400_000, missions: ["x_follow_mapae"]}, eth: {enabled: false, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: 604_800_000, missions: []}};
         answer(200, {...status, siteKey: "0x4AAAAAAA-test"});
         expect((await readFaucetStatus()).siteKey).toBe("0x4AAAAAAA-test");
         answer(200, status);

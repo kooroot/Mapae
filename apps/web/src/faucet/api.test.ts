@@ -15,7 +15,7 @@ const PAYER = "0x00000000000000000000000000000000000000b2";
 const HASH = `0x${"ab".repeat(32)}`;
 const STATUS = {
     musdc: {enabled: true, targetBase: String(FAUCET_TARGET_BASE), windowMs: FAUCET_WINDOW_MS, missions: ["x_follow_mapae"]},
-    eth: {enabled: false, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: FAUCET_ETH_WINDOW_MS, missions: [], minMainnetNonce: 1},
+    eth: {enabled: false, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: FAUCET_ETH_WINDOW_MS, missions: []},
 };
 
 const dbs: Database[] = [];

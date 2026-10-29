@@ -16,7 +16,7 @@ facilitator.mapae.io 터널의 `^/faucet` 경로 규칙 하나다.
 | --- | --- |
 | 남의 지갑으로 받기 | Worker의 SIWE 세션(faucet.mapae.io 오리진에 묶임). ETH는 그 지갑으로만, tUSDC는 그 지갑의 지불 계정으로만 간다 |
 | 같은 지갑 반복 | 지갑당 창: tUSDC 24시간, ETH 7일. 진행 중인 청구가 있으면 같은 청구를 돌려준다 |
-| 지갑을 바꿔 가며 받기 | ETH는 이더리움 메인넷 거래 기록이 1건 이상 있는 지갑만 — 가짜 지갑마다 실제 가스가 든다. IP(IPv4 주소, IPv6 /64)당 하루 1건, 서브넷(/24, /48)당 3건 |
+| 지갑을 바꿔 가며 받기 | ETH는 IP(IPv4 주소, IPv6 /64)당 하루 1건, 서브넷(/24, /48)당 3건. 한 건이 0.0005라 지갑을 바꿔도 얻는 양이 적고, 하루 wei 상한이 전체를 묶는다. 스마트 계정(컨트랙트 코드가 있는 주소)은 받지 못한다 |
 | 한 기계에서 대량 요청 | Turnstile, Worker의 IP당 10분 10건(D1), tUSDC는 IP당 하루 5건·서브넷 20건 |
 | 지갑 비우기 | ETH 하루 wei 상한(`FAUCET_ETH_DAILY_WEI`), 스테이블코인 민팅 가스용 바닥 잔액(`FAUCET_MIN_BALANCE_WEI`) 아래로는 ETH를 보내지 않음, 이미 충분히 가진 지갑은 건너뜀 |
 | 재시작으로 한도 초기화 | 원장은 SQLite 파일(`STORE_PATH`). 켜진 상태에서 `:memory:`는 기동 거부 |
@@ -43,9 +43,8 @@ faucet 지갑의 가스를 지키는 장치다. ETH가 실제로 노릴 만한 �
 
 | 경로 | 응답 |
 | --- | --- |
-| `GET /faucet/status` | `{musdc:{enabled,targetBase,windowMs,missions}, eth:{enabled,amountWei,windowMs,missions,minMainnetNonce}}`. 잔액은 내보내지 않고, 바닥 잔액 아래면 `enabled`만 끈다 |
+| `GET /faucet/status` | `{musdc:{enabled,targetBase,windowMs,missions}, eth:{enabled,amountWei,windowMs,missions}}`. 잔액은 내보내지 않고, 바닥 잔액 아래면 `enabled`만 끈다 |
 | `GET /faucet/claims/:owner` | `{owner, recipients:{musdc, eth}, musdc: ClaimView\|null, eth: ClaimView\|null}` |
-| `GET /faucet/eligibility/:owner` | `{eligible}`: ETH 규칙(메인넷 거래 기록, 컨트랙트 코드 없음)만 본다. 청구가 아니라 세지 않는다. 읽기 실패는 `{reason:"eligibility_unavailable"}`(503). Worker의 `GET /api/faucet/eligibility`(로그인 없이 `X-Mapae-Wallet`, IP 버킷당 10분 30회)가 이것을 부른다 |
 | `POST /faucet/claims` `{kind, owner, ipKey, subnetKey, missions}` | `200 ClaimView` 또는 `{reason, nextAt?}`(400/403/429/503) |
 | `GET /health` | loopback 전용(터널을 거친 요청은 404). 지갑 주소·잔액·미결 청구 수, `last7Days`(최근 7일 청구 상태별 수, UTC 날짜별 거절 이유 수) |
 
@@ -89,7 +88,6 @@ ETH 청구 여럿이 같은 잔액을 보고 바닥까지 함께 쓰는 일을 �
 | `FAUCET_ETH_MISSIONS` | 비어 있음 | 비어 있으면 ETH 탭 꺼짐 |
 | `FAUCET_ETH_DAILY_WEI` | `50000000000000000` (0.05 ETH = 100건) | ETH 하루 상한 |
 | `FAUCET_MIN_BALANCE_WEI` | `20000000000000000` (0.02 ETH) | 스테이블코인 민팅 가스용 바닥. ETH 탭은 이 아래로 보내지 않는다(측정 수수료로 약 200일치 민팅, ETH 청구 40건 몫) |
-| `ETH_MAINNET_RPC_URL` | `https://ethereum-rpc.publicnode.com` | ETH 자격 읽기 전용, 5초 타임아웃 |
 | `DELEGATION_DEPLOYMENT_PATH` | `../../deployments/giwa-sepolia.framework.json` | 지불 계정 유도용. GIWA Sepolia가 아니면 기동 거부 |
 | `BOOTSTRAP_ADDRESS`, `FACILITATOR_SIGNER_ADDRESS`, `DEPLOYER_ADDRESS`, `REVOCATION_SPONSOR_ADDRESS` | 선택 | 넣으면 faucet 지갑과 같은지 검사해 같으면 기동 거부 |
 
