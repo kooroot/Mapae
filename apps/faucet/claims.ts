@@ -7,10 +7,10 @@
  *
  * 1. The kind is on, and the caller asserts every mission the kind requires.
  * 2. The ledger's admission check (in flight, cooldown, address and subnet buckets, the
- *    daily caps) — so a wallet on cooldown never costs a read on another chain.
- * 3. Verified missions and, for ETH, eligibility: at least one transaction on Ethereum's
- *    main chain, and no contract code at the wallet on GIWA. A read that fails refuses;
- *    a failed read never passes.
+ *    daily caps) — so a wallet on cooldown never costs a network read.
+ * 3. Verified missions and, for ETH, no contract code at the wallet on GIWA (a plain or
+ *    EIP-7702-delegated wallet, never a smart account). A read that fails refuses; a
+ *    failed read never passes.
  * 4. `reserve`: the same checks again, in one SQLite transaction that also records the
  *    claim, so two concurrent requests cannot share the last slot.
  * 5. The recipient's balance. A recipient that already holds enough is `skipped`, which
@@ -27,7 +27,6 @@ import {
     FAUCET_ETH_WINDOW_MS,
     FAUCET_LIMITS,
     FAUCET_LIMIT_WINDOW_MS,
-    FAUCET_MAINNET_MIN_NONCE,
     FAUCET_MISSIONS,
     FAUCET_MUSDC_MISSIONS,
     FAUCET_TARGET_BASE,
@@ -35,7 +34,6 @@ import {
     planTopUp,
     type FaucetAccount,
     type FaucetClaimView,
-    type FaucetEligibility,
     type FaucetKind,
     type FaucetMissionId,
     type FaucetRefusal,
@@ -86,8 +84,6 @@ export interface FaucetChain {
     receipt(hash: Hex): Promise<ReceiptStatus | null>;
     /** Waits up to `timeoutMs`; `null` on timeout. */
     waitForReceipt(hash: Hex, timeoutMs: number): Promise<ReceiptStatus | null>;
-    /** Transactions the wallet has sent on Ethereum's main chain. */
-    mainnetNonce(owner: Address): Promise<number>;
     /** The owner's payer smart account — local CREATE2, no network. */
     payer(owner: Address): Promise<Address>;
 }
@@ -241,7 +237,6 @@ export function createFaucet(deps: {
                 amountWei: String(FAUCET_ETH_AMOUNT_WEI),
                 windowMs: FAUCET_ETH_WINDOW_MS,
                 missions: [...config.ethMissions],
-                minMainnetNonce: FAUCET_MAINNET_MIN_NONCE,
             },
         };
     }
@@ -257,7 +252,7 @@ export function createFaucet(deps: {
         };
     }
 
-    /** Verified missions and ETH eligibility: the reads that cost a network round trip. */
+    /** Verified missions and, for ETH, the wallet's code: the reads that cost a network round trip. */
     async function eligibility(kind: FaucetKind, owner: Address): Promise<ClaimOutcome | undefined> {
         for (const id of missionsOf(kind)) {
             if (FAUCET_MISSIONS[id].kind !== "verified") continue;
@@ -269,28 +264,14 @@ export function createFaucet(deps: {
             }
         }
         if (kind !== "eth") return undefined;
-        let met: boolean;
+        let code: Hex | undefined;
         try {
-            met = await ethRuleMet(owner);
+            code = await chain.code(owner);
         } catch (error) {
             console.warn(`[faucet] eligibility read failed — ${redactForLog(error)}`);
             return refuse("eligibility_unavailable");
         }
-        return met ? undefined : refuse("not_eligible");
-    }
-
-    /** The ETH rule alone: Ethereum main-chain history and no contract code on GIWA. A failed read throws. */
-    async function ethRuleMet(owner: Address): Promise<boolean> {
-        const [sent, code] = await Promise.all([chain.mainnetNonce(owner), chain.code(owner)]);
-        return sent >= FAUCET_MAINNET_MIN_NONCE && (!code || code === "0x" || DELEGATED_EOA.test(code));
-    }
-
-    /**
-     * The same rule, read for the page before it asks for anything. Not a claim: nothing is
-     * counted, and a failed read throws for the route to answer `eligibility_unavailable`.
-     */
-    async function ethEligibility(owner: Address): Promise<FaucetEligibility> {
-        return {eligible: await ethRuleMet(owner)};
+        return !code || code === "0x" || DELEGATED_EOA.test(code) ? undefined : refuse("not_eligible");
     }
 
     async function claim(request: ClaimRequest): Promise<ClaimOutcome> {
@@ -525,7 +506,7 @@ export function createFaucet(deps: {
     /** Claims and refusals since `since`, for the operator's loopback health read. */
     const outcomes = (since: number) => store.outcomes(since);
 
-    return {status, account, ethEligibility, claim, reconcile, outcomes};
+    return {status, account, claim, reconcile, outcomes};
 }
 
 export type Faucet = ReturnType<typeof createFaucet>;

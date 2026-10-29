@@ -12,7 +12,6 @@ import {
     isFaucetMissionId,
     parseFaucetAccount,
     parseFaucetClaimView,
-    parseFaucetEligibility,
     parseFaucetMissionList,
     parseFaucetRefusal,
     parseFaucetStatus,
@@ -58,7 +57,7 @@ describe("faucet.mapae.io contract", () => {
     const HASH = `0x${"ab".repeat(32)}` as const;
     const status = {
         musdc: {enabled: true, targetBase: String(FAUCET_TARGET_BASE), windowMs: FAUCET_WINDOW_MS, missions: ["x_follow_mapae"]},
-        eth: {enabled: false, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: FAUCET_ETH_WINDOW_MS, missions: [], minMainnetNonce: 1},
+        eth: {enabled: false, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: FAUCET_ETH_WINDOW_MS, missions: []},
     };
 
     test("ETH is 0.0005 per claim, once a week; the follow mission links the official account", () => {
@@ -112,12 +111,6 @@ describe("faucet.mapae.io contract", () => {
         expect(parseFaucetAccount(account)).toEqual(account);
         expect(() => parseFaucetAccount({...account, recipients: {musdc: PAYER, eth: OTHER}})).toThrow();
         expect(() => parseFaucetAccount({...account, musdc: {kind: "eth", state: "pending", amount: "0", recipient: ACCOUNT}})).toThrow();
-    });
-
-    test("parseFaucetEligibility keeps exactly one boolean", () => {
-        expect(parseFaucetEligibility({eligible: true})).toEqual({eligible: true});
-        expect(parseFaucetEligibility({eligible: false, owner: PAYER})).toEqual({eligible: false});
-        for (const bad of [{eligible: "true"}, {eligible: 1}, {}, null, [true]]) expect(() => parseFaucetEligibility(bad)).toThrow();
     });
 
     test("parseFaucetRefusal admits only the closed set", () => {

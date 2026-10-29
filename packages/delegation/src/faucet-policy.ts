@@ -53,12 +53,6 @@ export const FAUCET_LIMITS = {
 } as const;
 /** The day the network limits and the daily caps count over. */
 export const FAUCET_LIMIT_WINDOW_MS = FAUCET_WINDOW_MS;
-/**
- * Transactions an ETH claimant's wallet must already have sent on Ethereum's main chain.
- * One is enough to make every sybil wallet cost real gas, which is more than the testnet
- * ETH it would draw is worth.
- */
-export const FAUCET_MAINNET_MIN_NONCE = 1;
 
 /**
  * How the service treats a mission.
@@ -111,7 +105,7 @@ export type FaucetRefusal = (typeof FAUCET_REFUSALS)[number];
 
 export interface FaucetStatus {
     musdc: {enabled: boolean; targetBase: string; windowMs: number; missions: FaucetMissionId[]};
-    eth: {enabled: boolean; amountWei: string; windowMs: number; missions: FaucetMissionId[]; minMainnetNonce: number};
+    eth: {enabled: boolean; amountWei: string; windowMs: number; missions: FaucetMissionId[]};
 }
 
 /**
@@ -137,14 +131,6 @@ export interface FaucetAccount {
     recipients: {musdc: Address; eth: Address};
     musdc: FaucetClaimView | null;
     eth: FaucetClaimView | null;
-}
-
-/**
- * Whether a wallet meets the ETH tab's rule — main-chain history and no contract code —
- * read once it connects, before the page asks for a follow, a signature or a bot check.
- */
-export interface FaucetEligibility {
-    eligible: boolean;
 }
 
 /** A refusal body: the reason, and for `cooldown` when the window opens. */
@@ -177,21 +163,12 @@ export function parseFaucetStatus(input: unknown): FaucetStatus {
     if (typeof musdc.enabled !== "boolean" || !decimal(musdc.targetBase) || !windowLength(musdc.windowMs)) {
         throw new Error("faucet status is malformed");
     }
-    if (
-        typeof eth.enabled !== "boolean" || !decimal(eth.amountWei) || !windowLength(eth.windowMs) ||
-        typeof eth.minMainnetNonce !== "number" || !Number.isSafeInteger(eth.minMainnetNonce) || eth.minMainnetNonce < 0
-    ) {
+    if (typeof eth.enabled !== "boolean" || !decimal(eth.amountWei) || !windowLength(eth.windowMs)) {
         throw new Error("faucet status is malformed");
     }
     return {
         musdc: {enabled: musdc.enabled, targetBase: musdc.targetBase, windowMs: musdc.windowMs, missions: missionList(musdc.missions)},
-        eth: {
-            enabled: eth.enabled,
-            amountWei: eth.amountWei,
-            windowMs: eth.windowMs,
-            missions: missionList(eth.missions),
-            minMainnetNonce: eth.minMainnetNonce,
-        },
+        eth: {enabled: eth.enabled, amountWei: eth.amountWei, windowMs: eth.windowMs, missions: missionList(eth.missions)},
     };
 }
 
@@ -228,11 +205,6 @@ export function parseFaucetAccount(input: unknown): FaucetAccount {
         musdc: input.musdc === null ? null : parseFaucetClaimView(input.musdc, "musdc"),
         eth: input.eth === null ? null : parseFaucetClaimView(input.eth, "eth"),
     };
-}
-
-export function parseFaucetEligibility(input: unknown): FaucetEligibility {
-    if (!record(input) || typeof input.eligible !== "boolean") throw new Error("faucet eligibility is malformed");
-    return {eligible: input.eligible};
 }
 
 /** A refusal body, or `undefined` when the value is not one this contract defines. */

@@ -42,7 +42,6 @@ class FakeChain implements FaucetChain {
     eth = new Map<string, bigint>([[FAUCET.toLowerCase(), ETHER]]);
     token = new Map<string, bigint>();
     codes = new Map<string, Hex>();
-    mainnet = new Map<string, number>();
     mempool = new Map<Hex, FaucetTransaction>();
     receipts = new Map<Hex, ReceiptStatus>();
     mined = 0;
@@ -53,7 +52,7 @@ class FakeChain implements FaucetChain {
     refusedNonces = new Set<number>();
     receiptMode: "instant" | "timeout" = "instant";
     revert = false;
-    failMainnet = false;
+    failCode = false;
     failToken = false;
     signed = new Map<Hex, FaucetTransaction>();
 
@@ -62,7 +61,10 @@ class FakeChain implements FaucetChain {
         if (this.failToken) throw new Error("token read failed");
         return this.token.get(address.toLowerCase()) ?? 0n;
     };
-    code = async (address: Address) => this.codes.get(address.toLowerCase());
+    code = async (address: Address) => {
+        if (this.failCode) throw new Error("code read failed");
+        return this.codes.get(address.toLowerCase());
+    };
     baseFee = async () => this.fee;
     /** Like a node: `pending` counts only the run of queued nonces contiguous with the mined one. */
     nonce = async (_address: Address, tag: "pending" | "latest") => {
@@ -89,10 +91,6 @@ class FakeChain implements FaucetChain {
         return this.receipts.get(hash) ?? null;
     };
     waitForReceipt = async (hash: Hex) => (this.receiptMode === "timeout" ? null : (this.receipts.get(hash) ?? null));
-    mainnetNonce = async (address: Address) => {
-        if (this.failMainnet) throw new Error("mainnet read failed");
-        return this.mainnet.get(address.toLowerCase()) ?? 0;
-    };
     payer = async (address: Address) => payerOf(address);
 
     /** Mine every pending transaction in nonce order, as long as the nonces are contiguous. */
@@ -214,13 +212,8 @@ describe("stablecoin top-up", () => {
 });
 
 describe("ETH claims", () => {
-    function eligible(chain: FakeChain, n: number) {
-        chain.mainnet.set(owner(n).toLowerCase(), 3);
-    }
-
     test("sends the ETH grant to the wallet itself once the missions are done", async () => {
         const {chain, faucet, signs} = setup();
-        eligible(chain, 1);
         expect(await faucet.claim(ethRequest(1))).toMatchObject({
             ok: true,
             view: {kind: "eth", state: "confirmed", amount: String(FAUCET_ETH_AMOUNT_WEI), recipient: owner(1), nextAt: T0 + FAUCET_ETH_WINDOW_MS},
@@ -230,50 +223,29 @@ describe("ETH claims", () => {
     });
 
     test("with no missions configured the ETH tab is off, whatever the caller asserts", async () => {
-        const {chain, faucet} = setup({ethMissions: []});
-        eligible(chain, 1);
+        const {faucet} = setup({ethMissions: []});
         expect(await faucet.claim(ethRequest(1))).toMatchObject({refusal: "faucet_off"});
         expect((await faucet.status()).eth).toMatchObject({enabled: false, missions: []});
         expect((await faucet.status()).musdc.enabled).toBe(true);
     });
 
-    test("a wallet with no main-chain history is not eligible; a failed read never passes", async () => {
+    test("a wallet whose code cannot be read is refused, never paid", async () => {
         const {chain, faucet, signs} = setup();
-        expect(await faucet.claim(ethRequest(1))).toEqual({ok: false, refusal: "not_eligible", status: 403});
-        chain.failMainnet = true;
-        eligible(chain, 1);
+        chain.failCode = true;
         expect(await faucet.claim(ethRequest(1))).toEqual({ok: false, refusal: "eligibility_unavailable", status: 503});
         expect(signs).toHaveLength(0);
     });
 
     test("a contract at the address is refused; an EIP-7702 delegated wallet is not", async () => {
         const {chain, faucet} = setup();
-        eligible(chain, 1);
-        eligible(chain, 2);
         chain.codes.set(owner(1).toLowerCase(), "0x6080604052");
         chain.codes.set(owner(2).toLowerCase(), `0xef0100${"12".repeat(20)}`);
         expect(await faucet.claim(ethRequest(1))).toMatchObject({refusal: "not_eligible"});
         expect(await faucet.claim(ethRequest(2))).toMatchObject({ok: true, view: {state: "confirmed"}});
     });
 
-    test("the eligibility read answers the ETH rule before any claim, and counts nothing", async () => {
-        const {chain, faucet, signs} = setup();
-        expect(await faucet.ethEligibility(owner(1))).toEqual({eligible: false});
-        eligible(chain, 1);
-        expect(await faucet.ethEligibility(owner(1))).toEqual({eligible: true});
-        chain.codes.set(owner(1).toLowerCase(), "0x6080604052");
-        expect(await faucet.ethEligibility(owner(1))).toEqual({eligible: false});
-        chain.codes.set(owner(1).toLowerCase(), `0xef0100${"12".repeat(20)}`);
-        expect(await faucet.ethEligibility(owner(1))).toEqual({eligible: true});
-        chain.failMainnet = true;
-        await expect(faucet.ethEligibility(owner(1))).rejects.toThrow(/mainnet read failed/);
-        expect(faucet.outcomes(0)).toEqual({claims: [], refusals: []});
-        expect(signs).toHaveLength(0);
-    });
-
     test("a wallet that already holds the ETH grant is skipped", async () => {
         const {chain, faucet, signs} = setup();
-        eligible(chain, 1);
         chain.eth.set(owner(1).toLowerCase(), FAUCET_ETH_AMOUNT_WEI);
         expect(await faucet.claim(ethRequest(1))).toMatchObject({ok: true, view: {state: "already_enough", amount: "0"}});
         expect(signs).toHaveLength(0);
@@ -281,7 +253,6 @@ describe("ETH claims", () => {
 
     test("a week-long window per wallet", async () => {
         const {chain, faucet, tick} = setup();
-        eligible(chain, 1);
         await faucet.claim(ethRequest(1));
         chain.eth.set(owner(1).toLowerCase(), 0n);
         tick(FAUCET_ETH_WINDOW_MS - 1);
@@ -291,8 +262,7 @@ describe("ETH claims", () => {
     });
 
     test("one claim per address bucket and three per subnet a day stop a single-machine farm", async () => {
-        const {chain, faucet} = setup();
-        for (let n = 1; n <= 9; n += 1) eligible(chain, n);
+        const {faucet} = setup();
         expect(await faucet.claim(ethRequest(1))).toMatchObject({ok: true});
         expect(await faucet.claim(ethRequest(2, {ipKey: key(1)}))).toMatchObject({refusal: "rate_limited"});
         // Rotating addresses inside one /24: two more, then the subnet is full.
@@ -303,8 +273,7 @@ describe("ETH claims", () => {
     });
 
     test("the daily wei cap is a hard bound across every network", async () => {
-        const {chain, faucet} = setup({ethDailyWei: 2n * FAUCET_ETH_AMOUNT_WEI});
-        for (let n = 1; n <= 3; n += 1) eligible(chain, n);
+        const {faucet} = setup({ethDailyWei: 2n * FAUCET_ETH_AMOUNT_WEI});
         expect(await faucet.claim(ethRequest(1))).toMatchObject({ok: true});
         expect(await faucet.claim(ethRequest(2))).toMatchObject({ok: true});
         expect(await faucet.claim(ethRequest(3))).toEqual({ok: false, refusal: "budget_exhausted", status: 503});
@@ -312,7 +281,6 @@ describe("ETH claims", () => {
 
     test("the ETH tab never spends the floor kept for mint gas; the stablecoin still can", async () => {
         const {chain, faucet} = setup();
-        eligible(chain, 1);
         chain.eth.set(FAUCET.toLowerCase(), 2n * 10n ** 16n + FAUCET_ETH_AMOUNT_WEI);
         expect(await faucet.claim(ethRequest(1))).toEqual({ok: false, refusal: "faucet_empty", status: 503});
         expect(await faucet.claim(request())).toMatchObject({ok: true, view: {state: "confirmed"}});
@@ -323,7 +291,6 @@ describe("ETH claims", () => {
 
     test("an empty-handed refusal leaves no window, so the wallet can claim once refilled", async () => {
         const {chain, faucet, tick} = setup();
-        eligible(chain, 1);
         chain.eth.set(FAUCET.toLowerCase(), 0n);
         expect(await faucet.claim(ethRequest(1))).toMatchObject({refusal: "faucet_empty"});
         chain.eth.set(FAUCET.toLowerCase(), ETHER);
@@ -474,8 +441,6 @@ describe("broadcast and recovery", () => {
     test("concurrent ETH claims count each other's unmined grants against the floor", async () => {
         const {chain, faucet, signs} = setup();
         chain.receiptMode = "timeout";
-        chain.mainnet.set(owner(1).toLowerCase(), 1);
-        chain.mainnet.set(owner(2).toLowerCase(), 1);
         // Enough for one grant above the floor, not two.
         chain.eth.set(FAUCET.toLowerCase(), 2n * 10n ** 16n + FAUCET_ETH_AMOUNT_WEI + 10n ** 14n);
         const outcomes = await Promise.all([faucet.claim(ethRequest(1)), faucet.claim(ethRequest(2))]);
@@ -517,6 +482,7 @@ describe("refusal counts", () => {
     test("every refusal is counted by reason and logged once; a claim that pays is not", async () => {
         const {chain, faucet, tick, at} = setup();
         const log = spyOn(console, "log").mockImplementation(() => {});
+        chain.codes.set(owner(1).toLowerCase(), "0x6080604052");
         try {
             expect(await faucet.claim(ethRequest(1))).toMatchObject({refusal: "not_eligible"});
             expect(await faucet.claim(ethRequest(1))).toMatchObject({refusal: "not_eligible"});
@@ -526,7 +492,7 @@ describe("refusal counts", () => {
                 `[faucet] eth refused not_eligible owner=${owner(1).toLowerCase()}`,
                 `[faucet] musdc refused mission_incomplete owner=${owner(1).toLowerCase()}`,
             ]);
-            chain.mainnet.set(owner(1).toLowerCase(), 1);
+            chain.codes.delete(owner(1).toLowerCase());
             tick(1_000);
             expect(await faucet.claim(ethRequest(1))).toMatchObject({ok: true, view: {state: "confirmed"}});
             const day = new Date(T0).toISOString().slice(0, 10);
@@ -539,7 +505,8 @@ describe("refusal counts", () => {
     });
 
     test("a count that cannot be written still answers the refusal", async () => {
-        const {store, faucet} = setup();
+        const {chain, store, faucet} = setup();
+        chain.codes.set(owner(1).toLowerCase(), "0x6080604052");
         const log = spyOn(console, "log").mockImplementation(() => {}), warn = spyOn(console, "warn").mockImplementation(() => {});
         const write = spyOn(store, "countRefusal").mockImplementation(() => {throw new Error("disk full");});
         try {
@@ -555,7 +522,7 @@ describe("status and account", () => {
         const status = await faucet.status();
         expect(status).toEqual({
             musdc: {enabled: true, targetBase: String(FAUCET_TARGET_BASE), windowMs: FAUCET_WINDOW_MS, missions: ["x_follow_mapae"]},
-            eth: {enabled: true, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: FAUCET_ETH_WINDOW_MS, missions: ["x_follow_mapae"], minMainnetNonce: 1},
+            eth: {enabled: true, amountWei: String(FAUCET_ETH_AMOUNT_WEI), windowMs: FAUCET_ETH_WINDOW_MS, missions: ["x_follow_mapae"]},
         });
         expect(JSON.stringify(status)).not.toContain(String(ETHER));
     });

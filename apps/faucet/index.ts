@@ -16,7 +16,6 @@ import {
     WaitForTransactionReceiptTimeoutError,
     createPublicClient,
     getAddress,
-    http,
     isAddress,
     parseAbi,
     zeroAddress,
@@ -24,7 +23,6 @@ import {
     type Hex,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
-import {mainnet} from "viem/chains";
 import {
     bearerMatches,
     createFaucet,
@@ -50,7 +48,6 @@ const MAX_BODY_BYTES = 4_096;
 const RECONCILE_INTERVAL_MS = 15_000;
 /** How far back `/health` reports claims by state and refusals by reason. */
 const OUTCOME_WINDOW_MS = 7 * 86_400_000;
-const DEFAULT_MAINNET_RPC = "https://ethereum-rpc.publicnode.com";
 
 function readPort(): number {
     const value = Number(process.env.PORT ?? 8084);
@@ -100,7 +97,6 @@ const ENABLED = readSwitch("FAUCET_ENABLED");
 const TOKEN = process.env.FAUCET_SERVICE_TOKEN?.trim() ?? "";
 if (TOKEN.length < 32) throw new Error("FAUCET_SERVICE_TOKEN must be at least 32 characters; the Worker sends the same value");
 const RPC_URL = parseNodeRpcUrl(process.env.GIWA_SEPOLIA_RPC_URL?.trim() || giwaSepolia.rpcUrls.default.http[0]);
-const MAINNET_RPC_URL = parseNodeRpcUrl(process.env.ETH_MAINNET_RPC_URL?.trim() || DEFAULT_MAINNET_RPC);
 const ETH_MISSIONS = parseFaucetMissionList(process.env.FAUCET_ETH_MISSIONS);
 const ETH_DAILY_WEI = readPositiveInteger("FAUCET_ETH_DAILY_WEI", 50_000_000_000_000_000n);
 const MIN_BALANCE_WEI = readPositiveInteger("FAUCET_MIN_BALANCE_WEI", 20_000_000_000_000_000n);
@@ -130,7 +126,6 @@ const deployment = parseActiveDeploymentArtifactJson(await deploymentFile.text()
 if (deployment.chainId !== giwaSepolia.id) throw new Error("the faucet runs on GIWA Sepolia only");
 
 const giwa = createPublicClient({chain: giwaSepolia, transport: throttledHttp(RPC_URL)});
-const ethereum = createPublicClient({chain: mainnet, transport: http(MAINNET_RPC_URL, {timeout: 5_000, retryCount: 1})});
 
 /**
  * A node that answers the broadcast with a JSON-RPC error did not take it; one that
@@ -175,7 +170,6 @@ const chain: FaucetChain = {
             throw error;
         }
     },
-    mainnetNonce: (owner) => ethereum.getTransactionCount({address: owner, blockTag: "latest"}),
     payer: async (owner) => (await ownerPayerAccount(deployment.environment, owner)).address,
 };
 
@@ -252,17 +246,6 @@ app.get("/faucet/claims/:owner", async (c) => {
     const owner = c.req.param("owner");
     if (!/^0x[0-9a-fA-F]{40}$/.test(owner)) return c.json({reason: "malformed_request"}, 400);
     return c.json(await faucet.account(getAddress(owner)));
-});
-
-app.get("/faucet/eligibility/:owner", async (c) => {
-    const owner = c.req.param("owner");
-    if (!/^0x[0-9a-fA-F]{40}$/.test(owner)) return c.json({reason: "malformed_request"}, 400);
-    try {
-        return c.json(await faucet.ethEligibility(getAddress(owner)));
-    } catch (error) {
-        console.warn(`[faucet] eligibility read failed — ${redactForLog(error)}`);
-        return c.json({reason: "eligibility_unavailable"}, 503);
-    }
 });
 
 app.post("/faucet/claims", async (c) => {
