@@ -4,22 +4,24 @@ import "../styles/landing.css";
 import "../styles/hero.css";
 import "../styles/home.css";
 import {MOCK_USDC} from "@mapae/shared";
-import type {ReactNode} from "react";
+import {useEffect, type ReactNode} from "react";
 import {InterfaceIcon, type InterfaceIconName} from "../brand/marks";
 import {Footer, Nav} from "../components/Shell";
 import {Reveal} from "../components/Reveal";
+import {trackEngagement} from "../arcade/engagement/client";
 import {Dial} from "./Dial";
 import {ArcadeInvitation} from "./ArcadeInvitation";
 import {
     appUrl,
     docsUrl,
     explorerTxUrl,
+    faucetUrl,
     refusalsFor,
     sellerGuideUrl,
     settlements,
 } from "../lib/config";
 import {short} from "../lib/dial";
-import {localizeUrl, type Locale} from "../lib/i18n";
+import {localizePath, localizeUrl, type Locale} from "../lib/i18n";
 import {useLocale} from "../lib/locale";
 
 const COPY: Record<
@@ -34,6 +36,13 @@ const COPY: Record<
             sub: string;
             openStudio: string;
             sellerGuide: string;
+        };
+        play: {
+            kicker: string;
+            title: string;
+            body: string;
+            play: string;
+            faucet: string;
         };
         authority: {
             titleA: string;
@@ -84,10 +93,17 @@ const COPY: Record<
             metaLead: "MAPAE · GIWA",
             metaTail: "LIMIT THE AUTHORITY · LET THE AGENT ACT",
             titleLine1: "Accept x402 on GIWA in one line.",
-            titleLine2: "No server? One form.",
-            sub: `Add agent payments with one line of code or a shop payment URL. Try it with ${MOCK_USDC.symbol} on GIWA Sepolia — test tokens, not real money.`,
+            titleLine2: "Agents pay only within your limits.",
+            sub: `Add agent payments with one line of Hono middleware. Try it with ${MOCK_USDC.symbol} on GIWA Sepolia — test tokens, not real money.`,
             openStudio: "Open Studio",
             sellerGuide: "Seller guide",
+        },
+        play: {
+            kicker: "MAPAE ARCADE · FREE",
+            title: "Play a round first. No wallet needed.",
+            body: "Race, haggle and stamp right in the browser. When you want a guardian of your own, get free test tokens from the faucet.",
+            play: "Play free",
+            faucet: "Get test tokens",
         },
         authority: {
             titleA: "What an agent needs",
@@ -138,10 +154,17 @@ const COPY: Record<
             metaLead: "마패 · GIWA",
             metaTail: "권한은 좁게 · 행동은 에이전트에게",
             titleLine1: "GIWA에서 x402를 한 줄로 받으세요.",
-            titleLine2: "서버가 없다면 폼 하나로.",
-            sub: `코드 한 줄 또는 가게 결제 URL로 에이전트 결제를 시작하세요. GIWA Sepolia의 ${MOCK_USDC.symbol} 테스트 토큰을 사용합니다.`,
+            titleLine2: "에이전트는 정한 한도 안에서만 결제합니다.",
+            sub: `Hono 미들웨어 한 줄로 에이전트 결제를 시작하세요. GIWA Sepolia의 ${MOCK_USDC.symbol} 테스트 토큰을 사용합니다.`,
             openStudio: "Studio 열기",
             sellerGuide: "셀러 가이드",
+        },
+        play: {
+            kicker: "마패 오락실 · 무료",
+            title: "지갑 없이 한 판 먼저 해 보세요.",
+            body: "경주·흥정·도장찍기를 브라우저에서 바로 즐겨요. 나만의 전령이 갖고 싶어지면 faucet에서 무료 테스트 토큰을 받으세요.",
+            play: "무료로 한 판",
+            faucet: "테스트 토큰 받기",
         },
         authority: {
             titleA: "에이전트에게 필요한 건",
@@ -325,11 +348,14 @@ const FLOW: Record<Locale, Array<{icon: InterfaceIconName; title: string; body: 
 };
 
 export function Landing() {
+    const {locale} = useLocale();
+    useEffect(() => {trackEngagement({event: "landing_viewed", locale});}, []);
     return (
         <>
             <Nav />
             <main className="home">
                 <Hero />
+                <PlayFree />
                 <StandardRail />
                 <Authority />
                 <Mandate />
@@ -378,6 +404,42 @@ function Hero() {
                     <span>{t.metaTail}</span>
                 </div>
                 <Dial />
+            </div>
+        </section>
+    );
+}
+
+/*
+ * The in-flow way into the arcade. The floating invitation docks to a tab on
+ * narrow screens, so the page itself has to offer the free round. The faucet
+ * keeps the referrer it reads, so this link carries no `noreferrer`.
+ */
+function PlayFree() {
+    const {locale} = useLocale();
+    const t = COPY[locale].play;
+    return (
+        <section className="home-play" aria-labelledby="home-play-title">
+            <div className="home-wrap home-play-grid">
+                <div className="home-play-copy">
+                    <span className="home-kicker">{t.kicker}</span>
+                    <h2 id="home-play-title">{t.title}</h2>
+                    <p>{t.body}</p>
+                </div>
+                <div className="home-actions home-play-actions">
+                    <a href={localizePath("/arcade", locale)} className="home-button home-button-primary">
+                        {t.play}
+                        <span aria-hidden="true">↗</span>
+                    </a>
+                    <a
+                        className="home-button home-button-secondary"
+                        href={localizeUrl(`${faucetUrl}?ref=landing`, locale)}
+                        target="_blank"
+                        rel="noopener"
+                    >
+                        {t.faucet}
+                        <span aria-hidden="true">↗</span>
+                    </a>
+                </div>
             </div>
         </section>
     );

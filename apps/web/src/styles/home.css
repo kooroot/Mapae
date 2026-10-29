@@ -179,6 +179,51 @@ body:has(.home) {
     background: rgba(240, 184, 146, 0.06);
 }
 
+/* ── Free round ───────────────────────────────────────────────────────── */
+
+/* One quiet row in normal flow after the hero's scroll stage releases: a way in
+   for visitors who came to play, set smaller than the section titles so the
+   payment argument still leads. */
+.home-play {
+    border-top: 1px solid rgba(241, 237, 229, 0.1);
+    background:
+        radial-gradient(circle at 6% 50%, rgba(225, 101, 68, 0.08), transparent 32%),
+        #050505;
+}
+
+.home-play-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 56px;
+    padding-block: 60px;
+}
+
+.home-play-copy h2 {
+    margin-top: 14px;
+    color: #f4f1eb;
+    font-family: var(--sans);
+    font-size: clamp(26px, 2.5vw, 34px);
+    font-weight: 480;
+    letter-spacing: -0.035em;
+    line-height: 1.18;
+    text-wrap: balance;
+    word-break: keep-all;
+}
+
+.home-play-copy p {
+    max-width: 60ch;
+    margin-top: 12px;
+    color: var(--on-obsidian-dim);
+    font-size: 15px;
+    line-height: 1.7;
+    word-break: keep-all;
+}
+
+.home-play-actions {
+    margin-top: 0;
+}
+
 /* ── Open rails ───────────────────────────────────────────────────────── */
 
 .home-standard-rail {
@@ -924,6 +969,10 @@ body:has(.home) {
         padding-block: 120px;
     }
 
+    .home-play-grid {
+        gap: 32px;
+    }
+
     .home-standard-grid {
         grid-template-columns: 1.1fr repeat(4, 1fr);
     }
@@ -1011,6 +1060,33 @@ body:has(.home) {
         height: 46px;
         padding-inline: 18px;
         font-size: 13px;
+    }
+
+    .home-play-grid {
+        grid-template-columns: 1fr;
+        gap: 26px;
+        padding-block: 52px;
+    }
+
+    .home-play-copy h2 {
+        margin-top: 12px;
+        font-size: clamp(24px, 6.6vw, 28px);
+    }
+
+    .home-play-copy p {
+        font-size: 14px;
+    }
+
+    /* Two equal buttons across the row, stacking only where both labels no longer fit.
+       The grid gap already spaces them from the copy, so the mobile action margin goes. */
+    .home-play-actions {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        margin-top: 0;
+    }
+
+    .home-play-actions .home-button {
+        flex: 1 1 140px;
     }
 
     .home-standard-grid {
@@ -1252,6 +1328,26 @@ body:has(.home) {
         gap: 7px;
     }
 
+}
+
+/* Short phones, which include in-app browsers opened from a post: the hero's
+   two-line promise would otherwise push its buttons onto the pass below. */
+@media (max-width: 767px) and (max-height: 760px) {
+    .home-hero-copy {
+        top: 4%;
+    }
+
+    .home-hero-copy h1 {
+        font-size: 28px;
+    }
+
+    .home-hero-copy p {
+        margin-top: 12px;
+    }
+
+    .home-hero-copy .home-actions {
+        margin-top: 14px;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
