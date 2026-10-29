@@ -33,10 +33,14 @@ function fixtures(empty=false){
         event('private-browser-a','2026-10-10','profile_authenticated',owner,'server_authenticated');
         event('private-browser-a','2026-10-10','operator_action',owner);
         event('private-browser-a','2026-10-11','operator_action',owner);
-        event('private-browser-a','2026-10-17','operator_action',owner);
-        event('private-browser-a','2026-10-18','operator_action',owner);
-        event('private-browser-b','2026-10-19','arcade_entered');
-        event('private-browser-c','2026-10-10','arcade_entered');
+        event('private-browser-a','2026-10-17','mint_started',owner);
+        event('private-browser-a','2026-10-18','outing_started',owner);
+        event('private-browser-b','2026-10-19','guardian_cta');
+        event('private-browser-c','2026-10-10','landing_viewed');
+        event('private-browser-c','2026-10-10','guardian_cta');
+        // Arriving again is not returning: a page arrival alone never counts as retention.
+        event('private-browser-c','2026-10-11','arcade_entered');
+        for(const [visitor,source] of [['private-browser-a','x'],['private-browser-c','telegram']])e.query('INSERT INTO arcade_engagement_sources VALUES(?,?)').run(visitor!,source!);
         for(const [actor,tx] of [[owner,hash],[bot,second]]){
             s.query('INSERT INTO arcade_guardian_results VALUES(?,?,?)').run(actor!,at('2026-10-18'),tx!);
             s.query('INSERT INTO orders VALUES(?,?,?,?,?,?)').run('mapae-arcade','paid',tx!,payer,'1000000',at('2026-10-18'));
@@ -70,6 +74,12 @@ describe('truthful aggregate adoption report',()=>{
         expect(report.engagement?.matureRetention.d1).toMatchObject({eligible:2,returned:1,rate:0.5,immatureVisitors:1});
         expect(report.engagement?.matureRetention.d7).toMatchObject({eligible:2,returned:1,rate:0.5,immatureVisitors:1});
         expect(report.repeatOperatorsLast7Days).toBe(1);expect(report.complete).toBe(false);
+        expect(report.engagement?.daily.find(d=>d.day==='2026-10-11')).toMatchObject({browser_visitors:2,browser_dau:1});
+        expect(report.engagement?.funnel.bySource).toEqual([
+            {source:'telegram',landing:1,arcade:1,practiced:0,connected:0,mint_started:0,outing_started:0,faucet_opened:0,faucet_musdc:0,faucet_eth:0},
+            {source:'unknown',landing:0,arcade:0,practiced:0,connected:0,mint_started:0,outing_started:0,faucet_opened:0,faucet_musdc:0,faucet_eth:0},
+            {source:'x',landing:0,arcade:0,practiced:1,connected:1,mint_started:1,outing_started:1,faucet_opened:0,faucet_musdc:0,faucet_eth:0},
+        ]);
         const output=JSON.stringify(report);for(const secret of [owner,bot,payer,hash,'private-browser-a','private-session','practice-run-1',f.engagementDb])expect(output).not.toContain(secret);
         expect(readFileSync(f.engagementDb)).toEqual(beforeE);expect(readFileSync(f.sellerDb)).toEqual(beforeS);
     });
@@ -103,7 +113,7 @@ describe('safe data-only D1 export import',()=>{
     const quote=(v:unknown)=>v===null?'NULL':typeof v==='number'?String(v):"'"+String(v).replaceAll("'","''")+"'";
     function exportSql(path:string){
         const db=new Database(path,{readonly:true});
-        try{return 'PRAGMA defer_foreign_keys=TRUE;\n'+['arcade_engagement_visitors','arcade_engagement_events','arcade_engagement_daily'].flatMap(table=>
+        try{return 'PRAGMA defer_foreign_keys=TRUE;\n'+['arcade_engagement_visitors','arcade_engagement_events','arcade_engagement_daily','arcade_engagement_sources'].flatMap(table=>
             db.query(`SELECT * FROM ${table}`).all().map(row=>`INSERT INTO "${table}" VALUES(${Object.values(row as object).map(quote).join(',')});`)).join('\n');}
         finally{db.close();}
     }

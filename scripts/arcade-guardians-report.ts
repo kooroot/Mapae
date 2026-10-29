@@ -15,6 +15,7 @@ const TABLES:Record<string,readonly string[]>={
     arcade_engagement_visitors:['hash','first_at','expires_at','last_at','session','session_at'],
     arcade_engagement_events:['id','visitor','session','owner','event','game','run_id','result','locale','at','day','trust'],
     arcade_engagement_daily:['day','event','trust','count'],
+    arcade_engagement_sources:['visitor','source'],
 };
 const failure=(code:string)=>new Error(code);
 type Coverage={status:'available'|'missing'|'invalid';reason:string|null};
@@ -127,7 +128,7 @@ async function engagement(options:ReportOptions,now:number,since:string,today:st
             return {...rate(mature.reduce((n,r)=>n+(r[name].returned??0),0),mature.reduce((n,r)=>n+r.visitors,0)),immatureVisitors:rows.filter(r=>!r[name].mature).reduce((n,r)=>n+r.visitors,0)};
         };
         const operators=db.query<OwnerDay,[string,string]>(`SELECT DISTINCT lower(owner) AS owner,day FROM arcade_engagement_events
-            WHERE owner IS NOT NULL AND event='operator_action' AND trust='client_reported' AND day>=? AND day<=?`).all(seoulDay(now-6*DAY_MS),today);
+            WHERE owner IS NOT NULL AND event IN ('operator_action','mint_started','outing_started') AND trust='client_reported' AND day>=? AND day<=?`).all(seoulDay(now-6*DAY_MS),today);
         return {coverage:{status:'available',reason:null} as Coverage,report:{...report,daily,cohorts:rows,matureRetention:{d1:retention('d1'),d7:retention('d7')},
             sourceCoverage:{rawRetentionDays:35,completeLookbackDays:28,snapshotCutoff:new Date(now).toISOString(),latestObservedEventAt:max===null?null:new Date(max).toISOString(),cutoffDeclaredByOperator:true},
             caveats:['Browser IDs and wallets do not identify unique people.','A supplied snapshot must cover the declared cutoff; inactivity alone cannot prove collection uptime.']},operators};

@@ -21,11 +21,13 @@
 
 | 보고 필드 | 집계와 해석 |
 | --- | --- |
-| `engagement.daily[].browser_dau` | 의도적인 화면 상호작용을 보고한 고유 1차 브라우저 ID. 클라이언트 보고이므로 실제 사람 수를 보장하지 않는다. |
+| `engagement.daily[].browser_visitors` | 무엇이든 보고한 고유 1차 브라우저 ID. 랜딩·오락실·faucet 도착만 한 브라우저도 들어간다. |
+| `engagement.daily[].browser_dau` | 의도적인 화면 상호작용을 보고한 고유 1차 브라우저 ID. 페이지 도착(`landing_viewed`·`arcade_entered`·`faucet_opened`)은 상호작용이 아니다. 클라이언트 보고이므로 실제 사람 수를 보장하지 않는다. |
 | `engagement.daily[].owner_dau` | 인증된 세션에서 사람의 화면 조작 또는 전면 SIWE 로그인을 기록한 지갑 수. 백그라운드 에이전트 실행과 폴링은 제외한다. 여러 지갑을 가진 사람은 중복될 수 있다. |
-| `engagement.matureRetention.d1/d7` | 최초 관측일 코호트의 정확히 다음 날/7일 뒤 재방문. Asia/Seoul 기준 목표 날짜 전체가 끝나야 분모에 넣는다. 분모가 없으면 `rate:null`이며, 미성숙 코호트는 `immatureVisitors`로 따로 나온다. |
+| `engagement.matureRetention.d1/d7` | 최초 관측일에 의도적 상호작용이 있었던 브라우저 코호트가 정확히 다음 날/7일 뒤 다시 상호작용한 비율. 페이지 도착만으로는 코호트에도 재방문에도 들지 않는다. Asia/Seoul 기준 목표 날짜 전체가 끝나야 분모에 넣는다. 분모가 없으면 `rate:null`이며, 미성숙 코호트는 `immatureVisitors`로 따로 나온다. |
+| `engagement.funnel.bySource[]` | 28일 동안 단계별 고유 브라우저 수를 처음 들어온 출처별로 나눈 표. 출처는 `?ref=`(x·telegram·discord·kakao·giwa·share·landing·arcade)가 먼저이고, 없으면 들어온 사이트, 둘 다 없으면 `direct`다. `internal`은 다른 mapae.io 페이지, `other`는 모르는 값, `unknown`은 출처 기록 전에 처음 본 브라우저다. 단계는 랜딩 도착·오락실 도착·무료 게임 완료·지갑 로그인·전령 뽑기 시작·외출 시작·faucet 도착·mUSDC 수령·ETH 수령이다. 뽑기·외출 시작은 클릭이지 확정 거래가 아니다. mapae.io와 faucet.mapae.io는 브라우저 ID가 따로라 faucet 단계는 다른 모집단이다. 단계는 포함 관계가 아니며, 출처별 수는 인과효과를 뜻하지 않는다. `funnel.total`은 출처를 합친 값이다. |
 | `autonomous.daily[].autonomousOwnerWallets` | seller의 영구 결과 원장에 완료된 유료 입장이 있는 NFT 당시 소유자 수. 사람이 그날 접속했다는 의미가 아니다. |
-| `repeatOperatorsLast7Days` | 최근 7개 서울 날짜 중 서로 다른 2일 이상 인증된 `operator_action`이 있고, 같은 기간 검증된 유료 외출 결과도 있는 지갑 수. 사람·NFT·거래 수와 분리한다. |
+| `repeatOperatorsLast7Days` | 최근 7개 서울 날짜 중 서로 다른 2일 이상 인증된 운영 조작(`operator_action`·`mint_started`·`outing_started`)이 있고, 같은 기간 검증된 유료 외출 결과도 있는 지갑 수. 사람·NFT·거래 수와 분리한다. |
 | `autonomous.sellerReportedPaidTransactions` | 해당 기간 seller의 모든 Arcade 결제 원장에서 중복 해시를 합친 수. NFT 외출만을 뜻하지 않는다. 블록체인 safe 확인 전 원장 증거다. |
 | `autonomous.paidTransactionsWithoutCompletedResult` | 기간 내 paid 거래 중 같은 기간 NFT 외출 완료 결과가 없는 수. 일반 Arcade 결제나 기간 경계도 포함되므로 모두 장애라고 해석하지 않는다. |
 | `chain.completeCounts` | 요청한 컬렉션 블록 구간과 제공한 결제 원장을 끝까지 확인했을 때만 제공하는 safe·정규 체인 집계. 불완전하면 `null`이다. |
@@ -41,13 +43,13 @@
 
 Bun과 기존 저장소 의존성을 사용한다. 별도 패키지나 서버 API가 필요하지 않다. D1 내보내기는 로그인된 Wrangler가 있는 운영 환경에서 실행하며 운영 DB를 변경하지 않는다. 아래 절대 경로를 개인용 작업 디렉터리로 바꾼다. 원본에는 가명 브라우저 ID와 지갑이 있으므로 공유하지 않는다. JSON 보고서에는 지갑·브라우저·세션·토큰·거래 식별자를 출력하지 않는다.
 
-1. `umask 077`을 설정하고 빈 개인용 디렉터리를 만든다. 저장소 루트에서 다음과 같이 세 테이블의 데이터만 내보낸다. 두 Worker가 같은 D1을 쓰므로 한 번만 추출한다.
+1. `umask 077`을 설정하고 빈 개인용 디렉터리를 만든다. 저장소 루트에서 다음과 같이 네 테이블의 데이터만 내보낸다. 세 Worker가 같은 D1을 쓰므로 한 번만 추출한다.
 
    ```sh
    umask 077
    mkdir -p /absolute/private/guardian-pilot
    cd apps/web
-   bun --no-env-file x wrangler d1 export ARCADE_DB --env landing --remote --no-schema --table arcade_engagement_visitors --table arcade_engagement_events --table arcade_engagement_daily --output /absolute/private/guardian-pilot/engagement.sql
+   bun --no-env-file x wrangler d1 export ARCADE_DB --env landing --remote --no-schema --table arcade_engagement_visitors --table arcade_engagement_events --table arcade_engagement_daily --table arcade_engagement_sources --output /absolute/private/guardian-pilot/engagement.sql
    cd ../..
    ```
 
