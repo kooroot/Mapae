@@ -332,7 +332,7 @@ describe("claim", () => {
         const signed = await login(repository, net.fetcher);
         owner = signed.owner;
         const counted: string[] = [];
-        const onClaimed = async (_r: Request, who: string, kind: string) => {counted.push(`${who}:${kind}`);};
+        const onClaimed = (_r: Request, who: string, kind: string) => {counted.push(`${who}:${kind}`);};
         expect((await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed}))).status).toBe(200);
         state = "already_enough";
         expect((await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed}))).status).toBe(200);
@@ -340,7 +340,7 @@ describe("claim", () => {
         expect((await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed}))).status).toBe(200);
         expect(counted).toEqual([`${owner}:eth`, `${owner}:eth`]);
         state = "confirmed";
-        const broken = await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed: async () => {throw new Error("d1 down");}}));
+        const broken = await faucetApi(request("/claim", "POST", claimBody("eth"), signed.headers), deps(repository, net.fetcher, {onClaimed: () => {throw new Error("d1 down");}}));
         expect(broken.status).toBe(200);
         expect(await broken.json<unknown>()).toEqual(view(owner, "eth"));
     });

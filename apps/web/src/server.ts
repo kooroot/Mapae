@@ -1,4 +1,4 @@
-import {env} from "cloudflare:workers";
+import {env, waitUntil} from "cloudflare:workers";
 import {outingsApi} from "./arcade/profile/outings";
 import {profileApi, profileSessionOwner} from "./arcade/profile/api";
 import {profileRepository} from "./arcade/profile/repository";
@@ -65,7 +65,8 @@ const entry = createServerEntry({fetch: (request, options) => {
     if (path.startsWith("/api/faucet/")) return faucetApi(request, {
         repo: profileRepository(env.ARCADE_DB), development: import.meta.env.DEV, cache: caches.open("mapae-faucet"),
         serviceToken: env.FAUCET_SERVICE_TOKEN, ipSalt: env.FAUCET_IP_SALT, turnstileSecret: env.TURNSTILE_SECRET_KEY, siteKey: env.TURNSTILE_SITE_KEY,
-        onClaimed: (r, owner, kind, now) => recordAuthenticatedEngagement(r, engagementRepository(env.ARCADE_DB), owner, kind === "eth" ? "faucet_eth_claimed" : "faucet_musdc_claimed", now),
+        // After the answer: the tokens are already on their way, and a slow database must not hold the reply past the page's timeout.
+        onClaimed: (r, owner, kind, now) => waitUntil(recordAuthenticatedEngagement(r, engagementRepository(env.ARCADE_DB), owner, kind === "eth" ? "faucet_eth_claimed" : "faucet_musdc_claimed", now).catch(() => undefined)),
     });
     if (path.startsWith("/api/arcade/profile")) {
         const profiles = profileRepository(env.ARCADE_DB);

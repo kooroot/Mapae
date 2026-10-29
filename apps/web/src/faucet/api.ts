@@ -51,8 +51,8 @@ export type FaucetApiDependencies = {
     cache?: Promise<Cache>;
     development?: boolean;
     verify?: SiweVerifier;
-    /** Told of every claim the service accepted (not `failed`). Counting only: a failure here never changes the answer. */
-    onClaimed?: (request: Request, owner: string, kind: FaucetKind, now: number) => Promise<void>;
+    /** Told of every claim the service accepted (not `failed`). Counting only: it is never awaited and never changes the answer. */
+    onClaimed?: (request: Request, owner: string, kind: FaucetKind, now: number) => void;
     now?: number;
 };
 
@@ -144,7 +144,7 @@ async function claim(request: Request, owner: string, now: number, deps: Service
     const value = await boundedJson(response);
     if (response.ok) {
         const view = parseFaucetClaimView(value, kind);
-        if (view.state !== "failed") try {await deps.onClaimed?.(request, owner, kind, now);} catch { /* Measurement never blocks a claim. */ }
+        if (view.state !== "failed") try {deps.onClaimed?.(request, owner, kind, now);} catch { /* Measurement never blocks a claim. */ }
         return json(view);
     }
     const refused = parseFaucetRefusal(value);
