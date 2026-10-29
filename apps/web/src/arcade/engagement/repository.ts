@@ -41,7 +41,9 @@ export function engagementRepository(db: EngagementDatabase) {
             await db.batch([
                 db.prepare('DELETE FROM arcade_engagement_events WHERE at < ?').bind(now - RAW_RETENTION_MS),
                 db.prepare('DELETE FROM arcade_engagement_visitors WHERE expires_at <= ?').bind(now),
-                db.prepare('DELETE FROM arcade_engagement_sources WHERE visitor NOT IN (SELECT hash FROM arcade_engagement_visitors)'),
+                // A source outlives its visitor until the visitor's last event ages out, so those events keep their label.
+                db.prepare(`DELETE FROM arcade_engagement_sources WHERE visitor NOT IN (SELECT hash FROM arcade_engagement_visitors)
+                    AND NOT EXISTS (SELECT 1 FROM arcade_engagement_events e WHERE e.visitor=arcade_engagement_sources.visitor)`),
                 db.prepare('DELETE FROM arcade_engagement_limits WHERE expires_at <= ?').bind(now),
                 db.prepare('DELETE FROM arcade_engagement_daily WHERE day < ?').bind(seoulDay(now - 400 * DAY_MS)),
             ]);
@@ -57,17 +59,19 @@ export function engagementRepository(db: EngagementDatabase) {
                 FROM arcade_engagement_events WHERE day>=? GROUP BY day ORDER BY day`).bind(since).all<DailyActivity>()).results;
         },
         async cohorts(since: string) {
-            // A cohort is the browsers whose first day included deliberate interaction; a page arrival alone joins none.
-            return (await db.prepare(`WITH cohorts AS (
-                SELECT v.hash, date(v.first_at/1000,'unixepoch','+9 hours') AS cohort_day,
-                MAX(CASE WHEN e.day=date(v.first_at/1000,'unixepoch','+9 hours') AND ${deliberate('e.')} THEN 1 ELSE 0 END) AS engaged,
-                MAX(CASE WHEN e.day=date(v.first_at/1000,'unixepoch','+9 hours','+1 day') AND ${deliberate('e.')} THEN 1 ELSE 0 END) AS d1,
-                MAX(CASE WHEN e.day=date(v.first_at/1000,'unixepoch','+9 hours','+7 day') AND ${deliberate('e.')} THEN 1 ELSE 0 END) AS d7,
+            // A browser joins the cohort of its first day of deliberate interaction; arriving earlier without playing moves nothing.
+            // Only browsers first seen inside the window: raw events outlive the window, so that first day is exact for them.
+            return (await db.prepare(`WITH engaged AS (
+                SELECT e.visitor, MIN(e.day) AS cohort_day FROM arcade_engagement_events e JOIN arcade_engagement_visitors v ON v.hash=e.visitor
+                WHERE date(v.first_at/1000,'unixepoch','+9 hours')>=? AND ${deliberate('e.')} GROUP BY e.visitor
+            ), cohorts AS (
+                SELECT g.cohort_day,
+                MAX(CASE WHEN e.day=date(g.cohort_day,'+1 day') AND ${deliberate('e.')} THEN 1 ELSE 0 END) AS d1,
+                MAX(CASE WHEN e.day=date(g.cohort_day,'+7 day') AND ${deliberate('e.')} THEN 1 ELSE 0 END) AS d7,
                 MAX(e.event='profile_authenticated') AS authenticated
-                FROM arcade_engagement_visitors v JOIN arcade_engagement_events e ON e.visitor=v.hash
-                WHERE date(v.first_at/1000,'unixepoch','+9 hours')>=? GROUP BY v.hash
+                FROM engaged g JOIN arcade_engagement_events e ON e.visitor=g.visitor GROUP BY g.visitor
             ) SELECT cohort_day AS day,COUNT(*) AS visitors,SUM(d1) AS returned_d1,SUM(d7) AS returned_d7,SUM(authenticated) AS authenticated
-              FROM cohorts WHERE engaged=1 GROUP BY cohort_day ORDER BY cohort_day`).bind(since).all<CohortRow>()).results;
+              FROM cohorts GROUP BY cohort_day ORDER BY cohort_day`).bind(since).all<CohortRow>()).results;
         },
         async funnel(since: string) {
             const stage = (condition: string) => `COUNT(DISTINCT CASE WHEN ${condition} THEN e.visitor END)`;

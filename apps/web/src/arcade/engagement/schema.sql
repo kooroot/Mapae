@@ -9,14 +9,14 @@ CREATE TABLE IF NOT EXISTS arcade_engagement_events (
   locale TEXT NOT NULL, at INTEGER NOT NULL, day TEXT NOT NULL,
   trust TEXT NOT NULL CHECK (trust IN ('client_reported', 'server_authenticated'))
 );
+-- First-touch source, written once when a browser is first seen; it stays until the browser's last event ages out.
+CREATE TABLE IF NOT EXISTS arcade_engagement_sources (visitor TEXT PRIMARY KEY, source TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS arcade_engagement_run_event ON arcade_engagement_events(visitor, run_id, event) WHERE run_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS arcade_engagement_session_entry ON arcade_engagement_events(visitor, session, day) WHERE event='arcade_entered';
 CREATE UNIQUE INDEX IF NOT EXISTS arcade_engagement_session_login ON arcade_engagement_events(visitor, session, day, owner) WHERE event='profile_authenticated';
 CREATE UNIQUE INDEX IF NOT EXISTS arcade_engagement_session_arrival ON arcade_engagement_events(visitor, session, day, event) WHERE event IN ('landing_viewed', 'faucet_opened');
 CREATE INDEX IF NOT EXISTS arcade_engagement_at ON arcade_engagement_events(at);
 CREATE INDEX IF NOT EXISTS arcade_engagement_visitor_day ON arcade_engagement_events(visitor, day);
--- First-touch source, written once when a browser is first seen; it leaves with the visitor.
-CREATE TABLE IF NOT EXISTS arcade_engagement_sources (visitor TEXT PRIMARY KEY, source TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS arcade_engagement_limits (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS arcade_engagement_daily (day TEXT NOT NULL, event TEXT NOT NULL, trust TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(day, event, trust));
 CREATE TRIGGER IF NOT EXISTS arcade_engagement_count AFTER INSERT ON arcade_engagement_events BEGIN

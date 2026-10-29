@@ -6,7 +6,7 @@ import {engagementApi, recordAuthenticatedEngagement} from './api';
 import {createEngagementClient} from './client';
 import {engagementRepository} from './repository';
 import {engagementReport} from './report';
-import {DAY_MS, ENGAGEMENT_LIMITS, MAX_EVENT_BYTES, parseEngagement, trafficSource} from './model';
+import {DAY_MS, ENGAGEMENT_LIMITS, MAX_EVENT_BYTES, parseEngagement, seoulDay, trafficSource} from './model';
 const NOW = Date.parse('2026-10-10T12:00:00+09:00');
 const owner = '0x' + '12'.repeat(20);
 function fixture() {
@@ -141,13 +141,26 @@ describe('bounded first-party engagement', () => {
         expect(trafficSource('', 'https://mapae.io/')).toBe('internal'); expect(trafficSource('', 'https://notmapae.io/')).toBe('other');
         expect(trafficSource('', 'https://www.google.com/')).toBe('other'); expect(trafficSource('', '')).toBe('direct');
     });
-    test('the source is written once with the browser, later hints never move it, and it leaves with the visitor', async () => {
+    test('the source is written once with the browser, later hints never move it, and it outlives the visitor until its last event', async () => {
         const {db, repo} = fixture();
         const r = await engagementApi(request(input({event: 'landing_viewed', source: 'x'})), repo, {now: NOW}); const cookie = cookieOf(r);
         await engagementApi(request(input({source: 'discord'}), cookie), repo, {now: NOW});
         expect(db.query('SELECT source FROM arcade_engagement_sources').all()).toEqual([{source: 'x'}]);
+        const late = NOW + 85 * DAY_MS;
+        expect((await engagementApi(request(input({event: 'mint_started'}), cookie), repo, {now: late, resolveOwner: async () => owner})).status).toBe(202);
         await repo.cleanup(NOW + 91 * DAY_MS);
+        expect(count(db, 'arcade_engagement_visitors')).toBe(0);
+        expect((await repo.funnel(seoulDay(late))).map(row => row.source)).toEqual(['x']);
+        await repo.cleanup(late + 36 * DAY_MS);
         expect(count(db, 'arcade_engagement_sources')).toBe(0);
+    });
+    test('a browser joins the cohort of its first day of play, not the day it first arrived', async () => {
+        const {repo} = fixture();
+        const cookie = cookieOf(await engagementApi(request(input({event: 'landing_viewed'})), repo, {now: NOW - 3 * DAY_MS}));
+        for (const day of [2, 1]) await engagementApi(request(input(), cookie), repo, {now: NOW - day * DAY_MS});
+        const {cohorts} = await engagementReport(repo, NOW);
+        expect(cohorts).toHaveLength(1);
+        expect(cohorts[0]).toMatchObject({day: seoulDay(NOW - 2 * DAY_MS), visitors: 1, d1: {mature: true, returned: 1, rate: 1}});
     });
     test('page arrivals are funnel stages only: deduplicated per session, outside DAU and cohorts', async () => {
         const {repo} = fixture();

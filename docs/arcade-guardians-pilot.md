@@ -24,7 +24,7 @@
 | `engagement.daily[].browser_visitors` | 무엇이든 보고한 고유 1차 브라우저 ID. 랜딩·오락실·faucet 도착만 한 브라우저도 들어간다. |
 | `engagement.daily[].browser_dau` | 의도적인 화면 상호작용을 보고한 고유 1차 브라우저 ID. 페이지 도착(`landing_viewed`·`arcade_entered`·`faucet_opened`)은 상호작용이 아니다. 클라이언트 보고이므로 실제 사람 수를 보장하지 않는다. |
 | `engagement.daily[].owner_dau` | 인증된 세션에서 사람의 화면 조작 또는 전면 SIWE 로그인을 기록한 지갑 수. 백그라운드 에이전트 실행과 폴링은 제외한다. 여러 지갑을 가진 사람은 중복될 수 있다. |
-| `engagement.matureRetention.d1/d7` | 최초 관측일에 의도적 상호작용이 있었던 브라우저 코호트가 정확히 다음 날/7일 뒤 다시 상호작용한 비율. 페이지 도착만으로는 코호트에도 재방문에도 들지 않는다. Asia/Seoul 기준 목표 날짜 전체가 끝나야 분모에 넣는다. 분모가 없으면 `rate:null`이며, 미성숙 코호트는 `immatureVisitors`로 따로 나온다. |
+| `engagement.matureRetention.d1/d7` | 기간 안에 처음 본 브라우저를 처음 의도적으로 상호작용한 날로 묶은 코호트가, 정확히 다음 날/7일 뒤 다시 상호작용한 비율. 페이지 도착은 상호작용이 아니어서 코호트의 시작일도 재방문도 되지 않는다. Asia/Seoul 기준 목표 날짜 전체가 끝나야 분모에 넣는다. 분모가 없으면 `rate:null`이며, 미성숙 코호트는 `immatureVisitors`로 따로 나온다. |
 | `engagement.funnel.bySource[]` | 28일 동안 단계별 고유 브라우저 수를 처음 들어온 출처별로 나눈 표. 출처는 `?ref=`(x·telegram·discord·kakao·giwa·share·landing·arcade)가 먼저이고, 없으면 들어온 사이트, 둘 다 없으면 `direct`다. `internal`은 다른 mapae.io 페이지, `other`는 모르는 값, `unknown`은 출처 기록 전에 처음 본 브라우저다. 단계는 랜딩 도착·오락실 도착·무료 게임 완료·지갑 로그인·전령 뽑기 시작·외출 시작·faucet 도착·mUSDC 수령·ETH 수령이다. 뽑기·외출 시작은 클릭이지 확정 거래가 아니다. mapae.io와 faucet.mapae.io는 브라우저 ID가 따로라 faucet 단계는 다른 모집단이다. 단계는 포함 관계가 아니며, 출처별 수는 인과효과를 뜻하지 않는다. `funnel.total`은 출처를 합친 값이다. |
 | `autonomous.daily[].autonomousOwnerWallets` | seller의 영구 결과 원장에 완료된 유료 입장이 있는 NFT 당시 소유자 수. 사람이 그날 접속했다는 의미가 아니다. |
 | `repeatOperatorsLast7Days` | 최근 7개 서울 날짜 중 서로 다른 2일 이상 인증된 운영 조작(`operator_action`·`mint_started`·`outing_started`)이 있고, 같은 기간 검증된 유료 외출 결과도 있는 지갑 수. 사람·NFT·거래 수와 분리한다. |
