@@ -41,6 +41,18 @@ test("HTTP 200 with unhealthy body is never green; profile data must remain priv
     expect(validProbe("profile", Response.json({}), {characters: []})).toBe(false);
     expect(validProbe("profile", Response.json({}, {status: 401}), {error: {code: "login_required"}})).toBe(true);
 });
+test("the faucet is green only while both tabs are on and the status is the contract", () => {
+    const status = (musdc: boolean, eth: boolean) => ({
+        musdc: {enabled: musdc, targetBase: "1000000000", windowMs: 86_400_000, missions: ["x_follow_mapae"]},
+        eth: {enabled: eth, amountWei: "500000000000000", windowMs: 604_800_000, missions: ["x_follow_mapae"], minMainnetNonce: 1},
+        siteKey: "0x4AAAAAAA-site",
+    });
+    expect(validProbe("faucet", Response.json({}), status(true, true))).toBe(true);
+    expect(validProbe("faucet", Response.json({}), status(true, false))).toBe(false);
+    expect(validProbe("faucet", Response.json({}), status(false, true))).toBe(false);
+    expect(validProbe("faucet", Response.json({}, {status: 503}), status(true, true))).toBe(false);
+    expect(validProbe("faucet", Response.json({}), {error: {code: "faucet_off"}})).toBe(false);
+});
 test("store readiness rejects closed or externally write-locked databases", () => {
     const directory = mkdtempSync(join(tmpdir(), "mapae-ops-test-")), file = join(directory, "store.sqlite");
     const store = openStore(file), blocker = new Database(file);

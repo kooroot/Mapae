@@ -1,8 +1,17 @@
 import {statfsSync, statSync, readFileSync} from "node:fs";
+import {parseFaucetStatus} from "../../packages/delegation/src/faucet-policy";
 import {MOCK_USDC, GIWA_SEPOLIA_CAIP2} from "../../packages/shared/src/index";
 
-export function validProbe(kind: "health" | "profile" | "ticket" | "page", response: Response, value: unknown): boolean {
+/** True only for each target's healthy contract; a faucet tab the service turned off (an empty wallet, a broken mint) is red. */
+export function validProbe(kind: "health" | "profile" | "ticket" | "page" | "faucet", response: Response, value: unknown): boolean {
     if (kind === "page") return response.status === 200;
+    if (kind === "faucet") {
+        if (response.status !== 200) return false;
+        try {
+            const status = parseFaucetStatus(value);
+            return status.musdc.enabled && status.eth.enabled;
+        } catch {return false;}
+    }
     if (kind === "profile") return response.status === 401 && !!value && typeof value === "object" && "error" in value && JSON.stringify(value.error) === '{"code":"login_required"}';
     if (!value || typeof value !== "object") return false;
     if (kind === "health") return response.status === 200 && "ok" in value && value.ok === true;
@@ -14,8 +23,9 @@ export async function check(fetcher: typeof fetch = fetch, metricsKeys?: {seller
         ["web", "https://mapae.io/ko/arcade", "page"],
         ["seller", "https://seller.mapae.io/health", "health"],
         ["facilitator", "https://facilitator.mapae.io/health", "health"],
-        ["profile-auth", "https://mapae.io/api/arcade/profile", "profile"],
+        ["profile-auth", "https://mapae.io/api/arcade/profile/session", "profile"],
         ["ticket", "https://mapae.io/api/arcade/giwa/stamp", "ticket"],
+        ["faucet", "https://faucet.mapae.io/api/faucet/status", "faucet"],
     ] as const;
     const checks: {name: string; ok: boolean; status: number; ms: number}[] = await Promise.all(targets.map(async ([name, url, kind]) => {
         const start = Date.now();

@@ -12,8 +12,9 @@ reason to kill the listener. Resolve its actual system/gui domain first.
 PUBLIC CHECK (may run on another existing computer, independently of the server)
   bun scripts/ops/check.ts
 Exit 1 means an unhealthy/missing dependency, incorrect token quote, exposed
-profile, or local disk below 10%/5 GiB. Local disk means the machine executing
-this command. It does not infer the remote server's disk space.
+profile, a faucet tab turned off (ETH off usually means the faucet wallet fell
+below its floor), or local disk below 10%/5 GiB. Local disk means the machine
+executing this command. It does not infer the remote server's disk space.
 Optional operator metrics:
   bun scripts/ops/check.ts --metrics-key-file /private/path/metrics.json
 The chmod-600 JSON file contains existing seller and facilitator metrics tokens:
@@ -23,6 +24,11 @@ attempts). Rejected requests count as failed; this is an incident signal, not
 payment conversion. No notification is sent by this command. An independent
 monitor must alert on nonzero exit / missing scheduled heartbeat; a dead Mac
 cannot report its own death. Test actual notification delivery separately.
+.github/workflows/monitor.yml is that monitor: it runs the public check at :07
+and :37 on a GitHub runner (no metrics keys), and GitHub mails a failed
+scheduled run to whoever last changed its cron line. GitHub pauses schedules in
+a repository with no commits for 60 days; re-enable it from the Actions tab.
+Its local-disk row is the runner's, not the Mac's.
 
 ENCRYPTED SQLITE SNAPSHOT
 Create a private 32-byte hex key file with openssl rand -hex 32 redirected into a
