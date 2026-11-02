@@ -96,14 +96,15 @@ describe("public ranking proxy", () => {
         expect(new Headers(calls[0]!.init?.headers).get("Authorization")).toBe(`Bearer ${receiptToken}`);
         expect(new Headers(calls[0]!.init?.headers).has("Cookie")).toBe(false); expect(new Headers(calls[0]!.init?.headers).has("X-Mapae-Owner")).toBe(false);
     });
-    test("a miss is cached with its max-age; a hit skips both the seller and the rate limit and keeps that max-age", async () => {
+    test("a miss is kept at the edge an hour past its max-age; a hit within that max-age skips both the seller and the rate limit and keeps it", async () => {
         const {calls, limits, entries, call} = setup(() => Response.json(board()));
         const first = await call("/board/race/today", {headers: {"CF-Connecting-IP": "203.0.113.9"}});
         expect(first.headers.get("Cache-Control")).toBe("public, max-age=30"); expect(first.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
-        expect(entries.get("https://app.mapae.io/api/arcade/ranking/board/race/today")?.headers.get("Cache-Control")).toBe("public, max-age=30");
+        const stored = entries.get("https://app.mapae.io/api/arcade/ranking/board/race/today")!;
+        expect(stored.headers.get("Cache-Control")).toBe("public, max-age=3630"); expect(stored.headers.get("X-Mapae-Fresh-Until")).toBe(String(now + 30_000));
         const hit = await call("/board/race/today", {headers: {"CF-Connecting-IP": "203.0.113.9"}});
         expect(hit.headers.get("Cache-Control")).toBe("public, max-age=30"); expect(hit.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
-        expect(await hit.json<unknown>()).toEqual(board());
+        expect(hit.headers.has("X-Mapae-Fresh-Until")).toBe(false); expect(await hit.json<unknown>()).toEqual(board());
         expect(calls).toHaveLength(1); expect(limits).toHaveLength(1); expect(limits[0]).not.toContain("203.0.113.9");
         const standing = setup(() => Response.json(standings()));
         expect((await standing.call("/guardians/2")).headers.get("Cache-Control")).toBe("public, max-age=10");
@@ -134,8 +135,8 @@ describe("public ranking proxy", () => {
         const sealed = setup(() => Response.json(hall()));
         const ok = await sealed.call("/hall/s1");
         expect(ok.status).toBe(200); expect(ok.headers.get("Cache-Control")).toBe("public, max-age=60"); expect(await ok.json<unknown>()).toEqual(hall());
-        expect(sealed.entries.get("https://app.mapae.io/api/arcade/ranking/hall/s1")?.headers.get("Cache-Control")).toBe("public, max-age=3600");
-        expect(entries.get("https://app.mapae.io/api/arcade/ranking/hall/s1")?.headers.get("Cache-Control")).toBe("public, max-age=60");
+        expect(sealed.entries.get("https://app.mapae.io/api/arcade/ranking/hall/s1")?.headers.get("X-Mapae-Fresh-Until")).toBe(String(now + 3_600_000));
+        expect(entries.get("https://app.mapae.io/api/arcade/ranking/hall/s1")?.headers.get("X-Mapae-Fresh-Until")).toBe(String(now + 60_000));
         expect((await sealed.call("/hall/s1")).headers.get("Cache-Control")).toBe("public, max-age=60"); expect(sealed.calls).toHaveLength(1);
         // Any season id ever held reads, whatever the current season is; the shape is strict.
         expect((await setup(() => Response.json({...hall(), season: 12}), {season: {id: 2, start: null, end: null}}).call("/hall/s12")).status).toBe(200);
@@ -185,6 +186,46 @@ describe("public ranking proxy", () => {
             const response = await call("/board/race/today");
             expect(response.status).toBe(503); expect(await response.json<unknown>()).toEqual({error: {code: "ranking_unavailable"}}); expect(entries.size).toBe(0);
         }
+    });
+    test("past its max-age a copy is asked for again; while the seller fails, the last good copy answers and no browser keeps it", async () => {
+        const {entries, cache} = memoryCache(), calls: string[] = [], key = origin + "/board/race/today";
+        let answer: () => Response = () => Response.json(board());
+        const call = (at: number, path = "/board/race/today") => rankingApi(new Request(origin + path), {receiptToken, now: at, cache: Promise.resolve(cache),
+            fetcher: async url => {calls.push(url); return answer();}, rateLimit: async () => true});
+        expect((await call(now)).status).toBe(200);
+        expect((await call(now + 29_999)).status).toBe(200); expect(calls).toHaveLength(1);
+        const failures: (() => Response)[] = [() => {throw new DOMException("The operation timed out.", "TimeoutError");}, () => Response.json({error: {code: "disabled"}}, {status: 503}),
+            () => new Response(null, {status: 404}), () => Response.json({...board(), rows: still(rowOf(2))})];
+        for (const [i, fail] of failures.entries()) {
+            answer = fail;
+            const stale = await call(now + 30_000);
+            expect(stale.status).toBe(200); expect(stale.headers.get("Cache-Control")).toBe("no-store"); expect(stale.headers.has("X-Mapae-Fresh-Until")).toBe(false);
+            expect(await stale.json<unknown>()).toEqual(board()); expect(calls).toHaveLength(2 + i);
+        }
+        // The stale copy is never stored again; the seller's next answer replaces it with a life of its own.
+        expect(entries.get(key)!.headers.get("X-Mapae-Fresh-Until")).toBe(String(now + 30_000));
+        const next = board([{...rowOf(1, "9"), prev: null}]);
+        answer = () => Response.json(next);
+        expect(await (await call(now + 60_000)).json<unknown>()).toEqual(next);
+        expect(entries.get(key)!.headers.get("X-Mapae-Fresh-Until")).toBe(String(now + 90_000));
+        // With no copy at all, a failure is still an outage.
+        answer = () => Response.json({error: {code: "disabled"}}, {status: 503});
+        expect((await call(now, "/board/shop/today")).status).toBe(503);
+    });
+    test("a copy of a day still running is kept no later than its midnight; a closed day's or a sealed hall's copy keeps the full hour", async () => {
+        const kept = async (answer: unknown, path: string, at: number) => {
+            const {entries, call} = setup(() => Response.json(answer), {now: at});
+            expect((await call(path)).status).toBe(200);
+            return entries.get(origin + path)!.headers.get("Cache-Control");
+        };
+        // 23:59:30 KST: tomorrow's tries must not read as spent, so the copy goes with its fresh life.
+        const late = Date.parse("2026-10-14T14:59:30Z");
+        expect(await kept(standings(), "/guardians/2", late)).toBe("public, max-age=30");
+        expect(await kept(board(), "/board/race/today", late)).toBe("public, max-age=30");
+        expect(await kept(status(), "/season", Date.parse("2026-10-14T14:59:59Z"))).toBe("public, max-age=60");
+        expect(await kept({...board(), period: "yesterday", from: "2026-10-13", to: "2026-10-13"}, "/board/race/yesterday", late)).toBe("public, max-age=3630");
+        expect(await kept(hall(), "/hall/s1", late)).toBe("public, max-age=7200");
+        expect(await kept(standings(), "/guardians/2", now)).toBe("public, max-age=3610");
     });
 });
 

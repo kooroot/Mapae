@@ -27,6 +27,13 @@ const HALL_PATH = /^\/api\/arcade\/ranking\/hall\/(s[1-9]\d{0,3})$/;
  * keeps it an hour; browsers keep any hall a minute, since their life is chosen by path before the cache is read.
  */
 const MAX_AGE = {board: 30, standings: 10, season: 60, sealedHall: 3600};
+/**
+ * How long at most the edge keeps a copy past its life. While the seller cannot answer (a restart, a tunnel reconnecting), that
+ * last good copy answers in place of an outage, and no browser keeps it.
+ */
+const STALE_FOR = 3600;
+/** When a stored copy's life ends, in epoch ms: kept with the copy at the edge and never sent on. */
+const FRESH_UNTIL = "X-Mapae-Fresh-Until";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "Referrer-Policy": "no-referrer"};
 
@@ -39,10 +46,17 @@ export type RankingDependencies = UpstreamDependencies & {
 
 const failure = (code: string, status: number, extra: Record<string, string> = {}) =>
     Response.json({error: {code}}, {status, headers: {...HEADERS, "Cache-Control": "no-store", ...extra}});
+/** A stored copy as it leaves the edge: with `cacheControl` for the browser, and without its life. */
+function fromCache(hit: Response, cacheControl: string): Response {
+    const response = fromEdgeCache(hit, cacheControl);
+    response.headers.delete(FRESH_UNTIL);
+    return response;
+}
 
 /**
  * Public leaderboards: no session, cookie or wallet is read, and nothing but a validated copy of the seller's answer leaves.
- * Hits come from the edge cache; only a miss spends the per-IP budget and one bearer call to the seller.
+ * A copy within its life comes from the edge cache; a miss or an expired copy spends the per-IP budget and one bearer call to
+ * the seller, and when that call fails, the expired copy answers.
  */
 export async function rankingApi(request: Request, deps: RankingDependencies): Promise<Response> {
     const url = new URL(request.url), team = TEAM_PATH.exec(url.pathname), board = team ? null : BOARD_PATH.exec(url.pathname);
@@ -56,25 +70,31 @@ export async function rankingApi(request: Request, deps: RankingDependencies): P
     }
     if (!hasReceiptToken(deps)) return failure("ranking_unavailable", 503);
     const key = new Request(`${url.origin}${url.pathname}`), cache = deps.cache ? await deps.cache.catch(() => undefined) : undefined;
-    const life = `public, max-age=${hall || status ? MAX_AGE.season : board || team ? MAX_AGE.board : MAX_AGE.standings}`;
-    const hit = await cache?.match(key);
-    if (hit) return fromEdgeCache(hit, life);
+    const maxAge = hall || status ? MAX_AGE.season : board || team ? MAX_AGE.board : MAX_AGE.standings, life = `public, max-age=${maxAge}`;
+    const now = deps.now ?? Date.now(), hit = await cache?.match(key);
+    if (hit && Number(hit.headers.get(FRESH_UNTIL)) > now) return fromCache(hit, life);
     const retryAfter = await ipBudget(request, deps);
     if (retryAfter !== null) return failure("rate_limited", 429, {"Retry-After": String(retryAfter)});
+    const unavailable = () => hit ? fromCache(hit, "no-store") : failure("ranking_unavailable", 503);
     let value: unknown;
     try {
         // The reader answers every board and standing that exists; its 404 is as much an outage here as any other failure.
         const upstream = await upstreamJson(url.pathname.slice("/api/arcade/ranking".length), deps);
         if (!upstream.found) throw new Error("upstream");
         value = upstream.value;
-    } catch {return failure("ranking_unavailable", 503);}
+    } catch {return unavailable();}
     const copy = status ? parseSeasonStatus(value, season) : hall ? parseSeasonHall(value, Number(hall[1]!.slice(1))) : team ? parseTeamBoard(value, team[1] as TeamPeriod)
         : !board ? parseRankingStandings(value, ids!)
         : by ? parseRankingPage(value, board[1] as RankingBoardId, board[2] as RankingPeriod, typeof at === "number" ? {offset: at} : {around: at!})
         : parseRankingBoard(value, board[1] as RankingBoardId, board[2] as RankingPeriod);
-    if (!copy) return failure("ranking_unavailable", 503);
-    const edge = hall && (copy as SeasonHall).sealed ? `public, max-age=${MAX_AGE.sealedHall}` : life;
-    await cache?.put(key, Response.json(copy, {headers: {...HEADERS, "Cache-Control": edge}})).catch(() => {/* A cold cache only costs the next visitor one seller call. */});
+    if (!copy) return unavailable();
+    const edge = hall && (copy as SeasonHall).sealed ? MAX_AGE.sealedHall : maxAge;
+    // A copy stands in only until the midnight that ends the last day it speaks of; past it, a spent day would read as today.
+    const lastDay = hall ? null : status ? (copy as SeasonStatus).today : standing ? (copy as RankingStandings).day : (copy as RankingBoard | RankingPage | TeamBoard).to;
+    const dayLeft = lastDay === null ? Infinity : Date.parse(`${lastDay}T15:00:00Z`) - now;
+    const keep = dayLeft > 0 ? Math.min(edge + STALE_FOR, Math.max(edge, Math.ceil(dayLeft / 1000))) : edge + STALE_FOR;
+    await cache?.put(key, Response.json(copy, {headers: {...HEADERS, "Cache-Control": `public, max-age=${keep}`, [FRESH_UNTIL]: String(now + edge * 1000)}}))
+        .catch(() => {/* A cold cache only costs the next visitor one seller call. */});
     return Response.json(copy, {headers: {...HEADERS, "Cache-Control": life}});
 }
 
