@@ -715,6 +715,15 @@ test("readiness fails on dependency or database failure; liveness stays independ
         store.close();
     }
 });
+test("readiness probes the hop payments settle through, while /health still names the public facilitator", async () => {
+    const store = openStore(IN_MEMORY), probed: string[] = [];
+    const app = createShopApp({store, mapae: createMapae({facilitator: "http://127.0.0.1:8081/"}), baseUrl: BASE_URL, facilitatorUrl: PUBLIC_FACILITATOR, name: "test",
+        readinessFetch: Object.assign(async (input: RequestInfo | URL) => {probed.push(String(input)); return Response.json({ok: true});}, {preconnect: fetch.preconnect})});
+    const health = await app.request("/health");
+    expect(health.status).toBe(200); expect(probed).toEqual(["http://127.0.0.1:8081/health"]);
+    expect(((await health.json()) as {facilitator: string}).facilitator).toBe(PUBLIC_FACILITATOR);
+    store.close();
+});
 test("arcade recovery authenticates the Worker and never exposes pickup capabilities", async () => {
     const {store, get, pay} = shop();
     seedArcade(store, NOW);

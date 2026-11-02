@@ -107,7 +107,8 @@ export interface ShopAppOptions {
     baseUrl: string;
     /**
      * The facilitator named in every manifest and by `/health`: the public one, not the
-     * hop this server settles through, which in the hosted topology is loopback.
+     * hop this server settles through, which in the hosted topology is loopback. Readiness
+     * probes that hop.
      */
     facilitatorUrl: string;
     /** The operator's name, reported by `/health`. */
@@ -485,7 +486,9 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
             let database = false, facilitatorReady = false;
             try {store.probe(); database = true;} catch { /* Closed health enum only. */ }
             try {
-                const response = await readinessFetch(`${facilitatorUrl.replace(/\/$/, "")}/health`, {redirect: "error", signal: AbortSignal.timeout(10_000)});
+                // The hop this server settles through, not the public name: a detour out through the internet and back
+                // would fail readiness on a network blip that no payment here passes through.
+                const response = await readinessFetch(`${mapae.facilitator.replace(/\/$/, "")}/health`, {redirect: "error", signal: AbortSignal.timeout(10_000)});
                 const value: unknown = await response.json();
                 facilitatorReady = response.ok && !!value && typeof value === "object" && "ok" in value && value.ok === true;
             } catch { /* Dependency unavailable. */ }
