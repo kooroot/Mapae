@@ -1,4 +1,10 @@
 {
   "extends": "../../packages/shared/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@mapae/delegation": ["../../packages/delegation/src/index.ts"],
+      "@mapae/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
   "include": ["*.ts"]
 }

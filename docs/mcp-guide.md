@@ -110,6 +110,7 @@ URL로 지정한다. 표의 기본값은 loopback으로, 셀프호스팅(§2)에
 | `DELEGATION_DEPLOYMENT_PATH` | | `../../deployments/giwa-sepolia.framework.json` |
 | `DELEGATION_MANIFEST_PATH` | | `../../deployments/giwa-sepolia.framework-manifest.json` |
 | `PARENT_PERMISSION_CONTEXT_PATH` | | `./open-agent.permission.json` |
+| `PARENT_PERMISSION_CONTEXT` | | 미설정 — 부모 권한 컨텍스트 인라인 값(`0x…` hex 또는 권한 파일과 같은 JSON). 설정하면 `PARENT_PERMISSION_CONTEXT_PATH`보다 우선 |
 | `AGENT_MAX_PAYMENT_MUSDC` | | 미설정 — 호출당 상한(tUSDC 십진, 소수 6자리까지) |
 | `AGENT_SESSION_BUDGET_MUSDC` | | 미설정 — 세션 누적 상한(tUSDC 십진) |
 | `AGENT_ALLOWED_PAY_TO` | | 미설정 — 쉼표로 구분한 수취처 허용목록 |

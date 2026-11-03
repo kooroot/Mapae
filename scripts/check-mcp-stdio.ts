@@ -21,6 +21,10 @@
  * `apps/agent-mcp/http-transport-control.ts` imports the HTTP transport on purpose.
  * Measured at the time of writing, 3 references for the control and 0 across the real
  * entry point's 974 modules.
+ *
+ * The Node bundle is measured as well (ENG-4). It is what the Claude Desktop extension
+ * ships, built as one file with `--outfile`; a separate build that resolves differently
+ * from the stdout build above must not be assumed to agree with it.
  */
 import {basename, dirname} from "node:path";
 
@@ -57,6 +61,27 @@ export async function countAdapterReferences(entrypoint: string): Promise<number
     }
 }
 
+/**
+ * The same count over the single-file Node bundle (`bun build --target=node --outfile`),
+ * the artifact the extension ships. Null when the build fails, for the same reason.
+ */
+export async function countNodeBundleReferences(entrypoint: string): Promise<number | null> {
+    const outfile = `${process.env.TMPDIR ?? "/tmp"}/mapae-agent-mcp-check-${process.pid}.js`;
+    try {
+        const proc = Bun.spawn(
+            ["bun", "build", `./${basename(entrypoint)}`, "--target=node", "--outfile", outfile],
+            {cwd: dirname(entrypoint), stdout: "ignore", stderr: "ignore"},
+        );
+        if ((await proc.exited) !== 0) return null;
+        const bundle = await Bun.file(outfile).text();
+        return (bundle.match(/hono/gi) ?? []).length;
+    } catch {
+        return null;
+    } finally {
+        await Bun.file(outfile).delete().catch(() => {});
+    }
+}
+
 /** Returns null while the invariant holds, or a sentence saying how it broke. */
 export function judgeStdioOnly(control: number | null, actual: number | null): string | null {
     if (control === null) {
@@ -82,7 +107,10 @@ export function judgeStdioOnly(control: number | null, actual: number | null): s
 async function main(): Promise<void> {
     const control = await countAdapterReferences(`${REPO}/apps/agent-mcp/http-transport-control.ts`);
     const actual = await countAdapterReferences(`${REPO}/apps/agent-mcp/index.ts`);
-    const broke = judgeStdioOnly(control, actual);
+    const nodeBundle = await countNodeBundleReferences(`${REPO}/apps/agent-mcp/index.ts`);
+    const broke =
+        judgeStdioOnly(control, actual) ??
+        judgeStdioOnly(control, nodeBundle)?.replace("apps/agent-mcp/index.ts", "the Node bundle of apps/agent-mcp/index.ts");
 
     if (broke) {
         console.error(`[mcp-stdio] ${broke}`);
@@ -90,7 +118,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-        `[mcp-stdio] the MCP server reaches no HTTP adapter (control ${control}, entry point 0)`,
+        `[mcp-stdio] the MCP server reaches no HTTP adapter (control ${control}, entry point 0, Node bundle ${nodeBundle})`,
     );
 }
 
