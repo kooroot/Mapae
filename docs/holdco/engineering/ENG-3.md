@@ -25,7 +25,7 @@ and, with `--seller`, `seller.settledWithoutOrder`.
 
 ## Limits
 
-- Owner via `owner()` on the HybridDeleGator payer; failure keeps owner = payer, `ownerResolved:false`.
-- Funding via the explorer's txlist (oldest incoming transfer with value). Internal transfers are not seen.
+- Owner via `owner()` on the HybridDeleGator payer; failure or the zero address (renounced ownership) keeps owner = payer, `ownerResolved:false`.
+- Funding via the explorer's txlist (oldest successful incoming transfer with value; reverted ones are skipped). Internal transfers are not seen.
 - Without `--public-funders`, faucet-funded owners read as one shared funder and are excluded.
 - `--chain` and the explorer were not exercised live (sessions cannot reach the hosts); tests use a fake client.

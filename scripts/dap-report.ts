@@ -12,13 +12,16 @@
  *   --chain         `owner()` read from the payer contract on GIWA Sepolia (HybridDeleGator is
  *                   Ownable; a payer with no code or a failing call has no owner);
  *   neither         no mapping.
+ * The zero address is never an owner: a HybridDeleGator whose ownership was renounced reports it,
+ * and treating it as an owner would merge unrelated accounts into one person.
  * A payer whose owner cannot be resolved stays its own owner and is listed in `payers` with
  * ownerResolved:false, so a person with several smart accounts may count more than once there.
  *
  * Owner funding (first funder, first transaction time) feeds the shared-funder and same-day-cluster
  * rules. --funding reads it from the file's `funding` array; --chain reads each owner's oldest
  * transactions from the GIWA Sepolia explorer (Blockscout txlist, ascending): the first funder is
- * the sender of the oldest incoming transaction with value, the first-tx time is the oldest
+ * the sender of the oldest successful incoming transaction with value (reverted ones, isError "1"
+ * or txreceipt_status "0", moved nothing and are skipped), the first-tx time is the oldest
  * transaction either way. Internal transfers are not seen; an owner with no such transaction has
  * no funding fact and is judged by the operator list only. Pass the faucet with --public-funders
  * (or `publicFunders` in the file), otherwise everyone it funded reads as one shared funder.
@@ -66,6 +69,9 @@ export type PayerOwner = {payer: string; owner: string; ownerResolved: boolean};
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const fail = (code: string) => new Error(code);
 const norm = (a: string) => a.toLowerCase();
+const ZERO = "0x0000000000000000000000000000000000000000";
+/** A usable owner: a well-formed address other than zero (a renounced HybridDeleGator reports zero). */
+const ownerAddress = (a: string | null) => (a && isAddress(a, {strict: false}) && norm(a) !== ZERO ? norm(a) : null);
 const addresses = (list: readonly string[] | undefined, code: string) =>
     (list ?? []).map((a) => {
         if (!isAddress(a, {strict: false})) throw fail(code);
@@ -89,7 +95,8 @@ export async function dapReport(input: DapReportInput) {
     for (const payer of new Set(rows.map((r) => norm(r.payer)))) {
         let owner = mapped.get(payer) ?? null;
         if (!owner && input.chain) owner = (await input.chain.ownerOf(payer as Address).catch(() => null))?.toLowerCase() ?? null;
-        owners.set(payer, owner && isAddress(owner, {strict: false}) ? {payer, owner, ownerResolved: true} : {payer, owner: payer, ownerResolved: false});
+        owner = ownerAddress(owner);
+        owners.set(payer, owner ? {payer, owner, ownerResolved: true} : {payer, owner: payer, ownerResolved: false});
     }
 
     const funding: OwnerFunding[] = [...(input.funding?.funding ?? [])];
@@ -152,10 +159,14 @@ export function liveChainClient(fetcher: typeof fetch = fetch): ChainClient {
         },
         async firstFunding(owner) {
             const url = `${explorer}/api?module=account&action=txlist&address=${owner}&sort=asc&page=1&offset=50`;
-            const body = (await (await fetcher(url, {signal: AbortSignal.timeout(15_000)})).json()) as {result?: {from: string; to: string; value: string; timeStamp: string}[]};
+            const body = (await (await fetcher(url, {signal: AbortSignal.timeout(15_000)})).json()) as {
+                result?: {from: string; to: string; value: string; timeStamp: string; isError?: string; txreceipt_status?: string}[];
+            };
             const txs = Array.isArray(body.result) ? body.result : [];
             const first = txs[0];
-            const funded = txs.find((t) => norm(t.to ?? "") === norm(owner) && t.value !== "0" && isAddress(t.from, {strict: false}));
+            // A reverted transfer moved no value, so it funds nobody.
+            const succeeded = (t: (typeof txs)[number]) => t.isError !== "1" && t.txreceipt_status !== "0";
+            const funded = txs.find((t) => succeeded(t) && norm(t.to ?? "") === norm(owner) && t.value !== "0" && isAddress(t.from, {strict: false}));
             if (!first || !funded) return null;
             return {firstFunder: funded.from as Address, firstTxAt: Number(first.timeStamp)};
         },

@@ -5,7 +5,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import type {Address} from "viem";
 import {ARCADE_PAY_TO} from "../packages/arcade/src/tickets";
-import {dapReport, loadFundingFile, parseDapArgs, type ChainClient} from "./dap-report";
+import {dapReport, liveChainClient, loadFundingFile, parseDapArgs, type ChainClient} from "./dap-report";
 
 const SHOP = "0x00000000000000000000000000000000000000aa";
 const acct = (n: number) => `0x${n.toString(16).padStart(40, "a")}`.toLowerCase();
@@ -147,6 +147,40 @@ describe("dapReport", () => {
             {payer: acct(2), owner: acct(2), ownerResolved: false},
         ]);
         expect(report.rows[0]).toMatchObject({raw: 2, dap: 2});
+    });
+
+    test("a zero-address owner is unresolved: renounced accounts keep their own identities", async () => {
+        const zero = "0x0000000000000000000000000000000000000000";
+        const db = facilitator([1, 2, 3].map((n) => ({payer: acct(n), payTo: SHOP, day: "2026-10-20", outcome: "settled" as const})));
+        const chain = fakeChain({[acct(1)]: zero, [acct(2)]: zero, [acct(3)]: eoa(3)}, {});
+        const report = await dapReport({facilitator: db, chain});
+        expect(report.payers).toEqual([
+            {payer: acct(1), owner: acct(1), ownerResolved: false},
+            {payer: acct(2), owner: acct(2), ownerResolved: false},
+            {payer: acct(3), owner: eoa(3), ownerResolved: true},
+        ]);
+        expect(report.rows[0]).toMatchObject({raw: 3, dap: 3});
+        const fromFile = await dapReport({facilitator: db, funding: {owners: {[acct(1)]: zero, [acct(2)]: zero}}});
+        expect(fromFile.unresolvedOwners).toBe(3);
+        expect(fromFile.rows[0]).toMatchObject({raw: 3, dap: 3});
+    });
+
+    test("live client: a reverted incoming transfer is not the first funder", async () => {
+        const owner = eoa(1) as Address;
+        const txs = [
+            {from: "0x2222222222222222222222222222222222222222", to: owner, value: "1000", timeStamp: "100", isError: "1", txreceipt_status: "0"},
+            {from: "0x4444444444444444444444444444444444444444", to: owner, value: "1000", timeStamp: "150", isError: "0", txreceipt_status: "0"},
+            {from: "0x3333333333333333333333333333333333333333", to: owner, value: "1000", timeStamp: "200", isError: "0", txreceipt_status: "1"},
+        ];
+        const urls: string[] = [];
+        const fetcher = (async (url: string) => {
+            urls.push(url);
+            return new Response(JSON.stringify({result: txs}));
+        }) as unknown as typeof fetch;
+        expect(await liveChainClient(fetcher).firstFunding(owner)).toEqual({firstFunder: "0x3333333333333333333333333333333333333333", firstTxAt: 100});
+        expect(urls[0]).toContain(`address=${owner}`);
+        txs.pop();
+        expect(await liveChainClient(fetcher).firstFunding(owner)).toBeNull();
     });
 
     test("seller orders cross-check counts settlements with no order", async () => {
