@@ -1,0 +1,82 @@
+{
+  "manifest_version": "0.3",
+  "name": "mapae",
+  "display_name": "Mapae",
+  "version": "0.1.0",
+  "description": "마패 에이전트 결제 — Studio에서 받은 세션 키와 permission으로 GIWA 테스트넷 mUSDC 결제를 위임 서명한다. 가스는 facilitator가 낸다.",
+  "author": {
+    "name": "Mapae"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kooroot/Mapae.git"
+  },
+  "homepage": "https://mapae.io",
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "SELLER_URL": "https://seller.mapae.io",
+        "FACILITATOR_URL": "https://facilitator.mapae.io",
+        "GIWA_SEPOLIA_RPC_URL": "https://sepolia-rpc.giwa.io",
+        "FRAMEWORK_ADMIN_ADDRESS": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+        "DELEGATION_DEPLOYMENT_PATH": "${__dirname}/deployments/giwa-sepolia.framework.json",
+        "DELEGATION_MANIFEST_PATH": "${__dirname}/deployments/giwa-sepolia.framework-manifest.json",
+        "AGENT_PRIVATE_KEY": "${user_config.agent_private_key}",
+        "PARENT_PERMISSION_CONTEXT": "${user_config.permission_context}",
+        "AGENT_MAX_PAYMENT_MUSDC": "${user_config.max_payment_musdc}",
+        "AGENT_SESSION_BUDGET_MUSDC": "${user_config.session_budget_musdc}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "mapae_pay_for_resource",
+      "description": "마패 판매자 자원을 가져오고, 402가 오면 온체인 한도 안에서 결제 전용 ERC-7710 leaf를 서명해 다시 요청한다."
+    },
+    {
+      "name": "mapae_status",
+      "description": "세션 키 주소, 신뢰하는 facilitator, 지출 한도 등 에이전트 런타임 상태를 보여준다."
+    }
+  ],
+  "user_config": {
+    "agent_private_key": {
+      "type": "string",
+      "title": "에이전트 세션 키",
+      "description": "Studio 번들의 AGENT_PRIVATE_KEY 값(0x로 시작하는 64자리 hex). OS 키체인에 저장된다.",
+      "sensitive": true,
+      "required": true
+    },
+    "permission_context": {
+      "type": "string",
+      "title": "Permission context",
+      "description": "Studio 번들의 permission context 값(0x로 시작하는 hex). OS 키체인에 저장된다.",
+      "sensitive": true,
+      "required": true
+    },
+    "max_payment_musdc": {
+      "type": "string",
+      "title": "결제 1건 상한 (mUSDC)",
+      "description": "이 확장이 한 번에 서명할 최대 금액. 온체인 한도와 별개의 로컬 상한이다.",
+      "default": "2.50",
+      "required": false
+    },
+    "session_budget_musdc": {
+      "type": "string",
+      "title": "세션 누적 상한 (mUSDC)",
+      "description": "확장 프로세스가 재시작될 때까지 서명할 수 있는 누적 금액.",
+      "default": "10.00",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}
