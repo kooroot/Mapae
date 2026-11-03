@@ -122,13 +122,26 @@ describe("browser-key provider", () => {
         await expect(provider.request({method: "wallet_switchEthereumChain", params: [{chainId: "0x1"}]})).rejects.toMatchObject({code: 4902});
     });
 
-    test("read-only methods are forwarded; signing-shaped methods are not", async () => {
-        const {provider, bodies, owner} = await connected();
+    test("only allowlisted read-only methods are forwarded; sending and signing-shaped methods are refused unforwarded", async () => {
+        const {provider, bodies, owner, seen} = await connected(async () => false);
         expect(await provider.request({method: "eth_getBalance", params: [owner, "latest"]})).toBe("0xde0b6b3a7640000");
         expect(bodies).toHaveLength(1);
-        await expect(provider.request({method: "eth_sign", params: [owner, "0x00"]})).rejects.toMatchObject({code: 4200});
-        await expect(provider.request({method: "eth_signTransaction", params: [{}]})).rejects.toMatchObject({code: 4200});
+        const refused = [
+            {method: "eth_sendRawTransaction", params: ["0x02f86c"]},
+            {method: "personal_sendTransaction", params: [{from: owner, to: address(0xbeef), value: "0x1"}, "pw"]},
+            {method: "eth_sign", params: [owner, "0x00"]},
+            {method: "eth_signTransaction", params: [{}]},
+            {method: "eth_signTypedData_v3", params: [owner, "{}"]},
+            {method: "eth_sendUserOperation", params: [{}]},
+            {method: "wallet_sendCalls", params: [{}]},
+            {method: "wallet_addEthereumChain", params: [{}]},
+            {method: "personal_unlockAccount", params: [owner, "pw"]},
+            {method: "eth_subscribe", params: ["newHeads"]},
+            {method: "something_unknown"},
+        ];
+        for (const call of refused) await expect(provider.request(call)).rejects.toMatchObject({code: 4200});
         expect(bodies).toHaveLength(1);
+        expect(seen).toHaveLength(0);
     });
 
     test("(f) a declined confirm rejects every signing method with 4001 and sends nothing", async () => {

@@ -38,9 +38,17 @@ export function rpcError(code: number, message: string): Error & {code: number} 
 }
 
 const KEY_PATTERN = /^0x[0-9a-fA-F]{64}$/;
-const SIGNING = new Set(["personal_sign", "eth_signTypedData_v4", "eth_sendTransaction"]);
-/** Signing-shaped methods this wallet does not offer; never forwarded. */
-const REFUSED = /^(eth_sign|eth_signTransaction|eth_signTypedData(_v1|_v3)?|wallet_.*)$/;
+/**
+ * The only methods forwarded to the RPC: reads that neither sign nor send. Anything else
+ * (eth_sendRawTransaction, personal_sendTransaction, eth_sign, wallet_*, ...) is refused with 4200,
+ * so no request can reach the network without passing the confirm above.
+ */
+const READ_ONLY = new Set([
+    "eth_blockNumber", "eth_call", "eth_estimateGas", "eth_feeHistory", "eth_gasPrice", "eth_maxPriorityFeePerGas",
+    "eth_getBalance", "eth_getCode", "eth_getStorageAt", "eth_getTransactionCount", "eth_getLogs",
+    "eth_getBlockByNumber", "eth_getBlockByHash", "eth_getTransactionByHash", "eth_getTransactionReceipt",
+    "eth_getBlockTransactionCountByNumber", "eth_getBlockTransactionCountByHash", "eth_syncing", "web3_clientVersion",
+]);
 
 function storedKey(store: KeyStore | undefined): Hex | undefined {
     const value = store?.getItem(BROWSER_KEY_STORAGE_KEY) ?? undefined;
@@ -132,7 +140,7 @@ export function createBrowserKeyProvider({store, confirm, chain = giwaChain, rpc
                     } as Parameters<typeof wallet.sendTransaction>[0]);
                 }
                 default:
-                    if (SIGNING.has(method) || REFUSED.test(method)) throw rpcError(4200, `${method} is not supported by this browser key`);
+                    if (!READ_ONLY.has(method)) throw rpcError(4200, `${method} is not supported by this browser key`);
                     return rpc.request({method, params} as never);
             }
         },

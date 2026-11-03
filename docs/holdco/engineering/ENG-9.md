@@ -28,7 +28,7 @@ The hooks that sign (`giwa-wallet.ts`, `useGuardians.ts`, `useGiwaTickets.ts`, `
 - `eth_chainId` → `0x164ce`; `eth_accounts` → `[]` until a key exists; `eth_requestAccounts` loads or generates the key.
 - `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`: wait on the confirm; decline → error `4001`, nothing sent. Signed locally with `privateKeyToAccount` (65-byte canonical ECDSA). The transaction is signed locally and only `eth_sendRawTransaction` reaches the RPC.
 - `wallet_switchEthereumChain` → `null` for 91342, error `4902` otherwise.
-- `eth_sign`, `eth_signTransaction`, `eth_signTypedData`/`_v1`/`_v3` and other `wallet_*` → error `4200`, never forwarded. Every other method is forwarded to `http(rpcUrl)` from `apps/web/src/lib/config.ts`.
+- Only an allowlist of read-only methods (`READ_ONLY` in the connector: `eth_call`, `eth_getBalance`, `eth_estimateGas`, block/receipt/log/fee reads, ...) is forwarded to `http(rpcUrl)` from `apps/web/src/lib/config.ts`. Every other method — `eth_sendRawTransaction`, `personal_sendTransaction`, `eth_sign`, `eth_signTransaction`, `eth_signTypedData`/`_v1`/`_v3`, `wallet_*` other than the switch, and anything unknown — is refused with `4200` and never forwarded, so nothing reaches the network without the confirm. The test "only allowlisted read-only methods are forwarded" asserts this with an always-decline confirm: zero extra RPC bodies, zero confirm calls. (Attempt 2: attempt 1 used a deny-list and forwarded `eth_sendRawTransaction` and `personal_sendTransaction`; Verification rejected it.)
 
 ## Threat notes (from RES-3) and where the UI shows them
 
@@ -63,6 +63,6 @@ The mint still needs test ETH (RES-1 blocker #2). With this ticket a visitor wit
 2. Storage is `localStorage` (one key, versioned `.v1`), not IndexedDB or a non-extractable WebCrypto key: secp256k1 is not a WebCrypto curve, and the ticket requires exporting the raw hex.
 3. The confirm dialog reads the locale from `<html lang>` because it mounts on its own root outside the route tree (no file outside the allowed list could host it).
 4. A `personal_sign` that is not an EIP-4361 message still opens the confirm, showing "Unknown (not a sign-in message)" for the domain.
-5. Signing-shaped methods other than the three named are refused with `4200` rather than forwarded.
+5. Forwarding is an allowlist of read-only methods; any method not on it (including ones a future dApp feature might need, such as `eth_subscribe`) is refused with `4200` until it is added deliberately.
 6. The picker's markup moved into the presentational `WalletPickerOptions` so the "injected wallet hides the entry" rule is testable with `renderToStaticMarkup`; the visible markup for the injected path is unchanged.
 7. `eth_sendTransaction` fills missing nonce, gas and fees through viem's `sendTransaction` against the same transport (`eth_getTransactionCount`, `eth_estimateGas`, block/fee reads), forwarded as read-only calls.
