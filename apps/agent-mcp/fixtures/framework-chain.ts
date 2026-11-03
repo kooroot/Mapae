@@ -43,8 +43,9 @@ export async function nodeSession(
     file: string,
     env: Record<string, string>,
     calls: {method: string; params?: unknown}[],
+    nodeArgs: string[] = [],
 ): Promise<{responses: Record<string, unknown>[]; stdoutLines: string[]; alive: boolean}> {
-    const proc = Bun.spawn(["node", file], {
+    const proc = Bun.spawn(["node", ...nodeArgs, file], {
         env: {PATH: process.env.PATH ?? "", ...env},
         stdin: "pipe",
         stdout: "pipe",
@@ -105,7 +106,8 @@ export function toolBody(response: Record<string, unknown>): Record<string, unkn
 export async function statusFromNode(
     file: string,
     urls: {GIWA_SEPOLIA_RPC_URL: string; FACILITATOR_URL: string},
+    nodeArgs: string[] = [],
 ): Promise<Record<string, unknown>> {
-    const {responses} = await nodeSession(file, fixtureEnv(urls), [STATUS]);
+    const {responses} = await nodeSession(file, fixtureEnv(urls), [STATUS], nodeArgs);
     return toolBody(responses[1]!);
 }

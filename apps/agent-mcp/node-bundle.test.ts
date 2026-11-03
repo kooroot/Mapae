@@ -1,5 +1,5 @@
 import {afterAll, beforeAll, describe, expect, test} from "bun:test";
-import {mkdtempSync, readFileSync, rmSync} from "node:fs";
+import {existsSync, mkdtempSync, readFileSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {privateKeyToAccount} from "viem/accounts";
@@ -10,7 +10,6 @@ import {
     STATUS,
     fixtureEnv,
     nodeSession,
-    rpcKey,
     toolBody,
 } from "./fixtures/framework-chain.js";
 
@@ -22,62 +21,43 @@ import {
  * bundle is built the way the extension will ship it and driven over stdio by hand, so
  * every byte on stdout is seen: a stray log line would corrupt a real client's stream.
  *
- * No network: the RPC and the facilitator are local fakes on loopback. The fake RPC
- * replays `fixtures/framework-chain.rpc.json` — the answers a local replay of the GIWA
- * Framework deployment gave the shipped bundle (`fixtures/record-framework-chain.ts`) —
- * so the audited bytecode verifier runs unmodified and passes.
+ * No network and no socket: `fixtures/fake-chain-preload.mjs` (`node --import`) answers
+ * the RPC and the facilitator inside the server's process. The fake RPC replays
+ * `fixtures/framework-chain.rpc.json` — the answers a local replay of the GIWA Framework
+ * deployment gave the shipped bundle (`fixtures/record-framework-chain.ts`) — so the
+ * audited bytecode verifier runs unmodified and passes.
  */
 const HERE = new URL(".", import.meta.url).pathname;
-const RECORDING = JSON.parse(readFileSync(join(HERE, "fixtures/framework-chain.rpc.json"), "utf8")) as Record<
-    string,
-    unknown
->;
+const PRELOAD = join(HERE, "fixtures/fake-chain-preload.mjs");
+// Same values as FAKE_RPC_URL / FAKE_FACILITATOR_URL in the preload: closed loopback ports.
+const URLS = {GIWA_SEPOLIA_RPC_URL: "http://127.0.0.1:1/", FACILITATOR_URL: "http://127.0.0.1:2/"};
 
 let outDir: string;
-let rpcServer: ReturnType<typeof Bun.serve>;
-let facilitator: ReturnType<typeof Bun.serve>;
-const rpcMethods: string[] = [];
-const rpcMisses: string[] = [];
-/** When set, every eth_getCode answers this instead of the recording. */
-let codeOverride: string | undefined;
-
 const BUNDLE = () => join(outDir, "mapae-agent-mcp.js");
+const LOG = () => join(outDir, "rpc.jsonl");
 
-function rpcAnswer(call: {id: unknown; method: string; params?: unknown[]}): unknown {
-    rpcMethods.push(call.method);
-    if (codeOverride !== undefined && call.method === "eth_getCode") {
-        return {jsonrpc: "2.0", id: call.id, result: codeOverride};
-    }
-    const key = rpcKey(call.method, call.params);
-    if (key in RECORDING) return {jsonrpc: "2.0", id: call.id, result: RECORDING[key]};
-    rpcMisses.push(key);
-    return {jsonrpc: "2.0", id: call.id, error: {code: -32601, message: "fake rpc: not in the recording"}};
-}
-
-function urls(): {GIWA_SEPOLIA_RPC_URL: string; FACILITATOR_URL: string} {
-    return {GIWA_SEPOLIA_RPC_URL: rpcServer.url.toString(), FACILITATOR_URL: facilitator.url.toString()};
+/** A full boot under node with the fake chain preloaded; returns the status body and the RPC log. */
+async function bootWithFakeChain(codeOverride?: string) {
+    rmSync(LOG(), {force: true});
+    const env: Record<string, string> = {
+        ...fixtureEnv(URLS),
+        FAKE_CHAIN_RECORDING: join(HERE, "fixtures/framework-chain.rpc.json"),
+        FAKE_CHAIN_LOG: LOG(),
+        FAKE_FACILITATOR_SIGNER: FACILITATOR_SIGNER,
+    };
+    if (codeOverride) env.FAKE_CHAIN_CODE_OVERRIDE = codeOverride;
+    const session = await nodeSession(BUNDLE(), env, [STATUS], ["--import", PRELOAD]);
+    const calls = existsSync(LOG())
+        ? readFileSync(LOG(), "utf8")
+              .trim()
+              .split("\n")
+              .map((line) => JSON.parse(line) as {method: string; key: string; miss: boolean})
+        : [];
+    return {...session, body: toolBody(session.responses[1]!), calls};
 }
 
 beforeAll(async () => {
     outDir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "mapae-node-bundle-"));
-    rpcServer = Bun.serve({
-        hostname: "127.0.0.1",
-        port: 0,
-        async fetch(request) {
-            const body = (await request.json()) as
-                | {id: unknown; method: string; params?: unknown[]}
-                | {id: unknown; method: string; params?: unknown[]}[];
-            return Response.json(Array.isArray(body) ? body.map(rpcAnswer) : rpcAnswer(body));
-        },
-    });
-    facilitator = Bun.serve({
-        hostname: "127.0.0.1",
-        port: 0,
-        fetch(request) {
-            if (new URL(request.url).pathname !== "/supported") return new Response(null, {status: 404});
-            return Response.json({signers: {"eip155:91342": [FACILITATOR_SIGNER]}});
-        },
-    });
     const proc = Bun.spawn(["bun", "build", "./index.ts", "--target=node", "--outfile", BUNDLE()], {
         cwd: HERE,
         stdout: "ignore",
@@ -88,8 +68,6 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(() => {
-    rpcServer?.stop(true);
-    facilitator?.stop(true);
     if (outDir) rmSync(outDir, {recursive: true, force: true});
 });
 
@@ -121,19 +99,15 @@ describe("the Node bundle", () => {
     }, 30_000);
 
     test("with a fixture key and inline permission, the shipped bundle bootstraps and reports the fixture's address", async () => {
-        rpcMethods.length = 0;
-        rpcMisses.length = 0;
-        codeOverride = undefined;
-        const {responses, stdoutLines, alive} = await nodeSession(BUNDLE(), fixtureEnv(urls()), [STATUS]);
-        const body = toolBody(responses[1]!);
+        const {body, calls, stdoutLines, alive} = await bootWithFakeChain();
         expect(body.code).toBeUndefined();
         expect(body.ok).toBe(true);
         expect(body.sessionKey).toBe(privateKeyToAccount(FIXTURE_KEY).address);
         expect(body.trustedFacilitators).toEqual([FACILITATOR_SIGNER]);
         expect(alive).toBe(true);
         // The real verifier ran: it fetched the Framework's runtime code from the fake chain.
-        expect(rpcMethods).toContain("eth_getCode");
-        expect(rpcMisses).toEqual([]);
+        expect(calls.map((call) => call.method)).toContain("eth_getCode");
+        expect(calls.filter((call) => call.miss).map((call) => call.key)).toEqual([]);
         for (const line of stdoutLines) {
             expect((JSON.parse(line) as {jsonrpc?: string}).jsonrpc).toBe("2.0");
         }
@@ -143,14 +117,9 @@ describe("the Node bundle", () => {
 
     test("the same boot is refused when the chain's bytecode is not the pinned composition", async () => {
         // Control for the test above: the verifier is live, not skipped.
-        codeOverride = "0x6000";
-        try {
-            const {responses} = await nodeSession(BUNDLE(), fixtureEnv(urls()), [STATUS]);
-            const body = toolBody(responses[1]!);
-            expect(body.code).toBe("RUNTIME_UNAVAILABLE");
-            expect(String(body.detail)).toContain("runtime code does not match the pinned composition");
-        } finally {
-            codeOverride = undefined;
-        }
+        const {body, calls} = await bootWithFakeChain("0x6000");
+        expect(calls.map((call) => call.method)).toContain("eth_getCode");
+        expect(body.code).toBe("RUNTIME_UNAVAILABLE");
+        expect(String(body.detail)).toContain("runtime code does not match the pinned composition");
     }, 30_000);
 });
