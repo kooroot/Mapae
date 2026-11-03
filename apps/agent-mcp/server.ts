@@ -24,9 +24,8 @@ import {z} from "zod/v4";
 const REQUEST_TIMEOUT_MS = 50_000;
 
 /**
- * The server's tool surface, apart from its transport so a test harness can hand it a
- * runtime loader of its own (`node-bootstrap-harness.ts`). `index.ts` is the only
- * production caller and passes `loadDelegatedAgentRuntime` unchanged.
+ * The server's tool surface, apart from its transport and its runtime loader.
+ * `index.ts` is the only caller and passes `loadDelegatedAgentRuntime` unchanged.
  */
 export function createAgentServer(
     loadRuntime: () => Promise<DelegatedAgentRuntime>,
