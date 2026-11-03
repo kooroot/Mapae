@@ -296,6 +296,12 @@ export type DelegatedPaymentResult =
            * 부르는 것은 없는 결제를 가리키는 것이다.
            */
           paymentIdentifier?: string;
+          /**
+           * `SETTLEMENT_UNKNOWN`에만, 판매자가 `Payment-Response`에 해시를 실었을 때만 있다.
+           * `readSellerRefusal`이 hex 패턴으로 맞춘 값이라 판매자 문장이 아니다 — 호출자가
+           * 탐색기로 들고 갈 수 있는 유일한 것이라 `detail` 문장 속에만 두지 않는다.
+           */
+          transaction?: Hex;
       };
 
 /**
@@ -884,7 +890,10 @@ export async function payForDelegatedResource(
         // The hash is matched against a hex pattern before it gets here, so it is a hash and
         // not seller prose — and it is the one thing the caller can take to an explorer.
         const found = refusal.transaction === undefined ? "" : ` — transaction ${refusal.transaction}`;
-        return sent(code, `${what} — ${REFUSAL_NOTE[code]}${found}`, second.status);
+        const failed = sent(code, `${what} — ${REFUSAL_NOTE[code]}${found}`, second.status);
+        return code === "SETTLEMENT_UNKNOWN" && refusal.transaction !== undefined
+            ? {...failed, transaction: refusal.transaction}
+            : failed;
     }
 
     // A paid resource is whatever the seller serves — a ticket as JSON, a report as

@@ -1025,6 +1025,7 @@ describe("D5 the seller's own word decides, when it is one we know", () => {
         // word would turn that into "nothing happened, pay again".
         const misdirected = await resultFor(502, refusal("vendor_not_credited", {transaction: TX}));
         expect(misdirected.code).toBe("SETTLEMENT_UNKNOWN");
+        expect(misdirected.transaction).toBe(TX);
         expect(misdirected.detail).not.toContain("vendor_not_credited");
         for (const word of ["settlement_reverted", "payer_budget_exhausted", "not a word at all", ""]) {
             expect((await resultFor(402, refusal(word))).code, word).toBe("PAYMENT_REJECTED");
