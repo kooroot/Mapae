@@ -16,7 +16,7 @@ facilitator의 relayer가 담당하고, 지출 한도는 온체인 caveat이 강
 
 | tool | 입력 | 반환 |
 |---|---|---|
-| `mapae_pay_for_resource` | `resource` — 판매자 origin의 절대 경로 (예: `/s/demo-cafe/americano`) | 성공: `resourceUrl`·`amount`·`payTo`·`resource`(content-type이 JSON이면 파싱한 값, 아니면 본문 문자열), 그리고 판매자 응답에 있을 때 `transaction`(tx 해시)과 `contentType`(미디어 타입만, 파라미터는 버린다). 실패: `code`·`detail`, 해당 시 `status` |
+| `mapae_pay_for_resource` | `resource` — 판매자 origin의 절대 경로 (예: `/s/demo-cafe/americano`) | 성공: `resourceUrl`·`amount`·`payTo`·`resource`(content-type이 JSON이면 파싱한 값, 아니면 본문 문자열), 그리고 판매자 응답에 있을 때 `transaction`(tx 해시)과 `contentType`(미디어 타입만, 파라미터는 버린다). 항상 `settlement`(해시가 있으면 `"confirmed"`, 없으면 `"unconfirmed"`)와 `next`(확인 방법 한 줄 — 탐색기 링크, 해시가 없으면 `/app`의 Studio 영수증 화면), 해시가 있을 때만 `explorerUrl`. 실패: `code`·`detail`, 해당 시 `status`; `SETTLEMENT_UNKNOWN`은 `retry: false`·`next`와 판매자가 해시를 실었을 때 `explorerUrl`, `LIMIT_EXCEEDED`·`SELLER_UNAVAILABLE`은 `retry: true` |
 | `mapae_status` | 없음 | 네트워크, 세션키 주소, seller/facilitator 엔드포인트, DelegationManager, 신뢰 signer 목록, 그리고 설정된 지출 한도(`limits`) |
 
 `mapae_status`는 키 원문과 서명된 permission context를 반환하지 않는다 — 둘 다

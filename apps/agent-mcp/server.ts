@@ -5,7 +5,7 @@ import {
     type AgentSpendPolicy,
     type DelegatedAgentRuntime,
 } from "@mapae/delegation";
-import {GIWA_SEPOLIA_CAIP2, fromTokenAmount, redactForLog} from "@mapae/shared";
+import {GIWA_SEPOLIA_CAIP2, explorerTxUrl, fromTokenAmount, redactForLog} from "@mapae/shared";
 import {z} from "zod/v4";
 
 /**
@@ -22,6 +22,16 @@ import {z} from "zod/v4";
  * giving up first would put the same ambiguity one level higher.
  */
 const REQUEST_TIMEOUT_MS = 50_000;
+
+/**
+ * 같은 결제를 다시 해도 되는 실패 코드. `docs/mcp-guide.md` §6이 "재시도"라고 적은 둘뿐이다.
+ * `SETTLEMENT_UNKNOWN`은 반대로 `retry: false`를 명시한다 — 칸이 없으면 "모른다"로 읽혀,
+ * 구동 모델이 이미 청구됐을지 모르는 결제를 한 번 더 내밀 수 있다.
+ */
+const RETRYABLE = new Set(["LIMIT_EXCEEDED", "SELLER_UNAVAILABLE"]);
+
+/** `settlement: "confirmed"`는 이 모양의 해시가 있을 때만 — 빈 문자열이나 판매자 문장은 아니다. */
+const TRANSACTION_HASH = /^0x[0-9a-fA-F]{64}$/;
 
 /**
  * The server's tool surface, apart from its transport and its runtime loader.
@@ -107,7 +117,9 @@ export function createAgentServer(
                 "reason on failure. Never broadcasts a transaction itself — the " +
                 "facilitator settles and pays gas. The operator may also cap what this " +
                 "server will sign per payment, per session, and to which recipients; " +
-                "mapae_status reports those limits and SPEND_POLICY_REFUSED names them.",
+                "mapae_status reports those limits and SPEND_POLICY_REFUSED names them. " +
+                "A SETTLEMENT_UNKNOWN result must not be retried until the transaction " +
+                "hash or the balance has been checked — the payer may already be charged.",
             inputSchema: {
                 resource: z
                     .string()
@@ -146,11 +158,37 @@ export function createAgentServer(
                 timeoutMs: REQUEST_TIMEOUT_MS,
             });
             if (!result.ok) {
+                const failure = {
+                    ok: false,
+                    code: result.code,
+                    status: result.status,
+                    detail: result.detail,
+                };
+                if (result.code === "SETTLEMENT_UNKNOWN") {
+                    return textResult(
+                        {
+                            ...failure,
+                            retry: false,
+                            ...(result.transaction === undefined
+                                ? {}
+                                : {explorerUrl: explorerTxUrl(result.transaction)}),
+                            next:
+                                result.transaction === undefined
+                                    ? "Do not pay again yet: check the mUSDC balance (or the Studio receipt screen at /app) first — the payment may already be charged."
+                                    : "Do not pay again yet: check this transaction hash on the explorer (or the mUSDC balance) first — the payment may already be charged.",
+                        },
+                        true,
+                    );
+                }
                 return textResult(
-                    {ok: false, code: result.code, status: result.status, detail: result.detail},
+                    RETRYABLE.has(result.code) ? {...failure, retry: true} : failure,
                     true,
                 );
             }
+            // 사용자는 이 결과만 보고 결제됐는지 판단한다. 해시는 판매자가 실었을 때만 있으니,
+            // 없을 때 "confirmed"라고 쓰면 확인한 적 없는 정산을 확인했다고 말하는 것이다.
+            const transaction = result.transaction;
+            const settled = transaction !== undefined && TRANSACTION_HASH.test(transaction);
             return textResult({
                 ok: true,
                 resourceUrl: target.toString(),
@@ -159,6 +197,11 @@ export function createAgentServer(
                 transaction: result.transaction,
                 contentType: result.contentType,
                 resource: result.resource,
+                settlement: settled ? "confirmed" : "unconfirmed",
+                ...(settled ? {explorerUrl: explorerTxUrl(transaction)} : {}),
+                next: settled
+                    ? "Paid. Open explorerUrl to see the settled transaction."
+                    : "The seller sent no transaction hash: confirm the payment on the Studio receipt screen at /app before paying again.",
             });
         },
     );
