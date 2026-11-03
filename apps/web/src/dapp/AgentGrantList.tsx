@@ -5,6 +5,7 @@ import {
     Check,
     Clipboard,
     Clock3,
+    Download,
     History,
     Trash2,
     Info,
@@ -17,6 +18,7 @@ import {useEffect, useState} from "react";
 import {buildMcpBundle} from "../lib/agent-key";
 import {docsUrl} from "../lib/config";
 import {deployment} from "../lib/chain-client";
+import {DESKTOP_EXTENSION_FILENAME, DESKTOP_EXTENSION_PATH, desktopPasteValues} from "../lib/desktop-extension";
 import {short} from "../lib/dial";
 import type {SessionGrant} from "../lib/grant";
 import type {Locale} from "../lib/i18n";
@@ -335,6 +337,16 @@ export function AgentGrantList({
                                 {grant.agentKey ? (
                                     <p className="studio-bundle-note">{t.bundleNote}</p>
                                 ) : null}
+                                <DesktopInstall
+                                    grant={grant}
+                                    locale={locale}
+                                    copied={copied}
+                                    onCopied={(tag) => {
+                                        setCopyFault(undefined);
+                                        setCopied(tag);
+                                    }}
+                                    onFault={() => setCopyFault(t.clipboardFault)}
+                                />
                                 {confirming === grant.id ? (
                                     // Two-step inline rather than window.confirm: that dialog
                                     // is unstyled and untranslatable through the COPY maps
@@ -377,6 +389,95 @@ export function AgentGrantList({
                 </div>
             )}
         </div>
+    );
+}
+
+const DESKTOP_COPY: Record<
+    Locale,
+    {title: string; download: string; steps: string; copyKey: string; copyCode: string; keyGone: string}
+> = {
+    en: {
+        title: "Install in Claude Desktop",
+        download: "Download mapae.mcpb",
+        steps:
+            "Double-click the file to install it in Claude Desktop, then paste the two values below into the dialog it opens. No terminal needed.",
+        copyKey: "① Copy agent key",
+        copyCode: "② Copy permission code",
+        keyGone:
+            "The agent key is held only in the tab that created it, so it cannot be copied here. Create a new grant in this tab to install with a fresh key.",
+    },
+    ko: {
+        title: "Claude Desktop에 설치",
+        download: "mapae.mcpb 내려받기",
+        steps:
+            "파일을 더블클릭해 Claude Desktop에 설치한 뒤, 열리는 창에 아래 두 값을 붙여넣으세요. 터미널은 필요 없습니다.",
+        copyKey: "① 에이전트 키 복사",
+        copyCode: "② 권한 코드 복사",
+        keyGone:
+            "에이전트 비밀 키는 만든 탭에만 있어 여기서는 복사할 수 없습니다. 새 키로 설치하려면 이 탭에서 새 권한을 만드세요.",
+    },
+};
+
+/**
+ * The Claude Desktop path (ENG-6): download the extension, then paste exactly the two
+ * values its install dialog asks for. Hook-free so a test can call it and click through.
+ * The key button copies the bare hex only (no `.env` line, no newline): the dialog field
+ * stores it in the OS keychain as-is.
+ */
+export function DesktopInstall({
+    grant,
+    locale,
+    copied,
+    onCopied,
+    onFault,
+}: {
+    grant: SessionGrant;
+    locale: Locale;
+    copied: string | undefined;
+    onCopied: (tag: string) => void;
+    onFault: () => void;
+}) {
+    const t = DESKTOP_COPY[locale];
+    const values = desktopPasteValues(grant);
+    const keyTag = `desktop-key:${grant.id}`;
+    const codeTag = `desktop-code:${grant.id}`;
+    const copy = (value: string, tag: string) =>
+        navigator.clipboard.writeText(value).then(() => onCopied(tag), onFault);
+    return (
+        <section className="studio-desktop-install" aria-label={t.title}>
+            <h3>{t.title}</h3>
+            <p>{t.steps}</p>
+            <a
+                className="mapae-action mapae-action-secondary"
+                href={DESKTOP_EXTENSION_PATH}
+                download={DESKTOP_EXTENSION_FILENAME}
+            >
+                <Download size={15} />
+                {t.download}
+            </a>
+            <button
+                type="button"
+                className="mapae-action mapae-action-secondary"
+                data-copy="agent-key"
+                disabled={!values.agentPrivateKey}
+                onClick={() => {
+                    if (values.agentPrivateKey) void copy(values.agentPrivateKey, keyTag);
+                }}
+            >
+                {copied === keyTag ? <Check size={15} /> : <KeyRound size={15} />}
+                {copied === keyTag ? COPY[locale].copied : t.copyKey}
+            </button>
+            <button
+                type="button"
+                className="mapae-action mapae-action-secondary"
+                data-copy="permission-code"
+                onClick={() => void copy(values.permissionContext, codeTag)}
+            >
+                {copied === codeTag ? <Check size={15} /> : <Clipboard size={15} />}
+                {copied === codeTag ? COPY[locale].copied : t.copyCode}
+            </button>
+            {values.agentPrivateKey ? null : <p className="studio-desktop-key-gone">{t.keyGone}</p>}
+        </section>
     );
 }
 

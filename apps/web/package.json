@@ -6,7 +6,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:landing": "CLOUDFLARE_ENV=landing VITE_SITE_SURFACE=landing vite build",
-    "build:app": "CLOUDFLARE_ENV=app VITE_SITE_SURFACE=app vite build",
+    "build:app": "bun run ../agent-mcp/mcpb/pack.ts --copy-to public/mapae.mcpb && CLOUDFLARE_ENV=app VITE_SITE_SURFACE=app vite build",
     "build:faucet": "CLOUDFLARE_ENV=faucet VITE_SITE_SURFACE=faucet vite build",
     "preview": "vite preview",
     "deploy:landing": "bun run build:landing && wrangler deploy --env landing",

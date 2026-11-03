@@ -30,7 +30,7 @@ bearer 권한이므로 tool 결과로 내보내지 않도록 설계되어 있다
 
 | 항목 | 비고 |
 |---|---|
-| [Bun](https://bun.sh) | 서버 런타임. 저장소 클론 후 `bun install` |
+| [Bun](https://bun.sh) | §2.1~§2.3에만 해당한다 — 서버 런타임. 저장소 클론 후 `bun install`. §2.0의 Claude Desktop 확장은 Bun 없이 Desktop의 Node로 돈다 |
 | 판매자·facilitator 엔드포인트 | 기본 경로는 Mapae가 운영하는 호스팅 엔드포인트다 — 판매자 `https://seller.mapae.io`, facilitator `https://facilitator.mapae.io`. 서비스를 직접 띄울 필요 없이 §3의 URL 변수 두 개만 지정한다. 직접 운영은 §2.3 참조 |
 | payer 스마트계정 | 이미 있으면 그대로 쓴다. 없으면 [app.mapae.io](https://app.mapae.io)에서 서명 한 번으로 만들 수 있다 — 아직 존재하지 않는 계정에 root 위임을 서명하면 같은 호스트의 `/bootstrap` 스폰서가 그 계정을 대납 배포한다. ETH가 필요한 단계는 없다 |
 | 서명된 parent permission | 소유자 지갑이 서명한 JSON 파일. **가장 짧은 경로는 Studio 번들이다(§2.1)** — CLI 조립은 그 아래 |
@@ -43,6 +43,51 @@ curl -s https://facilitator.mapae.io/supported
 ```
 
 `eip155:91342`와 signer 주소가 돌아오면 정상이다.
+
+### 2.0 Claude Desktop 확장 — 설치 없이
+
+터미널·저장소 클론·Bun·`.env` 없이 Claude Desktop에서 결제까지 가는 경로다.
+권한 서명은 §2.1의 1~2단계와 같다.
+
+1. [app.mapae.io](https://app.mapae.io)에서 **"새 에이전트 키"**로 권한을 서명한다
+   (§2.1 1~2단계). 키는 만든 탭에만 있으므로 이 탭을 닫지 않은 채 다음으로 간다.
+2. **내 에이전트 → 에이전트 카드의 "Claude Desktop에 설치"** 블록에서
+   **"mapae.mcpb 내려받기"**로 확장 파일(`https://app.mapae.io/mapae.mcpb`)을 받는다.
+3. 받은 `mapae.mcpb`를 더블클릭한다 — Claude Desktop이 열리며 설치 창을 띄운다.
+   (또는 Desktop의 설정 → 확장 프로그램 화면에 파일을 끌어다 놓는다.)
+4. 설치 창이 묻는 두 값을 Studio 카드의 버튼으로 하나씩 복사해 붙여넣는다.
+
+   | 설치 창 칸 | Studio 버튼 | 값 |
+   |---|---|---|
+   | 에이전트 세션 키 | **① 에이전트 키 복사** | `0x`로 시작하는 64자리 hex 하나 — 다른 글자 없이 |
+   | Permission context | **② 권한 코드 복사** | `0x`로 시작하는 서명된 권한 코드 |
+
+   "① 에이전트 키 복사"가 비활성이면 키를 만든 탭이 아니라는 뜻이다 — 키는
+   만든 탭에만 있다. 그 탭에서 새 권한을 만들어 다시 시작한다.
+5. 선택 칸 두 개는 비워 두면 기본값이 쓰인다. 둘 다 온체인 caveat 위에 얹는
+   로컬 상한이다(§3.1).
+
+   | 칸 | 기본값 |
+   |---|---|
+   | 결제 1건 상한 (mUSDC) | `2.50` |
+   | 세션 누적 상한 (mUSDC) | `10.00` — 확장 프로세스가 재시작될 때까지 누적 |
+
+6. 설치를 마친다. 두 값은 `sensitive` 칸이라 Desktop이 OS 키체인(macOS
+   키체인, Windows 자격 증명 관리자)에 저장하고, 파일로 남지 않는다. 서버는
+   Desktop에 내장된 Node로 돈다 — 확장 manifest가 요구하는 Node는
+   `>=22.12.0`이며, 따로 설치할 것은 없다.
+7. 새 대화에서 **"마패 상태 확인해 줘"**처럼 `mapae_status`를 부르게 한다.
+   세션키 주소와 엔드포인트, `limits`의 `2.50`/`10.00`이 보이면 연결된 것이다.
+8. 첫 결제는 이렇게 시킨다: **"마패로 `/s/demo-cafe/americano`를 결제해 줘"** —
+   `mapae_pay_for_resource`가 불리고, 성공하면 `amount`·`payTo`와 `transaction`
+   (tx 해시)이 돌아온다. 실패 코드는 §6을 본다.
+
+**회수.** 확장을 지우는 것(Desktop 설정 → 확장 프로그램 → 제거)은 이 기기에서
+키를 치울 뿐 권한을 거두지 않는다. 권한 자체는 Studio **내 에이전트 → 권한 보기
+→ 회수 탭**(영문 화면은 Revoke)에서 회수한다. 회수 뒤의 결제는 `PERMISSION_INACTIVE`로 거절된다.
+
+복사한 키는 붙여넣은 뒤 클립보드 기록·기기 간 동기화에서도 지운다. 개발자는
+같은 카드의 "MCP 연결 번들 복사"로 §2.1 경로를 그대로 쓸 수 있다.
 
 ### 2.1 Studio 번들 — 권장 경로
 
