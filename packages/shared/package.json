@@ -11,7 +11,8 @@
     "./token": "./src/token.ts",
     "./x402": "./src/x402.ts",
     "./errors": "./src/errors.ts",
-    "./net": "./src/net.ts"
+    "./net": "./src/net.ts",
+    "./metrics/dap": "./src/metrics/dap.ts"
   },
   "peerDependencies": {
     "viem": "*"
