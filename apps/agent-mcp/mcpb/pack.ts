@@ -9,7 +9,7 @@
  * (`docs/holdco/engineering/ENG-5.md`), not a dependency of this script.
  */
 import {copyFileSync, mkdirSync, rmSync, statSync} from "node:fs";
-import {join} from "node:path";
+import {dirname, join, resolve} from "node:path";
 
 const HERE = new URL(".", import.meta.url).pathname;
 export const AGENT_MCP = join(HERE, "..");
@@ -55,4 +55,13 @@ export async function pack(): Promise<{stage: string; archive: string; bytes: nu
 if (import.meta.main) {
     const {archive, bytes} = await pack();
     console.log(`[mcpb] ${archive} (${bytes} bytes)`);
+    const flag = process.argv.indexOf("--copy-to");
+    if (flag !== -1) {
+        const target = process.argv[flag + 1];
+        if (!target) throw new Error("--copy-to needs a path");
+        const copy = resolve(process.cwd(), target);
+        mkdirSync(dirname(copy), {recursive: true});
+        copyFileSync(archive, copy);
+        console.log(`[mcpb] copied to ${copy}`);
+    }
 }

@@ -27,6 +27,7 @@ node_modules/
 .yarn/
 .pnpm-store/
 dist/
+apps/web/public/mapae.mcpb
 build/
 .vite/
 .turbo/

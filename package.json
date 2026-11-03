@@ -12,7 +12,7 @@
     "test:mcp": "cd apps/agent-mcp && bun test",
     "test:docs": "cd apps/docs && bun test",
     "build:docs": "cd apps/docs && bun run build",
-    "build:mcpb": "bun run apps/agent-mcp/mcpb/pack.ts",
+    "build:mcpb": "bun run apps/agent-mcp/mcpb/pack.ts --copy-to apps/web/public/mapae.mcpb",
     "build:seller": "cd packages/seller && bun run build",
     "deploy:docs": "cd apps/docs && bun run deploy",
     "deploy:docs:legacy": "cd apps/docs && bun run deploy:legacy",
