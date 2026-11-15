@@ -29,6 +29,8 @@ and :37 on a GitHub runner (no metrics keys), and GitHub mails a failed
 scheduled run to whoever last changed its cron line. GitHub pauses schedules in
 a repository with no commits for 60 days; re-enable it from the Actions tab.
 Its local-disk row is the runner's, not the Mac's.
+apps/ops-monitor is the second monitor: a Cloudflare Worker that runs the same
+probes every five minutes and alerts over Telegram. See apps/ops-monitor/README.md.
 
 ENCRYPTED SQLITE SNAPSHOT
 Create a private 32-byte hex key file with openssl rand -hex 32 redirected into a

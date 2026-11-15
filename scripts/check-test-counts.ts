@@ -48,6 +48,8 @@ export const SUITES = [
             "apps/delegated-seller",
             "apps/faucet",
             "apps/payment-scheduler",
+            "apps/ops-monitor",
+            "apps/metrics-collector",
             "scripts",
         ],
     },

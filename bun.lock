@@ -110,6 +110,25 @@
         "viem": "^2.55.8",
       },
     },
+    "apps/metrics-collector": {
+      "name": "@mapae/metrics-collector",
+      "dependencies": {
+        "@mapae/arcade": "workspace:*",
+        "@mapae/delegation": "workspace:*",
+        "@mapae/shared": "workspace:*",
+        "@mapae/store": "workspace:*",
+        "viem": "^2.55.8",
+      },
+    },
+    "apps/ops-monitor": {
+      "name": "@mapae/ops-monitor",
+      "dependencies": {
+        "@mapae/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "wrangler": "^4.45.0",
+      },
+    },
     "apps/payment-scheduler": {
       "name": "@mapae/payment-scheduler",
       "dependencies": {
@@ -478,6 +497,10 @@
     "@mapae/facilitator-erc7710": ["@mapae/facilitator-erc7710@workspace:apps/facilitator-erc7710"],
 
     "@mapae/faucet": ["@mapae/faucet@workspace:apps/faucet"],
+
+    "@mapae/metrics-collector": ["@mapae/metrics-collector@workspace:apps/metrics-collector"],
+
+    "@mapae/ops-monitor": ["@mapae/ops-monitor@workspace:apps/ops-monitor"],
 
     "@mapae/payment-scheduler": ["@mapae/payment-scheduler@workspace:apps/payment-scheduler"],
 

@@ -1,0 +1,8 @@
+# Copy to .dev.vars for `wrangler dev` (gitignored). Production values go in with
+# `wrangler secret put <NAME>`, never into a file that is committed.
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+TELEGRAM_WEBHOOK_SECRET=
+INGEST_TOKEN=
+SELLER_METRICS_TOKEN=
+FACILITATOR_METRICS_TOKEN=

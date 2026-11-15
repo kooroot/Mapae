@@ -1,51 +1,9 @@
 import {statfsSync, statSync, readFileSync} from "node:fs";
-import {parseFaucetStatus} from "../../packages/delegation/src/faucet-policy";
-import {MOCK_USDC, GIWA_SEPOLIA_CAIP2} from "../../packages/shared/src/index";
+import {runProbes, type Fetcher, type MetricsKeys} from "../../apps/ops-monitor/src/probes";
 
-/** True only for each target's healthy contract; a faucet tab the service turned off (an empty wallet, a broken mint) is red. */
-export function validProbe(kind: "health" | "profile" | "ticket" | "page" | "faucet", response: Response, value: unknown): boolean {
-    if (kind === "page") return response.status === 200;
-    if (kind === "faucet") {
-        if (response.status !== 200) return false;
-        try {
-            const status = parseFaucetStatus(value);
-            return status.musdc.enabled && status.eth.enabled;
-        } catch {return false;}
-    }
-    if (kind === "profile") return response.status === 401 && !!value && typeof value === "object" && "error" in value && JSON.stringify(value.error) === '{"code":"login_required"}';
-    if (!value || typeof value !== "object") return false;
-    if (kind === "health") return response.status === 200 && "ok" in value && value.ok === true;
-    if (response.status !== 402 || !("accepts" in value) || !Array.isArray(value.accepts)) return false;
-    return value.accepts.some(v => v.network === GIWA_SEPOLIA_CAIP2 && v.amount === "1000000" && v.asset?.toLowerCase() === MOCK_USDC.address.toLowerCase());
-}
-export async function check(fetcher: typeof fetch = fetch, metricsKeys?: {seller: string; facilitator: string}) {
-    const targets = [
-        ["web", "https://mapae.io/ko/arcade", "page"],
-        ["seller", "https://seller.mapae.io/health", "health"],
-        ["facilitator", "https://facilitator.mapae.io/health", "health"],
-        ["profile-auth", "https://mapae.io/api/arcade/profile/session", "profile"],
-        ["ticket", "https://mapae.io/api/arcade/giwa/stamp", "ticket"],
-        ["faucet", "https://faucet.mapae.io/api/faucet/status", "faucet"],
-    ] as const;
-    const checks: {name: string; ok: boolean; status: number; ms: number}[] = await Promise.all(targets.map(async ([name, url, kind]) => {
-        const start = Date.now();
-        try {
-            const response = await fetcher(url, {redirect: "error", signal: AbortSignal.timeout(15_000)});
-            const value: unknown = kind === "page" ? (await response.body?.cancel(), null) : await response.json();
-            return {name, ok: validProbe(kind, response, value), status: response.status, ms: Date.now() - start};
-        } catch {return {name, ok: false, status: 0, ms: Date.now() - start};}
-    }));
-    if (metricsKeys) {
-        for (const name of ["seller", "facilitator"] as const) {
-            let ok = false;
-            try {
-                const response = await fetcher(`https://${name}.mapae.io/metrics`, {headers: {Authorization: `Bearer ${metricsKeys[name]}`}, redirect: "error", signal: AbortSignal.timeout(15_000)});
-                const value = await response.json() as {budget?: {remainingWei: string; limitWei: string}; last24h?: {failed: number; total: number}; orders?: unknown};
-                ok = response.ok && (name === "seller" ? !!value.orders : !!value.budget && BigInt(value.budget.remainingWei) > BigInt(value.budget.limitWei) / 10n && !!value.last24h && (value.last24h.total < 20 || value.last24h.failed / value.last24h.total < .2));
-            } catch { /* Secrets and upstream response details are never printed. */ }
-            checks.push({name: `${name}-metrics`, ok, status: 0, ms: 0});
-        }
-    }
+/** The shared public probes plus this machine's own disk, which only a local CLI can see. */
+export async function check(fetcher: Fetcher = fetch, metricsKeys?: MetricsKeys) {
+    const checks = await runProbes(fetcher, metricsKeys);
     const disk = statfsSync(process.cwd()), free = disk.bavail * disk.bsize;
     checks.push({name: "local-disk", ok: free >= 5 * 1024 ** 3 && disk.bavail / disk.blocks >= .1, status: 0, ms: 0});
     return {at: new Date().toISOString(), ok: checks.every(c => c.ok), checks, freeDiskBytes: free};
@@ -53,7 +11,7 @@ export async function check(fetcher: typeof fetch = fetch, metricsKeys?: {seller
 if (import.meta.main) {
     try {
         const [flag, path] = process.argv.slice(2);
-        let keys: {seller: string; facilitator: string} | undefined;
+        let keys: MetricsKeys | undefined;
         if (flag) {
             if (flag !== "--metrics-key-file" || !path || (statSync(path).mode & 0o077) !== 0) throw new Error("private_file_required");
             const value: unknown = JSON.parse(readFileSync(path, "utf8"));

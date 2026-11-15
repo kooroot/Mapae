@@ -12,7 +12,8 @@
     "./x402": "./src/x402.ts",
     "./errors": "./src/errors.ts",
     "./net": "./src/net.ts",
-    "./metrics/dap": "./src/metrics/dap.ts"
+    "./metrics/dap": "./src/metrics/dap.ts",
+    "./ops-ingest": "./src/ops-ingest.ts"
   },
   "peerDependencies": {
     "viem": "*"

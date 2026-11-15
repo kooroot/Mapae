@@ -1,0 +1,27 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "mapae-ops-monitor",
+    "main": "src/worker.ts",
+    "compatibility_date": "2025-09-02",
+    // Probes must see what an outside visitor sees. Without this flag a fetch to a Worker
+    // on the same zone is routed internally (or refused with 1042) — which matters the day
+    // this Worker moves from workers.dev onto ops.mapae.io, next to the sites it probes.
+    "compatibility_flags": ["global_fetch_strictly_public"],
+    "observability": {"enabled": true},
+    // The Telegram webhook needs a public URL. workers.dev until a custom domain is
+    // decided; the README's runbook registers whichever URL is live.
+    "workers_dev": true,
+    "preview_urls": false,
+    "triggers": {"crons": ["*/5 * * * *"]},
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "mapae-ops",
+            // PLACEHOLDER. `wrangler d1 create mapae-ops` prints the real id at deploy
+            // time; paste it here. Deploying with this value fails, which is the point.
+            "database_id": "00000000-0000-0000-0000-000000000000"
+        }
+    ]
+    // Secrets (never in this file): TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+    // TELEGRAM_WEBHOOK_SECRET, INGEST_TOKEN, SELLER_METRICS_TOKEN, FACILITATOR_METRICS_TOKEN.
+}

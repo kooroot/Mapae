@@ -4,7 +4,7 @@ import {mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync} from "node
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {backup, restoreDrill} from "./backup";
-import {validProbe} from "./check";
+import {validProbe} from "../../apps/ops-monitor/src/probes";
 import {reconcile} from "./reconcile";
 import {openStore} from "../../packages/store/src/index";
 

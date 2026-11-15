@@ -83,6 +83,8 @@ temp/
 # secret in development, so it must never be commit-eligible.
 .dev.vars
 .dev.vars.*
+# The empty template is the one exception: it lists names, never values.
+!.dev.vars.example
 
 # Run artifacts written into the tree by the GIWA demo scripts
 *.evidence.json

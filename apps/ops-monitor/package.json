@@ -1,0 +1,15 @@
+{
+  "name": "@mapae/ops-monitor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@mapae/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "wrangler": "^4.45.0"
+  }
+}
