@@ -116,7 +116,7 @@ command runs from `apps/ops-monitor`. The steps keep each secret out of shell ar
 
    ```bash
    bunx wrangler d1 create mapae-ops
-   # paste the printed database_id into wrangler.jsonc (replacing the 0000… placeholder)
+   # set the printed database_id in wrangler.jsonc, and decline wrangler's offer to add a binding
    bunx wrangler d1 execute mapae-ops --remote --file schema.sql
    ```
 

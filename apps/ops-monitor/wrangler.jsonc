@@ -17,9 +17,7 @@
         {
             "binding": "DB",
             "database_name": "mapae-ops",
-            // PLACEHOLDER. `wrangler d1 create mapae-ops` prints the real id at deploy
-            // time; paste it here. Deploying with this value fails, which is the point.
-            "database_id": "00000000-0000-0000-0000-000000000000"
+            "database_id": "60b27256-3fd5-4c76-b063-94cfe5967ed8"
         }
     ]
     // Secrets (never in this file): TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
