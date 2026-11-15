@@ -1,6 +1,7 @@
 /** Public read-only release evidence. This tool never loads a wallet or sends a transaction. */
-import {createPublicClient, getAddress, http, isAddress, parseAbi, type Address} from 'viem';
+import {createPublicClient, getAddress, isAddress, parseAbi, type Address} from 'viem';
 import {giwaSepolia} from '../packages/shared/src/index';
+import {throttledHttp} from '../packages/delegation/src/rpc';
 import {GUARDIAN_CHAIN_ID, GUARDIAN_ENTROPY, GUARDIAN_PROVIDER, guardianTokenId, guardianTraits} from '../packages/arcade/src/guardians';
 import {guardianAbi} from '../packages/arcade/src/guardian-abi';
 
@@ -27,7 +28,7 @@ async function main() {
     const collection = options.get('--collection'), token = options.get('--token');
     if (collection && !isAddress(collection)) throw Error('invalid_collection');
     if (token && (!collection || !guardianTokenId(token) || BigInt(token) > 10000n)) throw Error('invalid_token');
-    const client = createPublicClient({chain: giwaSepolia, transport: http(undefined, {timeout: 15000, retryCount: 1})});
+    const client = createPublicClient({chain: giwaSepolia, transport: throttledHttp(giwaSepolia.rpcUrls.default.http[0], {}, {timeout: 15000, retryCount: 1})});
     const [chainId, block, safe, code] = await Promise.all([client.getChainId(), client.getBlock(), client.getBlock({blockTag: 'safe'}), client.getCode({address: GUARDIAN_ENTROPY})]);
     if (chainId !== GUARDIAN_CHAIN_ID || !code || code === '0x' || block.number === null || safe.number === null) throw Error('chain_unavailable');
     if (Math.abs(Date.now() / 1000 - Number(block.timestamp)) > 180) throw Error('stale_chain_head');

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "chainId": 91342,
+  "network": "giwa-sepolia",
+  "deployedAt": "2026-10-10",
+  "upstreamCommit": "e7d196942cb2ea3adb42b5b3c016eaa176ae8f33",
+  "localSourceCommit": "55dfd7ff2a40d7c0a8d0d253e5776cd6026d7290",
+  "includesUncommittedReleaseFixes": true,
+  "contract": "MapaeGuardians",
+  "address": "0x0144F8C5cA15D55136542aECf025c656e66cf9A6",
+  "deploymentTransaction": "0x51852793a6bcf542c473e8f1f10babb5c0c0c03cdd7b9b1852a61ef3a4f4b307",
+  "deploymentBlock": "38263794",
+  "deployer": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+  "admin": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+  "resultSigner": "0x7B704FD8d96CcA7d441B3114C0B69AbfbE864064",
+  "paymentAgent": "0xE50a03A16ee644a584840893362EDaAD66DA67Bc",
+  "entropy": "0x0708325268dF9F66270F1401206434524814508b",
+  "entropyProvider": "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344",
+  "imageBaseURI": "https://mapae.io/api/arcade/guardians/",
+  "sourceVerification": "verified",
+  "mintPausedAtCompletion": false,
+  "publicOpeningTransaction": "0x2866b03f5285ba89d7f722722a4591d136158d48bde07db0b0e9e1439d7dc3b2",
+  "canary": {
+    "owner": "0xd0ECc3ED81e8275F4D9e46242dE0d3B35ddbB317",
+    "payer": "0x40753152109bE6979592EfD986640E872A56dfd4",
+    "tokenId": "1",
+    "sequence": "1",
+    "mintTransaction": "0xd1ba65bcf5ec90141fda486debee117fb1379abe5143b6f562d4cf9a734cb970",
+    "revealTransaction": "0x1ac8e98f84cfa7a0da781460430455702398e2738a27fd70d978305d0b09c887",
+    "automaticCallback": true,
+    "seed": "0xefc5f99e8be07482b31f31f247cac4ef68470ec488cbd002e62b87d918b956dd",
+    "paymentTransaction": "0xda1689d2757aeba5f984c088e3082c58fe9429eaef6a6737e871448b22e60ff9",
+    "amountBase": "1000000",
+    "symbol": "mUSDC",
+    "resultId": "0x1247cf56be8d9556c5e06539bc2c4f06d7ee5f80e34f3d9dfb8e1d8dfb2267ab",
+    "growthTransaction": "0xa68e08f5143fa79428a557810233224f7e8411770f125658fc05e0b529c24888",
+    "plays": 1,
+    "victories": 1,
+    "experience": 15,
+    "replay": "AlreadyClaimed in eth_call; one paid order and result",
+    "browser": "Automated production browser and local test wallet signer; no physical device or wallet extension QA"
+  },
+  "workers": {
+    "landing": {
+      "name": "mapae",
+      "version": "efc9449e-385d-4213-b503-897dfb8855d3",
+      "percentage": 100,
+      "deployment": "48715970-ef8c-4133-b03e-f25b21a117e7"
+    },
+    "app": {
+      "name": "mapae-app",
+      "version": "7b70328f-6514-492e-88ad-a9ae0f333b6e",
+      "percentage": 100,
+      "deployment": "6644e574-d192-4d76-82a2-61dd527dff4b"
+    }
+  },
+  "webSource": {
+    "upstreamCommit": "e8086469a1be3203ded771e13067a82473986e7c",
+    "includesStagedLocalReleaseFixes": true,
+    "updatedAt": "2026-10-11"
+  }
+}

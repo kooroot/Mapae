@@ -78,6 +78,25 @@ function setup(answer: () => Response | Promise<Response> = () => Response.json(
 }
 
 describe("public ranking proxy", () => {
+    test("impossible upstream dates fail closed without throwing or caching the answer", async () => {
+        for (const date of ["2026-99-99", "2026-10-32", "2026-02-30"]) {
+            for (const field of ["from", "to"] as const) {
+                const {call, entries} = setup(() => Response.json({...board(), [field]: date}));
+                const response = await call("/board/race/today");
+                expect(response.status).toBe(503);
+                expect(await response.json<unknown>()).toEqual({error: {code: "ranking_unavailable"}});
+                expect(response.headers.get("Cache-Control")).toBe("no-store");
+                expect(entries.size).toBe(0);
+            }
+            for (const field of ["day", "week"] as const) {
+                const {call, entries} = setup(() => Response.json({...standings(), [field]: date}));
+                const response = await call("/guardians/2");
+                expect(response.status).toBe(503);
+                expect(await response.json<unknown>()).toEqual({error: {code: "ranking_unavailable"}});
+                expect(entries.size).toBe(0);
+            }
+        }
+    });
     test("exact paths, GET only, no query, and only sorted unique ids reach the seller", async () => {
         const {calls, call} = setup();
         expect((await call("/board/race/today", {method: "POST"})).status).toBe(405);

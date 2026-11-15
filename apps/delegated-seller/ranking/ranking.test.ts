@@ -7,6 +7,9 @@ import {raffleDraw, type SeasonHall} from '@mapae/arcade/hall';
 import {type Season, type SeasonStatus} from '@mapae/arcade/season';
 import {CARD_REVISION} from '@mapae/arcade/share-card/contract';
 import {decodePng} from '@mapae/arcade/share-card/png';
+import {createMapae} from '@mapae/seller';
+import {IN_MEMORY, openStore} from '@mapae/store';
+import {createShopApp} from '../app';
 import type {TeamBoard} from '@mapae/arcade/team';
 import {OutingStore} from '../outings/store';
 import {RankingReader, type CloseBlock} from './board';
@@ -599,6 +602,28 @@ describe('share cards', () => {
         for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (pixel(png, x, y) === hex) return true;
         return false;
     };
+    test.skipIf(!hasArt)('the serving shop preserves only successful share PNG cache lifetimes through its outer security middleware', async () => {
+        const {add, reader} = setup(season1); add('1', 'race', '2026-10-14', 1, 50);
+        add('1', 'race', '2026-10-13', 2, 40);
+        const store = openStore(IN_MEMORY);
+        try {
+            const app = createShopApp({store, mapae: createMapae({facilitator: 'http://127.0.0.1:8081', baseUrl: 'http://shop.test'}), baseUrl: 'http://shop.test', facilitatorUrl: 'https://facilitator.test', name: 'Card test'});
+            app.route('/arcade/ranking', createRankingApp({token, reader, art: shareCardArt(ART_DIR)}));
+            for (const [path, lifetime] of [['race/2026-10-14/1/png', 'public, max-age=60'], ['race/2026-10-13/1/png', 'public, max-age=3600'], ['season/1/png', 'public, max-age=60']]) {
+                const response = await app.request('/arcade/ranking/card/' + path, {headers: auth});
+                expect(response.status).toBe(200);
+                expect(response.headers.get('Content-Type')).toBe('image/png');
+                expect(response.headers.get('Cache-Control')).toBe(lifetime);
+                expect(response.headers.get('ETag')).toEndWith(`-${CARD_REVISION}"`);
+                expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+            }
+            for (const [path, headers, status] of [['race/2026-10-14/1/png', {}, 401], ['race/2026-10-14/2/png', auth, 404], ['race/2026-10-14/1', auth, 200]] as const) {
+                const response = await app.request('/arcade/ranking/card/' + path, {headers});
+                expect(response.status).toBe(status);
+                expect(response.headers.get('Cache-Control')).toBe('no-store');
+            }
+        } finally {store.close();}
+    });
     test.skipIf(!hasArt)('a card PNG is drawn from the layer art with the tag and cache life the Worker stores it under, and says nothing about the owner', async () => {
         const {add, reader} = setup(season1); add('1', 'race', '2026-10-14', 1, 50);
         const past = setup(); past.add('1', 'race', '2026-10-13', 1, 40);

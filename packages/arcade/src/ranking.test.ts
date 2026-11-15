@@ -2,12 +2,20 @@ import {describe, expect, test} from "bun:test";
 import {dailyChallenge} from "./challenge";
 import {ARCADE_RULESET_VERSION} from "./contracts";
 import {
-    addDays, fnv1a, guardianStreak, kstDay, kstWeek, nextReset, parseRankingIds, parseRankingPageOffset, rankedSeed, rankingPageOffset, rankingWeekIndex, rankingWeekOf, sealedWeek,
+    addDays, fnv1a, guardianStreak, isRankingDay, kstDay, kstWeek, nextReset, parseRankingIds, parseRankingPageOffset, rankedSeed, rankingPageOffset, rankingWeekIndex, rankingWeekOf, sealedWeek,
     streakMilestone, titlePlace, validRankedAttempt, validRankingBoard, weekCutoff,
 } from "./ranking";
 import {SEASON} from "./season";
 
 describe("KST windows", () => {
+    test("invalid calendar dates are rejected without throwing in stored and upstream records", () => {
+        for (const day of ["2026-99-99", "2026-10-32", "2026-00-01", "2026-02-29", "2026-02-30", "not-a-day", null, 42]) {
+            expect(isRankingDay(day)).toBe(false);
+            expect(validRankedAttempt({day, attempt: 1})).toBe(false);
+        }
+        expect(isRankingDay("2024-02-29")).toBe(true);
+        expect(guardianStreak(["2026-99-99", "2026-10-14"], "2026-10-14")).toEqual({current: 1, best: 1, freezes: 0, playedToday: true});
+    });
     test("the day turns at 00:00 KST, which is 15:00 UTC", () => {
         expect(kstDay(Date.parse("2026-10-04T14:59:59.999Z"))).toBe("2026-10-04");
         expect(kstDay(Date.parse("2026-10-04T15:00:00Z"))).toBe("2026-10-05");

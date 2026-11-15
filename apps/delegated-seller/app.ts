@@ -367,7 +367,14 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
     const app = new Hono<ShopEnv>();
     app.use("*", async (c, next) => {
         await next();
-        c.header("Cache-Control", "no-store");
+        // Only a successful public share image may keep the ranking route's cache
+        // lifetime. The Worker validates that lifetime before accepting the PNG.
+        // JSON, authentication failures and all payment responses stay no-store.
+        const sharePng = (c.req.method === "GET" || c.req.method === "HEAD") && c.res.status === 200
+            && /^\/arcade\/ranking\/card\/(?:season\/|(?:stamp|race|shop)\/\d{4}-\d{2}-\d{2}\/)[1-9]\d{0,4}\/png$/.test(c.req.path)
+            && c.res.headers.get("Content-Type") === "image/png"
+            && ["public, max-age=60", "public, max-age=3600"].includes(c.res.headers.get("Cache-Control") ?? "");
+        if (!sharePng) c.header("Cache-Control", "no-store");
         c.header("Content-Security-Policy", CONTENT_SECURITY_POLICY);
         c.header("Referrer-Policy", "no-referrer");
         c.header("X-Content-Type-Options", "nosniff");

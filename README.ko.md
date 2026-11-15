@@ -11,7 +11,7 @@ GIWA-native 에이전틱 페이먼트 인프라입니다.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-1959%20TS%20%2B%2078%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-1965%20TS%20%2B%2078%20Foundry-16A34A)
 
 **마패는 특권의 증표가 아니라 한계의 증표입니다.**
 
@@ -94,7 +94,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
   에이전트는 거절됐다는 답을 받았다. 아래 "settlement-unknown" 참조.
 - **스폰서드 온보딩**, 계정보다 먼저 만들어진 서명으로 계정 배포:
-  배포 [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902),
+  배포 [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3519118884c66e1599902),
   tUSDC 민팅 [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
   — 계정 [`0x1528…3301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301),
   배포 뒤 라이브 ERC-1271이 그 사전 서명에 `0x1626ba7e`를 답했다. 새 사용자의 가스
@@ -105,7 +105,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   enforcer의 revert가 `/verify`에서 나오고, 어차피 실패할 트랜잭션에 가스를 쓰지 않는다.
   판정은 배포된 enforcer 바이트코드가 실제 주기 카운터를 읽어 내리지만 — 블록이 아니라
   `eth_call`이다. 증거표는 [기술 문서](https://docs.mapae.io)에 있다.
-- 회귀 검증: **1959 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts/scheduler/arcade/faucet 1315 + MCP 3 + 웹 606 + 문서 35)
+- 회귀 검증: **1965 TypeScript tests (shared/delegation/seller/store/facilitator/shop/scripts/scheduler/arcade/faucet 1317 + MCP 3 + 웹 610 + 문서 35)
   + 78 Foundry tests**, 그리고 동일한 23개 caveat 케이스를 일회용 체인과 GIWA fork
   양쪽에서 돌리는 체인 파라미터화 negative-path 수트. 내역을 적는 이유는
   `bun run check`가 네 개의 숫자로 나눠 찍기 때문이다 — 합계 하나만 적으면 명령이

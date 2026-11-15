@@ -10,6 +10,7 @@ import {deployment, publicClient} from "../lib/chain-client";
 import type {Locale} from "../lib/i18n";
 import {arcadePolicy, checkGiwaCatalogue, GiwaTicketError} from "./giwa-client";
 import {giwaWalletError, requestGiwaSignature, waitForWallet} from "./giwa-wallet";
+import {readFundedBalance} from "./giwa-readiness";
 import {loadGrants, writeGrants} from "../lib/grant-store";
 import type {SessionGrant} from "../lib/grant";
 import {validAllowance} from "./allowance";
@@ -185,10 +186,16 @@ export function useGiwaTickets(locale: Locale, owner: Address | undefined, authe
                 const code = await publicClient.getCode({address: account});
                 if (!code || code === "0x") throw new GiwaTicketError("Studio에서 스마트 계정을 준비해 주세요. / Set up your smart account in Studio.");
                 await verifyPermissionArtifact(artifact, locale);
-                const available = await readPayerBalance(account);
-                setPayer(account); setBalance(available === undefined ? null : formatUnits(available, 6));
                 const reserved = active.reduce((sum, item) => sum + item.reservedAdmissions, 0);
                 const needed = targets.slice(index).reduce((sum, item) => sum + item.admissions, reserved);
+                const readBalance = () => {
+                    if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
+                    return readPayerBalance(account);
+                };
+                const available = index === 0 && sponsor.kind === "configured"
+                    ? await readFundedBalance(readBalance, BigInt(needed) * ARCADE_TICKET_AMOUNT)
+                    : await readBalance();
+                setPayer(account); setBalance(available === undefined ? null : formatUnits(available, 6));
                 if (available === undefined || available < BigInt(needed) * ARCADE_TICKET_AMOUNT) throw new GiwaTicketError("테스트 토큰 잔액이 부족해요. faucet.mapae.io에서 @mapae_io를 팔로우하고 받아 주세요. / Not enough test tokens. Follow @mapae_io on faucet.mapae.io to get more.");
                 if (activeOwner.current !== address || activeConnector.current !== connector.uid) throw new GiwaTicketError("지갑이 변경됐어요. / Wallet changed.");
                 setPhase("submitting");

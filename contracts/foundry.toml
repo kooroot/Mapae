@@ -27,7 +27,8 @@ giwa_sepolia = "https://sepolia-rpc.giwa.io"
 giwa_sepolia_alt = "${GIWA_SEPOLIA_RPC_URL}"
 
 [etherscan]
-giwa_sepolia = {key = "unused", url = "https://sepolia-explorer.giwa.io/api/", chain = 91342}
+# A custom Blockscout URL must not trigger Foundry's Etherscan chain allowlist.
+giwa_sepolia = {key = "unused", url = "https://sepolia-explorer.giwa.io/api/"}
 
 [fmt]
 line_length = 120

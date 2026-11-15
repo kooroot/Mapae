@@ -11,7 +11,7 @@ owning the user's wallet or private key.
 [![Network: GIWA Sepolia](https://img.shields.io/badge/network-GIWA%20Sepolia-111827)](https://docs.giwa.io/giwa-chain/en/get-started/connect-to-giwa)
 ![x402 v2](https://img.shields.io/badge/x402-v2-635BFF)
 ![ERC-7710](https://img.shields.io/badge/delegation-ERC--7710-3C3C3D)
-![Tests](https://img.shields.io/badge/tests-1959%20TS%20%2B%2078%20Foundry-16A34A)
+![Tests](https://img.shields.io/badge/tests-1965%20TS%20%2B%2078%20Foundry-16A34A)
 
 **Mapae is not a symbol of unlimited authority. It is a proof of where authority
 ends.**
@@ -96,7 +96,7 @@ a strong result, but nothing was mined and there is no link to follow.
   agent received said the payment had been rejected while it had in fact been mined. See
   "settlement-unknown" below.
 - **Sponsored onboarding**, account deployed from a signature that predates the account:
-  deploy [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902),
+  deploy [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3519118884c66e1599902),
   tUSDC float mint [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
   — account [`0x1528…3301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301),
   whose live ERC-1271 then answered `0x1626ba7e` for that pre-deployment signature.
@@ -108,7 +108,7 @@ a strong result, but nothing was mined and there is no link to follow.
   transaction is ever paid for. The verdict comes from the deployed enforcer bytecode
   reading the real period counter — it is simply an `eth_call`, not a mined block. See the
   evidence table in the [technical documentation](https://docs.mapae.io).
-- Regression suite: **1959 TypeScript tests (1315 shared/delegation/seller/store/facilitator/shop/scripts/scheduler/faucet + 3 MCP + 606 web + 35 docs)
+- Regression suite: **1965 TypeScript tests (1317 shared/delegation/seller/store/facilitator/shop/scripts/scheduler/faucet + 3 MCP + 610 web + 35 docs)
   + 78 Foundry tests**, plus a chain-parameterised negative-path suite that runs the same
   twenty-three caveat cases on a disposable chain and on a GIWA fork. The breakdown is
   given because `bun run check` prints it as four separate numbers — a single total is a

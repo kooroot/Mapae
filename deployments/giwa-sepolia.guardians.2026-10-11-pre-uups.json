@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "chainId": 91342,
+  "network": "giwa-sepolia",
+  "deployedAt": "2026-10-11",
+  "upstreamCommit": "4588ef4c8baac1df6895a2a1d7f840c1a48189bc",
+  "includesUncommittedReleaseFixes": true,
+  "contract": "MapaeGuardians",
+  "address": "0x26Cb90dA20a58955D497d2e8be53Ff68aC4A5eFc",
+  "deploymentTransaction": "0xee4df1c511a94c3b85c14b97df2ddd3d436baa9007100f25b326c8c516d66e28",
+  "deploymentBlock": "38341491",
+  "runtimeHash": "0x990dfcba277d8076653a4ecb5026a3e9a79576962e66fa3f0a42dbd01b5681f5",
+  "deployer": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+  "admin": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+  "resultSigner": "0x7B704FD8d96CcA7d441B3114C0B69AbfbE864064",
+  "paymentAgent": "0xE50a03A16ee644a584840893362EDaAD66DA67Bc",
+  "entropy": "0x0708325268dF9F66270F1401206434524814508b",
+  "entropyProvider": "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344",
+  "imageBaseURI": "https://mapae.io/api/arcade/guardians/",
+  "sourceVerification": "verified",
+  "mintPausedAtCompletion": false,
+  "publicOpeningTransaction": "0x83c393385719bf6db4bc5d3ee6b804d446e10de350bf728e9d1290f0a2c634d1",
+  "tokenIdScheme": "random unused token ID from 1..10000 at mint; Pyth entropy determines birth traits",
+  "previousCollection": {
+    "address": "0x0144F8C5cA15D55136542aECf025c656e66cf9A6",
+    "mintPaused": true,
+    "pauseTransaction": "0xd846da9afb16addae6acd034ec411b22ecce437f4219ac7d308262e406c4fcf7",
+    "artifact": "giwa-sepolia.guardians.2026-10-10.json",
+    "existingTokensMigrated": false
+  },
+  "canary": {
+    "owner": "0xd0ECc3ED81e8275F4D9e46242dE0d3B35ddbB317",
+    "payer": "0x40753152109bE6979592EfD986640E872A56dfd4",
+    "tokenId": "9279",
+    "sequence": "3",
+    "nameKo": "장터 가는 금동이",
+    "nameEn": "Market-Bound Geumdongi",
+    "mintTransaction": "0x2be5e455b43f6c8f3130fbcd78e7fc9a4f9377a5e15961b93c183a4bf05b8668",
+    "revealTransaction": "0xdb3f8f9298c85e6cc4ca0fcecd64a384ba639cc43cf12ed15a79c1d7b1fbcc63",
+    "automaticCallback": true,
+    "seed": "0x9c9139edb99b510b236e864ee10eed828e8a4d601371556b3c5f813c54caff69",
+    "paymentTransaction": "0x234da66a813ae1a78d218a479696a3fb539aac66ee2b4a6b2acb877fa257eee3",
+    "amountBase": "1000000",
+    "symbol": "mUSDC",
+    "resultId": "0x731f93b127365ad1875b395b82505e0f83c93ded087116c178519ac375344602",
+    "growthTransaction": "0x05de10af04d43178c65b0de32b98ce1065837ea29d81c0caece8768cf3e1532c",
+    "plays": 1,
+    "victories": 1,
+    "experience": 15,
+    "replay": "Same outing/claim API returned existing results; AlreadyClaimed in eth_call; one new paid order and result",
+    "browser": "Automated production browser and local test wallet signer; no physical device or wallet extension QA"
+  },
+  "workers": {
+    "landing": {
+      "name": "mapae",
+      "version": "2fcdbd87-04b0-4f3a-b6c8-3b11996cef29",
+      "percentage": 100,
+      "deployment": "4d401bbb-a3f1-49bb-9672-7074fe76052c",
+      "previousVersion": "f269fca8-9a13-4347-aa35-f3705399a70e"
+    },
+    "app": {
+      "name": "mapae-app",
+      "version": "57e0516d-d9b5-4642-af94-d46e3ddcf4fa",
+      "percentage": 100,
+      "deployment": "0edd6475-42da-43d8-baa2-592ba1fafb33",
+      "previousVersion": "ec0f9a0c-c007-4c2a-ba10-4b442bd015ea"
+    }
+  },
+  "seller": {
+    "service": "system/io.mapae.delegated-seller",
+    "restartedAt": "2026-10-11T02:45:58.837Z",
+    "legacyTerminalOutingsArchived": 2,
+    "priorOrdersPreserved": 8,
+    "priorGuardianResultsPreserved": 6,
+    "d1Migration": "not required; existing schema retained and backed up"
+  },
+  "validation": {
+    "typescriptTests": 1658,
+    "webTests": 491,
+    "foundryTests": 39,
+    "preflight": "PREFLIGHT_READ_ONLY_OK; token revealed at safe block",
+    "assetResponsesVerified": 28
+  },
+  "webSource": {
+    "upstreamCommit": "1e8cb4b780cd5fb2a1e51300c8871570d0b0810d",
+    "includesStagedLocalReleaseFixes": true,
+    "updatedAt": "2026-10-11"
+  }
+}

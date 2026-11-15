@@ -112,6 +112,25 @@ describe("status", () => {
         } finally {nativeFetch.mockRestore();}
     });
 
+    test("the default transport preserves the global fetch receiver for status and Turnstile", async () => {
+        const repository = repo(), session = await login(repository, network().fetcher);
+        const net = network({siteverify: passing(session.owner), service: (path) => Response.json(path === "/status" ? STATUS : view(session.owner))});
+        const original = globalThis.fetch;
+        globalThis.fetch = (async function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+            if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+            return net.fetcher(String(input), init);
+        }) as typeof fetch;
+        try {
+            expect((await faucetApi(request("/status"), deps(repository, undefined))).status).toBe(200);
+            const claim = await faucetApi(request("/claim", "POST", {kind: "musdc", missions: ["x_follow_mapae"], turnstile: "valid-token"}, session.headers), deps(repository, undefined));
+            expect(claim.status).toBe(200);
+            expect(net.siteverify()).toHaveLength(1);
+            expect(net.service()).toHaveLength(2);
+        } finally {
+            globalThis.fetch = original;
+        }
+    });
+
     test("is the service's status, validated, with the site key, cached at the edge, and a hit keeps its max-age", async () => {
         const net = network(), repository = repo(), store = new Map<string, Response>();
         // The zone hands an entry back with its Browser Cache TTL in place of the stored life.

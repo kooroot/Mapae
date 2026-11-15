@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "chainId": 91342,
+  "network": "giwa-sepolia",
+  "deployedAt": "2026-10-11",
+  "upstreamCommit": "ada0f4aa7be19e533f534601bbd8e8bb5b2a4d68",
+  "includesUncommittedReleaseFixes": true,
+  "contract": "MapaeGuardians",
+  "architecture": "OpenZeppelin 5.6.1 UUPS / ERC1967Proxy",
+  "address": "0x2b968116411C7413F83df461CD7eaB0792AAC2C0",
+  "deploymentTransaction": "0x4f807c29b5896cc327be19488e28e24a3cacd00e4e796b32436a8ad47320c5ee",
+  "deploymentBlock": "38351379",
+  "runtimeHash": "0x903bbd864bbd9c7bb9986a2f655d850cd6e43667b823638d5188f07887b01186",
+  "implementation": {
+    "address": "0x7652F9E57CC5A52b7e723A4aD517a37Be3AB7174",
+    "deploymentTransaction": "0x2453b4fa6ac96fc7d2267c6d64c7616b3a3da8e9cc84215291bdfcd86e230810",
+    "runtimeHash": "0x368e124df3aa5af0746b7aa4adfc59dfbe0ac48322173f6b664af90caebd7c4f",
+    "runtimeBytes": 18877
+  },
+  "metadataLibrary": {
+    "address": "0x69577b8106CD852a304aD7EffF866689A38fF553",
+    "deploymentTransaction": "0x8b423da56bfe0bdb4f7566acd6ff9b4a912a29e586f97471194c6b72c0940f09",
+    "runtimeHash": "0x5ab5ef66f8d68723c6e736c5c6b15eb9aee1b4c561c4ed8598ffa3e15762e69c"
+  },
+  "deployer": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+  "admin": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+  "resultSigner": "0x7B704FD8d96CcA7d441B3114C0B69AbfbE864064",
+  "paymentAgent": "0xE50a03A16ee644a584840893362EDaAD66DA67Bc",
+  "entropy": "0x0708325268dF9F66270F1401206434524814508b",
+  "entropyProvider": "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344",
+  "imageBaseURI": "https://mapae.io/api/arcade/guardians/",
+  "sourceVerification": "library, implementation and proxy verified independently",
+  "atomicInitializationVerified": true,
+  "implementationSlotVerified": true,
+  "liveUpgradeExecuted": false,
+  "mintPausedAtCompletion": false,
+  "publicOpeningTransaction": "0x6a74e8600ea6ed398418231fe9ca48c5e8199d6caaebf91f44b83e694c63fe1d",
+  "tokenIdScheme": "random unused token ID from 1..10000 at mint; Pyth entropy determines birth traits",
+  "previousCollection": {
+    "address": "0x26Cb90dA20a58955D497d2e8be53Ff68aC4A5eFc",
+    "mintPaused": true,
+    "pauseTransaction": "0x1187af5095618d3d95388d1e1bed1a5c4a70c4de27c2286cad12bf2eea2c315f",
+    "artifact": "giwa-sepolia.guardians.2026-10-11-pre-uups.json",
+    "existingTokensMigrated": false
+  },
+  "canary": {
+    "owner": "0xd0ECc3ED81e8275F4D9e46242dE0d3B35ddbB317",
+    "payer": "0x40753152109bE6979592EfD986640E872A56dfd4",
+    "tokenId": "3261",
+    "sequence": "4",
+    "nameKo": "휘파람 부는 옥이",
+    "nameEn": "Whistling Ogi",
+    "mintTransaction": "0xbaca89551e67111107260f51971bb91aac172c2f265fea09321d09710f7e4eba",
+    "revealTransaction": "0x26bbe7710f12922ccc076b444297d1fbbc397ed1e79894289c70c0b1404fe7cc",
+    "automaticCallback": true,
+    "seed": "0x9adf226603e5ea888800508b85b5b550a6098a10e72d84469e68d522925af00f",
+    "paymentTransaction": "0x0fadf705ca7734655b7d5cd6bfcd50618f22c4065dad613853d2e6d04eaebd18",
+    "amountBase": "1000000",
+    "symbol": "mUSDC",
+    "resultId": "0x7cb900931fbd2d8a7f7dfaabfed6c127a473e33cd77963491038ecd9af696ba8",
+    "growthTransaction": "0xb7b1f234388a6992d8bb037276ce1e76c8723560e439f225100e18f99c786de8",
+    "plays": 1,
+    "victories": 1,
+    "experience": 15,
+    "bootstrapFundingTransaction": "0x93ad2bcd65aaebde8d6d67dfbcc6911a040592fddf5a1a21a1df0ff96ed80056",
+    "bootstrapFundingBase": "2000000",
+    "payerBalanceBaseAtCompletion": "999000000",
+    "payerGas": 0,
+    "replay": "Same outing/claim API returned existing results; AlreadyClaimed in eth_call; one new paid order and result",
+    "browser": "Automated production browser and local test wallet signer; no physical device or wallet extension QA"
+  },
+  "workers": {
+    "landing": {
+      "name": "mapae",
+      "version": "4f8e8fb8-eef7-4e1f-8e24-2556aad1761d",
+      "percentage": 100,
+      "deployment": "72d06e6a-e57e-45ee-8751-b115238793f8",
+      "previousVersion": "6c6621a5-8c52-48d5-89ec-e547e03c4766"
+    },
+    "app": {
+      "name": "mapae-app",
+      "version": "2516f57f-2373-4b9e-9bb0-80920b40bf63",
+      "percentage": 100,
+      "deployment": "d799c91e-cd17-4078-924b-a420667f3e38",
+      "previousVersion": "8498f101-7d1e-43c7-ba09-0a21e0cc7c7d"
+    }
+  },
+  "seller": {
+    "service": "system/io.mapae.delegated-seller",
+    "pidAtCompletion": 66445,
+    "addressAppliedAt": "2026-10-11T05:31:31.883Z",
+    "preservedOutings": 1,
+    "priorOrdersPreserved": 9,
+    "priorGuardianResultsPreserved": 7,
+    "deletedRows": 0,
+    "d1Migration": "not required; existing schema retained and backed up"
+  },
+  "validation": {
+    "typescriptTests": 1659,
+    "webTests": 491,
+    "foundryTests": 61,
+    "preflight": "PREFLIGHT_READ_ONLY_OK; token revealed at safe block",
+    "assetResponsesVerified": 28,
+    "reinitialization": "proxy and implementation reject InvalidInitialization",
+    "unauthorizedUpgrade": "OwnableUnauthorizedAccount via eth_call",
+    "metadataAfterGrowth": "unchanged birth traits; one play; 15 XP"
+  },
+  "limitations": [
+    "Fresh proxy collection; existing non-proxy NFTs remain at the previous collection.",
+    "Internal audit and local upgrade tests; no live implementation upgrade performed.",
+    "Owner remains the testnet deployment EOA; move to a multisig before mainnet.",
+    "Intermittent NFT image API 503 remains; both domains returned 200 on bounded retry."
+  ],
+  "webSource": {
+    "upstreamCommit": "13c4b589ab6cc71281101c5ae1ea1a33ed6c6f33",
+    "includesStagedLocalReleaseFixes": true,
+    "updatedAt": "2026-10-11",
+    "typescriptTests": 1710,
+    "webTests": 510
+  },
+  "rankingRelease": {
+    "upstreamCommit": "64f27537eff19a6b2b11069aaa040921fdc3071a",
+    "date": "2026-10-11",
+    "includesUncommittedDateValidationFix": true,
+    "sellerService": "system/io.mapae.delegated-seller",
+    "sellerPid": 70528,
+    "sellerEnvUnchanged": true,
+    "sqliteTableAdded": "arcade_guardian_ranked",
+    "existingDataPreserved": true,
+    "d1Migration": false,
+    "newChainTransactions": false,
+    "audit": "docs/audits/arcade-ranking-2026-10-11.md"
+  },
+  "lastWebRedeployment": {
+    "at": "2026-10-11T23:39:09.609144+09:00",
+    "sourceCommit": "13c4b589ab6cc71281101c5ae1ea1a33ed6c6f33",
+    "includesStagedLocalReleaseFixes": true,
+    "publicAssetsVerified": 28,
+    "aptitudeBrowserChecks": 12,
+    "newAptitudeCopyPresent": true,
+    "oldAptitudeCopyAbsent": true
+  }
+}

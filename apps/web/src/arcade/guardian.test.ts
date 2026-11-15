@@ -115,6 +115,14 @@ describe("Mapae guardian customization", () => {
             const hatOn = (zodiac: "snake" | "rabbit") => guardianLayers({...g, zodiac, wardrobe: {hat, outfit: "scholar", shoes: "taesahye"}}).find(l => l.src === wardrobeAsset("hat", hat))!;
             expect(hatOn("snake").width).toBeGreaterThan(hatOn("rabbit").width * 1.3);
         }
+        // Preserve the deployed fitting regression alongside the broader width checks.
+        expect(front.clip).toContainEqual({x: 205, y: 108});
+        expect(front.stretch).toBe(true);
+        const snake = guardianLayers({...g, zodiac: "snake", wardrobe: {hat: "ikseongwan", outfit: "scholar", shoes: "taesahye"}});
+        const crown = snake.find(layer => layer.src === wardrobeAsset("hat", "ikseongwan"))!;
+        expect(crown.width * .86).toBeCloseTo(140);
+        expect(crown.y).toBeCloseTo(12);
+        expect(crown.height).toBeLessThan(crown.width * (512 / 428));
         const original = {...g, wardrobe: undefined};
         expect(validGuardian(original)).toBe(true); expect(projectGuardian(original)).not.toHaveProperty("wardrobe");
         expect(validWardrobe([])).toBe(false);

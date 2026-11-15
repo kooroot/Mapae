@@ -28,12 +28,19 @@ delegator와 일치할 때만 스폰서 가스로 계정을 배포한다. 위임
 | --- | --- | --- |
 | `BOOTSTRAP_DAILY_WEI` | `500000000000000` | 배포의 하루(UTC) 가스 예산 |
 | `BOOTSTRAP_RATE_PER_HOUR` | `30` | IP당 한 시간에 받는 요청 수. IPv6는 /64 단위로 센다. `CF-Connecting-IP`가 없는(loopback) 요청은 세지 않는다 |
-| `STORE_PATH` | `./data/bootstrap.sqlite` | 그날 쓴 가스를 남기는 `@mapae/store` 파일. `:memory:`는 드라이런용 |
+| `STORE_PATH` | `./data/bootstrap.sqlite` | 그날 쓴 가스를 남기는 `@mapae/store` 파일. 후원이 켜져 있으면 `:memory:`로 기동할 수 없다 |
 
 나머지 변수(스폰서 키·승인 문구·RPC·바인드·오리진·수수료 상한)는
 `.env.example`에 있다. 예전 faucet 변수(`BOOTSTRAP_FAUCET_ENABLED`,
 `BOOTSTRAP_FAUCET_TARGET_BASE`, `MAX_BOOTSTRAP_MINT_GAS`)가 남아 있으면 기동을
 거부한다 — `.env`에서 지운다.
+
+공개 아케이드와 Studio를 함께 지원하려면 `BOOTSTRAP_ALLOWED_ORIGINS`에
+`https://mapae.io,https://app.mapae.io`를 모두 넣는다. 기존 `.env`가 출처를
+명시하면 코드의 기본 목록을 바꿔도 실행 설정에는 반영되지 않으므로, 설정 변경 후
+기존 서비스 관리자로 재시작한다. 두 출처의 `OPTIONS /bootstrap`이 정확한
+`Access-Control-Allow-Origin`과 204를 반환하고, 다른 출처는 403인지 확인한다.
+실제 계정 생성이나 지갑 서명 없이 이 경로를 검증할 수 있다.
 
 ## 기동
 

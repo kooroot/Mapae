@@ -6,6 +6,22 @@
 GIWA 활성화 절차(예치금 arming, 서비스 배포, 키 보관)는 이 문서에 없다 — 운영
 비밀값이 필요하므로 내부 런북에서 다룬다.
 
+스폰서드 서비스의 재시작 조건은 다음과 같다.
+
+- `STORE_PATH`는 쓰기 가능한 영구 SQLite 파일이어야 한다. 기본값은
+  `./data/revocation.sqlite`이고, 스폰서드 모드는 `:memory:`를 거절한다.
+  일일 사용액은 `revocation-sponsor` 범위에 저장한다.
+- 메모리 예산만 쓰던 프로세스에서 전환할 때는 재시작 전 loopback `/health`의
+  오늘 사용액·잔여 예산과 후원 지갑 잔액·미확정 거래를 확인한다. 기존 메모리의
+  지출은 새 DB로 자동 이전되지 않으므로 전환일의 한도가 다시 충전되지 않게 한다.
+  기존 DB는 실행 중인 SQLite의 온라인 백업으로 보관한다.
+- 공개 출처를 `.env`에 명시했다면 `REVOCATION_ALLOWED_ORIGINS`에
+  `https://mapae.io,https://app.mapae.io`가 모두 포함돼야 한다. 재시작 후 두 출처의
+  `OPTIONS /revoke`는 정확한 허용 출처와 204, 다른 출처는 403인지 확인한다.
+- 기존 서비스 관리자로 재시작하고 loopback `/health`의 정상 상태와 사용액 보존을
+  확인한다. 진단용 `/health`를 공개 터널에 추가하거나 두 번째 funded signer를
+  별도로 실행할 필요는 없다.
+
 ---
 
 ## 0. 한 줄 요약
@@ -83,14 +99,15 @@ single-flight, simulate→broadcast, `UserOperationEvent.success` 판정 — 는
 | J 스폰서드 회수 | ETH 0·예치금 0 계정이 회수되고 스폰서가 낸다 | `200` + tx, 스폰서 지출·잔여 예치 측정 |
 | K 비소유자 서명 | 계정의 ERC-1271이 **예치 전에** 거절한다 | `403 invalid_account_signature`, 스폰서 nonce 불변 |
 | L 완료 후 재제출 | 끝난 회수는 한 푼도 쓰지 않고 거절 | `409 already_revoked`, 추가 예치 없음 |
+| S 오래된 nonce | 유효한 소유자 서명이어도 현재 key 0 nonce와 다르면 예치 전에 거절 | `409 stale_nonce`, 스폰서 nonce 불변 |
 | P 수수료 300 wei | 수수료 **하한**이 릴레이어 손실을 막는다 — cap·팁 둘 다 300 wei인 op과 cap은 하한이되 팁만 300 wei인 op을 차례로 낸다 | `400 invalid_submission` ×2, 스폰서 nonce 불변 |
-| M 예산 1 wei | 일일 예산이 실제 상한이다 | `503 budget_exhausted`, 위임은 그대로 |
+| M 재시작 후 예산 1 wei | 이전 지출을 영구 저장하며 일일 예산이 실제 상한이다 | 사용액이 0으로 초기화되지 않음, `503 budget_exhausted`, 위임은 그대로 |
 | N 닫힌 응답 본문 | 공개 모드는 `detail`을 싣지 않는다 | `400 invalid_submission`, `detail` 없음 |
 | O rate 1/시간 | 두 번째 요청부터 끊긴다 | `429 rate_limited` |
 | Q facilitator 서명자 공유 | 정산 키를 물려받은 기동은 아예 뜨지 않는다 | 부팅 실패(0이 아닌 종료 코드) |
 | R 옛 변수명 | 폐기된 `RELAYER_ADDRESS` 철자가 보이면 뜨지 않는다 | 부팅 실패(0이 아닌 종료 코드) |
 
-A–H는 **핀 모드**(단일 payer, loopback 운영용)로, I–R은 같은 바이너리를
+A–H는 **핀 모드**(단일 payer, loopback 운영용)로, I–S는 같은 바이너리를
 `PAYER_ACCOUNT_ADDRESS` 없이 재기동한 **스폰서드 모드**(공개 터널용)로 돈다.
 스폰서드 케이스가 **새 계정**을 쓰는 이유: 첫 계정의 예치금은 E가 재충전해 두어
 부족분이 0이고, 그 상태로는 이 모드의 존재 이유인 예치 대납 레그가 아예 돌지

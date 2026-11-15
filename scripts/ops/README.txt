@@ -25,9 +25,10 @@ payment conversion. No notification is sent by this command. An independent
 monitor must alert on nonzero exit / missing scheduled heartbeat; a dead Mac
 cannot report its own death. Test actual notification delivery separately.
 .github/workflows/monitor.yml is that monitor: it runs the public check at :07
-and :37 on a GitHub runner (no metrics keys), and GitHub mails a failed
-scheduled run to whoever last changed its cron line. GitHub pauses schedules in
-a repository with no commits for 60 days; re-enable it from the Actions tab.
+and :37 on a GitHub runner (no metrics keys). With Actions email notifications
+enabled, scheduled-run notifications go to the cron editor, or the person who
+re-enabled a disabled workflow. GitHub pauses schedules in a public repository
+after 60 days without repository activity; re-enable it from the Actions tab.
 Its local-disk row is the runner's, not the Mac's.
 
 ENCRYPTED SQLITE SNAPSHOT

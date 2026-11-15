@@ -1,0 +1,606 @@
+{
+  "schemaVersion": 1,
+  "chainId": 91342,
+  "network": "giwa-sepolia",
+  "deployedAt": "2026-10-11",
+  "upstreamCommit": "ada0f4aa7be19e533f534601bbd8e8bb5b2a4d68",
+  "includesUncommittedReleaseFixes": true,
+  "contract": "MapaeGuardians",
+  "architecture": "OpenZeppelin 5.6.1 UUPS / ERC1967Proxy",
+  "address": "0x2b968116411C7413F83df461CD7eaB0792AAC2C0",
+  "deploymentTransaction": "0x4f807c29b5896cc327be19488e28e24a3cacd00e4e796b32436a8ad47320c5ee",
+  "deploymentBlock": "38351379",
+  "runtimeHash": "0x903bbd864bbd9c7bb9986a2f655d850cd6e43667b823638d5188f07887b01186",
+  "implementation": {
+    "address": "0x901e9c042a05d53b1c986c9012b1df2110dc9de6",
+    "runtimeHash": "0x7df4235c0a74f86c1e5a1e7cfa2d1851169cd510f767a2eff43ddaf9fc75037d",
+    "runtimeBytes": 21002,
+    "deploymentTransaction": "0xd15867df04dc0dd6ba16c6bda2c02901e154d19a1124ea2bf6437a20acb678d9",
+    "deploymentBlock": "38428612",
+    "sourceVerified": true
+  },
+  "metadataLibrary": {
+    "address": "0xe585a052f720206d9d7089ff758f4d5c3ccf8565",
+    "runtimeHash": "0x2a7cf89ab0c20cca9770fcd1ffce1972c65dce09e2b1274f19e967ec2994d409",
+    "runtimeBytes": 8496,
+    "deploymentTransaction": "0x728a0c4cacf7b3a264666edea81683dc2cac1b330c89b25346504ed9d34cdd97",
+    "deploymentBlock": "38428590",
+    "sourceVerified": true
+  },
+  "deployer": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+  "admin": "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+  "resultSigner": "0x7B704FD8d96CcA7d441B3114C0B69AbfbE864064",
+  "paymentAgent": "0xE50a03A16ee644a584840893362EDaAD66DA67Bc",
+  "entropy": "0x0708325268dF9F66270F1401206434524814508b",
+  "entropyProvider": "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344",
+  "imageBaseURI": "https://mapae.io/api/arcade/guardians/",
+  "sourceVerification": "library, implementation and proxy verified independently",
+  "atomicInitializationVerified": true,
+  "implementationSlotVerified": true,
+  "liveUpgradeExecuted": true,
+  "mintPausedAtCompletion": false,
+  "publicOpeningTransaction": "0x6a74e8600ea6ed398418231fe9ca48c5e8199d6caaebf91f44b83e694c63fe1d",
+  "tokenIdScheme": "random unused token ID from 1..10000 at mint; Pyth entropy determines birth traits",
+  "previousCollection": {
+    "address": "0x26Cb90dA20a58955D497d2e8be53Ff68aC4A5eFc",
+    "mintPaused": true,
+    "pauseTransaction": "0x1187af5095618d3d95388d1e1bed1a5c4a70c4de27c2286cad12bf2eea2c315f",
+    "artifact": "giwa-sepolia.guardians.2026-10-11-pre-uups.json",
+    "existingTokensMigrated": false
+  },
+  "canary": {
+    "owner": "0xd0ECc3ED81e8275F4D9e46242dE0d3B35ddbB317",
+    "payer": "0x40753152109bE6979592EfD986640E872A56dfd4",
+    "tokenId": "3261",
+    "sequence": "4",
+    "nameKo": "휘파람 부는 옥이",
+    "nameEn": "Whistling Ogi",
+    "mintTransaction": "0xbaca89551e67111107260f51971bb91aac172c2f265fea09321d09710f7e4eba",
+    "revealTransaction": "0x26bbe7710f12922ccc076b444297d1fbbc397ed1e79894289c70c0b1404fe7cc",
+    "automaticCallback": true,
+    "seed": "0x9adf226603e5ea888800508b85b5b550a6098a10e72d84469e68d522925af00f",
+    "paymentTransaction": "0x0fadf705ca7734655b7d5cd6bfcd50618f22c4065dad613853d2e6d04eaebd18",
+    "amountBase": "1000000",
+    "symbol": "mUSDC",
+    "resultId": "0x7cb900931fbd2d8a7f7dfaabfed6c127a473e33cd77963491038ecd9af696ba8",
+    "growthTransaction": "0xb7b1f234388a6992d8bb037276ce1e76c8723560e439f225100e18f99c786de8",
+    "plays": 1,
+    "victories": 1,
+    "experience": 15,
+    "bootstrapFundingTransaction": "0x93ad2bcd65aaebde8d6d67dfbcc6911a040592fddf5a1a21a1df0ff96ed80056",
+    "bootstrapFundingBase": "2000000",
+    "payerBalanceBaseAtCompletion": "999000000",
+    "payerGas": 0,
+    "replay": "Same outing/claim API returned existing results; AlreadyClaimed in eth_call; one new paid order and result",
+    "browser": "Automated production browser and local test wallet signer; no physical device or wallet extension QA"
+  },
+  "workers": {
+    "landing": {
+      "name": "mapae",
+      "version": "15bd8a29-4b90-4994-bd57-d962bd910fa8",
+      "percentage": 100,
+      "deployment": "42a86835-9e4f-4f6a-9752-a1c9d29ac17e",
+      "previousVersion": "828ba938-c172-4899-9064-e97edf821fde"
+    },
+    "app": {
+      "name": "mapae-app",
+      "version": "05e5e251-779f-453d-9fdd-b74490a5ee3a",
+      "percentage": 100,
+      "deployment": "885bb392-5842-4a18-8aeb-b54f566b8888",
+      "previousVersion": "cc6eb8f6-1c9a-4758-b817-1d4678804886"
+    },
+    "faucet": {
+      "name": "mapae-faucet",
+      "version": "3703cad3-861b-4646-a208-9e29f69d8bed",
+      "percentage": 100,
+      "deployment": "4c4f5eb0-f630-4ca8-b296-e6b4dc35c324",
+      "previousVersion": "2d35964e-9e33-4e37-be92-dabca06cebbc"
+    }
+  },
+  "seller": {
+    "service": "system/io.mapae.delegated-seller",
+    "pidAtCompletion": 74034,
+    "addressAppliedAt": "2026-10-11T05:31:31.883Z",
+    "preservedOutings": 1,
+    "priorOrdersPreserved": 9,
+    "priorGuardianResultsPreserved": 7,
+    "deletedRows": 0,
+    "d1Migration": "not required; existing schema retained",
+    "codeAppliedAt": "2026-10-16T09:59:45.412607+00:00",
+    "environmentUnchanged": true,
+    "existingTablesPreservedAtRestart": 14,
+    "sqliteTablesAdded": [
+      "arcade_guardian_titles",
+      "arcade_guardian_title_weeks"
+    ],
+    "lastRestart": {
+      "at": "2026-11-02T08:19:58.168021+00:00",
+      "sourceCommit": "4672807bbfdca8bb488556fd6ddf3d39d62949c7",
+      "pid": 74034,
+      "reason": "health probes settlement loopback facilitator",
+      "environmentUnchanged": true,
+      "persistentDataPreserved": true,
+      "pausedRecoveryRecordsPreserved": 12
+    }
+  },
+  "validation": {
+    "typescriptTests": 1748,
+    "webTests": 521,
+    "foundryTests": 78,
+    "preflight": "PREFLIGHT_READ_ONLY_OK; proxy implementation and revealed token 3261 checked after upgrade",
+    "assetResponsesVerified": 28,
+    "reinitialization": "proxy and implementation reject InvalidInitialization",
+    "unauthorizedUpgrade": "OwnableUnauthorizedAccount via eth_call",
+    "metadataAfterGrowth": "unchanged birth traits; one play; 15 XP"
+  },
+  "limitations": [
+    "Fresh proxy collection; existing non-proxy NFTs remain at the previous collection.",
+    "Owner remains the testnet deployment EOA; move to a multisig before mainnet.",
+    "2026-10-12 dedicated RPC/image cache verification returned 200 for 50 requests on each domain; this was not a load test.",
+    "2026-10-12 rollout used read-only wallet browser QA; no fresh mint, payment or result/honor claim broadcast. Existing canary transactions above are historical."
+  ],
+  "webSource": {
+    "upstreamCommit": "4672807bbfdca8bb488556fd6ddf3d39d62949c7",
+    "includesStagedLocalReleaseFixes": true,
+    "updatedAt": "2026-11-02T08:20:30.783Z",
+    "typescriptTests": 1965,
+    "webTests": 610,
+    "appliesTo": [
+      "app"
+    ]
+  },
+  "rankingRelease": {
+    "upstreamCommit": "64f27537eff19a6b2b11069aaa040921fdc3071a",
+    "date": "2026-10-11",
+    "includesUncommittedDateValidationFix": true,
+    "sellerService": "system/io.mapae.delegated-seller",
+    "sellerPid": 70528,
+    "sellerEnvUnchanged": true,
+    "sqliteTableAdded": "arcade_guardian_ranked",
+    "existingDataPreserved": true,
+    "d1Migration": false,
+    "newChainTransactions": false,
+    "audit": "docs/audits/arcade-ranking-2026-10-11.md"
+  },
+  "lastWebRedeployment": {
+    "at": "2026-11-02T08:20:30.783Z",
+    "sourceCommit": "4672807bbfdca8bb488556fd6ddf3d39d62949c7",
+    "surfaces": [
+      "app"
+    ],
+    "includesStagedLocalReleaseFixes": true,
+    "publicAssetsVerified": 48,
+    "publicDocumentsVerified": 6,
+    "rankingApiChecks": 15,
+    "serverRestarted": true,
+    "restartOrder": [
+      "app Worker",
+      "seller service"
+    ],
+    "newContractTransactions": false
+  },
+  "lastUpgrade": {
+    "at": "2026-10-12T03:44:03.520Z",
+    "sourceCommit": "12a7d8dee3b55502f32eef715e80445c1ef41c1d",
+    "transaction": "0x2d1fe621f6a609e588b235eac1783687bb0d5d8f04d50cda60e277235e6504e1",
+    "block": "38431471",
+    "previousImplementation": "0x7652F9E57CC5A52b7e723A4aD517a37Be3AB7174",
+    "previousArtifact": "giwa-sepolia.guardians.2026-10-12-pre-honors.json",
+    "existingNftsPreserved": 4,
+    "metadataAttributesAdded": 11,
+    "proxyAddressUnchanged": true,
+    "entropyAndRolesUnchanged": true
+  },
+  "honorsRelease": {
+    "at": "2026-10-12T12:48:56.481520+09:00",
+    "sourceCommit": "c13d5fa2ca9c3b59e02d41a78284e7866c34f0c2",
+    "newAdminTransactions": 3,
+    "newPaymentsByVerification": 0,
+    "existingProxyUpgraded": true,
+    "databaseRestoreDrill": true,
+    "existingTableDataPreservedAtRestart": 14,
+    "sqliteTitleCacheTablesAdded": 2,
+    "sellerEnvironmentUnchanged": true,
+    "d1Migration": false,
+    "productionRankingBoardsChecked": 26,
+    "alreadyClaimedBatchApiReturnedEmpty": true
+  },
+  "fullRankingRelease": {
+    "at": "2026-10-12T16:40:01.692620+09:00",
+    "sourceCommit": "5f3566581279c87a32ef284eb8f8a3d4cbaddaf8",
+    "sellerPid": 76459,
+    "deploymentOrder": [
+      "seller",
+      "app",
+      "landing"
+    ],
+    "schemaChanged": false,
+    "persistentTablesPreservedAtRestart": 15,
+    "ephemeralLeaseExcludedFromRowComparison": true,
+    "environmentUnchanged": true,
+    "contractUpgradeRequired": false,
+    "newChainTransactions": false,
+    "sellerApiChecks": 100,
+    "webApiChecks": 104,
+    "liveEntrantsAtVerification": 3,
+    "browserFixtureEntrants": 137,
+    "browserFixtureBoardWindows": 52,
+    "independentTopAndPageCacheSeconds": 30
+  },
+  "faucetRelease": {
+    "at": "2026-10-12T09:51:32.196Z",
+    "sourceCommit": "218ef8675adc95362377ddf25b6b0da0b6ed8627",
+    "service": "system/io.mapae.faucet",
+    "faucetPid": 78300,
+    "bootstrapPid": 79269,
+    "address": "0x2B07E3e5E00363a496224DE18cE345dE57A6bB21",
+    "fundingTransaction": "0xbd065b279f9e6ed3351f12a39f5058d32298bcf3718246b225a1275f148ed2f8",
+    "fundingWei": "30000000000000000",
+    "fundingChainId": 91342,
+    "ethTabEnabled": false,
+    "turnstile": {
+      "hostname": "faucet.mapae.io",
+      "mode": "managed"
+    },
+    "deploymentOrder": [
+      "faucet service",
+      "faucet Worker",
+      "app Worker",
+      "landing Worker",
+      "bootstrap restart"
+    ],
+    "bootstrapTablesPreserved": 10,
+    "d1Migration": false,
+    "contractUpgrade": false,
+    "apiChecks": 25,
+    "liveFaucetPayoutsTested": false,
+    "realWalletTurnstileFlowTested": false,
+    "localFetchReceiverFix": true,
+    "publicDnsVerified": true,
+    "macNegativeDnsCacheAtVerification": true
+  },
+  "season1Release": {
+    "at": "2026-10-16T10:06:41.571796+00:00",
+    "upstreamCommit": "5948667716fa14a338f46af2406997de1b70d20e",
+    "assetCommit": "17811d4513458c7e86cddbd7f00b0c55289b54fb",
+    "assetChecksumsVerified": 150,
+    "privateShareLayers": 36,
+    "wardrobeFitSynced": true,
+    "localFix": "Preserve only authenticated successful share-PNG cache lifetimes through seller middleware; composed application regression added. Other responses remain no-store.",
+    "tests": {
+      "typescript": 1946,
+      "webIncluded": 599,
+      "foundry": 78,
+      "fullCheck": "passed",
+      "productionBuildsAndDryRuns": [
+        "faucet",
+        "landing",
+        "app"
+      ]
+    },
+    "servicesRestarted": {
+      "faucet": 97205,
+      "seller": 97265
+    },
+    "restartOrder": [
+      "faucet service",
+      "faucet Worker",
+      "seller service",
+      "landing Worker",
+      "app Worker"
+    ],
+    "faucet": {
+      "address": "0x2B07E3e5E00363a496224DE18cE345dE57A6bB21",
+      "fundedBy": "user",
+      "observedTestEthBalance": "1.02999981173476514",
+      "ethEnabled": true,
+      "ethAmountWei": "5000000000000000",
+      "ethWindowMs": 604800000,
+      "ethMissions": [
+        "x_follow_mapae"
+      ],
+      "minMainnetNonce": 1,
+      "payoutTestPerformed": false,
+      "onlyEnvironmentKeyChanged": "FAUCET_ETH_MISSIONS",
+      "existingDatabasePreserved": true
+    },
+    "season": {
+      "id": 1,
+      "start": null,
+      "end": null,
+      "phase": "pending",
+      "userDeferredDates": true,
+      "liveSeasonCardStatus": 404,
+      "liveDailyCardStatus": 200,
+      "shareCardEtagRevision": 3
+    },
+    "verification": {
+      "workerTrafficPercent": 100,
+      "settingsPreserved": true,
+      "documents": 14,
+      "publicAssetHashes": 152,
+      "liveBrowserViewports": 44,
+      "closedSeasonBrowserFixtureViewports": 12,
+      "dailyPngSize": [
+        1200,
+        630
+      ],
+      "privateShareLayerPublicStatus": 404,
+      "twitterbotUserAgentPages": "200; simulation only",
+      "opsCheck": "passed"
+    },
+    "limitations": [
+      "User deferred real X post test.",
+      "No faucet payout, new mint, 1 mUSDC outing, or growth transaction sent for this release.",
+      "Closed-season hall and raffle were checked using isolated memory/browser fixtures, not production sealing or live raffle.",
+      "Desktop browser viewports do not replace physical phone tests."
+    ],
+    "unchanged": [
+      "season dates",
+      "NFT contracts",
+      "D1 schema",
+      "seller .env",
+      "web .env.production",
+      "existing keys and service tokens",
+      "DNS and Tunnel"
+    ],
+    "backupDirectory": "~/.mapae/backups/season1-release-20261016-014017",
+    "committedOrPushed": false
+  },
+  "cacheAndSecurityWebRelease": {
+    "at": "2026-10-29T04:37:59.948611+00:00",
+    "sourceCommit": "c16a28a66c91d5be425930660999a674c4f80152",
+    "previousSourceCommit": "5948667716fa14a338f46af2406997de1b70d20e",
+    "buildRuntime": {
+      "bun": "1.4.4",
+      "node": "24.22.1",
+      "isolatedInstallation": true
+    },
+    "changes": [
+      "Permit tied leading score in lower-ranked share pages.",
+      "Restore intended browser Cache-Control after edge cache hits.",
+      "Apply upstream dependency security patches and fail-closed advisory check."
+    ],
+    "tests": {
+      "typescript": 1948,
+      "webIncluded": 600,
+      "foundry": 78,
+      "fullCheck": "passed",
+      "buildAndDryRun": [
+        "faucet",
+        "landing",
+        "app"
+      ],
+      "publicAssetHashes": 152,
+      "productionBrowserViewports": 44,
+      "cachePolicyRequests": 32
+    },
+    "serverRestartRequired": false,
+    "serverReason": "Only server source change is a comment; no resolved production dependency version changes found in the five running service graphs.",
+    "preserved": [
+      "local release fixes",
+      "season dates remain unset",
+      "all service PIDs",
+      "service keys and tokens",
+      "seller/faucet/web environment files",
+      "DB and D1 schema",
+      "contracts",
+      "DNS and Tunnel"
+    ],
+    "assetCommit": "17811d4513458c7e86cddbd7f00b0c55289b54fb",
+    "assetChecksumsVerified": 150,
+    "limitations": [
+      "No new wallet signature, faucet payout, payment, mint, or growth transaction sent.",
+      "No real X post or physical phone test.",
+      "docs Worker not deployed."
+    ],
+    "backupDirectory": "~/.mapae/backups/web-release-20261029-133103",
+    "committedOrPushed": false
+  },
+  "surfaceSources": {
+    "landing": "bcfe0b8d7583b77785afc2f7ab84f4540f763428",
+    "app": "4672807bbfdca8bb488556fd6ddf3d39d62949c7",
+    "faucet": "bcfe0b8d7583b77785afc2f7ab84f4540f763428"
+  },
+  "faucetEligibilityRelease": {
+    "at": "2026-10-29T13:03:21.664497+00:00",
+    "sourceCommit": "049e5c7cd3b500188b20e89553e800e1cfe69bdc",
+    "workerDeploymentAt": "2026-10-29T12:56:53.1167Z",
+    "serviceRestartedAt": "2026-10-29T12:58:10.249572+00:00",
+    "service": "system/io.mapae.faucet",
+    "pid": 64680,
+    "runtime": "/Users/kooroot/.mapae/tools/bun-1.4.4/bin/bun",
+    "onlyLaunchdConfigChange": "ProgramArguments[0]",
+    "environmentUnchanged": true,
+    "ethAmountWei": "500000000000000",
+    "dailyEthWei": "50000000000000000",
+    "dailyOverride": false,
+    "maxDailyGrants": 100,
+    "newSqliteTables": [
+      "faucet_refusals"
+    ],
+    "existingClaimsPreserved": 14,
+    "allTimeClaims": [
+      {
+        "kind": "eth",
+        "state": "skipped",
+        "count": 3
+      },
+      {
+        "kind": "musdc",
+        "state": "confirmed",
+        "count": 11
+      }
+    ],
+    "ethDiagnosis": "Three recorded ETH requests were skipped because the recipient already held the threshold; no retained eligibility read failed logs. Pre-reservation refusals before this release were not counted, so they cannot be reconstructed.",
+    "last7DaysAtVerification": {
+      "claims": [
+        {
+          "kind": "eth",
+          "state": "skipped",
+          "count": 1
+        },
+        {
+          "kind": "musdc",
+          "state": "confirmed",
+          "count": 2
+        }
+      ],
+      "refusals": []
+    },
+    "validation": {
+      "typescriptTests": 1962,
+      "webTestsIncluded": 606,
+      "foundryTests": 78,
+      "fullCheck": "passed",
+      "encryptedBackupAndRestore": "passed",
+      "migrationRehearsal": "applied twice; old rows and schema preserved",
+      "faucetBuildAndDryRun": "passed",
+      "publicAssetHashes": 48,
+      "serviceEligibilityCases": 2,
+      "serviceBoundaryChecks": 4,
+      "publicEligibilityCases": 4,
+      "productionGuestViewports": 12,
+      "readOnlyProviderFixtureViewports": 6,
+      "opsCheck": "passed"
+    },
+    "limits": [
+      "Refusal history starts at rollout; no historical backfill.",
+      "Read-only provider fixture is not a real wallet/signature test.",
+      "No payout, mint, outing payment, growth, or X posting performed."
+    ],
+    "unchanged": [
+      "landing/app Worker versions",
+      "other four service PIDs",
+      "service key and tokens",
+      "faucet and web environment files",
+      "D1",
+      "NFT contracts",
+      "season dates",
+      "DNS and Tunnel"
+    ],
+    "monitor": {
+      "workflow": "monitor.yml",
+      "state": "active",
+      "cron": "7,37 * * * *",
+      "manualSuccessRun": 40870258661,
+      "mailDeliveryTested": false,
+      "publicRepositoryInactivityDays": 60
+    },
+    "backupDirectory": "~/.mapae/backups/faucet-release-20261029-210927",
+    "committedOrPushed": false
+  },
+  "engagementAttributionRelease": {
+    "at": "2026-10-30T00:47:27.946996+00:00",
+    "upstreamCommit": "bcfe0b8d7583b77785afc2f7ab84f4540f763428",
+    "d1": {
+      "at": "2026-10-30T00:41:20.988Z",
+      "database": "mapae-arcade-profiles",
+      "added": [
+        "arcade_engagement_sources",
+        "arcade_engagement_session_arrival"
+      ],
+      "existingSchemaPreserved": true,
+      "sourceRows": 0,
+      "eventCountsUnchanged": true
+    },
+    "encryptedBackupAndRestoreDrillPassed": true,
+    "fullCheck": {
+      "typescriptTests": 1962,
+      "commonAndServerTests": 1316,
+      "mcpTests": 3,
+      "webTests": 608,
+      "docsTests": 35,
+      "foundryTests": 78
+    },
+    "publicDocumentsVerified": 14,
+    "publicAssetsVerified": 153,
+    "guestBrowserViewports": 24,
+    "negativeBoundaryChecks": 12,
+    "anonymousQaVisitors": 3,
+    "qaDeliberateEvents": 0,
+    "qaFirstSources": {
+      "landing": "direct",
+      "app": "direct",
+      "faucet": "landing"
+    },
+    "qaLaterRefPreservedFirstSource": true,
+    "qaArrivalDeduplicationPassed": true,
+    "consoleErrors": 0,
+    "seasonDates": "pending",
+    "livePayoutOrPaymentPerformed": false,
+    "evidenceDirectory": "/Users/kooroot/.mapae/backups/engagement-release-20261030-093553",
+    "faucetServiceRestart": "completed and verified",
+    "completedAt": "2026-10-30T00:52:15.511Z",
+    "faucet": {
+      "restartedAt": "2026-10-30T00:51:57.937314+00:00",
+      "pid": 19811,
+      "mainnetNonceRequirementRemoved": true,
+      "dailyWei": "50000000000000000",
+      "amountWei": "500000000000000",
+      "unsettled": 0,
+      "encryptedBackupAndRestoreDrillPassed": true,
+      "allDatabaseRowsAndSchemaPreserved": true,
+      "claimsAtRestart": [
+        {
+          "kind": "eth",
+          "state": "skipped",
+          "count": 3
+        },
+        {
+          "kind": "musdc",
+          "state": "confirmed",
+          "count": 12
+        }
+      ],
+      "otherFourServicePidsUnchanged": true,
+      "environmentAndLaunchDaemonPreserved": true,
+      "directServiceAuthBoundaryChecks": 3,
+      "opsCheckAfterRestartPassed": true
+    }
+  },
+  "rankingAvailabilityRelease": {
+    "at": "2026-11-02T08:20:30.783Z",
+    "upstreamCommit": "4672807bbfdca8bb488556fd6ddf3d39d62949c7",
+    "previousPhase2Verified": true,
+    "remoteD1SchemaChanged": false,
+    "fullCheck": {
+      "typescriptTests": 1965,
+      "commonAndServerTests": 1317,
+      "mcpTests": 3,
+      "webTests": 610,
+      "docsTests": 35,
+      "foundryTests": 78
+    },
+    "appWorker": {
+      "name": "mapae-app",
+      "version": "05e5e251-779f-453d-9fdd-b74490a5ee3a",
+      "percentage": 100,
+      "deployment": "885bb392-5842-4a18-8aeb-b54f566b8888",
+      "previousVersion": "cc6eb8f6-1c9a-4758-b817-1d4678804886"
+    },
+    "sellerPid": 74034,
+    "publicHealthVerified": true,
+    "facilitatorProbe": "configured settlement loopback; tested public name unchanged",
+    "existingDataPreservedExcludingTransientLease": true,
+    "pausedRecoveryRecordsPreserved": 12,
+    "activeOutingsAtRestart": 0,
+    "pendingFacilitatorSettlementsAtRestart": 0,
+    "reconciliation": {
+      "orders": 2472,
+      "intents": 2472,
+      "mismatches": 0
+    },
+    "encryptedBackupAndRestoreDrillPassed": true,
+    "liveFailureInjection": false,
+    "staleFallbackValidatedByRegressionTests": true,
+    "publicAssetsVerified": 48,
+    "publicRankingChecks": 15,
+    "opsCheckPassed": true,
+    "otherServicesUnchanged": true,
+    "landingAndFaucetVersionsUnchanged": true,
+    "seasonDates": "pending",
+    "evidenceDirectory": "/Users/kooroot/.mapae/backups/ranking-health-release-20261102-171604",
+    "agentInitiatedPayments": false
+  }
+}
