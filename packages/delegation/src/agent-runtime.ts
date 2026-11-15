@@ -1,3 +1,17 @@
+/**
+ * Delegated-agent runtime: env + files + on-chain verification, loaded once.
+ *
+ * Runs under plain Node as well as Bun — no Bun-only API is used, because the MCP server
+ * that loads this is bundled to a single Node file for the Claude Desktop extension.
+ * Bun's automatic `.env` load does not happen under Node; the host passes env itself.
+ *
+ * The parent permission context comes from one of two places:
+ * - `PARENT_PERMISSION_CONTEXT` — inline, either the hex `permissionContext` itself
+ *   (`0x…`) or the same JSON the file holds (`{"permissionContext":"0x…"}`). Wins when set.
+ * - `PARENT_PERMISSION_CONTEXT_PATH` — a file holding that JSON (default
+ *   `./open-agent.permission.json`).
+ */
+import {readFile} from "node:fs/promises";
 import {createPublicClient, getAddress, isAddress, zeroAddress} from "viem";
 import type {Account, Address, Hex} from "viem";
 import {privateKeyToAccount} from "viem/accounts";
@@ -58,8 +72,14 @@ export interface DelegatedAgentRuntime {
 export interface LoadDelegatedAgentRuntimeOptions {
     /** Defaults to process.env. */
     env?: Record<string, string | undefined>;
-    /** Reads a file's UTF-8 text; defaults to Bun.file. Injectable for tests. */
+    /** Reads a file's UTF-8 text; defaults to node:fs/promises. Injectable for tests. */
     readTextFile?: (path: string) => Promise<string>;
+    /**
+     * The Framework verification step; defaults to `verifyActiveFrameworkDeployment`.
+     * Code-level only — no env value reaches it — so a test can stand in for the pinned
+     * runtime bytecode it cannot serve offline. Production callers never pass it.
+     */
+    verifyDeployment?: typeof verifyActiveFrameworkDeployment;
     /** Defaults to the global fetch (used only for the facilitator /supported call). */
     fetchImpl?: typeof fetch;
 }
@@ -348,6 +368,35 @@ async function readText(
     }
 }
 
+function parsePermissionJson(text: string, label: string): Hex {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        throw new Error(`${label} is not JSON`);
+    }
+    const value = (parsed as {permissionContext?: unknown} | null)?.permissionContext;
+    if (!isPermissionContext(value)) {
+        throw new Error("parent permissionContext is missing, malformed, or too large");
+    }
+    return value;
+}
+
+/**
+ * `PARENT_PERMISSION_CONTEXT`: hex, or the permission file's JSON. Anything else is
+ * refused by name — the value is a bearer credential, so the error never echoes it.
+ */
+export function parseInlinePermissionContext(value: string): Hex {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("{")) {
+        return parsePermissionJson(trimmed, "PARENT_PERMISSION_CONTEXT");
+    }
+    if (isPermissionContext(trimmed)) return trimmed;
+    throw new Error(
+        "PARENT_PERMISSION_CONTEXT must be a 0x-hex permission context or the permission file's JSON",
+    );
+}
+
 async function readTrustedFacilitators(
     facilitatorUrl: URL,
     fetchImpl: typeof fetch,
@@ -380,7 +429,8 @@ export async function loadDelegatedAgentRuntime(
     options: LoadDelegatedAgentRuntimeOptions = {},
 ): Promise<DelegatedAgentRuntime> {
     const env = options.env ?? (process.env as Record<string, string | undefined>);
-    const readTextFile = options.readTextFile ?? ((path: string) => Bun.file(path).text());
+    const readTextFile = options.readTextFile ?? ((path: string) => readFile(path, "utf8"));
+    const verifyDeployment = options.verifyDeployment ?? verifyActiveFrameworkDeployment;
     const fetchImpl = options.fetchImpl ?? fetch;
 
     const account = privateKeyToAccount(readAgentKey(env));
@@ -397,6 +447,9 @@ export async function loadDelegatedAgentRuntime(
     const manifestPath =
         env.DELEGATION_MANIFEST_PATH ??
         "../../deployments/giwa-sepolia.framework-manifest.json";
+    // 인라인 값이 있으면 파일은 읽지도 않는다. 둘 다 읽고 하나를 고르면, 쓰지 않을 파일이
+    // 없다는 이유로 부팅이 실패한다.
+    const inlineParent = env.PARENT_PERMISSION_CONTEXT?.trim() || undefined;
     const parentPath = env.PARENT_PERMISSION_CONTEXT_PATH ?? "./open-agent.permission.json";
 
     const [deployment, manifest, parentText, trustedFacilitators] = await Promise.all([
@@ -406,20 +459,24 @@ export async function loadDelegatedAgentRuntime(
         readText(readTextFile, manifestPath, "Framework manifest").then(
             parseFrameworkDeploymentManifestJson,
         ),
-        readText(readTextFile, parentPath, "parent permission file"),
+        inlineParent === undefined
+            ? readText(readTextFile, parentPath, "parent permission file")
+            : Promise.resolve(inlineParent),
         readTrustedFacilitators(facilitatorUrl, fetchImpl),
     ]);
 
-    const parent = JSON.parse(parentText) as {permissionContext?: unknown};
-    if (!isPermissionContext(parent.permissionContext)) {
-        throw new Error("parent permissionContext is missing, malformed, or too large");
-    }
+    const parent = {
+        permissionContext:
+            inlineParent === undefined
+                ? parsePermissionJson(parentText, "parent permission file")
+                : parseInlinePermissionContext(inlineParent),
+    };
 
     const publicClient = createPublicClient({
         chain: giwaSepolia,
         transport: throttledHttp(rpcUrl),
     });
-    await verifyActiveFrameworkDeployment({
+    await verifyDeployment({
         publicClient,
         deployment,
         manifest,

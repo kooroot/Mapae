@@ -3,3 +3,4 @@ export * from "./token.js";
 export * from "./x402.js";
 export * from "./errors.js";
 export * from "./net.js";
+export * from "./metrics/dap.js";

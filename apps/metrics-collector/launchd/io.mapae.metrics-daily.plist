@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+<key>Label</key>
+<string>io.mapae.metrics-daily</string>
+<key>ProgramArguments</key>
+<array>
+<string>/Users/USER/.bun/bin/bun</string>
+<string>run</string>
+<string>index.ts</string>
+<string>daily</string>
+</array>
+<key>WorkingDirectory</key>
+<string>/Users/USER/mapae/apps/metrics-collector</string>
+<key>StartCalendarInterval</key>
+<dict>
+<key>Hour</key>
+<integer>0</integer>
+<key>Minute</key>
+<integer>30</integer>
+</dict>
+<key>StandardOutPath</key>
+<string>/Users/USER/Library/Logs/mapae-metrics-daily.log</string>
+<key>StandardErrorPath</key>
+<string>/Users/USER/Library/Logs/mapae-metrics-daily.log</string>
+</dict>
+</plist>

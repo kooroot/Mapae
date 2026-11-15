@@ -19,3 +19,8 @@
 
 /share.css
   Cache-Control: public, max-age=86400
+
+/mapae.mcpb
+  Content-Type: application/zip
+  Content-Disposition: attachment; filename="mapae.mcpb"
+  Cache-Control: public, max-age=300

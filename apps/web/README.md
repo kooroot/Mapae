@@ -50,6 +50,8 @@ rsync -a ../Mapae-arcade-asset/arcade/ apps/web/public/arcade/
 test -f apps/web/public/arcade/lobby-scene.webp
 ```
 
+같은 일을 `bun scripts/sync-arcade-assets.ts` 한 줄로도 할 수 있다. 이 스크립트는 `.claude/worktrees` 아래 연결 워크트리에서도 메인 체크아웃 옆의 에셋 저장소를 찾고, `SHA256SUMS`를 검증한 뒤 `arcade/`만 복사한다.
+
 CI는 `.github/workflows/ci.yml`에 고정한 에셋 커밋을 내려받아 `SHA256SUMS`를
 검증하고 이미지 디렉터리만 복사한 뒤 전체 검사를 실행한다. 새 에셋을 적용할 때는
 해당 workflow의 에셋 `ref`도 새 커밋으로 갱신한다.

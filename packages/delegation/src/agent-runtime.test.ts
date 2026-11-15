@@ -5,10 +5,13 @@ import {
     toTokenAmount,
     type Erc7710PaymentRequirements,
 } from "@mapae/shared";
+import {readFile} from "node:fs/promises";
 import {
     createAgentSpendGate,
     judgePreflight,
+    loadDelegatedAgentRuntime,
     parseAgentSpendPolicy,
+    parseInlinePermissionContext,
     resolveResourceTarget,
     tightestRemaining,
 } from "./agent-runtime.js";
@@ -669,5 +672,115 @@ describe("지출 정책과 결제 루프의 합성", () => {
         expect(verdict).toMatchObject({ok: false, code: "SPEND_POLICY_REFUSED"});
         expect(second.signatures()).toBe(0);
         expect(second.calls).toHaveLength(1);
+    });
+});
+
+describe("부모 권한 컨텍스트: 인라인 env와 파일", () => {
+    // 루트 링크 하나(위임자 0x…02, caveat 없음)의 `encodeDelegations` 결과.
+    const CONTEXT = (
+        "0x" +
+        "0000000000000000000000000000000000000000000000000000000000000020" +
+        "0000000000000000000000000000000000000000000000000000000000000001" +
+        "0000000000000000000000000000000000000000000000000000000000000020" +
+        "00000000000000000000000019e7e376e7c213b7e7e7e46cc70a5dd086daff2a" +
+        "0000000000000000000000002000000000000000000000000000000000000002" +
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" +
+        "00000000000000000000000000000000000000000000000000000000000000c0" +
+        "0000000000000000000000000000000000000000000000000000000000000001" +
+        "00000000000000000000000000000000000000000000000000000000000000e0" +
+        "0000000000000000000000000000000000000000000000000000000000000000" +
+        "0000000000000000000000000000000000000000000000000000000000000000"
+    ) as Hex;
+    const REPO = new URL("../../../", import.meta.url).pathname;
+    const PARENT_PATH = "/fixture/parent.permission.json";
+
+    /**
+     * 실제 부트스트랩을 네트워크 없이 돌린다: 배포 파일은 레포의 것, 부모 파일은 주어진
+     * 텍스트, facilitator는 가짜, Framework 검증은 대역(바이트코드는 오프라인에서 줄 수
+     * 없다). 어떤 경로를 읽었는지 돌려줘서 우선순위를 관측한다.
+     */
+    async function boot(env: Record<string, string>, parentFile?: string) {
+        const reads: string[] = [];
+        const runtime = await loadDelegatedAgentRuntime({
+            env: {
+                AGENT_PRIVATE_KEY: `0x${"11".repeat(32)}`,
+                FRAMEWORK_ADMIN_ADDRESS: "0x00A7b901abb908ecafEC72973906424c4fDdc100",
+                GIWA_SEPOLIA_RPC_URL: "http://127.0.0.1:9",
+                DELEGATION_DEPLOYMENT_PATH: `${REPO}deployments/giwa-sepolia.framework.json`,
+                DELEGATION_MANIFEST_PATH: `${REPO}deployments/giwa-sepolia.framework-manifest.json`,
+                PARENT_PERMISSION_CONTEXT_PATH: PARENT_PATH,
+                ...env,
+            },
+            readTextFile: async (path) => {
+                reads.push(path);
+                if (path === PARENT_PATH) {
+                    if (parentFile === undefined) throw new Error("ENOENT");
+                    return parentFile;
+                }
+                return readFile(path, "utf8");
+            },
+            fetchImpl: (async () =>
+                Response.json({signers: {"eip155:91342": [ADDR(3)]}})) as unknown as typeof fetch,
+            verifyDeployment: async () => ({}) as never,
+        });
+        return {runtime, readParent: reads.includes(PARENT_PATH)};
+    }
+
+    test("인라인 hex를 받는다", async () => {
+        const {runtime, readParent} = await boot({PARENT_PERMISSION_CONTEXT: CONTEXT});
+        expect(runtime.trustedFacilitators).toEqual([ADDR(3)]);
+        expect(readParent).toBe(false);
+    });
+
+    test("인라인 JSON(파일과 같은 모양)을 받는다", async () => {
+        const {readParent} = await boot({
+            PARENT_PERMISSION_CONTEXT: JSON.stringify({permissionContext: CONTEXT}),
+        });
+        expect(readParent).toBe(false);
+    });
+
+    test("PARENT_PERMISSION_CONTEXT_PATH 파일은 여전히 동작한다", async () => {
+        const {readParent} = await boot({}, JSON.stringify({permissionContext: CONTEXT}));
+        expect(readParent).toBe(true);
+    });
+
+    test("둘 다 있으면 인라인이 이기고, 파일은 읽지 않는다", async () => {
+        // 파일이 망가져 있어도 부팅한다 — 읽었다면 실패했을 것이다.
+        const {readParent} = await boot({PARENT_PERMISSION_CONTEXT: CONTEXT}, "not json");
+        expect(readParent).toBe(false);
+    });
+
+    test("빈 인라인 값은 미설정이다 — 파일로 떨어진다", async () => {
+        const {readParent} = await boot(
+            {PARENT_PERMISSION_CONTEXT: "  "},
+            JSON.stringify({permissionContext: CONTEXT}),
+        );
+        expect(readParent).toBe(true);
+    });
+
+    test("hex도 JSON도 아닌 인라인 값은 이름을 대며 거절하고, 값을 되풀이하지 않는다", async () => {
+        const secretish = "open-sesame-not-a-context";
+        let message = "";
+        try {
+            await boot({PARENT_PERMISSION_CONTEXT: secretish});
+        } catch (error) {
+            message = (error as Error).message;
+        }
+        expect(message).toContain("PARENT_PERMISSION_CONTEXT must be a 0x-hex permission context");
+        expect(message).not.toContain(secretish);
+        expect(() => parseInlinePermissionContext("0xzz")).toThrow("PARENT_PERMISSION_CONTEXT");
+        expect(() => parseInlinePermissionContext("{not json")).toThrow(
+            "PARENT_PERMISSION_CONTEXT is not JSON",
+        );
+        expect(() => parseInlinePermissionContext(JSON.stringify({permissionContext: 1}))).toThrow(
+            "parent permissionContext is missing",
+        );
+    });
+
+    test("파싱만으로 hex와 JSON이 같은 컨텍스트가 된다", () => {
+        expect(parseInlinePermissionContext(CONTEXT)).toBe(CONTEXT);
+        expect(parseInlinePermissionContext(` ${JSON.stringify({permissionContext: CONTEXT})} `)).toBe(
+            CONTEXT,
+        );
     });
 });

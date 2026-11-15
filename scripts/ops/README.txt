@@ -30,6 +30,8 @@ enabled, scheduled-run notifications go to the cron editor, or the person who
 re-enabled a disabled workflow. GitHub pauses schedules in a public repository
 after 60 days without repository activity; re-enable it from the Actions tab.
 Its local-disk row is the runner's, not the Mac's.
+apps/ops-monitor is the second monitor: a Cloudflare Worker that runs the same
+probes every five minutes and alerts over Telegram. See apps/ops-monitor/README.md.
 
 ENCRYPTED SQLITE SNAPSHOT
 Create a private 32-byte hex key file with openssl rand -hex 32 redirected into a

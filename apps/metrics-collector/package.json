@@ -1,0 +1,16 @@
+{
+  "name": "@mapae/metrics-collector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "hourly": "bun run index.ts hourly",
+    "daily": "bun run index.ts daily"
+  },
+  "dependencies": {
+    "@mapae/arcade": "workspace:*",
+    "@mapae/delegation": "workspace:*",
+    "@mapae/shared": "workspace:*",
+    "@mapae/store": "workspace:*",
+    "viem": "^2.55.8"
+  }
+}
