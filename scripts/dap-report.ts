@@ -43,6 +43,7 @@ import {readFileSync} from "node:fs";
 import {parseArgs} from "node:util";
 import {createPublicClient, isAddress, type Address} from "viem";
 import {giwaSepolia} from "../packages/shared/src/chain";
+import {redactForLog} from "../packages/shared/src/errors";
 import {countDailyActivatedPayers, type DapDay, type OwnerFunding, type SettledPayment} from "../packages/shared/src/metrics/dap";
 import {throttledHttp} from "../packages/delegation/src/index";
 import {ARCADE_PAY_TO} from "../packages/arcade/src/tickets";
@@ -235,7 +236,7 @@ if (import.meta.main) {
             seller?.close();
         }
     } catch (error) {
-        console.error(`DAP report unavailable (${error instanceof Error ? error.message : "error"}). Usage: bun scripts/dap-report.ts FACILITATOR_DB [--seller SELLER_DB] [--funding FUNDING_JSON | --chain] [--operators 0x..,0x..] [--public-funders 0x..] [--from YYYY-MM-DD] [--to YYYY-MM-DD]`);
+        console.error(`DAP report unavailable (${redactForLog(error)}). Usage: bun scripts/dap-report.ts FACILITATOR_DB [--seller SELLER_DB] [--funding FUNDING_JSON | --chain] [--operators 0x..,0x..] [--public-funders 0x..] [--from YYYY-MM-DD] [--to YYYY-MM-DD]`);
         process.exitCode = 1;
     }
 }
