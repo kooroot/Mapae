@@ -102,16 +102,28 @@ bun test                                  # also part of the root `bun run test:
 `launchd/` holds the two agents. Like the other plists on the mini, they are handwritten
 with short lines and no DOCTYPE, because long pasted lines corrupted every generated
 version. Replace `USER` and the checkout path, then check each file with `plutil -lint`
-before you load it. If you skip that check and a placeholder is left in, `launchctl`
+before you load it. A long command pasted into the mini's terminal wraps and breaks the
+same way, so every command below is short. If you skip that check and a placeholder is left in, `launchctl`
 reports only `Load failed: 5`.
 `StartCalendarInterval` uses the Mac's local time zone, so 00:30 means KST only if the
 mini is set to Seoul.
 
+Run these from the repository root on the mini, one line at a time. The three `sed`
+lines replace the checkout path, the bun path and the home directory, in that order.
+
 ```bash
-cp launchd/io.mapae.metrics-*.plist ~/Library/LaunchAgents/
+REPO=$(pwd); D=~/Library/LaunchAgents
+cp apps/metrics-collector/launchd/io.mapae.metrics-*.plist "$D"/
+sed -i '' "s|/Users/USER/mapae|$REPO|" "$D"/io.mapae.metrics-*.plist
+sed -i '' "s|/Users/USER/.bun/bin/bun|$(command -v bun)|" "$D"/io.mapae.metrics-*.plist
+sed -i '' "s|/Users/USER|$HOME|" "$D"/io.mapae.metrics-*.plist
+grep -c USER "$D"/io.mapae.metrics-*.plist    # 0 for both
 plutil -lint ~/Library/LaunchAgents/io.mapae.metrics-*.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.mapae.metrics-hourly.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.mapae.metrics-daily.plist
 ```
 
 The plists hold no secrets. Bun reads `.env` from `WorkingDirectory`.
+
+Run the first `daily` by hand before loading the daily agent, so the two never index
+into the same file at once.
