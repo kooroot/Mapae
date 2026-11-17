@@ -47,6 +47,7 @@ import {
     beforeBroadcast,
     classifyFrameworkError,
     describeFailure,
+    limitRejection,
     frameworkPausedFrom,
     rateLimitByIp,
     requireReadiness,
@@ -377,7 +378,19 @@ class SettlementCoordinator {
         // — unless the row already says the attempt failed on chain, which is a verdict.
         const known = this.#recovery.known(payment.paymentIntentId);
         if (known) return verifyKnownSettlement(known);
-        await beforeBroadcast(() => this.#prepareRedemption(payment));
+        try {
+            await beforeBroadcast(() => this.#prepareRedemption(payment));
+        } catch (error) {
+            // A seller verifies before it settles, so a payment the delegation's limits
+            // refuse stops here and `/settle` never sees it. This row is the only trace
+            // that a limit held. Nothing else `/verify` refuses is recorded: the ledger
+            // is a record of settlements, and this is the one verdict it would otherwise
+            // have no way to count.
+            const limit = limitRejection(error);
+            if (limit) recordRejection({kind: "verify", payer: payment.payer, payTo: payment.paymentRequirements.payTo,
+                amountBase: payment.amount, at: Date.now(), outcome: "rejected", errorCode: limit});
+            throw error;
+        }
     }
 
     async settle(payment: ValidatedDelegatedPayment): Promise<Erc7710SettleResponse> {
@@ -407,7 +420,7 @@ class SettlementCoordinator {
             const failure = describeFailure(error, "settle");
             if (failure.outcome === "rejected") recordRejection({kind: "settle", payer: payment.payer,
                 payTo: payment.paymentRequirements.payTo, amountBase: payment.amount, at: Date.now(),
-                outcome: "rejected", errorCode: failure.errorCode});
+                outcome: "rejected", errorCode: limitRejection(error) ?? failure.errorCode});
             throw error;
         }
     }

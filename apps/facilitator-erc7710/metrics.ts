@@ -16,16 +16,19 @@ const MIN_TOKEN_LENGTH = 16;
 /**
  * How long `/settle`'s refusals stay on file. A signed payment the facilitator refuses is
  * a `rejected` ledger row, and the per-IP rate limit bounds how fast those arrive, not
- * how many: a patient caller grew the sqlite file forever. Rejected rows are kept for a
- * week and never beyond the newest 50,000. The count is sized from the limit's worst
+ * how many: a patient caller grew the sqlite file forever. Rejected rows are kept for
+ * nine days and never beyond the newest 50,000. Nine, not seven, because the metrics
+ * collector reads a seven-day window that ended at the last KST midnight, and reads it
+ * after that midnight: at seven the oldest hours of every weekly figure were already
+ * gone. The two spare days cover a run that is up to two days late. The count is sized from the limit's worst
  * case — one IP (one /64) can put 600 req/h × 24 h = 14,400 rejected rows a day on file,
  * at ~200 B each about 3 MB — so 50,000 is three and a half such IP-days, roughly 10 MB,
- * and under a sustained flood it is the count, not the week, that binds. The limit keys
+ * and under a sustained flood it is the count, not the nine days, that binds. The limit keys
  * on the IP, not the payer, which is why a count is needed at all: one payer with many
  * addresses is many windows. Settled and error rows are never pruned: money moved, or
  * may have, and the ledger is the only record of it.
  */
-export const REJECTED_SETTLEMENT_RETENTION_MS = 7 * DAY_MS;
+export const REJECTED_SETTLEMENT_RETENTION_MS = 9 * DAY_MS;
 export const REJECTED_SETTLEMENTS_KEPT = 50_000;
 
 /**
@@ -109,8 +112,8 @@ export interface BudgetJson {
 /**
  * `succeeded`, `volumeByPayTo` and `uniquePayers` are complete in both windows: settled
  * rows are never pruned, and neither are error rows. `failed` and `total` count rejected
- * rows only as far back as {@link rejectedRetention} keeps them — a week, and never more
- * than 50,000 — in `last24h` and `allTime` alike. A refusal older than the week has left
+ * rows only as far back as {@link rejectedRetention} keeps them — nine days, and never more
+ * than 50,000 — in `last24h` and `allTime` alike. A refusal older than that has left
  * `allTime`; under a sustained flood the count binds first — four IPs at the 600/h limit
  * put 57,600 rejected rows on file in a day — and then the hourly prune trims rows younger
  * than a day, so `last24h` under-counts too.

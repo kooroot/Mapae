@@ -19,6 +19,22 @@ const ITEM_NAME = /^[a-z0-9][a-z0-9-]{0,47}$/;
 /** Printable, single-line: a detail ends up inside a Telegram message line. */
 const DETAIL = /^[^\x00-\x1f\x7f]*$/;
 
+/**
+ * The journal's words for a redemption the delegation's own limits refused, and the label
+ * each gets in a report. The facilitator writes them to `settlement_events.error_code`
+ * (never to the wire, which says `delegation_rejected` for all of them) and the Worker
+ * reads them back out of `LedgerMetrics.failureReasons`, so both ends take the set from
+ * here. `limit_allowance` is `ERC20TransferAmountEnforcer`'s one revert, which a spent
+ * lifetime total and a leaf presented twice both raise; the chain does not say which.
+ */
+export const LIMIT_REJECTIONS = {
+    limit_period_cap: "period cap",
+    limit_allowance: "amount allowance",
+    limit_expired: "expired",
+    limit_revoked: "revoked",
+} as const;
+export type LimitRejection = keyof typeof LIMIT_REJECTIONS;
+
 export interface IngestItem {
     name: string;
     ok: boolean;

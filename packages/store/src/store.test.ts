@@ -366,6 +366,10 @@ describe("ledger", () => {
         store.ledger.record({at, kind: "settle", payer: ALICE, payTo: CAFE, amountBase: 999n, outcome: "rejected"});
         store.ledger.record({at, kind: "settle", payer: BOB, payTo: SHOP, amountBase: 5n, outcome: "error"});
         store.ledger.record({at, kind: "settle", payer: CAROL, payTo: SHOP, amountBase: 7n, outcome: "rejected"});
+        // A limit refusal noted at /verify is not a settlement attempt: it is listed, and
+        // it is not in the total the failure ratio is taken from.
+        store.ledger.record({at, kind: "verify", payer: CAROL, payTo: SHOP, amountBase: 7n, outcome: "rejected", errorCode: "limit_period_cap"});
+        expect(store.ledger.list({limit: 1})[0]?.errorCode).toBe("limit_period_cap");
 
         expect(store.ledger.summary({sinceMs: 0})).toEqual({
             total: 6,

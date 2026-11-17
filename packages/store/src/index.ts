@@ -463,12 +463,15 @@ function createLedger(db: Database): Ledger {
     const newest = db.query<SettlementEventRow, Params>(
         `SELECT * FROM settlement_events ORDER BY at DESC, id DESC LIMIT $limit`,
     );
+    // Settlement attempts only. A `verify` row is a limit refusal the facilitator notes
+    // for the operator's reports; counting it here would turn every buyer who ran into
+    // their own cap into a failed settlement, and the failure ratio into an alarm.
     const counts = db.query<{total: number; succeeded: number; payers: number}, Params>(
         `SELECT COUNT(*) AS total,
                 COUNT(*) FILTER (WHERE outcome = 'settled') AS succeeded,
                 COUNT(DISTINCT payer) FILTER (WHERE outcome = 'settled') AS payers
          FROM settlement_events
-         WHERE at >= $since`,
+         WHERE at >= $since AND kind = 'settle'`,
     );
     // Summed in JavaScript: SQLite's SUM over TEXT goes through a double and loses
     // precision past 2^53, which a base-unit total reaches.

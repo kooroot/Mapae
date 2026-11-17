@@ -20,9 +20,11 @@ so it stays under 4096 characters without being cut.
   delta against the previous day's snapshot: root settlements, broadcast success
   (settled/(settled+error)), external payees, payee top-1 share, paying wallets, repeat
   paying wallets, payments not relayed by Mapae (target 0; defined in
-  `apps/metrics-collector/README.md`), and limit rejections. Limit rejections
-  read `not collected` for now, because the journal records an enforcer revert as a
-  generic delegation rejection. If no snapshot exists for the previous day, the report
+  `apps/metrics-collector/README.md`), and limit rejections. Limit rejections are the
+  attempts the facilitator journalled as refused by the delegation's own limits (period
+  cap, amount allowance, expiry, revocation; `LIMIT_REJECTIONS` in
+  `packages/shared/src/ops-ingest.ts`), at `/verify` or `/settle`. It is a count of
+  attempts, so a retried request counts again. If no snapshot exists for the previous day, the report
   says so and shows no deltas.
 - **Weekly**, for the latest Monday-to-Sunday week whose Sunday snapshot is stored. It
   normally goes out with the Monday 00:30 run that closes Sunday. It is built from the

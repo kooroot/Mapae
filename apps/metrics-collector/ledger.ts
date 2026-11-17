@@ -73,7 +73,7 @@ export function internalPayees(sellerPath: string): string[] {
 }
 
 /**
- * The facilitator journal's view of one window. Rejected rows are pruned after a week, so
+ * The facilitator journal's view of one window. Rejected rows are pruned after nine days, so
  * they are reported but never used as a denominator: the success rate is settled against
  * error, i.e. "of the transactions we broadcast, how many landed".
  */

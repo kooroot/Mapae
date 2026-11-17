@@ -43,6 +43,7 @@ import {
     beforeBroadcast,
     classifyFrameworkError,
     describeFailure,
+    limitRejection,
     isRpcUnreachable,
     frameworkPausedFrom,
     rateLimitByIp,
@@ -430,6 +431,43 @@ describe("beforeBroadcast", () => {
 
     test("a step that answers is returned as is", async () => {
         expect(await beforeBroadcast(async () => ({gas: 333_523n}))).toEqual({gas: 333_523n});
+    });
+});
+
+describe("limitRejection", () => {
+    test("each of the delegation's own limits gets its journal word, and the wire word does not change", () => {
+        const cases = [
+            ["ERC20PeriodTransferEnforcer:transfer-amount-exceeded", "limit_period_cap"],
+            ["ERC20TransferAmountEnforcer:allowance-exceeded", "limit_allowance"],
+            ["TimestampEnforcer:expired-delegation", "limit_expired"],
+        ] as const;
+        for (const [reason, code] of cases) {
+            const revert = reverted(reason);
+            expect(limitRejection(revert)).toBe(code);
+            expect(describeFailure(revert, "verify")).toEqual({outcome: "rejected", errorCode: "delegation_rejected", transaction: ""});
+        }
+    });
+
+    test("a disabled delegation is read from the decoded custom error, or from its selector when the ABI does not name it", () => {
+        const abi = [{type: "error", name: "CannotUseADisabledDelegation", inputs: []}] as const;
+        const named = new ContractFunctionRevertedError({abi, functionName: "redeemDelegations", data: "0x05baa052"});
+        expect(limitRejection(simulationFailed(named))).toBe("limit_revoked");
+        const unnamed = new ContractFunctionRevertedError({abi: REDEEM_ABI, functionName: "redeemDelegations", data: "0x05baa052"});
+        expect(limitRejection(simulationFailed(unnamed))).toBe("limit_revoked");
+    });
+
+    test("a node that reports the revert without data still names the limit, from the text it kept", () => {
+        const bare = simulationFailed(new ExecutionRevertedError({message: "execution reverted: ERC20PeriodTransferEnforcer:transfer-amount-exceeded"}));
+        expect(limitRejection(bare)).toBe("limit_period_cap");
+        expect(limitRejection(simulationFailed(new ExecutionRevertedError({message: "execution reverted"})))).toBeNull();
+    });
+
+    test("any other failure is not a limit: another revert, the gas cap, a dead RPC, a validation refusal", () => {
+        expect(limitRejection(reverted("rate limit exceeded"))).toBeNull();
+        expect(limitRejection(reverted("TimestampEnforcer:early-delegation"))).toBeNull();
+        expect(limitRejection(new RedemptionRejected("redemption gas 2000000 exceeds configured cap"))).toBeNull();
+        expect(limitRejection(new RpcUnreachableBeforeBroadcast(new HttpRequestError({url: RPC, details: "fetch failed"})))).toBeNull();
+        expect(limitRejection(new Error("ERC20PeriodTransferEnforcer:transfer-amount-exceeded"))).toBeNull();
     });
 });
 

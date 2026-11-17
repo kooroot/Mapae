@@ -20,7 +20,8 @@ test("the daily report carries the eight headlines with signed deltas", () => {
     const previous = snapshotFixture("2026-10-11");
     const current = snapshotFixture("2026-10-12", s => {
         s.day_metrics.settlements = {internal: 2, cohort: 0, organic: 4};
-        s.ledger = {...s.ledger, settled: 9, error: 1};
+        s.ledger = {...s.ledger, settled: 9, error: 1, failureReasons: {
+            "rejected:delegation_rejected": 4, "rejected:limit_period_cap": 2, "rejected:limit_expired": 1}};
         s.day_metrics.payeeTop1 = {part: {internal: 2, cohort: 0, organic: 1}, whole: {internal: 2, cohort: 0, organic: 4}};
     });
     const text = dailyReport(current, previous);
@@ -30,7 +31,8 @@ test("the daily report carries the eight headlines with signed deltas", () => {
     expect(text).toContain("9/10 90% (-10pp) settled/(settled+error)");
     // 0/0 is "no data", never a percentage and never a delta.
     expect(text).toContain("coh 0/0 · org 1/4 25% (-41.7pp)");
-    expect(text).toContain("8. Limit rejections</b>\n  not collected");
+    // Only the limit words are summed; a generic rejection is not a limit holding.
+    expect(text).toContain("8. Limit rejections</b>\n  3 (+3) attempts — period cap 2 · expired 1");
     expect(text).not.toContain("VIOLATION");
 });
 

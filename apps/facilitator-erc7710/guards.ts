@@ -23,6 +23,7 @@ import {
     type Erc7710VerifyResponse,
 } from "@mapae/delegation";
 import {GIWA_SEPOLIA_CAIP2, ipBucket} from "@mapae/shared";
+import type {LimitRejection} from "@mapae/shared/ops-ingest";
 import {SettlementBudgetExceeded} from "@mapae/store";
 import type {MiddlewareHandler} from "hono";
 import {
@@ -261,6 +262,41 @@ function isRedemptionRevert(error: unknown): boolean {
         }
     }
     return false;
+}
+
+/** `CannotUseADisabledDelegation()`, for a node whose answer viem could not decode by name. */
+const DISABLED_DELEGATION_SELECTOR = "0x05baa052";
+
+const LIMIT_REVERT_REASONS: readonly [string, LimitRejection][] = [
+    ["ERC20PeriodTransferEnforcer:transfer-amount-exceeded", "limit_period_cap"],
+    ["ERC20TransferAmountEnforcer:allowance-exceeded", "limit_allowance"],
+    ["TimestampEnforcer:expired-delegation", "limit_expired"],
+];
+
+/**
+ * Which of the delegation's own limits a simulation revert was, or `null` for any other
+ * failure. For the ledger only: the wire keeps the one word `delegation_rejected`, because
+ * the revert names the caveat that fired and that is the caller's boundary to probe. The
+ * answer is a member of a closed set, never the revert's text, so nothing a contract
+ * chose to say reaches the journal.
+ *
+ * It is a count of what was observed, not a proof of what happened: a delegation names
+ * its own enforcers, so a caller can deploy one that reverts with these strings. That
+ * buys them nothing a genuine over-cap attempt would not, which is free to make.
+ */
+export function limitRejection(error: unknown): LimitRejection | null {
+    for (const link of causeChain(error)) {
+        // A node that reports the revert under a plain `-32000` hands viem no data to
+        // decode: there is no `ContractFunctionRevertedError`, and the enforcer's string
+        // survives only in that error's own text. A custom error leaves nothing to read there, so a
+        // revoked delegation on such a node stays a generic rejection.
+        const text = link instanceof ContractFunctionRevertedError ? link.reason
+            : link instanceof ExecutionRevertedError ? `${link.shortMessage} ${link.details}` : undefined;
+        if (link instanceof ContractFunctionRevertedError
+            && (link.data?.errorName === "CannotUseADisabledDelegation" || link.signature === DISABLED_DELEGATION_SELECTOR)) return "limit_revoked";
+        for (const [reason, code] of LIMIT_REVERT_REASONS) if (text?.includes(reason)) return code;
+    }
+    return null;
 }
 
 /**

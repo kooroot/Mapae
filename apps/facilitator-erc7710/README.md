@@ -65,6 +65,8 @@ payer는 위임이 허락하는 만큼 정산을 요구할 수 있다. 그래서
 브로드캐스트 전에 형성된 거절은 한 분류(`describeFailure`)에서 나온다. `/verify`의
 `invalidReason`, `/settle`의 `errorReason`, `/settle`이 원장에 남기는 `rejected` 행의
 `errorCode`가 그 한 값이라, 구매자가 받은 이유와 운영자가 세는 코드가 어긋날 수 없다.
+예외는 하나다. 위임 자신의 한도가 막은 거절은 wire에는 `delegation_rejected`로 나가고
+원장에는 어느 한도였는지가 남는다 (아래 "한도 거절").
 낱말은 `delegation_rejected` 하나를 빼면 모두 x402 v2 §9 어휘다. 채굴된 뒤에 실패한
 결과(`settlement_reverted`, `vendor_not_credited`)는 이 분류를 거치지 않는다 — 영수증을
 읽은 저널이 terminal 행에 적고 `/settle`이 그 행을 그대로 싣는다. 사유의 *문장*은 운영자
@@ -168,14 +170,40 @@ chain, signer)를 전송 전에 저장한다. 서명 원문·permission context�
 결제 본문은 ASCII라 문자 상한 아래면 바이트 상한 아래이므로, 413은 이 서비스의 어떤
 클라이언트도 만들지 않는 본문에만 나간다.
 
+## 한도 거절
+
+시뮬레이션 revert가 위임 자신의 한도였으면 원장의 `errorCode`는 `delegation_rejected`
+대신 아래 넷 중 하나다 (`limitRejection`, 집합은 `packages/shared/src/ops-ingest.ts`의
+`LIMIT_REJECTIONS`). wire의 낱말은 바뀌지 않는다.
+
+| 원장 코드 | revert |
+|---|---|
+| `limit_period_cap` | `ERC20PeriodTransferEnforcer:transfer-amount-exceeded` |
+| `limit_allowance` | `ERC20TransferAmountEnforcer:allowance-exceeded`. 총액 한도 소진과 같은 leaf의 재사용이 같은 문장을 낸다 |
+| `limit_expired` | `TimestampEnforcer:expired-delegation` |
+| `limit_revoked` | `CannotUseADisabledDelegation()` |
+
+판매자는 `/settle` 전에 `/verify`를 부르므로 한도에 걸린 결제는 `/verify`에서 멈춘다.
+그래서 이 넷에 한해 `/verify`도 `kind = 'verify'`인 `rejected` 행을 남긴다. `/verify`의
+다른 거절은 기록하지 않는다. `verify` 행은 `/metrics`의 `total`·`failed`에 들지 않는다.
+자기 한도에 걸린 구매자가 정산 실패율을 올리면 안 되기 때문이다.
+
+이 수는 관측된 시도 수다. 같은 요청을 다시 보내면 다시 세고, 위임은 자기 enforcer를
+지정하므로 같은 문장을 내는 계약으로도 만들 수 있다. 원장에 들어가는 것은 닫힌 집합의
+낱말뿐이고 revert 문장은 들어가지 않는다.
+
 ## 원장 보존
 
-`/settle`이 거절한 서명된 결제는 원장에 `rejected` 행으로 남는다. 요청 제한은 그 행이
+보존 기간이 7일이 아니라 9일인 것은 지표 수집기 때문이다. 수집기는 KST 자정에 끝난 7일
+창을 그 자정 뒤에 읽으므로, 7일이면 주간 수치의 가장 오래된 몇 시간이 읽기 전에 이미
+지워진다. 남는 이틀은 수집이 이틀까지 늦어도 창 전체가 남아 있게 한다.
+
+`/settle`이 거절한 서명된 결제와 `/verify`의 한도 거절은 원장에 `rejected` 행으로 남는다. 요청 제한은 그 행이
 쌓이는 속도를 묶지 개수를 묶지 않아, 느긋한 공격자는 sqlite 파일을 끝없이 키울 수 있었다.
-그래서 `rejected` 행은 7일(`REJECTED_SETTLEMENT_RETENTION_MS`)만 두고, 그 안에서도 최신
+그래서 `rejected` 행은 9일(`REJECTED_SETTLEMENT_RETENTION_MS`)만 두고, 그 안에서도 최신
 50,000건(`REJECTED_SETTLEMENTS_KEPT`)까지만 둔다. 개수는 요청 제한의 최악에서 잰 것이다 —
 IP 하나(IPv6는 /64 하나)가 하루에 600회/시 × 24시간 = 14,400행, 행당 약 200 B로 3 MB쯤이니
-50,000건은 그런 IP-일 셋 반, 약 10 MB이고, 지속되는 홍수 아래서는 일주일이 아니라 개수가
+50,000건은 그런 IP-일 셋 반, 약 10 MB이고, 지속되는 홍수 아래서는 9일이 아니라 개수가
 먼저 묶는다. 제한의 키는 payer가 아니라 IP라 개수 상한이 필요한 것이다 — 주소 많은 payer
 하나는 창 여럿이다. `settled`와 `error` 행은 절대 지우지 않는다 — 돈이 움직였거나 움직였을 수 있고,
 원장이 그 유일한 기록이다.
@@ -200,8 +228,8 @@ IP 하나(IPv6는 /64 하나)가 하루에 600회/시 × 24시간 = 14,400행, �
 
 - `last24h` / `allTime` — 원장 요약. `volumeByPayTo`는 정산된 금액(base 단위)을 수취인별로 합한 것.
   `succeeded`·`volumeByPayTo`·`uniquePayers`는 두 창 모두 빠짐없이 세지만, `failed`와
-  `total`은 `rejected` 행을 보존 범위(위 "원장 보존": 7일, 최대 50,000건) 안에서만 센다 —
-  두 창 다 그렇다. 일주일보다 오래된 거절은 `allTime`에서 빠지고, 지속되는 홍수 아래서는
+  `total`은 `rejected` 행을 보존 범위(위 "원장 보존": 9일, 최대 50,000건) 안에서만 센다 —
+  두 창 다 그렇다. 9일보다 오래된 거절은 `allTime`에서 빠지고, 지속되는 홍수 아래서는
   개수가 먼저 묶인다: 600회/시 한도의 IP 넷이면 하루에 57,600행이라 매시간 지우기가
   하루도 안 된 행을 잘라 `last24h`도 실제보다 적게 센다.
 - `budget.day` — 수치가 속한 UTC 날짜. `spentWei`는 실제 비용과 미확정 예약의 합이다. `remainingWei`는

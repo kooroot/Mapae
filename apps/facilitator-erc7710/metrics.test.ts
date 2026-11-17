@@ -90,20 +90,20 @@ describe("summaryJson", () => {
 describe("rejectedRetention", () => {
     test("keeps a refusal a week and no more than 50,000 of them; the cutoff never precedes the epoch", () => {
         const now = 30 * DAY_MS;
-        expect(rejectedRetention(now)).toEqual({rejectedBefore: now - 7 * DAY_MS, keepRejected: 50_000});
-        expect(REJECTED_SETTLEMENT_RETENTION_MS).toBe(7 * DAY_MS);
+        expect(rejectedRetention(now)).toEqual({rejectedBefore: now - 9 * DAY_MS, keepRejected: 50_000});
+        expect(REJECTED_SETTLEMENT_RETENTION_MS).toBe(9 * DAY_MS);
         expect(REJECTED_SETTLEMENTS_KEPT).toBe(50_000);
         expect(rejectedRetention(DAY_MS).rejectedBefore).toBe(0);
     });
 
-    test("under the policy a refusal older than the week leaves failed and total; settled and error rows stay", () => {
+    test("under the policy a refusal older than the retention leaves failed and total; settled and error rows stay", () => {
         const store = open();
         const now = 30 * DAY_MS;
         const budget = new SpendBudget(LIMIT, now, store.budget);
         const base = {kind: "settle", payTo: SHOP, amountBase: 100n} as const;
-        store.ledger.record({...base, at: now - 8 * DAY_MS, payer: ALICE, outcome: "settled"});
-        store.ledger.record({...base, at: now - 8 * DAY_MS, payer: ALICE, outcome: "error"});
-        store.ledger.record({...base, at: now - 8 * DAY_MS, payer: BOB, outcome: "rejected"});
+        store.ledger.record({...base, at: now - 10 * DAY_MS, payer: ALICE, outcome: "settled"});
+        store.ledger.record({...base, at: now - 10 * DAY_MS, payer: ALICE, outcome: "error"});
+        store.ledger.record({...base, at: now - 10 * DAY_MS, payer: BOB, outcome: "rejected"});
         store.ledger.record({...base, at: now - 6 * DAY_MS, payer: BOB, outcome: "rejected"});
 
         expect(store.ledger.prune(rejectedRetention(now))).toBe(1);

@@ -9,7 +9,7 @@
  * Messages are bounded by construction (fixed rows, failure reasons capped) instead of
  * truncated: cutting HTML at 4096 characters can split a tag, and Telegram rejects that.
  */
-import type {ChainMetrics, ColumnFraction, Columns, DailySnapshot, LedgerMetrics} from "@mapae/shared/ops-ingest";
+import {LIMIT_REJECTIONS, type ChainMetrics, type ColumnFraction, type Columns, type DailySnapshot, type LedgerMetrics, type LimitRejection} from "@mapae/shared/ops-ingest";
 
 const DAY_MS = 86_400_000;
 const MAX_REASONS_SHOWN = 5;
@@ -62,6 +62,20 @@ function successLine(now: LedgerMetrics, before: LedgerMetrics | undefined): str
 
 const total = (c: Columns) => c.internal + c.cohort + c.organic;
 
+const limitCount = (ledger: LedgerMetrics, code: LimitRejection) => ledger.failureReasons[`rejected:${code}`] ?? 0;
+const limitTotal = (ledger: LedgerMetrics) => (Object.keys(LIMIT_REJECTIONS) as LimitRejection[]).reduce((sum, code) => sum + limitCount(ledger, code), 0);
+
+/**
+ * Attempts the delegation's own limits refused, as the facilitator saw them at `/verify`
+ * and `/settle`. A count of attempts, not of payers: a retried request is counted again.
+ */
+function limitLine(now: LedgerMetrics, before: LedgerMetrics | undefined): string {
+    const sum = limitTotal(now);
+    const parts = (Object.entries(LIMIT_REJECTIONS) as [LimitRejection, string][])
+        .filter(([code]) => limitCount(now, code) > 0).map(([code, label]) => `${label} ${limitCount(now, code)}`);
+    return `${sum}${delta(sum, before && limitTotal(before))} attempts${parts.length ? ` — ${parts.join(" · ")}` : ""}`;
+}
+
 const entry = (title: string, body: string) => `<b>${escapeHtml(title)}</b>\n  ${escapeHtml(body)}`;
 
 function header(title: string, current: DailySnapshot, comparedTo: string, previous: DailySnapshot | null): string {
@@ -89,9 +103,7 @@ export function dailyReport(current: DailySnapshot, previous: DailySnapshot | nu
         entry("5. Paying wallets", columnsLine(now.payingWallets, before?.payingWallets)),
         entry("6. Repeat paying wallets", columnsLine(now.repeatPayingWallets, before?.repeatPayingWallets)),
         entry(`7. Payments not relayed by Mapae (target 0)${violations ? " — VIOLATION" : ""}`, columnsLine(now.payerGasViolations, before?.payerGasViolations)),
-        // The journal records an enforcer revert as a generic delegation rejection, so a
-        // cap refusal cannot be told apart from any other yet; a figure here would lie.
-        entry("8. Limit rejections", "not collected"),
+        entry("8. Limit rejections", limitLine(current.ledger, previous?.ledger)),
     ].join("\n\n");
 }
 
@@ -128,6 +140,7 @@ export function weeklyReport(current: DailySnapshot, previous: DailySnapshot | n
         entry("Payee concentration (top-1 share)", fractionLine(now.payeeTop1, before?.payeeTop1)),
         entry("Broadcast success", successLine(ledger, previous?.week_ledger)),
         entry("Settlement latency", `p50 ${ms(ledger.latencyMs.p50)} · p95 ${ms(ledger.latencyMs.p95)} · n ${ledger.latencyMs.n}`),
+        entry("Limit rejections", limitLine(ledger, previous?.week_ledger)),
         entry("Failure reasons", topReasons(ledger.failureReasons)),
         entry("Retention W1 (retained/eligible)", fractionLine(current.retention.w1, previous?.retention.w1)),
         entry("Retention W4 (retained/eligible)", fractionLine(current.retention.w4, previous?.retention.w4)),
