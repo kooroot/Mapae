@@ -49,7 +49,7 @@ The current policy model supports:
 ```mermaid
 flowchart LR
     Owner["Account owner<br/>wallet"] -->|"pre-deployment<br/>signature"| Bootstrap["account-bootstrap<br/>sponsor gas"]
-    Bootstrap -->|"CREATE2 deploy<br/>+ tUSDC float"| Account["HybridDeleGator<br/>smart account"]
+    Bootstrap -->|"CREATE2 deploy"| Account["HybridDeleGator<br/>smart account"]
     Owner -->|"root delegation"| Account
     Account -->|"period / expiry / vendor caveats"| Session["Agent session key"]
     Session -->|"payment-specific ERC-7710 leaf"| Agent["AI agent"]
@@ -85,7 +85,7 @@ a strong result, but nothing was mined and there is no link to follow.
 | Studio | Studio (app.mapae.io) reads the cap, the remaining period balance and the settlement receipts straight from chain | **GIWA** |
 | Standing gates | Documentation, logging, advisory and test-count gates (`check:counts` re-measures the badge and the breakdown below on every run); 23/23 negative paths on both chain targets; 16/16 onboarding cases on a GIWA fork | Local + read-only GIWA verification |
 
-- MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
+- MockUSDC (written tUSDC here; its on-chain symbol is `mUSDC`): [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - Direct settlement: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - Delegated settlement, 1 tUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - Delegated settlement, 2.5 tUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
@@ -96,7 +96,7 @@ a strong result, but nothing was mined and there is no link to follow.
   agent received said the payment had been rejected while it had in fact been mined. See
   "settlement-unknown" below.
 - **Sponsored onboarding**, account deployed from a signature that predates the account:
-  deploy [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3519118884c66e1599902),
+  deploy [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902),
   tUSDC float mint [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
   — account [`0x1528…3301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301),
   whose live ERC-1271 then answered `0x1626ba7e` for that pre-deployment signature.

@@ -66,8 +66,8 @@ that. Re-running `bun run index.ts daily` later the same morning overwrites the 
   `UserOperationEvent` cannot show whose money paid.
 - **Revocation**: `DisabledDelegation`. **Onboarding**: `SimpleFactory.Deployed` in a
   transaction sent by `BOOTSTRAP_ADDRESS`.
-- **Columns**: an address is `internal` if the deployment artifacts, the D3 session
-  addresses, the arcade's payee and redeemer, the configured wallets,
+- **Columns**: an address is `internal` if the deployment artifacts (Framework, and the
+  Guardians record's signers and canary account), the D3 session addresses, the arcade's payee and redeemer, the configured wallets,
   `METRICS_INTERNAL_ADDRESSES`, or a seller shop marked `internal` name it. It is `cohort`
   if `METRICS_COHORT_FILE` lists it. Otherwise it is `organic`. If an address is in both
   lists, internal wins. Each figure goes in its payer's column.

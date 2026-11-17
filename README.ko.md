@@ -48,7 +48,7 @@ Mapae는 실행 주체와 자금 소유자를 분리합니다.
 ```mermaid
 flowchart LR
     Owner["Account owner<br/>wallet"] -->|"pre-deployment<br/>signature"| Bootstrap["account-bootstrap<br/>sponsor gas"]
-    Bootstrap -->|"CREATE2 deploy<br/>+ tUSDC float"| Account["HybridDeleGator<br/>smart account"]
+    Bootstrap -->|"CREATE2 deploy"| Account["HybridDeleGator<br/>smart account"]
     Owner -->|"root delegation"| Account
     Account -->|"period / expiry / vendor caveats"| Session["Agent session key"]
     Session -->|"payment-specific ERC-7710 leaf"| Agent["AI agent"]
@@ -84,7 +84,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
 | Studio | Studio(app.mapae.io)가 한도·남은 주기 잔액·정산 영수증을 체인에서 직접 읽음 | **GIWA** |
 | 상시 게이트 | 문서·로깅·의존성 권고·테스트 수 상시 게이트(`check:counts`가 매번 배지와 아래 내역을 다시 셈), 두 체인 타깃 negative path 23/23, GIWA fork 온보딩 16/16 | 로컬 + GIWA 읽기 전용 검증 |
 
-- MockUSDC: [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
+- MockUSDC (이 문서의 tUSDC, 온체인 심볼은 `mUSDC`): [`0xcfeb…e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92)
 - 직접 정산: [`0xc9ab…b7a9`](https://sepolia-explorer.giwa.io/tx/0xc9ab58de064e88776cf2681851849cb4d79ad5c443d2675c60cbdd6ffaa3b7a9)
 - 위임 정산 1 tUSDC: [`0xe897…a97d`](https://sepolia-explorer.giwa.io/tx/0xe897fe55048b91c0f6728d0af313e30db2b425af8955ee89f7174a16c6aaa97d)
 - 위임 정산 2.5 tUSDC: [`0x71d7…6ce4`](https://sepolia-explorer.giwa.io/tx/0x71d7144213a04ae7b463f1c0e2b021c672938f10c7d92d5d4fe367e532f46ce4)
@@ -94,7 +94,7 @@ Sepolia에 블록으로 들어가 익스플로러에서 열리는 트랜잭션�
   이 실행이 실제 결함도 하나 드러냈고 수정이 같은 트리에 있다 — 체인에서는 채굴됐는데
   에이전트는 거절됐다는 답을 받았다. 아래 "settlement-unknown" 참조.
 - **스폰서드 온보딩**, 계정보다 먼저 만들어진 서명으로 계정 배포:
-  배포 [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3519118884c66e1599902),
+  배포 [`0xed21…9902`](https://sepolia-explorer.giwa.io/tx/0xed21ac71881cc587cc742862fea9ce16e5d2a09370a3516118884c66e1599902),
   tUSDC 민팅 [`0x9d14…baa0`](https://sepolia-explorer.giwa.io/tx/0x9d14588b8bc3e72851b320036696493f668a7675f664b5b812737540a373baa0)
   — 계정 [`0x1528…3301`](https://sepolia-explorer.giwa.io/address/0x15286FE9A48d52504607bEaaa021B29194353301),
   배포 뒤 라이브 ERC-1271이 그 사전 서명에 `0x1626ba7e`를 답했다. 새 사용자의 가스

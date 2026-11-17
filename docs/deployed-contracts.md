@@ -10,6 +10,7 @@ Mapae가 **GIWA Sepolia**에 배포한 모든 온체인 컨트랙트의 단일 �
 |---|---|
 | Framework 38 유닛, 데모 계정 | `deployments/giwa-sepolia.framework*.json`, `deployments/giwa-sepolia.owner-account.json` |
 | **MockUSDC** | **`packages/shared/src/token.ts`** — 배포 아티팩트에 없다 |
+| Mapae Guardians (오락실 NFT) | `deployments/giwa-sepolia.guardians.json` |
 
 MockUSDC는 Framework와 별도로 배포되어 배포 아티팩트에 포함되어 있지 않고,
 토큰 정의 파일이 그 주소의 정본이다. 문서 검사기는 두 정본을 모두 읽어 이 표의
@@ -45,6 +46,9 @@ Mapae가 직접 작성해 배포한 컨트랙트.
 | 컨트랙트 | 주소 | 비고 |
 |---|---|---|
 | MockUSDC | [`0xcfeb694719A09caeb80798e2011298F29CDa4e92`](https://sepolia-explorer.giwa.io/address/0xcfeb694719A09caeb80798e2011298F29CDa4e92) | EIP-3009 테스트 스테이블코인. EIP-712 도메인 `Mock USDC` / `2` / 6 decimals. `mint`는 무권한 faucet |
+| Mapae Guardians (프록시) | [`0x2b968116411C7413F83df461CD7eaB0792AAC2C0`](https://sepolia-explorer.giwa.io/address/0x2b968116411C7413F83df461CD7eaB0792AAC2C0) | 마패 오락실의 ERC-721 수호신 NFT. OpenZeppelin UUPS / `ERC1967Proxy`, 2026-10-11 배포. 탄생 특성은 Pyth Entropy 난수로 정한다. 소유자는 테스트넷 배포 EOA다 |
+| MapaeGuardians 구현체 | [`0x901E9c042a05D53b1C986C9012b1df2110dC9dE6`](https://sepolia-explorer.giwa.io/address/0x901E9c042a05D53b1C986C9012b1df2110dC9dE6) | 프록시가 가리키는 현재 구현. 2026-10-12 업그레이드로 교체됨 |
+| GuardianMetadata 라이브러리 | [`0xE585a052F720206D9D7089fF758F4D5c3CcF8565`](https://sepolia-explorer.giwa.io/address/0xE585a052F720206D9D7089fF758F4D5c3CcF8565) | 토큰 메타데이터를 온체인에서 조립하는 링크 라이브러리 |
 
 ---
 

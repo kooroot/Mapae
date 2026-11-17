@@ -127,6 +127,8 @@ function fakeSource(headTimestamp: bigint, selfRedeemed = false): ChainSource {
 test("the daily snapshot from real deployment artifacts is one the Worker accepts", async () => {
     const deployment = loadDeployment();
     expect(deployment.internal.length).toBeGreaterThan(5);
+    // The team's Guardians canary pays through the arcade like any visitor would.
+    expect(deployment.internal).toContain(getAddress("0x40753152109bE6979592EfD986640E872A56dfd4"));
     const db = openMetricsDb(":memory:");
     const snapshot = await dailySnapshot(parseConfig(env()), deployment, db, fakeSource(dayEnd + 60n), Date.parse("2026-10-13T00:30:00Z"));
     expect(snapshot.day).toBe("2026-10-12");

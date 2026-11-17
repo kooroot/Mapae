@@ -4,7 +4,7 @@
  * is evidence of demand.
  *
  * Internal is assembled from sources that already exist rather than a hand-kept list: the
- * deployment artifacts, the D3 session addresses, the arcade's fixed payee, the seller's
+ * deployment artifacts (Framework and Guardians), the D3 session addresses, the arcade's fixed payee, the seller's
  * own `internal` shops, and the wallet names every funded service already reads. A list
  * someone has to remember to update is a list that silently misfiles the next wallet.
  */
@@ -36,6 +36,10 @@ export function loadDeployment(): Deployment {
     const framework = parseActiveDeploymentArtifactJson(readFileSync(new URL("giwa-sepolia.framework.json", DEPLOYMENTS), "utf8"));
     const owner = readJson("giwa-sepolia.owner-account.json") as Record<string, unknown>;
     const sessions = readJson("d3-session-addresses.json");
+    // The Guardians record names the team's own canary account and the arcade's signers.
+    // Left out, the canary's outings were counted as a stranger's payments.
+    const guardians = readJson("giwa-sepolia.guardians.json") as Record<string, unknown>;
+    const canary = (guardians.canary ?? {}) as Record<string, unknown>;
     const journal = readJson("giwa-sepolia.framework-chain-journal.json") as {receipts?: unknown};
     const first = Array.isArray(journal.receipts) ? (journal.receipts[0] as Record<string, unknown> | undefined)?.transactionHash : undefined;
     if (typeof first !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(first)) throw new Error("framework chain journal has no first transaction");
@@ -51,6 +55,12 @@ export function loadDeployment(): Deployment {
             address(owner.account, "owner-account.account"),
             address(owner.owner, "owner-account.owner"),
             ...Object.entries(sessions).map(([role, value]) => address(value, `d3-session-addresses.${role}`)),
+            address(guardians.deployer, "guardians.deployer"),
+            address(guardians.admin, "guardians.admin"),
+            address(guardians.resultSigner, "guardians.resultSigner"),
+            address(guardians.paymentAgent, "guardians.paymentAgent"),
+            address(canary.owner, "guardians.canary.owner"),
+            address(canary.payer, "guardians.canary.payer"),
             getAddress(ARCADE_PAY_TO),
             getAddress(ARCADE_REDEEMER),
         ],
