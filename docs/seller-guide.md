@@ -172,6 +172,14 @@ mapaePaywall({
 받은 돈의 판매를 거절한다. 중복 배송은 `receipt.intent` 한 건당 한 행으로 막고, 이 값은
 "다른 호출이 이 일을 했다"로만 읽는다.
 
+정산 트랜잭션에는 위임 전체가 실려 있어서, 체인을 읽는 누구나 이미 정산된 결제의 헤더를
+다시 만들 수 있다. `paymentIdentifiers`를 주면 페이월이 이것을 막는다: facilitator가
+`replayed`로 답한 결제는 그 결제에 **가장 먼저 묶인** `payment-identifier`를 댄 요청에만
+자원이 나가고, 나머지는 `409 payment_identifier_settled`다. 식별자는 체인에 오르지 않고
+구매자의 것이 먼저 묶이기 때문이다. 식별자 없이 온 결제에는 페이월이 아무에게도 알리지
+않는 이름을 대신 묶으므로, 그 구매자는 첫 답만 받고 재시도는 받지 못한다. 바인딩을 주지
+않으면 이 검사는 없다.
+
 **같은 가격·같은 `payTo`의 경로 둘을 두지 않는다.** 오퍼에는 경로가 들어 있지 않아,
 한 경로에서 산 헤더가 같은 오퍼의 다른 경로도 연다. 경로마다 가격을 다르게 하거나,
 `receipt.intent`를 장부와 대조해 한 번 쓴 결제를 거절한다.
@@ -256,7 +264,7 @@ curl -s https://facilitator.mapae.io/supported
 | `402` (헤더 없음) | 결제 헤더가 없다 | 정상. 에이전트가 낼 차례다 |
 | `400 malformed_payment` | 헤더가 ERC-7710 결제가 아니거나, `payment-identifier`가 `[A-Za-z0-9_-]` 16–128자가 아니다. 영수증은 `invalid_payload`를 대고, 헤더 자체가 읽힌 경우에만 지불자를 댄다 | 에이전트 쪽 문제. `detail`이 사람이 읽을 이유를 말한다 |
 | `409 payment_identifier_conflict` | 이 `payment-identifier`가 이미 다른 요청에 묶여 있거나, 아직 정산되지 않은 결제에 묶여 있다(`detail`이 어느 쪽인지 말한다). **이 요청으로** 청구된 것은 없고 오퍼도 다시 싣지 않는다 | 에이전트는 새 id로 낸다. 같은 id로는 무엇을 내도 같은 답이다 |
-| `409 payment_identifier_settled` | 같은 요청인데 리프가 다르고, 그 id로는 이미 정산이 끝났다. 영수증이 저장된 지불자와 해시를 댄다 | 다시 내지 않는다. 해시를 탐색기에서 확인하고, 그 결제로 자원을 받으려면 **처음 낸 헤더 그대로** 다시 제시한다 |
+| `409 payment_identifier_settled` | 같은 요청인데 리프가 다르고, 그 id로는 이미 정산이 끝났다. 또는 이미 정산된 결제를 처음 낸 id 없이 다시 제시했다(`detail`이 `replayed_without_identifier` 또는 `replayed_under_later_identifier`). 영수증이 저장된 지불자와 해시를 댄다 | 다시 내지 않는다. 해시를 탐색기에서 확인하고, 그 결제로 자원을 받으려면 **처음 낸 헤더 그대로** 다시 제시한다 |
 | `503 facilitator_unavailable` | `/supported` 또는 `/verify`에 닿지 못했거나, facilitator가 결제를 보지 않았다 — 요청 제한, 또는 실패한 준비 검사 — `/verify`든 `/settle`이든. 청구된 것은 없다 | `curl -s https://facilitator.mapae.io/supported`로 확인하고 같은 결제로 다시 시도 |
 | `402` (오퍼 재발행) | facilitator가 위임을 거절했거나(만료, 한도 초과, 상한 10.00 초과, 오퍼 불일치), 아무도 청구되지 않은 정산 실패다. 새 leaf로 다시 낼 수 있으므로 오퍼를 다시 싣는다 | 손님의 위임을 확인. 가격이 상한 안인지 확인 |
 | `504 settlement_unknown` | 결과가 확정되지 않았다 — 응답 유실, `settlement_pending`, `unexpected_settle_error`, 또는 채굴 실패 낱말이 아닌 사유로 해시를 댄 실패. **청구됐을 수 있다** | 영수증 헤더의 tx를 탐색기에서 확인. 에이전트에게 다시 서명시키지 않는다 |

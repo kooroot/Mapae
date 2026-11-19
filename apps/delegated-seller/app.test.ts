@@ -86,6 +86,14 @@ const AMERICANO = "/s/demo-cafe/americano";
 const CROISSANT = "/s/demo-cafe/croissant";
 const LOGO = "/s/demo-studio/logo";
 const SETTLED_ONCE = ["/supported", "/verify", "/settle"];
+const ID = "pay_0123456789abcdef0123456789ab";
+
+/** 같은 결제에 식별자만 실은 헤더. */
+const identified = (header: string, id: string): string =>
+    encodePaymentHeader({
+        ...decodePaymentHeader(header),
+        extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierEcho(id)},
+    });
 
 function shop(options: {metricsToken?: string; store?: MapaeStore} = {}) {
     const store = options.store ?? openStore(IN_MEMORY);
@@ -241,7 +249,7 @@ describe("ticket — one payment, one ticket", () => {
 
     test("same-intent replay is the same answer, from the ledger, with no facilitator call", async () => {
         const {store, pay, stub} = shop();
-        const header = paymentHeader(ONE, LEAF_A);
+        const header = identified(paymentHeader(ONE, LEAF_A), ID);
         const first = await ticketOf(await pay(AMERICANO, header));
         expect(stub.paths).toEqual(SETTLED_ONCE);
         // The chain would refuse this header now; the shop must not even ask.
@@ -255,6 +263,55 @@ describe("ticket — one payment, one ticket", () => {
         expect(again.receipt).toEqual({...first.receipt, replayed: true});
         expect(first.receipt.replayed).toBe(false);
         expect(store.orders.summary({sinceMs: 0})).toEqual({total: 1, bySeller: {"demo-cafe": 1}});
+    });
+
+    test("a paid header rebuilt from the settlement's public calldata buys no ticket", async () => {
+        const {store, pay, stub} = shop();
+        const first = await ticketOf(await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID)));
+        // What the facilitator's journal answers for a leaf it already settled: the same
+        // success, marked as an earlier call's.
+        stub.routes["/settle"] = () => Response.json({success: true, network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX, replayed: true});
+        // The delegation is on chain; the identifier is not. Without it, or under one the
+        // copier made up, the row is not answered and the replayed settlement delivers nothing.
+        for (const forged of [paymentHeader(ONE, LEAF_A), identified(paymentHeader(ONE, LEAF_A), "pay_made_up_by_the_copier_0000")]) {
+            const response = await pay(AMERICANO, forged);
+            expect(response.status).toBe(409);
+            const body = JSON.stringify(await response.json());
+            expect(body).toContain("payment_identifier_settled");
+            expect(body).not.toContain(first.ticket.code);
+        }
+        // The made-up identifier presented a second time is no better: it never settled anything.
+        expect((await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), "pay_made_up_by_the_copier_0000"))).status).toBe(409);
+        // The buyer's own header still answers, from the row.
+        const again = await ticketOf(await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID)));
+        expect(again.ticket).toEqual(first.ticket);
+        expect(store.orders.summary({sinceMs: 0})).toEqual({total: 1, bySeller: {"demo-cafe": 1}});
+    });
+
+    test("refused payments leave no binding, so a flood of them cannot push a buyer's row out", async () => {
+        const {store, pay, stub} = shop();
+        stub.routes["/verify"] = ALLOWANCE_SPENT;
+        for (let i = 0; i < 20; i++) {
+            expect((await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_B), `pay_junk_${String(i).padStart(20, "0")}`))).status).toBe(402);
+        }
+        expect((await pay(AMERICANO, paymentHeader(ONE, LEAF_B))).status).toBe(402);
+        // Nothing unsettled is on file to prune.
+        expect(store.paymentIdentifiers.prune({unsettledBefore: Date.now() + 1, keepUnsettled: 1})).toBe(0);
+    });
+
+    test("a first attempt that ended pending is finished by the same header, and its ticket is delivered", async () => {
+        const {store, pay, stub} = shop();
+        const header = identified(paymentHeader(ONE, LEAF_A), ID);
+        const settle = stub.routes["/settle"];
+        stub.routes["/settle"] = () => Response.json({success: false, errorReason: "settlement_pending", network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX});
+        expect((await pay(AMERICANO, header)).status).toBe(504);
+        // The retry is answered out of the facilitator's journal, so it is marked replayed —
+        // and it is the buyer's first delivery. The identifier bound by the first attempt is the proof.
+        stub.routes["/settle"] = () => Response.json({success: true, network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX, replayed: true});
+        const ticket = await ticketOf(await pay(AMERICANO, header));
+        expect(ticket.receipt.replayed).toBe(true);
+        expect(store.orders.summary({sinceMs: 0})).toEqual({total: 1, bySeller: {"demo-cafe": 1}});
+        stub.routes["/settle"] = settle;
     });
 
     test("two leaves for one item are two intents, two codes and two rows", async () => {
@@ -274,7 +331,7 @@ describe("ticket — one payment, one ticket", () => {
         const {store, pay, stub} = shop();
         // The logo costs what the americano costs and both shops pay to one address, so
         // the header is byte-for-byte a valid payment for either offer.
-        const header = paymentHeader(ONE, LEAF_A);
+        const header = identified(paymentHeader(ONE, LEAF_A), ID);
         const original = await ticketOf(await pay(AMERICANO, header));
         stub.routes["/verify"] = ALLOWANCE_SPENT;
         const replay = await ticketOf(await pay(LOGO, header));
@@ -298,10 +355,10 @@ describe("ticket — one payment, one ticket", () => {
 
     test("the intent is keyed on the shop's offer, not on what the header claims it accepted", async () => {
         const {pay, stub} = shop();
-        const original = await ticketOf(await pay(AMERICANO, paymentHeader(ONE, LEAF_A)));
+        const original = await ticketOf(await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID)));
         // The paywall derives the intent from its own price and the header's leaf, never
         // from the header's `accepted` block — so neither does the lookup that precedes it.
-        const misdescribed = await ticketOf(await pay(AMERICANO, paymentHeader(2_500_000n, LEAF_A)));
+        const misdescribed = await ticketOf(await pay(AMERICANO, identified(paymentHeader(2_500_000n, LEAF_A), ID)));
         expect(stub.paths).toEqual(SETTLED_ONCE);
         expect(misdescribed.ticket).toEqual(original.ticket);
     });
@@ -606,14 +663,6 @@ describe("health and seed", () => {
  * 일어나는 일이다 — 즉 재시도가 새 리프로 서명해도 두 번 청구되지 않는다는 것.
  */
 describe("payment-identifier — 같은 이름으로 다른 결제는 받지 않는다", () => {
-    const ID = "pay_0123456789abcdef0123456789ab";
-
-    /** 같은 결제에 식별자만 실은 헤더. */
-    const identified = (header: string, id: string): string =>
-        encodePaymentHeader({
-            ...decodePaymentHeader(header),
-            extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierEcho(id)},
-        });
 
     test("같은 id로 서명한 다른 리프는 409 — 재시도가 두 번 청구되지 않는다", async () => {
         const {store, stub, pay} = shop();
@@ -697,7 +746,7 @@ describe("payment-identifier — 같은 이름으로 다른 결제는 받지 않
         // 첫 바인딩이 정리를 한 번 물고 간다 — 재시작 뒤 첫 결제가 곧 부팅 청소다.
         await ticketOf(await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_A), ID)));
         // 그 행은 갔다: 같은 이름을 다른 지문으로 묶어도 충돌이 아니다.
-        expect(bind(print("d"), Date.now())).toEqual({kind: "new"});
+        expect(bind(print("d"), Date.now())).toEqual({kind: "new", created: true});
         // 방금 정산된 행은 남는다. 재생 가드를 지우는 정리는 정리가 아니다.
         const retry = await pay(AMERICANO, identified(paymentHeader(ONE, LEAF_B), ID));
         expect(retry.status).toBe(409);

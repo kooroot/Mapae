@@ -1100,7 +1100,7 @@ function binding() {
             const row = rows.get(id);
             if (row === undefined) {
                 rows.set(id, {fingerprint, intent: paymentIntentId});
-                return {kind: "new"};
+                return {kind: "new", created: true};
             }
             // 거절에도 실어 보낸다: 이 **id**로 이미 움직인 돈이 있는지는 거절당한 시도와
             // 별개의 사실이고, 판매자가 그것으로 409의 낱말을 고른다.
@@ -1114,7 +1114,15 @@ function binding() {
             // 같은 id·같은 요청·같은 리프인데 정산 기록이 없다 = 앞선 라운드가 돈을 옮기지
             // 못했다. 다시 정산해도 되는 유일한 경우이고, 그 라운드의 이중 청구는
             // 퍼실리테이터의 intent 장부가 막는다.
-            return settled === null ? {kind: "new"} : {kind: "settled", settled};
+            return settled === null ? {kind: "new", created: false} : {kind: "settled", settled};
+        },
+        release(id) {
+            if (rows.get(id)?.settled === undefined) rows.delete(id);
+        },
+        // 삽입 순서를 지키는 Map이라, 처음 나오는 행이 가장 먼저 묶인 id다.
+        first(paymentIntentId) {
+            for (const [id, row] of rows) if (row.intent === paymentIntentId) return id;
+            return null;
         },
         record({id, payer, transaction}) {
             const row = rows.get(id);
@@ -1123,6 +1131,94 @@ function binding() {
     };
     return {port, rows};
 }
+
+describe("replayed settlement — 체인에서 베낀 헤더는 자원을 받지 못한다", () => {
+    const BUYER = "pay_the_buyers_identifier_0001";
+    const COPIER = "pay_made_up_by_the_copier_0002";
+    const replaying = () => facilitator({"/settle": json({...SETTLED, replayed: true})});
+
+    test("the buyer's retry after a pending first attempt is delivered under the identifier it first presented", async () => {
+        const {port} = binding();
+        const pending = facilitator({"/settle": json({success: false, errorReason: "settlement_pending", network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX})});
+        expect((await pay(seller(paywall({fetch: pending.fetch, paymentIdentifiers: port})).app, identified(BUYER))).status).toBe(504);
+        const {app, seen} = seller(paywall({fetch: replaying().fetch, paymentIdentifiers: port}));
+        expect((await pay(app, identified(BUYER))).status).toBe(200);
+        expect(seen.receipt?.replayed).toBe(true);
+        expect(seen.served).toBe(1);
+    });
+
+    test("no identifier, a later identifier, and that later identifier presented again are all 409 with nothing served", async () => {
+        const {port, rows} = binding();
+        expect((await pay(seller(paywall({fetch: facilitator().fetch, paymentIdentifiers: port})).app, identified(BUYER))).status).toBe(200);
+        const {app, seen} = seller(paywall({fetch: replaying().fetch, paymentIdentifiers: port}));
+        for (const [header, detail] of [
+            [paymentHeader(), "replayed_without_identifier"],
+            [identified(COPIER), "replayed_under_later_identifier"],
+            [identified(COPIER), "replayed_under_later_identifier"],
+        ] as const) {
+            const response = await pay(app, header);
+            expect(response.status).toBe(409);
+            expect(await response.json()).toEqual({error: "payment_identifier_settled", detail});
+            expect(failureReceipt(response)).toMatchObject({success: false, errorReason: "payment_identifier_settled", transaction: TX});
+        }
+        expect(seen.served).toBe(0);
+        // Refused attempts leave nothing on file: only the buyer's settled row remains.
+        expect([...rows.keys()]).toEqual([BUYER]);
+    });
+
+    test("a payment made with no identifier is bound under a name nobody is told, so no later identifier is first", async () => {
+        const {port, rows} = binding();
+        const first = seller(paywall({fetch: facilitator().fetch, paymentIdentifiers: port}));
+        expect((await pay(first.app, paymentHeader())).status).toBe(200);
+        expect(first.seen.served).toBe(1);
+        const [name] = [...rows.keys()];
+        expect(name).toMatch(/^srv_[0-9a-f]{32}$/);
+        expect(rows.get(name ?? "")?.settled).toBeDefined();
+        const {app, seen} = seller(paywall({fetch: replaying().fetch, paymentIdentifiers: port}));
+        expect((await pay(app, identified(COPIER))).status).toBe(409);
+        // The stated cost: this buyer cannot be served again either.
+        expect((await pay(app, paymentHeader())).status).toBe(409);
+        expect(seen.served).toBe(0);
+        expect(rows.size).toBe(1);
+    });
+
+    test("a settled payment with no binding on file is not served to whoever names it first", async () => {
+        // An order paid before bindings existed, or a row that was lost: the first
+        // identifier anyone presents now was created by that very request.
+        const {port, rows} = binding();
+        const {app, seen} = seller(paywall({fetch: replaying().fetch, paymentIdentifiers: port}));
+        const both = await Promise.all([pay(app, identified(COPIER)), pay(app, identified(COPIER))]);
+        expect(both.map((r) => r.status)).toEqual([409, 409]);
+        expect((await pay(app, identified(COPIER))).status).toBe(409);
+        expect(seen.served).toBe(0);
+        expect(rows.size).toBe(0);
+    });
+
+    test("one request's refusal does not drop the row a concurrent request under the same name settles on", async () => {
+        const {port, rows} = binding();
+        let verifies = 0;
+        const flaky = facilitator({"/verify": () => (verifies++ === 0 ? new Response("", {status: 503}) : Response.json({isValid: true, payer: PAYER}))});
+        const {app, seen} = seller(paywall({fetch: flaky.fetch, paymentIdentifiers: port}));
+        const both = await Promise.all([pay(app, identified(BUYER)), pay(app, identified(BUYER))]);
+        expect(both.map((r) => r.status).sort()).toEqual([200, 503]);
+        expect(seen.served).toBe(1);
+        expect(rows.get(BUYER)?.settled).toBeDefined();
+    });
+
+    test("an attempt that charged nobody leaves no binding behind, and one in doubt keeps its", async () => {
+        const {port, rows} = binding();
+        const refused = facilitator({"/verify": json({isValid: false, invalidReason: "expired"})});
+        expect((await pay(seller(paywall({fetch: refused.fetch, paymentIdentifiers: port})).app, identified(COPIER))).status).toBe(402);
+        expect((await pay(seller(paywall({fetch: refused.fetch, paymentIdentifiers: port})).app, paymentHeader())).status).toBe(402);
+        expect(rows.size).toBe(0);
+        const pending = facilitator({"/settle": json({success: false, errorReason: "settlement_pending", network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX})});
+        expect((await pay(seller(paywall({fetch: pending.fetch, paymentIdentifiers: port})).app, identified(BUYER))).status).toBe(504);
+        expect([...rows.keys()]).toEqual([BUYER]);
+        // The buyer's own later refusal does not drop the row an earlier attempt left in doubt.
+        expect((await pay(seller(paywall({fetch: refused.fetch, paymentIdentifiers: port})).app, identified(BUYER))).status).toBe(402);
+        expect([...rows.keys()]).toEqual([BUYER]);
+    });
+});
 
 describe("mapaePaywall — payment-identifier 확장", () => {
     test("바인딩을 준 판매자만 확장을 광고한다", async () => {

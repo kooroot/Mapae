@@ -39,6 +39,8 @@ export function createPayments(store: MapaeStore, admissions: ArcadeStore, optio
                 if (bound.kind === "settled") return {kind: "settled", settled: receipt(bound.settled)};
                 return {kind: "conflict", reason: bound.reason, settled: bound.settled ? receipt(bound.settled) : null};
             },
+            release: (id) => store.paymentIdentifiers.release(id),
+            first: (intent) => store.paymentIdentifiers.firstFor(intent)?.id ?? null,
             record(input) {store.paymentIdentifiers.record({id: input.id, payer: input.payer, txHash: input.transaction, at: Date.now()});},
         };
         for (const game of GAMES) {

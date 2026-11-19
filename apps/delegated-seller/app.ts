@@ -19,6 +19,7 @@ import {
     PAYMENT_SIGNATURE_HEADER,
     decodePaymentHeader,
     fromTokenAmount,
+    readPaymentIdentifier,
     redactForLog,
     toTokenAmount,
 } from "@mapae/shared";
@@ -86,12 +87,13 @@ const CONTENT_SECURITY_POLICY = [
 /**
  * 정산되지 않은 결제 식별자 바인딩을 얼마나 오래 들고 있는가.
  *
- * 정산까지의 예산은 초 단위다(페이월이 `/settle`에 35초). 한 시간이 지난 미정산 행은
- * 아무도 더 이어 가지 않는 시도이고, 지워도 잃는 것이 없다 — 같은 헤더를 다시 내면 새로
- * 묶이고, 그 라운드의 이중 청구는 리프의 일회성 allowance와 퍼실리테이터의 저널이 막는다.
- * 정산된 행은 이 정리가 건드리지 않는다.
+ * 거절로 끝난 시도의 행은 페이월이 그 자리에서 지운다. 여기까지 남는 미정산 행은 결과를
+ * 모르는 결제(`settlement_pending`)이거나 요청 도중 죽은 프로세스가 남긴 것이다. 앞의 것은
+ * 구매자가 그 id로 돌아와야 자원을 받으므로 오래 둔다 — 한 시간이던 때에는 그 사이 행이
+ * 지워지면 체인에서 헤더를 베낀 사람의 id가 그 결제의 첫 id가 됐다. 정산된 행은 이 정리가
+ * 건드리지 않는다.
  */
-export const UNSETTLED_BINDING_TTL_MS = 3_600_000;
+export const UNSETTLED_BINDING_TTL_MS = 30 * 24 * 3_600_000;
 /** 시간 기준과 함께 걸리는 두 번째 상한. 원장의 `keepRejected`와 같은 역할이다. */
 const UNSETTLED_BINDINGS_KEPT = 5_000;
 /**
@@ -328,7 +330,7 @@ function recordedReceipt(order: Order, payTo: Address): SettlementReceipt {
     };
 }
 
-type Delegation = Pick<PaymentIntent, "delegationManager" | "permissionContext">;
+type Delegation = Pick<PaymentIntent, "delegationManager" | "permissionContext"> & {identifier?: string};
 
 /**
  * The two header fields an intent is keyed on, or nothing. The shape admitted is the
@@ -360,7 +362,9 @@ function readDelegation(header: string): Delegation | undefined {
     if (typeof permissionContext !== "string" || !isHex(permissionContext) || permissionContext.length <= 2) {
         return undefined;
     }
-    return {delegationManager: getAddress(delegationManager), permissionContext};
+    const identifier = readPaymentIdentifier(decoded);
+    return {delegationManager: getAddress(delegationManager), permissionContext,
+        ...(identifier.kind === "present" ? {identifier: identifier.id} : {})};
 }
 
 export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metricsToken, readinessFetch = fetch, arcadeReceiptToken}: ShopAppOptions) {
@@ -393,20 +397,29 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
      * settlement: this shop's payTo, this item's price, the network and the asset, plus
      * the header's delegation. A header for another price derives another intent and
      * finds nothing; one nothing bought finds nothing and goes on to pay.
+     *
+     * The delegation alone proves nothing about who is asking: it is in the settlement's
+     * calldata, so anyone reading the chain can rebuild the header of a paid order. The
+     * `payment-identifier` is not on chain. The row is answered only to a header naming
+     * the identifier this payment was first bound under; any other falls through to the
+     * paywall, which refuses a replayed settlement on the same test.
      */
     const paidOrder = (c: Context<ShopEnv>, seller: Seller, item: Item): Order | null => {
         const header = c.req.header(PAYMENT_SIGNATURE_HEADER);
         const delegation = header === undefined ? undefined : readDelegation(header);
-        if (!delegation) return null;
-        return store.orders.getByIntent(
-            derivePaymentIntentId({
-                network: GIWA_SEPOLIA_CAIP2,
-                asset: MOCK_USDC.address,
-                amount: item.priceBase,
-                payTo: seller.payTo,
-                ...delegation,
-            }),
-        );
+        if (!delegation || delegation.identifier === undefined) return null;
+        const {identifier, ...signed} = delegation;
+        const intent = derivePaymentIntentId({
+            network: GIWA_SEPOLIA_CAIP2,
+            asset: MOCK_USDC.address,
+            amount: item.priceBase,
+            payTo: seller.payTo,
+            ...signed,
+        });
+        // Settled, not merely first: an unsettled first row may be a request still in
+        // flight under a name its sender made up a moment ago.
+        const first = store.paymentIdentifiers.firstFor(intent);
+        return first?.settled && first.id === identifier ? store.orders.getByIntent(intent) : null;
     };
 
     /**
@@ -463,6 +476,8 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
                 settled: bound.settled === null ? null : recorded(bound.settled),
             };
         },
+        release: (id) => store.paymentIdentifiers.release(id),
+        first: (paymentIntentId) => store.paymentIdentifiers.firstFor(paymentIntentId)?.id ?? null,
         record: ({id, payer, transaction}) =>
             store.paymentIdentifiers.record({
                 id,
@@ -533,11 +548,10 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
     const paywall: MiddlewareHandler<ShopEnv> = (c, next) => {
         const seller = c.get("seller");
         const item = c.get("item");
-        // Before the facilitator, not after: `/verify` simulates against live chain
-        // state, where the first settlement already spent the leaf's one-shot allowance,
-        // so a replayed header is refused there and never reaches the orders table.
-        // 주문 행은 "이 결제는 이미 끝났다"는 증거다. 식별자는 아직 정산되지 않은
-        // 결제를 지키는 장치이므로, 이 칸을 앞질러 읽을 필요가 없다.
+        // Before the facilitator, not after: the row already answers the question, and
+        // the buyer who paid should not wait on two more round trips to hear it again.
+        // 주문 행은 "이 결제는 이미 끝났다"는 증거이고, 그 결제에 가장 먼저 묶인
+        // 식별자는 "묻는 쪽이 그 구매자"라는 증거다. 둘 다 있어야 여기서 답한다.
         const paid = paidOrder(c, seller, item);
         if (paid) {
             c.set("order", paid);
@@ -588,10 +602,10 @@ export function createShopApp({store, mapae, baseUrl, facilitatorUrl, name, metr
         const order = c.get("order");
         if (!order) {
             // `onSettled` threw — the paywall logged the intent — so the payment settled
-            // and nothing recorded it. A retry cannot recover it: no row answers the
-            // header here, and `/verify` refuses it on the allowance the settlement
-            // spent. The logged intent is what the operator reconciles from; a made-up
-            // ticket could not be shown at any counter.
+            // and nothing recorded it. The same header presented again is settled from
+            // the facilitator's journal and writes the row then; the logged intent is
+            // what the operator reconciles from if it is not. A made-up ticket could not
+            // be shown at any counter.
             return c.json({error: "order_not_recorded"}, 500);
         }
         // A same-price replay comes back as the row of the item the payment first

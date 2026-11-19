@@ -95,6 +95,19 @@ interface SettlementReceipt {
 later success for that intent is marked, so refusing a replay refuses a sale you were paid
 for. Dedupe on `intent` — one row per intent — and read this as "some other call did this".
 
+What does gate a replayed settlement is the identifier binding, when you pass one. A
+settlement puts the whole delegation on chain, so anyone can rebuild the header of a
+payment that already settled; the `payment-identifier` is never on chain, and the buyer's
+was bound before there was a transaction to copy. With `paymentIdentifiers` set, a
+settlement the facilitator answers as `replayed` reaches your handler only when the request
+names the identifier **first bound** to that payment. Without one, or under a later one, it
+is `409 payment_identifier_settled` and nothing is served. A payment that arrives with no
+identifier is bound under a random name the paywall tells nobody, so no later identifier is
+ever first for it: that buyer is answered once and cannot be re-served, which means a
+client without the extension has no retry after a lost answer (the refusal is logged with
+the intent, for you to reconcile). Without `paymentIdentifiers` nothing is checked and a
+paid header can be replayed by whoever reads the chain.
+
 | status | meaning |
 |---|---|
 | `402` (no offer consumed) | no payment header — normal for humans and `curl` |
@@ -146,12 +159,15 @@ A second attempt under the same id that changes either half is the 409; one that
 neither and already settled is served from the stored result with `replayed: true` and no
 facilitator call. This is what an id buys you that `intent` cannot: a retry signs a **new
 leaf**, so its intent differs, and the identifier is the only name the two attempts share.
-It is not signed, though — treat it as an idempotency hint, never as authentication, and
-keep every safety decision on `intent`.
+It is not signed, and it is not the buyer's identity. The one thing it proves is the one
+above: this caller presented the payment before it was public.
 
 `bind` runs before the facilitator does, so an attempt nobody verified claims a row too.
-Give your store a way to drop **unsettled** bindings — by age and by count — and never the
-settled ones, which are the replay guard.
+The paywall calls `release(id)` for a row it created when the attempt ends with nobody
+charged, so refused requests leave nothing behind; what stays unsettled is a payment whose
+outcome is unknown, and its buyer needs that row to be served. Prune unsettled rows only
+after a long time, never the settled ones. `first(intent)` answers by insertion order, not
+by a date a caller supplied.
 
 ### `mapae.manifest({name, app})` · `mapaeManifest({name, app, facilitator?})`
 

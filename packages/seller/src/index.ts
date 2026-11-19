@@ -113,7 +113,8 @@ export interface RecordedPayment {
 }
 
 export type PaymentIdentifierBindResult =
-    | {kind: "new"}
+    /** `created`: 이 호출이 그 행을 만들었는가. 앞선 시도가 남긴 행이면 false다. */
+    | {kind: "new"; created: boolean}
     | {kind: "settled"; settled: RecordedPayment}
     | {
           kind: "conflict";
@@ -143,6 +144,20 @@ export type PaymentIdentifierBindResult =
  * 못박고(그래서 동시에 도착한 다른 leaf가 곧바로 conflict가 된다), `record`는 정산이
  * 성공한 **뒤에** 결과를 그 행에 남긴다. 실패·미결에서는 기록하지 않는다: 그 id는 아직
  * 결과가 없고, 같은 헤더를 다시 제시하면 퍼실리테이터의 저널이 답한다.
+ *
+ * 바인딩이 있으면 식별자는 **재제시의 증명**이기도 하다. 정산 트랜잭션의 calldata에는
+ * 위임 컨텍스트가 그대로 실려 있어서, 체인을 읽는 누구나 이미 정산된 결제의 헤더를
+ * 다시 만들 수 있다. 식별자는 체인에 오르지 않고, 구매자의 id는 베낄 트랜잭션이 생기기
+ * 전에 묶인다. 그래서 퍼실리테이터가 `replayed`로 답한 결제는 그 결제에 **가장 먼저 묶인**
+ * id를 댈 때만 자원을 받고, id가 없거나 나중에 묶인 id면 `409 payment_identifier_settled`다.
+ * 식별자 없이 온 결제에는 페이월이 아무에게도 알리지 않는 id를 직접 묶는다. 그래야 정산된
+ * 모든 결제에 "가장 먼저 묶인 id"가 있고, 나중에 온 누구의 id도 첫째가 되지 못한다. 그
+ * 구매자의 첫 답은 그대로 나가지만 재제시는 받지 못한다 — 확장을 쓰지 않는 클라이언트에는
+ * 재시도 수단이 없다.
+ *
+ * 행은 서명을 확인하기 전에 쓰이므로, 아무도 청구되지 않은 것으로 끝난 시도의 행은 그
+ * 자리에서 `release`로 지운다. 남겨 두면 거절당한 요청을 쏟아부어 진짜 구매자의 진행 중인
+ * 행을 정리 상한 밖으로 밀어낼 수 있다.
  */
 export interface PaymentIdentifierBinding {
     /**
@@ -156,6 +171,10 @@ export interface PaymentIdentifierBinding {
      * 만든다). 저장해 두고 다음에 같은지만 비교하면 된다.
      */
     bind(payment: {id: string; fingerprint: string; paymentIntentId: Hex}): PaymentIdentifierBindResult;
+    /** 정산되지 않은 바인딩을 지운다. `bind`가 `created: true`를 준 호출만 부른다. */
+    release(id: string): void;
+    /** 이 결제에 가장 먼저 묶인 id. 없으면 `null`. 읽기만 한다 — 묶는 순서가 답이다. */
+    first(paymentIntentId: Hex): string | null;
     /**
      * 정산이 끝난 결과를 그 id에 남긴다. `bind`가 `new`를 준 뒤에만 불린다.
      *
@@ -637,6 +656,12 @@ function writeFailureReceipt(
  * 새 행이 맞지 않는다 — 그때 조용히 "같은 결제"로 읽히는 대신 409로 떨어지도록 태그를
  * 함께 접는다. 태그를 올리는 것이 마이그레이션이다.
  */
+/** A name nobody is told: 128 random bits in the extension's own alphabet. */
+function serverIdentifier(): string {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return `srv_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 const FINGERPRINT_VERSION = "mapae.x402.payment-identifier.fingerprint.v2";
 
 /**
@@ -710,6 +735,12 @@ function buildPaywall(
             ? extensions
             : {...extensions, [PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierOffer()};
 
+    // Binding names with a request in flight, and those whose row that request created.
+    // A replayed settlement is never served under a name still being created: until the
+    // creating call ends, "first" cannot tell the buyer's earlier attempt from a request
+    // that arrived a moment ago with a copied header. Per process, like the requests.
+    const holders = new Map<string, number>();
+    const creating = new Set<string>();
     const paywall: MiddlewareHandler<MapaeEnv> = async (c, next) => {
         // Every answer below turns on whether this request carried a payment, so a shared
         // cache must never hand one of them to the other request: `no-store` keeps a paid
@@ -878,10 +909,25 @@ function buildPaywall(
         // 멱등성 판정은 퍼실리테이터보다 먼저다. 사양의 표가 그렇게 요구하고("같은 id에
         // 다른 요청이면 캐시된 결과를 주지도, 두 번째 연산을 하지도 말 것"), 정산은 그
         // "두 번째 연산"이다.
-        if (paymentIdentifiers && identifier !== undefined) {
+        // 식별자 없이 온 결제에도 행 하나를 묶는다. 아무에게도 알리지 않는 이름이라 누구도
+        // 제시할 수 없고, 그 행이 이 결제의 "가장 먼저 묶인 id" 자리를 차지한다.
+        const bindingId = identifier ?? (paymentIdentifiers ? serverIdentifier() : undefined);
+        // 이 호출이 만든 행만 지운다. 앞선 시도가 남긴 행은 그 시도의 결과를 아직 모른다.
+        let created = false;
+        let held = false;
+        const forget = (): void => {
+            // Another request under the same name is still in flight and may yet settle.
+            if (!paymentIdentifiers || bindingId === undefined || !created || (holders.get(bindingId) ?? 0) > 1) return;
+            try {
+                paymentIdentifiers.release(bindingId);
+            } catch (error) {
+                console.error(`[mapae] payment identifier binding not released for intent ${intent} — ${redactForLog(error)}`);
+            }
+        };
+        if (paymentIdentifiers && bindingId !== undefined) {
             const requested = new URL(c.req.url);
             const bound = paymentIdentifiers.bind({
-                id: identifier,
+                id: bindingId,
                 // 오리진 + 경로 + 쿼리. 뒤에 선 핸들러가 무엇으로 답을 바꾸든 그 값이 이 안에
                 // 있어야, 한 번 낸 값으로 다른 답을 받아 가지 못한다.
                 fingerprint: requestFingerprint(
@@ -937,97 +983,136 @@ function buildPaywall(
                 });
                 return;
             }
+            created = bound.created;
+            held = true;
+            holders.set(bindingId, (holders.get(bindingId) ?? 0) + 1);
+            if (created) creating.add(bindingId);
         }
+        try {
 
-        const request: Erc7710FacilitatorRequest = {
-            x402Version: X402_VERSION,
-            paymentPayload: payload,
-            paymentRequirements: requirements,
-        };
-        // Only the address Cloudflare wrote on the buyer's request. An `X-Mapae-Client-IP`
-        // the buyer sent themselves is never passed through: a request through the tunnel
-        // always carries `CF-Connecting-IP`, and one that does not carry it came from
-        // somewhere the facilitator would not count anyway.
-        const buyer: BuyerContext = {clientIp: c.req.header("cf-connecting-ip")};
+            const request: Erc7710FacilitatorRequest = {
+                x402Version: X402_VERSION,
+                paymentPayload: payload,
+                paymentRequirements: requirements,
+            };
+            // Only the address Cloudflare wrote on the buyer's request. An `X-Mapae-Client-IP`
+            // the buyer sent themselves is never passed through: a request through the tunnel
+            // always carries `CF-Connecting-IP`, and one that does not carry it came from
+            // somewhere the facilitator would not count anyway.
+            const buyer: BuyerContext = {clientIp: c.req.header("cf-connecting-ip")};
 
-        // "Could not be reached" and "refused this delegation" are different claims.
-        // Nothing is charged at /verify, so 503 is a safe, honest "retry later".
-        const verification = decideVerification(await facilitator.verify(request, buyer), payer);
-        if (verification.kind === "unavailable") {
-            writeFailureReceipt(c, verification.errorReason, payer);
-            return c.json({error: "facilitator_unavailable"}, 503);
-        }
-        if (verification.kind === "rejected") {
-            // A refused delegation is not the end of the sale. The buyer can sign another
-            // leaf and pay again, and 402 is the status the spec keeps for "pay (again) to
-            // proceed" — a 403 said "this identity may not have it", which was never true
-            // of a payment that was simply not accepted yet.
-            writeFailureReceipt(c, verification.errorReason, payer);
-            return offer();
-        }
-
-        // "Did not succeed" and "is not known to have succeeded" are different claims
-        // too. A transport failure, or a facilitator that broadcast without seeing a
-        // receipt, leaves the payer possibly charged — 402 would invite a second payment.
-        const outcome = decideSettlement(await facilitator.settle(request, buyer), payer);
-        if (outcome.kind === "unavailable") {
-            writeFailureReceipt(c, outcome.errorReason, payer);
-            return c.json({error: "facilitator_unavailable"}, 503);
-        }
-        if (outcome.kind === "unknown") {
-            // The hash rides along whenever the facilitator named one: it is the buyer's
-            // only way to find out for themselves whether they were charged.
-            writeFailureReceipt(c, SETTLEMENT_PENDING, payer, outcome.transaction ?? "");
-            return c.json({error: "settlement_unknown"}, 504);
-        }
-        if (outcome.kind === "failed") {
-            writeFailureReceipt(c, outcome.errorReason, payer, outcome.transaction ?? "");
-            // A mined redemption that credited someone else moved the buyer's balance. No
-            // offer goes back with it: answering "pay again" to a buyer who has already
-            // paid once is how one sale takes two payments, and this wire cannot refund
-            // the first.
-            if (outcome.errorReason === VENDOR_NOT_CREDITED) {
-                return c.json({error: "settlement_misdirected"}, 502);
+            // "Could not be reached" and "refused this delegation" are different claims.
+            // Nothing is charged at /verify, so 503 is a safe, honest "retry later".
+            const verification = decideVerification(await facilitator.verify(request, buyer), payer);
+            if (verification.kind === "unavailable") {
+                forget();
+                writeFailureReceipt(c, verification.errorReason, payer);
+                return c.json({error: "facilitator_unavailable"}, 503);
             }
-            // Everything still here charged nobody. That is not read off this one word:
-            // `decideSettlement` only reaches `failed` with a hash for a word that names a
-            // mined failure, and turns any other answer carrying one into `unknown` above.
-            // So the offer is never re-issued alongside evidence of a broadcast, whatever
-            // the facilitator called it.
-            return offer();
-        }
+            if (verification.kind === "rejected") {
+                // A refused delegation is not the end of the sale. The buyer can sign another
+                // leaf and pay again, and 402 is the status the spec keeps for "pay (again) to
+                // proceed" — a 403 said "this identity may not have it", which was never true
+                // of a payment that was simply not accepted yet.
+                forget();
+                writeFailureReceipt(c, verification.errorReason, payer);
+                return offer();
+            }
 
-        const receipt: SettlementReceipt = {
-            intent,
-            payer,
-            amount: fromTokenAmount(amount),
-            asset: requirements.asset,
-            payTo,
-            network: NETWORK,
-            transaction: outcome.transaction,
-            replayed: outcome.replayed,
-        };
-        if (paymentIdentifiers && identifier !== undefined) {
-            // 기록은 정산이 성공한 뒤에만이다. 미결(504)이나 실패에서 남기면 다음 호출이
-            // "이미 낸 결제"라며 자원을 내주는데, 정말 냈는지는 아무도 모른다.
-            try {
-                paymentIdentifiers.record({
-                    id: identifier,
-                    payer,
-                    ...(outcome.transaction === undefined
-                        ? {}
-                        : {transaction: outcome.transaction}),
-                });
-            } catch (error) {
-                // 돈은 이미 옮겨졌다. 여기서 500을 내면 구매자의 클라이언트는 그것을
-                // "아무것도 청구되지 않았다"로 읽고 다시 낸다 — 기록을 잃는 것이 결제를
-                // 두 번 받는 것보다 낫다. 대신 판매자가 로그에서 보게 한다.
-                console.error(
-                    `[mapae] payment identifier record failed for intent ${receipt.intent} — ${redactForLog(error)}`,
-                );
+            // "Did not succeed" and "is not known to have succeeded" are different claims
+            // too. A transport failure, or a facilitator that broadcast without seeing a
+            // receipt, leaves the payer possibly charged — 402 would invite a second payment.
+            const outcome = decideSettlement(await facilitator.settle(request, buyer), payer);
+            if (outcome.kind === "unavailable") {
+                forget();
+                writeFailureReceipt(c, outcome.errorReason, payer);
+                return c.json({error: "facilitator_unavailable"}, 503);
+            }
+            if (outcome.kind === "unknown") {
+                // The hash rides along whenever the facilitator named one: it is the buyer's
+                // only way to find out for themselves whether they were charged.
+                writeFailureReceipt(c, SETTLEMENT_PENDING, payer, outcome.transaction ?? "");
+                return c.json({error: "settlement_unknown"}, 504);
+            }
+            if (outcome.kind === "failed") {
+                writeFailureReceipt(c, outcome.errorReason, payer, outcome.transaction ?? "");
+                // A mined redemption that credited someone else moved the buyer's balance. No
+                // offer goes back with it: answering "pay again" to a buyer who has already
+                // paid once is how one sale takes two payments, and this wire cannot refund
+                // the first.
+                if (outcome.errorReason === VENDOR_NOT_CREDITED) {
+                    return c.json({error: "settlement_misdirected"}, 502);
+                }
+                // Everything still here charged nobody. That is not read off this one word:
+                // `decideSettlement` only reaches `failed` with a hash for a word that names a
+                // mined failure, and turns any other answer carrying one into `unknown` above.
+                // So the offer is never re-issued alongside evidence of a broadcast, whatever
+                // the facilitator called it.
+                forget();
+                return offer();
+            }
+
+            // 이 호출은 아무것도 정산하지 않았고, 답은 앞선 정산의 것이다. 그 결제의 헤더는
+            // 체인에서 다시 만들 수 있으므로, 자원은 그 결제에 가장 먼저 묶인 id에만 나간다.
+            // 첫 시도가 `settlement_pending`으로 끝난 구매자는 같은 헤더를 다시 내므로 같은
+            // id를 들고 온다. 영수증의 지불자와 해시는 이미 체인에 있는 값이다.
+            if (outcome.replayed && paymentIdentifiers
+                && (identifier === undefined || creating.has(identifier) || paymentIdentifiers.first(intent) !== identifier)) {
+                // A row this call created names a payment that had already settled, so it is
+                // not the first presentation whatever else is in flight under the name.
+                if (created && bindingId !== undefined) {
+                    try {paymentIdentifiers.release(bindingId);}
+                    catch (error) {console.error(`[mapae] payment identifier binding not released for intent ${intent} — ${redactForLog(error)}`);}
+                }
+                // 확장 없이 낸 구매자의 재시도도 여기로 온다. 돈은 받았고 자원은 나가지 않으니,
+                // 운영자가 대조할 수 있게 intent를 남긴다.
+                console.error(`[mapae] replayed settlement refused for intent ${intent}: not presented under its first identifier`);
+                writeFailureReceipt(c, PAYMENT_IDENTIFIER_SETTLED, payer, outcome.transaction ?? "");
+                return c.json({
+                    error: PAYMENT_IDENTIFIER_SETTLED,
+                    detail: identifier === undefined ? "replayed_without_identifier" : "replayed_under_later_identifier",
+                }, 409);
+            }
+
+            const receipt: SettlementReceipt = {
+                intent,
+                payer,
+                amount: fromTokenAmount(amount),
+                asset: requirements.asset,
+                payTo,
+                network: NETWORK,
+                transaction: outcome.transaction,
+                replayed: outcome.replayed,
+            };
+            if (paymentIdentifiers && bindingId !== undefined) {
+                // 기록은 정산이 성공한 뒤에만이다. 미결(504)이나 실패에서 남기면 다음 호출이
+                // "이미 낸 결제"라며 자원을 내주는데, 정말 냈는지는 아무도 모른다.
+                try {
+                    paymentIdentifiers.record({
+                        id: bindingId,
+                        payer,
+                        ...(outcome.transaction === undefined
+                            ? {}
+                            : {transaction: outcome.transaction}),
+                    });
+                } catch (error) {
+                    // 돈은 이미 옮겨졌다. 여기서 500을 내면 구매자의 클라이언트는 그것을
+                    // "아무것도 청구되지 않았다"로 읽고 다시 낸다 — 기록을 잃는 것이 결제를
+                    // 두 번 받는 것보다 낫다. 대신 판매자가 로그에서 보게 한다.
+                    console.error(
+                        `[mapae] payment identifier record failed for intent ${receipt.intent} — ${redactForLog(error)}`,
+                    );
+                }
+            }
+            await deliver(receipt);
+        } finally {
+            if (held && bindingId !== undefined) {
+                const left = (holders.get(bindingId) ?? 1) - 1;
+                if (left > 0) holders.set(bindingId, left);
+                else holders.delete(bindingId);
+                if (created) creating.delete(bindingId);
             }
         }
-        await deliver(receipt);
     };
     const descriptor: PaywallDescriptor = {price: options.price.trim(), description, payTo};
     return Object.assign(paywall, {[PAYWALL]: descriptor});

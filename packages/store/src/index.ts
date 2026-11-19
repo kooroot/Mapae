@@ -254,7 +254,8 @@ export interface RecordedPayment {
 }
 
 export type PaymentIdentifierBindResult =
-    | {kind: "new"}
+    /** `created` is false when an earlier attempt had already put the row on file. */
+    | {kind: "new"; created: boolean}
     | {kind: "settled"; settled: RecordedPayment}
     | ({kind: "conflict"} & PaymentIdentifierRefusal);
 
@@ -300,6 +301,25 @@ export interface PaymentIdentifiers {
         paymentIntentId: HexString;
         at: number;
     }): PaymentIdentifierBindResult;
+    /**
+     * The identifier this payment was first bound under, of the rows on file, or `null`.
+     * Read-only: asking binds nothing.
+     *
+     * A settlement puts the whole delegation on chain, so anyone can rebuild the header
+     * of a payment that already settled. The identifier travels only between the buyer
+     * and the seller, and the buyer's was bound before there was a transaction to copy
+     * from — so being first is what the buyer can show and a copier cannot. Insertion
+     * order decides, never a timestamp the caller supplied.
+     */
+    firstFor(paymentIntentId: HexString): {id: string; settled: boolean} | null;
+    /**
+     * Drop an **unsettled** binding. For the caller that just created it and then learned
+     * that the attempt charged nobody: a row is written before anyone checks a signature,
+     * and if refused attempts stayed on file a flood of them would push a real buyer's
+     * in-flight binding out through {@link PaymentIdentifiers.prune}'s count bound. A
+     * settled row is never touched.
+     */
+    release(id: string): void;
     /** Write the settled half. Only after the transfer is confirmed; never before. */
     record(settlement: {id: string; payer: HexString; txHash?: HexString | null; at: number}): void;
     /**
@@ -908,6 +928,13 @@ function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
     const byId = db.query<PaymentIdentifierDbRow, Params>(
         `SELECT * FROM payment_identifiers WHERE id = $id`,
     );
+    const dropUnsettled = db.query<never, Params>(
+        `DELETE FROM payment_identifiers WHERE id = $id AND settled_at IS NULL`,
+    );
+    const firstByIntent = db.query<{id: string; settled: number}, Params>(
+        `SELECT id, settled_at IS NOT NULL AS settled FROM payment_identifiers
+         WHERE payment_intent_id = $paymentIntentId ORDER BY rowid LIMIT 1`,
+    );
     // `settled_at IS NULL` is the guard, not an optimisation: an UPDATE that overwrote a
     // settled row would replace the payer of a payment that already moved money with
     // another one, and that is the double charge this table exists to make visible.
@@ -946,7 +973,7 @@ function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
                 paymentIntentId,
                 at: millis(at, "at"),
             });
-            if (inserted) return {kind: "new"};
+            if (inserted) return {kind: "new", created: true};
             // DO NOTHING returned no row, so the identifier is already claimed. The store is
             // single-process and synchronous; nothing can delete it in between.
             const existing = byId.get({id: key});
@@ -963,8 +990,15 @@ function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
             if (existing.payment_intent_id !== paymentIntentId) {
                 return {kind: "conflict", reason: "payment_intent", settled};
             }
-            if (settled === null) return {kind: "new"};
+            if (settled === null) return {kind: "new", created: false};
             return {kind: "settled", settled};
+        },
+        release(id) {
+            dropUnsettled.run({id: identifierKey(id)});
+        },
+        firstFor(paymentIntentId) {
+            const row = firstByIntent.get({paymentIntentId});
+            return row ? {id: row.id, settled: row.settled === 1} : null;
         },
         record({id, payer, txHash, at}) {
             const {changes} = settle.run({
@@ -977,7 +1011,9 @@ function createPaymentIdentifiers(db: Database): PaymentIdentifiers {
             // or settled one of them twice. Both are bugs in the order of the two calls, and
             // both are invisible if this returns quietly.
             if (changes === 0) {
-                throw new Error(`payment_identifiers: ${id} is not bound, or is already settled`);
+                // The identifier is not named: it is what a buyer shows to be served again,
+                // and this message ends up in a log.
+                throw new Error("payment_identifiers: the identifier is not bound, or is already settled");
             }
         },
         prune({unsettledBefore, keepUnsettled}) {

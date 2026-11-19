@@ -985,7 +985,7 @@ describe("payment identifiers", () => {
                 paymentIntentId: INTENT,
                 at: T0,
             }),
-        ).toEqual({kind: "new"});
+        ).toEqual({kind: "new", created: true});
 
         // Bound but not settled: the earlier attempt moved no money, so the same payment may
         // be tried again — and the facilitator's intent journal is what guards that round.
@@ -996,7 +996,21 @@ describe("payment identifiers", () => {
                 paymentIntentId: INTENT,
                 at: T0 + HOUR,
             }),
-        ).toEqual({kind: "new"});
+        ).toEqual({kind: "new", created: false});
+        // The first identifier bound to a payment stays the first, whatever is bound after
+        // it and whatever date the later caller supplies; asking binds nothing.
+        const LATER = "pay_ffffffffffffffffffffffffffff";
+        expect(store.paymentIdentifiers.firstFor(INTENT)).toEqual({id: ID, settled: false});
+        store.paymentIdentifiers.bind({id: LATER, fingerprint: PRINT, paymentIntentId: INTENT, at: T0 - HOUR});
+        expect(store.paymentIdentifiers.firstFor(INTENT)).toEqual({id: ID, settled: false});
+        expect(store.paymentIdentifiers.firstFor(`0x${"ee".repeat(32)}`)).toBeNull();
+        // Releasing drops an unsettled row and leaves the next one first; a settled row stays.
+        store.paymentIdentifiers.release(ID);
+        expect(store.paymentIdentifiers.firstFor(INTENT)).toEqual({id: LATER, settled: false});
+        store.paymentIdentifiers.record({id: LATER, payer: ALICE, txHash: TX, at: T0});
+        store.paymentIdentifiers.release(LATER);
+        expect(store.paymentIdentifiers.firstFor(INTENT)).toEqual({id: LATER, settled: true});
+        store.paymentIdentifiers.bind({id: ID, fingerprint: PRINT, paymentIntentId: INTENT, at: T0});
 
         store.paymentIdentifiers.record({id: ID, payer: ALICE, txHash: TX, at: T0 + 2 * HOUR});
         expect(
@@ -1020,7 +1034,7 @@ describe("payment identifiers", () => {
         expect(
             store.paymentIdentifiers.prune({unsettledBefore: T0 + 1, keepUnsettled: 10}),
         ).toBe(1);
-        expect(bind(T0 + 2 * HOUR)).toEqual({kind: "new"});
+        expect(bind(T0 + 2 * HOUR)).toEqual({kind: "new", created: true});
     });
 
     test("names which half of the binding a second attempt changed", () => {
@@ -1059,7 +1073,7 @@ describe("payment identifiers", () => {
                 paymentIntentId: INTENT,
                 at: T0 + HOUR,
             }),
-        ).toEqual({kind: "new"});
+        ).toEqual({kind: "new", created: false});
     });
 
     test("a refusal also says whether that identifier already paid for something", () => {
@@ -1230,7 +1244,7 @@ describe("payment identifiers", () => {
                 paymentIntentId: INTENT,
                 at: T0 + 9 * HOUR,
             }),
-        ).toEqual({kind: "new"});
+        ).toEqual({kind: "new", created: true});
         // Nothing left to drop, and the count says so.
         expect(
             store.paymentIdentifiers.prune({unsettledBefore: T0, keepUnsettled: 10}),
