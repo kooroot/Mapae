@@ -26,5 +26,11 @@ export function surfaceRedirect(surface: SiteSurface, url: URL, sites: {landingU
     if (alias) return Response.redirect(new URL(alias[1] ? "/ko" : "/", url.origin).href, 308);
     // An API this site does not serve is absent, not elsewhere: a redirected POST would only fail later.
     if (path.startsWith("/api/")) return new Response(null, {status: 404, headers: {"Cache-Control": "no-store"}});
-    return Response.redirect(new URL(`${path}${url.search}`, sites.landingUrl).href, 308);
+    // The landing's origin is fixed and only the path and query are carried over. Resolving
+    // the path as a reference let `//evil.example/x` name its own host, and this site
+    // then redirected its visitors there.
+    const target = new URL(sites.landingUrl);
+    target.pathname = path.replace(/^[/\\]{2,}/, "/");
+    target.search = url.search;
+    return Response.redirect(target.href, 308);
 }

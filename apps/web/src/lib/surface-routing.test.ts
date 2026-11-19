@@ -34,6 +34,14 @@ describe("surfaceRedirect", () => {
         expect(surfaceRedirect("landing", at("https://mapae.io/ko/arcade"), SITES)).toBeUndefined();
     });
 
+    test("a path that names another host still lands on the landing site", () => {
+        for (const path of ["//evil.example/claim", "/\\evil.example/claim", "///evil.example", "//evil.example/%2e%2e/x?next=//evil.example"]) {
+            const target = location(surfaceRedirect("faucet", at(`https://faucet.mapae.io${path}`), SITES));
+            expect(target, path).not.toBeNull();
+            expect(new URL(target ?? "").origin, path).toBe("https://mapae.io");
+        }
+    });
+
     test("a combined dev server serves every page", () => {
         for (const path of ["/faucet", "/ko/arcade", "/app"]) expect(surfaceRedirect("combined", at(`http://127.0.0.1:5173${path}`), SITES)).toBeUndefined();
     });
