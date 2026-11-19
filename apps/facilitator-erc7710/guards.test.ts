@@ -43,6 +43,7 @@ import {
     beforeBroadcast,
     classifyFrameworkError,
     describeFailure,
+    isBroadcastRefusal,
     limitRejection,
     isRpcUnreachable,
     frameworkPausedFrom,
@@ -778,5 +779,19 @@ describe("CachedProbe", () => {
 
     test("refuses a window that would cache nothing", () => {
         expect(() => new CachedProbe(async () => 1, {ttlMs: 0, cacheFailures: true})).toThrow("ttlMs");
+    });
+});
+
+describe("isBroadcastRefusal", () => {
+    test("only a final answer about these bytes counts", () => {
+        expect(isBroadcastRefusal(new Error("request failed", {cause: new Error("insufficient funds for gas * price + value")}))).toBe(true);
+        expect(isBroadcastRefusal(Object.assign(new Error("RPC Request failed."), {details: "max fee per gas less than block base fee"}))).toBe(true);
+        // `nonce too low` is a refusal of this send; whether it may be acted on is the caller's
+        // question — only for bytes never sent before (recovery.test.ts).
+        expect(isBroadcastRefusal(new Error("nonce too low: next nonce 8, tx nonce 7"))).toBe(true);
+        for (const text of ["already known", "replacement transaction underpriced", "The request took too long to respond.", "HTTP request failed. Status: 503"]) {
+            expect(isBroadcastRefusal(new Error(text))).toBe(false);
+        }
+        expect(isBroadcastRefusal("insufficient funds")).toBe(false);
     });
 });

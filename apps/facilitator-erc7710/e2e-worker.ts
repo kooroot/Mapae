@@ -34,6 +34,7 @@ const app = createPaymentRoutes({
             receipt: async (hash) => {try {return await client.getTransactionReceipt({hash});}
                 catch (error) {if (error instanceof TransactionReceiptNotFoundError) return null; throw error;}},
             send: (serializedTransaction) => wallet.sendRawTransaction({serializedTransaction}),
+            refused: () => false,
             wait: (hash) => client.waitForTransactionReceipt({hash, timeout: 700, pollingInterval: 50}),
             failure: (receipt) => receipt.status === "reverted" ? "settlement_reverted" : undefined,
         });

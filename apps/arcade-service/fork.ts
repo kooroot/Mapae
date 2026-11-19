@@ -77,6 +77,7 @@ export async function createFork(store: MapaeStore, env: Record<string, string |
                 restore: (envelope) => sign(payment, envelope),
                 receipt: async (hash) => {try {return await publicClient.getTransactionReceipt({hash});} catch (error) {if (error instanceof TransactionReceiptNotFoundError) return null; throw error;}},
                 send: async (serializedTransaction: Hex) => {await assertAnvil(rpc); return wallet.sendRawTransaction({serializedTransaction});},
+                refused: () => false,
                 wait: (hash) => publicClient.waitForTransactionReceipt({hash, timeout: 20_000}),
                 failure: (receipt) => receiptFailure(receipt, payment),
             });

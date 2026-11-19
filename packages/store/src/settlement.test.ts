@@ -57,7 +57,7 @@ test("a failed final ledger write rolls back gas reconciliation and leaves a rec
 });
 test("a claimed nonce is unavailable after restart even when the node has never seen it", () => {
     const path = file(), a = open(path); a.settlements.claim(INPUT, LIMITS); a.close();
-    const b = open(path); expect(b.settlements.nextNonce(A, 91342, 0)).toBe(4);
+    const b = open(path); expect(b.settlements.nextNonce(A, 91342, 3)).toBe(4);
     expect(b.settlements.nextNonce(A, 91342, 9)).toBe(9);
     expect(() => b.settlements.claim({...INPUT, paymentIntentId: HASH, txHash: ID}, LIMITS)).toThrow();
 });
@@ -80,4 +80,33 @@ test("mined errors and actual cost exceeding the estimate are recorded once", ()
     s.settlements.finish(ID, {at: NOW, gasUsed: 100n, actualCost: 1200n});
     expect(s.ledger.summary({sinceMs: 0})).toMatchObject({total: 1, succeeded: 0, failed: 1});
     expect(s.budget.load("2026-09-13")).toBe(1200n);
+});
+test("the lowest free nonce at or above the node's is handed out, so a gap is filled rather than stepped over", () => {
+    const s = open();
+    s.settlements.claim({...INPUT, nonce: 4}, LIMITS);
+    s.settlements.claim({...INPUT, paymentIntentId: HASH, txHash: ID, nonce: 6}, LIMITS);
+    expect(s.settlements.nextNonce(A, 91342, 3)).toBe(3);
+    expect(s.settlements.nextNonce(A, 91342, 4)).toBe(5);
+    expect(s.settlements.nextNonce(A, 91342, 6)).toBe(7);
+    expect(s.settlements.nextNonce(B, 91342, 4)).toBe(4);
+});
+test("a released claim returns its reservation, leaves one error event, and frees both its nonce and its intent", () => {
+    const s = open(); s.settlements.claim(INPUT, LIMITS);
+    expect(s.settlements.unsettled(A, 91342).map((r) => r.nonce)).toEqual([3]);
+    s.settlements.release(ID, {at: NOW, actualCost: 7n, errorCode: "broadcast_lost"});
+    expect(s.settlements.get(ID)).toBeNull(); expect(s.settlements.unsettled(A, 91342)).toEqual([]);
+    expect(s.budget.load("2026-09-13")).toBe(7n);
+    expect(s.ledger.list()).toMatchObject([{outcome: "error", errorCode: "broadcast_lost", txHash: HASH, gasUsed: 0n}]);
+    expect(s.settlements.nextNonce(A, 91342, 3)).toBe(3);
+    // The same payment is claimable again: nothing was charged for the first attempt.
+    expect(s.settlements.claim({...INPUT, txHash: ID}, LIMITS).txHash).toBe(ID);
+    s.settlements.release(ID, {at: NOW, actualCost: 0n, errorCode: "broadcast_refused"});
+    expect(s.ledger.list()).toHaveLength(2);
+});
+test("a terminal claim is never released", () => {
+    const s = open(); s.settlements.claim(INPUT, LIMITS);
+    s.settlements.finish(ID, {at: NOW, gasUsed: 50n, actualCost: 103n});
+    s.settlements.release(ID, {at: NOW, actualCost: 0n, errorCode: "broadcast_lost"});
+    expect(s.settlements.get(ID)?.terminal?.outcome).toBe("settled"); expect(s.budget.load("2026-09-13")).toBe(103n);
+    expect(s.settlements.unsettled(A, 91342)).toEqual([]);
 });

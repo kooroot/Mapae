@@ -2,7 +2,7 @@ import {PaymentIntentSingleFlight, readReceiptFeeField} from "@mapae/delegation"
 import type {SettlementInput, SettlementJournal, SettlementLimits, SettlementRecord, TransactionEnvelope} from "@mapae/store";
 import {SettlementBudgetExceeded} from "@mapae/store";
 import {keccak256, parseTransaction, type Hex} from "viem";
-import {SettlementPending, SettlementStorageUnavailable} from "./guards.js";
+import {BROADCAST_LOST, BROADCAST_REFUSED, SettlementBroadcastRefused, SettlementPending, SettlementStorageUnavailable} from "./guards.js";
 
 export interface RecoveryReceipt {
     transactionHash: Hex;
@@ -16,8 +16,30 @@ export interface RecoveryOperations<T extends RecoveryReceipt> {
     restore: (envelope: TransactionEnvelope) => Promise<Hex>;
     receipt: (hash: Hex) => Promise<T | null>;
     send: (serializedTransaction: Hex) => Promise<Hex>;
+    /** True only when the node's answer to `send` means these bytes are in no pool and never will be. */
+    refused: (error: unknown) => boolean;
     wait: (hash: Hex) => Promise<T>;
     failure: (receipt: T) => string | undefined;
+}
+/** What the sweep needs: no payment is in hand, only the journal's rows and the chain. */
+export interface SweepOperations<T extends RecoveryReceipt> {
+    pendingNonce: () => Promise<number>;
+    receipt: (hash: Hex) => Promise<T | null>;
+    failure: (receipt: T, record: SettlementRecord) => string | undefined;
+    /**
+     * The signed bytes of a transfer of nothing at this envelope's nonce. The same envelope
+     * must always give the same bytes: the journal has no column for a filler, so its hash
+     * is recomputed from the claim on every pass, and that is how a filler sent by an
+     * earlier pass — or by a process that has since restarted — is recognised.
+     */
+    filler: (envelope: TransactionEnvelope) => Promise<Hex>;
+    /** Whether the node took it. Nothing is decided on the answer; it is only counted. */
+    send: (serializedTransaction: Hex) => Promise<boolean>;
+}
+export interface SweepResult {finished: number; released: number; filled: number}
+function receiptCost(receipt: RecoveryReceipt): bigint {
+    if (typeof receipt.gasUsed !== "bigint" || receipt.gasUsed <= 0n || typeof receipt.effectiveGasPrice !== "bigint") throw new Error("missing receipt fees");
+    return readReceiptFeeField(receipt.gasUsed) * readReceiptFeeField(receipt.effectiveGasPrice) + readReceiptFeeField(receipt.l1Fee);
 }
 export type RecoveryPayment = Pick<SettlementInput, "paymentIntentId" | "payer" | "payTo" | "amountBase">;
 /**
@@ -93,19 +115,34 @@ export class SettlementRecovery {
                 if (!receipt) {
                     const serialized = await operations.restore(record);
                     if (keccak256(serialized) !== record.txHash) throw new Error("reconstructed transaction hash mismatch");
-                    // An already-known transaction can cause a send error. Whether the
-                    // answer was lost or the node refused it, only its receipt decides.
-                    try {await operations.send(serialized);} catch { /* inspect original hash below */ }
+                    // An already-known transaction can cause a send error, and so can a
+                    // lost answer: for those only the receipt decides. A refusal is a
+                    // verdict only for a claim made in this call, whose bytes have never
+                    // left this process: no node can hold them, so nobody will be charged
+                    // and the nonce must not stay claimed, or every later settlement
+                    // queues behind it. A resumed claim may have been broadcast by the
+                    // attempt that made it, and a node that does not see that pool can
+                    // refuse the same bytes; it is left to the receipt and to the sweep.
+                    try {await operations.send(serialized);}
+                    catch (error) {
+                        if (!replayed && operations.refused(error) && !(await operations.receipt(record.txHash))) {
+                            this.journal.release(record.paymentIntentId, {at: this.now(), actualCost: 0n, errorCode: BROADCAST_REFUSED});
+                            throw new SettlementBroadcastRefused();
+                        }
+                    }
                     receipt = await operations.wait(record.txHash);
                 }
                 if (receipt.transactionHash.toLowerCase() !== record.txHash) throw new Error("receipt hash mismatch");
-                if (typeof receipt.gasUsed !== "bigint" || receipt.gasUsed <= 0n || typeof receipt.effectiveGasPrice !== "bigint") throw new Error("missing receipt fees");
-                const actualCost = readReceiptFeeField(receipt.gasUsed) * readReceiptFeeField(receipt.effectiveGasPrice)
-                    + readReceiptFeeField(receipt.l1Fee);
                 const finished = this.journal.finish(record.paymentIntentId, {at: this.now(), gasUsed: receipt.gasUsed,
-                    actualCost, errorCode: operations.failure(receipt)});
+                    actualCost: receiptCost(receipt), errorCode: operations.failure(receipt)});
                 return {record: finished, replayed};
-            } catch {
+            } catch (error) {
+                if (error instanceof SettlementBroadcastRefused) throw error;
+                // The sweep released this claim while we waited: its nonce went to a
+                // filler, so the hash can never mine and must not be handed out as pending.
+                let gone = false;
+                try {gone = this.journal.get(record.paymentIntentId) === null;} catch {/* unreadable: pending below */}
+                if (gone) throw new SettlementBroadcastRefused();
                 // The claim is durable and the transaction may be on the network; only
                 // our wait, our reconstruction, or the terminal write gave up. Includes
                 // disk failure after a mined receipt: keep the claim and let the next
@@ -120,5 +157,61 @@ export class SettlementRecovery {
         // the call that owns the operation. Leaving it unmarked would let two live requests
         // for one payment both claim to be the settling one.
         return own ? result : {...result, replayed: true};
+    }
+
+    /**
+     * Resolve claims nobody came back for. A claim stays open when its settle call gave
+     * up waiting, and only a retry of that same payment used to finish it — so a
+     * transaction the node never received held its nonce forever, and every settlement
+     * after it sat in the node's queue behind the gap.
+     *
+     * A claim older than `staleMs` is finished from its receipt when one exists. If it is
+     * still open at or above the node's pending nonce, the node has nothing at that nonce
+     * and a filler — a transfer of nothing — is sent for it. Nothing is released on that
+     * send. A claim is released only on the positive evidence of its filler's own receipt:
+     * one nonce takes one transaction, so once the filler is mined the claim never can be.
+     * A missing receipt proves nothing through a load-balanced RPC, and is never the reason.
+     *
+     * The journal keeps no calldata, so re-sending the original is not an option here.
+     * One filler per pass, no waiting on it; it runs on the same queue as nonce allocation.
+     */
+    sweep<T extends RecoveryReceipt>(operations: SweepOperations<T>, staleMs: number): Promise<SweepResult> {
+        const run = this.#preparing.then(async () => {
+            const result: SweepResult = {finished: 0, released: 0, filled: 0};
+            const cutoff = this.now() - staleMs;
+            const waiting: SettlementRecord[] = [];
+            for (const record of this.journal.unsettled(this.signer, this.chainId)) {
+                if (record.createdAt > cutoff) continue;
+                const receipt = await operations.receipt(record.txHash);
+                if (receipt) {
+                    if (receipt.transactionHash.toLowerCase() !== record.txHash) throw new Error("receipt hash mismatch");
+                    this.journal.finish(record.paymentIntentId, {at: this.now(), gasUsed: receipt.gasUsed,
+                        actualCost: receiptCost(receipt), errorCode: operations.failure(receipt, record)});
+                    result.finished += 1;
+                    continue;
+                }
+                const filler = keccak256(await operations.filler(record));
+                const landed = await operations.receipt(filler);
+                if (landed && landed.transactionHash.toLowerCase() === filler) {
+                    this.journal.release(record.paymentIntentId, {at: this.now(), actualCost: receiptCost(landed), errorCode: BROADCAST_LOST});
+                    result.released += 1;
+                    continue;
+                }
+                waiting.push(record);
+            }
+            if (waiting.length === 0) return result;
+            const pending = await operations.pendingNonce();
+            const basis = waiting.find((record) => record.nonce >= pending);
+            if (!basis) return result;
+            // A younger claim at that nonce may simply not have been sent yet.
+            const holder = this.journal.unsettled(this.signer, this.chainId).find((record) => record.nonce === pending);
+            if (holder && holder.createdAt > cutoff) return result;
+            // With no holder the gap was left by a released claim; the filler borrows the
+            // fees of the first claim queued behind it and nothing needs releasing after.
+            if (await operations.send(await operations.filler({...(holder ?? basis), nonce: pending}))) result.filled = 1;
+            return result;
+        });
+        this.#preparing = run.catch(() => {});
+        return run;
     }
 }

@@ -82,10 +82,13 @@ export function ledgerDaily(facilitatorPath: string, window: Window): LedgerMetr
         const outcomes = db.query<{outcome: string; error_code: string | null; n: number}, [number, number]>(
             "SELECT outcome, error_code, COUNT(*) AS n FROM settlement_events WHERE at >= ? AND at < ? GROUP BY outcome, error_code").all(window.startMs, window.endMs);
         const totals = {settled: 0, error: 0, rejected: 0};
+        // A released claim is an error row whose transaction never reached the chain.
+        let unbroadcast = 0;
         const failureReasons: Record<string, number> = {};
         for (const row of outcomes) {
             if (row.outcome !== "settled" && row.outcome !== "error" && row.outcome !== "rejected") continue;
             totals[row.outcome] += row.n;
+            if (row.error_code === "broadcast_refused" || row.error_code === "broadcast_lost") unbroadcast += row.n;
             if (row.outcome !== "settled") {
                 const key = `${row.outcome}:${row.error_code ?? "unknown"}`;
                 failureReasons[key] = (failureReasons[key] ?? 0) + row.n;
@@ -94,7 +97,7 @@ export function ledgerDaily(facilitatorPath: string, window: Window): LedgerMetr
         const latencies = db.query<{ms: number}, [number, number]>(
             `SELECT e.at - i.created_at AS ms FROM settlement_intents i JOIN settlement_events e ON e.id = i.terminal_event_id
              WHERE e.outcome = 'settled' AND e.at >= ? AND e.at < ?`).all(window.startMs, window.endMs).map(r => r.ms);
-        const broadcast = totals.settled + totals.error;
+        const broadcast = totals.settled + totals.error - unbroadcast;
         return {
             ...totals,
             broadcastSuccessRate: broadcast === 0 ? null : totals.settled / broadcast,

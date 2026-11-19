@@ -33,12 +33,27 @@ export class SettlementBudgetExceeded extends Error {
 }
 export interface SettlementJournal {
     get(id: HexString): SettlementRecord | null;
-    /** Node pending nonce is the floor; locally claimed nonces may not yet be on the node. */
+    /**
+     * The lowest nonce at or above the node's pending nonce that no row holds. A claimed
+     * nonce may not be on the node yet, so it stays taken; a released one is free again,
+     * and handing out the lowest free one is what closes the gap it left — `MAX + 1`
+     * would step over it and queue every later transaction behind a nonce nobody sends.
+     */
     nextNonce(signer: HexString, chainId: number, pendingNonce: number): number;
     /** Intent and both daily gas reservations land in one transaction. */
     claim(input: SettlementInput, limits: SettlementLimits): SettlementRecord;
     /** Actual cost, both original-day totals and the terminal ledger event land exactly once. */
     finish(id: HexString, result: {at: number; gasUsed: bigint; actualCost: bigint; errorCode?: string}): SettlementRecord;
+    /** Every claim of this signer with no terminal event yet, lowest nonce first. */
+    unsettled(signer: HexString, chainId: number): SettlementRecord[];
+    /**
+     * Close a claim whose transaction can never be mined — the node refused it, or its
+     * nonce went to another transaction. The reservation is replaced by `actualCost`, the
+     * ledger gets one error event, and the row is deleted in the same transaction: its
+     * nonce is free for the next claim, and the same payment can be settled afresh
+     * because nothing was ever charged for it. A terminal or unknown row is left alone.
+     */
+    release(id: HexString, result: {at: number; actualCost: bigint; errorCode: string}): void;
 }
 function hex(value: unknown, bytes: number): HexString {
     if (typeof value !== "string" || !new RegExp(`^0x[0-9a-fA-F]{${bytes * 2}}$`).test(value)) {
@@ -72,7 +87,9 @@ export function createSettlementJournal(db: Database, ledger: Ledger): Settlemen
     const insert = db.query(`INSERT INTO settlement_intents
         (payment_intent_id, tx_hash, signer, chain_id, nonce, gas, max_fee, priority_fee, payer, pay_to,
          amount_base, budget_day, reserved_wei, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const maxNonce = db.query<{nonce: number | null}, [string, number]>("SELECT MAX(nonce) AS nonce FROM settlement_intents WHERE signer = ? AND chain_id = ?");
+    const taken = db.query<{nonce: number}, [string, number, number]>("SELECT nonce FROM settlement_intents WHERE signer = ? AND chain_id = ? AND nonce >= ? ORDER BY nonce");
+    const open = db.query<{payment_intent_id: HexString}, [string, number]>("SELECT payment_intent_id FROM settlement_intents WHERE signer = ? AND chain_id = ? AND terminal_event_id IS NULL ORDER BY nonce");
+    const remove = db.query("DELETE FROM settlement_intents WHERE payment_intent_id = ?");
     function load(scope: string, day: string): bigint {return BigInt(spent.get(scope, day)?.spent_wei ?? "0");}
     function read(id: HexString): SettlementRecord | null {
         const r = select.get(hex(id, 32));
@@ -124,13 +141,31 @@ export function createSettlementJournal(db: Database, ledger: Ledger): Settlemen
             .run(e.id, amount(result.actualCost), record.paymentIntentId);
         return read(id)!;
     });
+    const release = db.transaction((id: HexString, result: {at: number; actualCost: bigint; errorCode: string}): void => {
+        const record = read(id);
+        if (!record || record.terminal) return;
+        amount(result.actualCost); uint(result.at);
+        if (!result.errorCode) throw new TypeError("a released claim needs an error code");
+        for (const scope of ["total", `payer:${record.payer}`]) {
+            save.run(scope, record.budgetDay, amount(load(scope, record.budgetDay) - record.reservedWei + result.actualCost));
+        }
+        ledger.record({at: result.at, kind: "settle", payer: record.payer, payTo: record.payTo, amountBase: record.amountBase,
+            txHash: record.txHash, gasUsed: 0n, outcome: "error", errorCode: result.errorCode});
+        remove.run(record.paymentIntentId);
+    });
     return {
         get: read,
         nextNonce(signer, chainId, pendingNonce) {
-            const known = maxNonce.get(hex(signer, 20), uint(chainId))?.nonce;
-            return uint(Math.max(uint(pendingNonce), known == null ? 0 : known + 1));
+            let nonce = uint(pendingNonce);
+            for (const row of taken.all(hex(signer, 20), uint(chainId), nonce)) {
+                if (row.nonce !== nonce) break;
+                nonce += 1;
+            }
+            return uint(nonce);
         },
         claim: (input, limits) => claim.immediate(input, limits),
         finish: (id, result) => finish.immediate(id, result),
+        unsettled: (signer, chainId) => open.all(hex(signer, 20), uint(chainId)).map((row) => read(row.payment_intent_id)!),
+        release: (id, result) => release.immediate(id, result),
     };
 }

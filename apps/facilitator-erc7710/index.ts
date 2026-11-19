@@ -17,6 +17,7 @@ import {
 } from "@mapae/delegation";
 import {
     GIWA_SEPOLIA_CAIP2,
+    MOCK_USDC,
     buildErc7710SupportedPayload,
     giwaSepolia,
     parseNodeRpcUrl,
@@ -41,12 +42,14 @@ import {
     RATE_WINDOW_MS,
     RedemptionRejected,
     SETTLE_NOT_READY,
+    SettlementBroadcastRefused,
     SETTLE_RATE_LIMITED,
     VERIFY_NOT_READY,
     VERIFY_RATE_LIMITED,
     beforeBroadcast,
     classifyFrameworkError,
     describeFailure,
+    isBroadcastRefusal,
     limitRejection,
     frameworkPausedFrom,
     rateLimitByIp,
@@ -54,7 +57,7 @@ import {
     type FrameworkHealthError,
 } from "./guards.js";
 import {createPaymentRoutes} from "./routes.js";
-import {receiptFailure, settlementResponse, verifyKnownSettlement} from "./settlement.js";
+import {receiptFailure, settlementResponse, transferFailure, verifyKnownSettlement} from "./settlement.js";
 import {SettlementRecovery} from "./recovery.js";
 import {bearerTokenMatches, metricsReport, readMetricsToken, rejectedRetention} from "./metrics.js";
 
@@ -246,6 +249,10 @@ const FACILITATOR_RATE_PER_HOUR = Number(readPositiveInteger("FACILITATOR_RATE_P
 // and hourly after. An hour of the worst flood is 600 rows — nothing against the
 // 50,000 cap — and the delete is two indexed statements in one transaction.
 const LEDGER_PRUNE_EVERY_MS = 3_600_000;
+// A claim left open this long is no longer some settle call's to finish: the receipt wait
+// is 25 s and a seller's own call gives up at 35 s. The sweep looks every 30 s.
+const SETTLEMENT_STALE_MS = 90_000;
+const SETTLEMENT_SWEEP_EVERY_MS = 30_000;
 // The durable settlement journal allocates nonces; one coordinator owns this signer.
 const relayer = privateKeyToAccount(readRelayerKey());
 const expectedRelayer = readRelayerAddress();
@@ -293,6 +300,11 @@ const facilitatorClient = createWalletClient({
     chain: giwaSepolia,
     transport: throttledHttp(RPC_URL),
 }).extend(publicActions);
+// The redemption is posted once. viem's transport re-posts on a 502 or a timeout, and a
+// second post of bytes the first one delivered is answered `nonce too low` once they are
+// mined — which would read as a refusal of a transaction that in fact charged the payer.
+// A rate-limited post was not processed, so that retry (throttledHttp's own) stays.
+const broadcastClient = createWalletClient({account: relayer, chain: giwaSepolia, transport: throttledHttp(RPC_URL, {}, {retryCount: 0})});
 
 const startupVerification = await verifyActiveFrameworkDeployment({
     publicClient,
@@ -401,6 +413,12 @@ class SettlementCoordinator {
                 prepare: async (nonce) => {
                     const {gas} = await beforeBroadcast(() => this.#prepareRedemption(payment));
                     const fees = await beforeBroadcast(() => publicClient.estimateFeesPerGas());
+                    // A relayer that cannot cover the envelope is refused by the node after
+                    // the nonce is claimed. Seeing it here costs nothing; a balance that
+                    // could not be read decides nothing, and the node's own refusal is
+                    // still handled below.
+                    const balance = await relayerBalance.read().catch(() => undefined);
+                    if (balance !== undefined && balance < gas * fees.maxFeePerGas) throw new SettlementBroadcastRefused();
                     return this.#sign(payment, {nonce, gas, ...fees});
                 },
                 restore: (envelope) => this.#sign(payment, envelope),
@@ -408,7 +426,8 @@ class SettlementCoordinator {
                     try {return await publicClient.getTransactionReceipt({hash});}
                     catch (error) {if (error instanceof TransactionReceiptNotFoundError) return null; throw error;}
                 },
-                send: (serializedTransaction) => facilitatorClient.sendRawTransaction({serializedTransaction}),
+                send: (serializedTransaction) => broadcastClient.sendRawTransaction({serializedTransaction}),
+                refused: isBroadcastRefusal,
                 // A wait that gives up is the recovery's to classify: the claim is durable
                 // and the hash is known, so it surfaces as `SettlementPending`, never as a
                 // rejection that would assert the payer was not charged.
@@ -425,6 +444,37 @@ class SettlementCoordinator {
         }
     }
 
+    /** See `SettlementRecovery.sweep`. Never throws: an unread chain is tried again next time. */
+    async sweep(): Promise<void> {
+        try {
+            const swept = await this.#recovery.sweep({
+                pendingNonce: () => publicClient.getTransactionCount({address: relayer.address, blockTag: "pending"}),
+                receipt: async (hash) => {
+                    try {return await publicClient.getTransactionReceipt({hash});}
+                    catch (error) {if (error instanceof TransactionReceiptNotFoundError) return null; throw error;}
+                },
+                failure: (receipt, record) => transferFailure(receipt, {asset: MOCK_USDC.address, payer: record.payer,
+                    payTo: record.payTo, amount: record.amountBase}),
+                // Fees are the claim's own, doubled: a pure function of the row, so the hash
+                // can be recomputed on any later pass, and enough to replace the claim's
+                // transaction where a node does hold it. Signing is RFC 6979 deterministic.
+                filler: (envelope) => facilitatorClient.signTransaction({to: relayer.address, value: 0n, type: "eip1559",
+                    chainId: giwaSepolia.id, nonce: envelope.nonce, gas: 21_000n, maxFeePerGas: envelope.maxFeePerGas * 2n,
+                    maxPriorityFeePerGas: envelope.maxPriorityFeePerGas * 2n}),
+                // A filler the node will not take is tried again next pass; nothing depends on this send.
+                send: async (serializedTransaction) => {
+                    try {await facilitatorClient.sendRawTransaction({serializedTransaction}); return true;}
+                    catch (error) {console.error(`[sweep] filler not accepted — ${redactForLog(error)}`); return false;}
+                },
+            }, SETTLEMENT_STALE_MS);
+            if (swept.finished + swept.released + swept.filled > 0) {
+                console.log(`[sweep] finished ${swept.finished}, released ${swept.released}, filled ${swept.filled}`);
+            }
+        } catch (error) {
+            console.error(`[sweep] open settlements not resolved — ${redactForLog(error)}`);
+        }
+    }
+
     async #sign(payment: ValidatedDelegatedPayment, envelope: {nonce: number; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint}) {
         const transfer = buildDelegatedTransfer(payment);
         const data = DelegationManager.encode.redeemDelegations({delegations: [...transfer.delegations],
@@ -436,6 +486,10 @@ class SettlementCoordinator {
 }
 
 const coordinator = new SettlementCoordinator();
+// Once at boot for whatever the last life left open, then on the interval. Passes never
+// overlap: each one joins the recovery's own queue. unref'd, as the ledger prune is.
+void coordinator.sweep();
+setInterval(() => void coordinator.sweep(), SETTLEMENT_SWEEP_EVERY_MS).unref();
 const app = new Hono();
 
 app.use("*", async (c, next) => {

@@ -8,14 +8,19 @@ import {
 } from "@mapae/delegation";
 import {GIWA_SEPOLIA_CAIP2} from "@mapae/shared";
 import type {SettlementRecord} from "@mapae/store";
-import type {TransactionReceipt} from "viem";
+import type {Address, TransactionReceipt} from "viem";
 
 /** A mined revert cost gas; it is not a pre-broadcast rejection. */
 export function receiptFailure(receipt: Pick<TransactionReceipt, "status" | "logs">, payment: ValidatedDelegatedPayment): string | undefined {
+    return transferFailure(receipt, {asset: payment.paymentRequirements.asset, payer: payment.payer,
+        payTo: payment.paymentRequirements.payTo, amount: payment.amount});
+}
+
+/** The same verdict from the journal's own fields, for a receipt found with no payment in hand. */
+export function transferFailure(receipt: Pick<TransactionReceipt, "status" | "logs">,
+    transfer: {asset: Address; payer: Address; payTo: Address; amount: bigint}): string | undefined {
     if (receipt.status !== "success") return SETTLEMENT_REVERTED;
-    const discrepancies = reconcileSettlementReceipt({logs: receipt.logs, asset: payment.paymentRequirements.asset,
-        payer: payment.payer, payTo: payment.paymentRequirements.payTo, amount: payment.amount});
-    return discrepancies.length ? VENDOR_NOT_CREDITED : undefined;
+    return reconcileSettlementReceipt({logs: receipt.logs, ...transfer}).length ? VENDOR_NOT_CREDITED : undefined;
 }
 
 /**

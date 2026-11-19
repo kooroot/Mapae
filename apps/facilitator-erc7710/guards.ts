@@ -227,6 +227,45 @@ export class SettlementPending extends Error {
     }
 }
 
+/** Ledger codes for a claim released without a mined transaction; neither reaches the wire. */
+export const BROADCAST_REFUSED = "broadcast_refused";
+export const BROADCAST_LOST = "broadcast_lost";
+
+/**
+ * The node would not take the redemption — in practice a relayer that cannot cover
+ * `gas × maxFeePerGas`. No transaction exists, so nobody was charged and the claim is
+ * already released: the answer is not-ready, and the same payment can be sent again once
+ * the operator has fixed what the node objected to.
+ */
+export class SettlementBroadcastRefused extends Error {
+    constructor() {
+        super("the node refused the redemption broadcast");
+        this.name = "SettlementBroadcastRefused";
+    }
+}
+
+const BROADCAST_REFUSALS = /insufficient funds|max fee per gas less than block base fee|intrinsic gas too low|nonce too low/i;
+
+/**
+ * Whether a failed `eth_sendRawTransaction` means the node did not take these bytes. A
+ * timeout, a 5xx and `already known` leave the transaction possibly accepted, and for
+ * those only a receipt decides.
+ *
+ * This is a verdict about one send, not about the transaction: the same bytes may sit in
+ * a pool this node cannot see, or be mined already (`nonce too low` is what a mined
+ * transaction's own re-send gets). The caller may act on it only for bytes that have never
+ * been sent before — `SettlementRecovery.settle` does exactly that. For those, `nonce too
+ * low` means the nonce was handed out from a stale pending-nonce read and something else
+ * holds it; releasing the claim is what lets the retry take a live one.
+ */
+export function isBroadcastRefusal(error: unknown): boolean {
+    for (const link of causeChain(error)) {
+        const details = (link as {details?: unknown}).details;
+        if (BROADCAST_REFUSALS.test(`${link.message} ${typeof details === "string" ? details : ""}`)) return true;
+    }
+    return false;
+}
+
 /** The redemption priced above the configured gas cap: a verdict, before the reservation. */
 export class RedemptionRejected extends Error {
     constructor(message: string) {
@@ -323,7 +362,8 @@ export type SettlementFailure =
     | {outcome: "error"; errorCode: typeof SETTLEMENT_PENDING; transaction: Hex};
 
 export function describeFailure(error: unknown, route: "verify" | "settle"): SettlementFailure {
-    if (error instanceof RpcUnreachableBeforeBroadcast || error instanceof SettlementStorageUnavailable) return {outcome: "not_ready"};
+    if (error instanceof RpcUnreachableBeforeBroadcast || error instanceof SettlementStorageUnavailable
+        || error instanceof SettlementBroadcastRefused) return {outcome: "not_ready"};
     if (error instanceof SettlementPending) {
         return {outcome: "error", errorCode: SETTLEMENT_PENDING, transaction: error.transaction};
     }
