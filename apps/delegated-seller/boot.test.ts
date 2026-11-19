@@ -3,7 +3,7 @@ import {Database} from "bun:sqlite";
 import {mkdtempSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {PAYMENT_SIGNATURE_HEADER} from "@mapae/shared";
+import {PAYMENT_IDENTIFIER_EXTENSION, PAYMENT_SIGNATURE_HEADER, buildPaymentIdentifierEcho, decodePaymentHeader, encodePaymentHeader} from "@mapae/shared";
 import {TRIAL_NOTICE, type ShopManifest, type TicketResponse, type VerifiedTicket} from "./app.js";
 import {
     FACILITATOR_ROUTES,
@@ -142,7 +142,12 @@ afterAll(() => {
 
 async function pay(path: string, leaf: `0x${string}`): Promise<TicketResponse> {
     const response = await fetch(`${baseUrl}${path}`, {
-        headers: {[PAYMENT_SIGNATURE_HEADER]: paymentHeader(ONE, leaf)},
+        // One name per leaf, as a buyer's client keeps it: a paid header is answered again
+        // only under the identifier it was first presented with.
+        headers: {[PAYMENT_SIGNATURE_HEADER]: encodePaymentHeader({
+            ...decodePaymentHeader(paymentHeader(ONE, leaf)),
+            extensions: {[PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierEcho(`pay_boot_${leaf.slice(2, 34)}`)},
+        })},
     });
     expect(response.status).toBe(200);
     return (await response.json()) as TicketResponse;

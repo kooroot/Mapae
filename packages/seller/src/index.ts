@@ -735,12 +735,14 @@ function buildPaywall(
             ? extensions
             : {...extensions, [PAYMENT_IDENTIFIER_EXTENSION]: buildPaymentIdentifierOffer()};
 
-    // Binding names with a request in flight, and those whose row that request created.
-    // A replayed settlement is never served under a name still being created: until the
-    // creating call ends, "first" cannot tell the buyer's earlier attempt from a request
+    // Binding names with a request in flight. `created`: the row was made by one of those
+    // requests. `keep`: one of them ended somewhere other than a definite no-charge, so the
+    // row stays. A created row nobody needs is dropped when the last request under the name
+    // ends — not by whichever request made it, which may finish while another still runs.
+    // A replayed settlement is never served under a name still being created: until those
+    // calls end, "first" cannot tell the buyer's earlier attempt from a request
     // that arrived a moment ago with a copied header. Per process, like the requests.
-    const holders = new Map<string, number>();
-    const creating = new Set<string>();
+    const names = new Map<string, {count: number; created: boolean; keep: boolean}>();
     const paywall: MiddlewareHandler<MapaeEnv> = async (c, next) => {
         // Every answer below turns on whether this request carried a payment, so a shared
         // cache must never hand one of them to the other request: `no-store` keeps a paid
@@ -913,17 +915,10 @@ function buildPaywall(
         // 제시할 수 없고, 그 행이 이 결제의 "가장 먼저 묶인 id" 자리를 차지한다.
         const bindingId = identifier ?? (paymentIdentifiers ? serverIdentifier() : undefined);
         // 이 호출이 만든 행만 지운다. 앞선 시도가 남긴 행은 그 시도의 결과를 아직 모른다.
-        let created = false;
-        let held = false;
-        const forget = (): void => {
-            // Another request under the same name is still in flight and may yet settle.
-            if (!paymentIdentifiers || bindingId === undefined || !created || (holders.get(bindingId) ?? 0) > 1) return;
-            try {
-                paymentIdentifiers.release(bindingId);
-            } catch (error) {
-                console.error(`[mapae] payment identifier binding not released for intent ${intent} — ${redactForLog(error)}`);
-            }
-        };
+        let held: {count: number; created: boolean; keep: boolean} | undefined;
+        // Set on every exit where this request is known to have charged nobody.
+        let noCharge = false;
+        const forget = (): void => {noCharge = true;};
         if (paymentIdentifiers && bindingId !== undefined) {
             const requested = new URL(c.req.url);
             const bound = paymentIdentifiers.bind({
@@ -983,12 +978,21 @@ function buildPaywall(
                 });
                 return;
             }
-            created = bound.created;
-            held = true;
-            holders.set(bindingId, (holders.get(bindingId) ?? 0) + 1);
-            if (created) creating.add(bindingId);
+            held = names.get(bindingId) ?? {count: 0, created: false, keep: false};
+            held.count += 1;
+            if (bound.created) held.created = true;
+            names.set(bindingId, held);
         }
         try {
+            // One payment, one name: the first identifier bound to this intent is the only
+            // one that may take it any further. A copy of a header whose first attempt
+            // ended in doubt — or whose claim the facilitator later released — would
+            // otherwise settle afresh, or be answered, under whatever name the copier chose.
+            if (paymentIdentifiers && bindingId !== undefined && paymentIdentifiers.first(intent) !== bindingId) {
+                forget();
+                writeFailureReceipt(c, PAYMENT_IDENTIFIER_CONFLICT, payer);
+                return c.json({error: PAYMENT_IDENTIFIER_CONFLICT, detail: "payment_bound_to_earlier_identifier"}, 409);
+            }
 
             const request: Erc7710FacilitatorRequest = {
                 x402Version: X402_VERSION,
@@ -1056,21 +1060,15 @@ function buildPaywall(
             // 체인에서 다시 만들 수 있으므로, 자원은 그 결제에 가장 먼저 묶인 id에만 나간다.
             // 첫 시도가 `settlement_pending`으로 끝난 구매자는 같은 헤더를 다시 내므로 같은
             // id를 들고 온다. 영수증의 지불자와 해시는 이미 체인에 있는 값이다.
-            if (outcome.replayed && paymentIdentifiers
-                && (identifier === undefined || creating.has(identifier) || paymentIdentifiers.first(intent) !== identifier)) {
-                // A row this call created names a payment that had already settled, so it is
-                // not the first presentation whatever else is in flight under the name.
-                if (created && bindingId !== undefined) {
-                    try {paymentIdentifiers.release(bindingId);}
-                    catch (error) {console.error(`[mapae] payment identifier binding not released for intent ${intent} — ${redactForLog(error)}`);}
-                }
+            if (outcome.replayed && paymentIdentifiers && (identifier === undefined || held?.created)) {
+                forget();
                 // 확장 없이 낸 구매자의 재시도도 여기로 온다. 돈은 받았고 자원은 나가지 않으니,
                 // 운영자가 대조할 수 있게 intent를 남긴다.
                 console.error(`[mapae] replayed settlement refused for intent ${intent}: not presented under its first identifier`);
                 writeFailureReceipt(c, PAYMENT_IDENTIFIER_SETTLED, payer, outcome.transaction ?? "");
                 return c.json({
                     error: PAYMENT_IDENTIFIER_SETTLED,
-                    detail: identifier === undefined ? "replayed_without_identifier" : "replayed_under_later_identifier",
+                    detail: identifier === undefined ? "replayed_without_identifier" : "replayed_under_new_identifier",
                 }, 409);
             }
 
@@ -1106,11 +1104,19 @@ function buildPaywall(
             }
             await deliver(receipt);
         } finally {
-            if (held && bindingId !== undefined) {
-                const left = (holders.get(bindingId) ?? 1) - 1;
-                if (left > 0) holders.set(bindingId, left);
-                else holders.delete(bindingId);
-                if (created) creating.delete(bindingId);
+            if (held && paymentIdentifiers && bindingId !== undefined) {
+                if (!noCharge) held.keep = true;
+                held.count -= 1;
+                if (held.count === 0) {
+                    names.delete(bindingId);
+                    if (held.created && !held.keep) {
+                        try {
+                            paymentIdentifiers.release(bindingId);
+                        } catch (error) {
+                            console.error(`[mapae] payment identifier binding not released for intent ${intent} — ${redactForLog(error)}`);
+                        }
+                    }
+                }
             }
         }
     };

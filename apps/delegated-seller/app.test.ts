@@ -277,7 +277,7 @@ describe("ticket — one payment, one ticket", () => {
             const response = await pay(AMERICANO, forged);
             expect(response.status).toBe(409);
             const body = JSON.stringify(await response.json());
-            expect(body).toContain("payment_identifier_settled");
+            expect(body).toContain("payment_identifier_conflict");
             expect(body).not.toContain(first.ticket.code);
         }
         // The made-up identifier presented a second time is no better: it never settled anything.

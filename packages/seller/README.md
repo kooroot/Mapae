@@ -100,8 +100,12 @@ settlement puts the whole delegation on chain, so anyone can rebuild the header 
 payment that already settled; the `payment-identifier` is never on chain, and the buyer's
 was bound before there was a transaction to copy. With `paymentIdentifiers` set, a
 settlement the facilitator answers as `replayed` reaches your handler only when the request
-names the identifier **first bound** to that payment. Without one, or under a later one, it
-is `409 payment_identifier_settled` and nothing is served. A payment that arrives with no
+names the identifier **first bound** to that payment. A request that arrives under any
+other name for a payment already bound is refused before the facilitator is asked —
+`409 payment_identifier_conflict`, `detail: payment_bound_to_earlier_identifier` — so a copy
+can neither be answered nor settle afresh a payment whose first attempt ended in doubt. A
+replayed settlement with no earlier binding at all is `409 payment_identifier_settled` and
+nothing is served. A payment that arrives with no
 identifier is bound under a random name the paywall tells nobody, so no later identifier is
 ever first for it: that buyer is answered once and cannot be re-served, which means a
 client without the extension has no retry after a lost answer (the refusal is logged with

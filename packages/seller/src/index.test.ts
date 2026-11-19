@@ -1150,17 +1150,15 @@ describe("replayed settlement — 체인에서 베낀 헤더는 자원을 받지
     test("no identifier, a later identifier, and that later identifier presented again are all 409 with nothing served", async () => {
         const {port, rows} = binding();
         expect((await pay(seller(paywall({fetch: facilitator().fetch, paymentIdentifiers: port})).app, identified(BUYER))).status).toBe(200);
-        const {app, seen} = seller(paywall({fetch: replaying().fetch, paymentIdentifiers: port}));
-        for (const [header, detail] of [
-            [paymentHeader(), "replayed_without_identifier"],
-            [identified(COPIER), "replayed_under_later_identifier"],
-            [identified(COPIER), "replayed_under_later_identifier"],
-        ] as const) {
+        const remote = replaying();
+        const {app, seen} = seller(paywall({fetch: remote.fetch, paymentIdentifiers: port}));
+        // Refused before the facilitator is asked anything: this payment already has a name.
+        for (const header of [paymentHeader(), identified(COPIER), identified(COPIER)]) {
             const response = await pay(app, header);
             expect(response.status).toBe(409);
-            expect(await response.json()).toEqual({error: "payment_identifier_settled", detail});
-            expect(failureReceipt(response)).toMatchObject({success: false, errorReason: "payment_identifier_settled", transaction: TX});
+            expect(await response.json()).toEqual({error: "payment_identifier_conflict", detail: "payment_bound_to_earlier_identifier"});
         }
+        expect(remote.paths()).not.toContain("/verify");
         expect(seen.served).toBe(0);
         // Refused attempts leave nothing on file: only the buyer's settled row remains.
         expect([...rows.keys()]).toEqual([BUYER]);
@@ -1180,6 +1178,32 @@ describe("replayed settlement — 체인에서 베낀 헤더는 자원을 받지
         expect((await pay(app, paymentHeader())).status).toBe(409);
         expect(seen.served).toBe(0);
         expect(rows.size).toBe(1);
+    });
+
+    test("a header whose first attempt ended in doubt cannot be settled afresh under another name", async () => {
+        // The facilitator released the claim (its transaction was lost), so the leaf is
+        // unspent and a copy of the header would settle as a new payment, not a replay.
+        const {port, rows} = binding();
+        const pending = facilitator({"/settle": json({success: false, errorReason: "settlement_pending", network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX})});
+        expect((await pay(seller(paywall({fetch: pending.fetch, paymentIdentifiers: port})).app, identified(BUYER))).status).toBe(504);
+        const fresh = facilitator();
+        const {app, seen} = seller(paywall({fetch: fresh.fetch, paymentIdentifiers: port}));
+        expect((await pay(app, identified(COPIER))).status).toBe(409);
+        expect((await pay(app, paymentHeader())).status).toBe(409);
+        expect(fresh.paths()).not.toContain("/settle");
+        expect(fresh.paths()).not.toContain("/verify");
+        expect(seen.served).toBe(0);
+        expect((await pay(app, identified(BUYER))).status).toBe(200);
+        expect([...rows.keys()]).toEqual([BUYER]);
+    });
+
+    test("junk sent twice at once under one name still leaves nothing on file", async () => {
+        const {port, rows} = binding();
+        const refused = facilitator({"/verify": json({isValid: false, invalidReason: "expired"})});
+        const {app} = seller(paywall({fetch: refused.fetch, paymentIdentifiers: port}));
+        const both = await Promise.all([pay(app, identified(COPIER)), pay(app, identified(COPIER))]);
+        expect(both.map((r) => r.status)).toEqual([402, 402]);
+        expect(rows.size).toBe(0);
     });
 
     test("a settled payment with no binding on file is not served to whoever names it first", async () => {
