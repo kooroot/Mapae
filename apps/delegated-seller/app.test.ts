@@ -116,6 +116,11 @@ function shop(options: {metricsToken?: string; store?: MapaeStore} = {}) {
     return {store, app, stub, get, pay};
 }
 
+/** The intent a leaf pays under, read off a receipt from a shop of its own. */
+async function intentOf(leaf: Parameters<typeof paymentHeader>[1]): Promise<`0x${string}`> {
+    return (await ticketOf(await shop().pay(AMERICANO, paymentHeader(ONE, leaf)))).receipt.intent as `0x${string}`;
+}
+
 async function ticketOf(response: Response): Promise<TicketResponse> {
     expect(response.status).toBe(200);
     return (await response.json()) as TicketResponse;
@@ -277,7 +282,7 @@ describe("ticket — one payment, one ticket", () => {
             const response = await pay(AMERICANO, forged);
             expect(response.status).toBe(409);
             const body = JSON.stringify(await response.json());
-            expect(body).toContain("payment_identifier_conflict");
+            expect(body).toContain("payment_identifier_settled");
             expect(body).not.toContain(first.ticket.code);
         }
         // The made-up identifier presented a second time is no better: it never settled anything.
@@ -312,6 +317,45 @@ describe("ticket — one payment, one ticket", () => {
         expect(ticket.receipt.replayed).toBe(true);
         expect(store.orders.summary({sinceMs: 0})).toEqual({total: 1, bySeller: {"demo-cafe": 1}});
         stub.routes["/settle"] = settle;
+    });
+
+    test("two simultaneous copies under one made-up identifier are both refused", async () => {
+        const {store, pay, stub} = shop();
+        // Settled with no binding on file, as an order paid before bindings existed.
+        stub.routes["/settle"] = async () => {
+            await Bun.sleep(5);
+            return Response.json({success: true, network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX, replayed: true});
+        };
+        const forged = identified(paymentHeader(ONE, LEAF_A), "pay_made_up_by_the_copier_0000");
+        const responses = await Promise.all([pay(AMERICANO, forged), pay(AMERICANO, forged)]);
+        expect(responses.map((response) => response.status)).toEqual([409, 409]);
+        expect(store.orders.summary({sinceMs: 0}).total).toBe(0);
+        expect(store.paymentIdentifiers.firstFor(await intentOf(LEAF_A))).toBeNull();
+    });
+
+    test("a request refused at verify does not drop the binding a simultaneous request is settling on", async () => {
+        const {store, pay, stub} = shop();
+        const header = identified(paymentHeader(ONE, LEAF_A), ID);
+        const verify = stub.routes["/verify"];
+        let first = true;
+        stub.routes["/verify"] = async () => {
+            if (!first) return verify();
+            first = false;
+            await Bun.sleep(5);
+            return new Response("busy", {status: 429});
+        };
+        stub.routes["/settle"] = async () => {
+            await Bun.sleep(20);
+            return Response.json({success: false, errorReason: "settlement_pending", network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX});
+        };
+        const responses = await Promise.all([pay(AMERICANO, header), pay(AMERICANO, header)]);
+        expect(responses.map((response) => response.status).sort()).toEqual([503, 504]);
+        expect(store.paymentIdentifiers.firstFor(await intentOf(LEAF_A))).toEqual({id: ID, settled: false});
+        // The retry the 504 asked for is the buyer's delivery.
+        stub.routes["/verify"] = verify;
+        stub.routes["/settle"] = () => Response.json({success: true, network: GIWA_SEPOLIA_CAIP2, payer: PAYER, transaction: TX, replayed: true});
+        await ticketOf(await pay(AMERICANO, header));
+        expect(store.orders.summary({sinceMs: 0}).total).toBe(1);
     });
 
     test("two leaves for one item are two intents, two codes and two rows", async () => {

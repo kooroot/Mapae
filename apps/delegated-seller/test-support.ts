@@ -27,7 +27,7 @@ export const LEAF_B = `0x${"b2".repeat(40)}` as Hex;
 export const LEAF_C = `0x${"c3".repeat(40)}` as Hex;
 
 export type FacilitatorPath = "/supported" | "/verify" | "/settle";
-export type FacilitatorRoute = () => Response;
+export type FacilitatorRoute = () => Response | Promise<Response>;
 
 /** The happy facilitator: every path answers as if the payment were good. */
 export const FACILITATOR_ROUTES: Record<FacilitatorPath, FacilitatorRoute> = {

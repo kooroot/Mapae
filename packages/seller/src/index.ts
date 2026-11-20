@@ -651,6 +651,15 @@ function writeFailureReceipt(
     c.header(PAYMENT_RESPONSE_HEADER, encodePaymentResponseHeader(receipt));
 }
 
+interface InFlightName {count: number; created: boolean; keep: boolean}
+const inFlight = new WeakMap<PaymentIdentifierBinding, Map<string, InFlightName>>();
+/** The names with a request in flight against this binding's rows, across every paywall built over it. */
+function inFlightNames(binding: PaymentIdentifierBinding): Map<string, InFlightName> {
+    let names = inFlight.get(binding);
+    if (!names) inFlight.set(binding, names = new Map());
+    return names;
+}
+
 /**
  * 지문 목록의 버전. 항목이 늘거나 순서가 바뀌면 같은 요청이 다른 지문을 내므로, 옛 행과
  * 새 행이 맞지 않는다 — 그때 조용히 "같은 결제"로 읽히는 대신 409로 떨어지도록 태그를
@@ -741,8 +750,10 @@ function buildPaywall(
     // ends — not by whichever request made it, which may finish while another still runs.
     // A replayed settlement is never served under a name still being created: until those
     // calls end, "first" cannot tell the buyer's earlier attempt from a request
-    // that arrived a moment ago with a copied header. Per process, like the requests.
-    const names = new Map<string, {count: number; created: boolean; keep: boolean}>();
+    // that arrived a moment ago with a copied header. Per process, like the requests —
+    // and per binding, not per paywall: a seller that builds a paywall for each request
+    // must still see two requests under one name as two holders of the same row.
+    const names = paymentIdentifiers ? inFlightNames(paymentIdentifiers) : new Map<string, InFlightName>();
     const paywall: MiddlewareHandler<MapaeEnv> = async (c, next) => {
         // Every answer below turns on whether this request carried a payment, so a shared
         // cache must never hand one of them to the other request: `no-store` keeps a paid
@@ -915,7 +926,7 @@ function buildPaywall(
         // 제시할 수 없고, 그 행이 이 결제의 "가장 먼저 묶인 id" 자리를 차지한다.
         const bindingId = identifier ?? (paymentIdentifiers ? serverIdentifier() : undefined);
         // 이 호출이 만든 행만 지운다. 앞선 시도가 남긴 행은 그 시도의 결과를 아직 모른다.
-        let held: {count: number; created: boolean; keep: boolean} | undefined;
+        let held: InFlightName | undefined;
         // Set on every exit where this request is known to have charged nobody.
         let noCharge = false;
         const forget = (): void => {noCharge = true;};
@@ -989,9 +1000,12 @@ function buildPaywall(
             // ended in doubt — or whose claim the facilitator later released — would
             // otherwise settle afresh, or be answered, under whatever name the copier chose.
             if (paymentIdentifiers && bindingId !== undefined && paymentIdentifiers.first(intent) !== bindingId) {
+                // Not `payment_identifier_conflict`: that word promises nothing was charged,
+                // and the earlier name is on file precisely because its attempt settled, is
+                // still running, or ended in doubt — a no-charge attempt leaves no row.
                 forget();
-                writeFailureReceipt(c, PAYMENT_IDENTIFIER_CONFLICT, payer);
-                return c.json({error: PAYMENT_IDENTIFIER_CONFLICT, detail: "payment_bound_to_earlier_identifier"}, 409);
+                writeFailureReceipt(c, PAYMENT_IDENTIFIER_SETTLED, payer);
+                return c.json({error: PAYMENT_IDENTIFIER_SETTLED, detail: "payment_bound_to_earlier_identifier"}, 409);
             }
 
             const request: Erc7710FacilitatorRequest = {

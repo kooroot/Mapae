@@ -1156,7 +1156,7 @@ describe("replayed settlement — 체인에서 베낀 헤더는 자원을 받지
         for (const header of [paymentHeader(), identified(COPIER), identified(COPIER)]) {
             const response = await pay(app, header);
             expect(response.status).toBe(409);
-            expect(await response.json()).toEqual({error: "payment_identifier_conflict", detail: "payment_bound_to_earlier_identifier"});
+            expect(await response.json()).toEqual({error: "payment_identifier_settled", detail: "payment_bound_to_earlier_identifier"});
         }
         expect(remote.paths()).not.toContain("/verify");
         expect(seen.served).toBe(0);

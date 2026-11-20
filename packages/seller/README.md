@@ -102,7 +102,7 @@ was bound before there was a transaction to copy. With `paymentIdentifiers` set,
 settlement the facilitator answers as `replayed` reaches your handler only when the request
 names the identifier **first bound** to that payment. A request that arrives under any
 other name for a payment already bound is refused before the facilitator is asked —
-`409 payment_identifier_conflict`, `detail: payment_bound_to_earlier_identifier` — so a copy
+`409 payment_identifier_settled`, `detail: payment_bound_to_earlier_identifier` — so a copy
 can neither be answered nor settle afresh a payment whose first attempt ended in doubt. A
 replayed settlement with no earlier binding at all is `409 payment_identifier_settled` and
 nothing is served. A payment that arrives with no
@@ -117,7 +117,7 @@ paid header can be replayed by whoever reads the chain.
 | `402` (no offer consumed) | no payment header — normal for humans and `curl` |
 | `400 malformed_payment` | header is not a usable ERC-7710 payment, or carries a `payment-identifier` outside 16–128 characters of `[A-Za-z0-9_-]`. The receipt names `invalid_payload`, and names the payer only when the header itself parsed |
 | `409 payment_identifier_conflict` | this `payment-identifier` is bound to a different request, or to a leaf that has not settled; `detail` says which. Nothing was charged **for this request** and no offer is re-issued — a fresh id is how to pay |
-| `409 payment_identifier_settled` | same request, different leaf, and that id already settled. The receipt names the **stored** payer and hash: do not pay again, and present the original header to be served what it bought |
+| `409 payment_identifier_settled` | same request, different leaf, and that id already settled; or the payment is bound to an earlier identifier, or was replayed with none (`detail` says which). The receipt names the **stored** payer and hash: do not pay again, and present the original header to be served what it bought |
 | `503 facilitator_unavailable` | `/supported` or `/verify` unreachable, or the facilitator would not look at the payment — its rate limit, or a readiness check it failed — on `/verify` or `/settle`; nothing charged, retry later with the same payment |
 | `402` (offer re-issued) | the facilitator refused the delegation (expired, over limit, over the 10.00 cap, offer mismatch), or the settlement failed without charging anybody. A new leaf can pay, so the offer rides along |
 | `504 settlement_unknown` | the outcome is not established — no answer, `settlement_pending`, `unexpected_settle_error`, or a failure that names a transaction hash under a word that does not mean a mined failure. The buyer **may** have been charged; no offer is re-issued and the hash goes out with the receipt |
